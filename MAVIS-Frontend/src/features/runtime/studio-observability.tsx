@@ -1946,14 +1946,14 @@ export function StudioObservability({
           {view === "3D" && (
             <section
               data-testid="studio-3d-controls"
-              aria-label={t("3D Camera & Layout", "Góc nhìn 3D & Bố cục")}
+              aria-label={t("3D Camera", "Góc nhìn 3D")}
               className={`pointer-events-auto ${
-                cameraFormOpen ? "w-[252px]" : "w-auto"
+                cameraFormOpen ? "w-[196px]" : "w-auto"
               } ${styleCfg.floatingCardClass}`}
             >
-              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-bold tracking-tight">
-                  <Box className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+              <div className="flex items-center justify-between gap-1.5 px-2 py-1">
+                <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10.5px] font-bold tracking-tight">
+                  <Box className="size-3 shrink-0 text-primary" aria-hidden="true" />
                   {t("3D Camera", "Góc nhìn 3D")}
                 </span>
                 <div className="flex items-center gap-1">
@@ -1981,25 +1981,25 @@ export function StudioObservability({
                     }`}
                   >
                     {cameraFormOpen ? (
-                      <ChevronDown className="size-3.5" aria-hidden="true" />
+                      <ChevronDown className="size-3" aria-hidden="true" />
                     ) : (
-                      <ChevronUp className="size-3.5" aria-hidden="true" />
+                      <ChevronUp className="size-3" aria-hidden="true" />
                     )}
                   </button>
                 </div>
               </div>
               {cameraFormOpen && (
                 <div
-                  className={`space-y-2 border-t px-2.5 py-2 ${
+                  className={`space-y-1.5 border-t px-2 py-1.5 ${
                     isLight ? "border-slate-200/80" : "border-slate-700/70"
                   }`}
                 >
                   <div className="grid grid-cols-3 gap-1">
                     {(
                       [
-                        ["Isometric", "Isometric", DEFAULT_3D_CAMERA.yaw, DEFAULT_3D_CAMERA.pitch],
-                        ["Top-down", "Từ trên", TOP_DOWN_3D_CAMERA.yaw, TOP_DOWN_3D_CAMERA.pitch],
-                        ["Elevation", "Góc thấp", ELEVATION_3D_CAMERA.yaw, ELEVATION_3D_CAMERA.pitch],
+                        ["Isometric", "Iso", DEFAULT_3D_CAMERA.yaw, DEFAULT_3D_CAMERA.pitch],
+                        ["Top-down", "Trên", TOP_DOWN_3D_CAMERA.yaw, TOP_DOWN_3D_CAMERA.pitch],
+                        ["Elevation", "Ngang", ELEVATION_3D_CAMERA.yaw, ELEVATION_3D_CAMERA.pitch],
                       ] as const
                     ).map(([labelEn, labelVi, presetYaw, presetPitch]) => {
                       const active =
@@ -2015,7 +2015,7 @@ export function StudioObservability({
                             setZoom(1);
                             setCamera({ yaw: presetYaw, pitch: presetPitch });
                           }}
-                          className={`whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition ${
+                          className={`whitespace-nowrap rounded-md px-1 py-1 text-[10px] font-semibold transition ${
                             active
                               ? isLight
                                 ? "bg-slate-900 text-white"
@@ -2030,106 +2030,70 @@ export function StudioObservability({
                       );
                     })}
                   </div>
-                  <div className="grid grid-cols-2 gap-1">
+                  <div className="grid grid-cols-4 gap-1">
                     <button
                       type="button"
+                      title={t("Rotate left", "Xoay trái")}
+                      aria-label={t("Rotate left", "Xoay trái")}
                       onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.26 }))}
-                      className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                      className={`inline-flex h-7 items-center justify-center rounded-md transition ${
                         isLight
                           ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
                       }`}
                     >
-                      <RotateCcw className="size-3 shrink-0" aria-hidden="true" />
-                      {t("Rotate left", "Xoay trái")}
+                      <RotateCcw className="size-3.5" aria-hidden="true" />
                     </button>
                     <button
                       type="button"
+                      title={t("Rotate right", "Xoay phải")}
+                      aria-label={t("Rotate right", "Xoay phải")}
                       onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.26 }))}
-                      className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                      className={`inline-flex h-7 items-center justify-center rounded-md transition ${
                         isLight
                           ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
                       }`}
                     >
-                      <RotateCw className="size-3 shrink-0" aria-hidden="true" />
-                      {t("Rotate right", "Xoay phải")}
+                      <RotateCw className="size-3.5" aria-hidden="true" />
                     </button>
                     <button
                       type="button"
+                      title={t("Tilt up", "Nâng góc")}
+                      aria-label={t("Tilt up", "Nâng góc")}
                       onClick={() =>
                         setCamera((value) => ({
                           ...value,
                           pitch: Math.min(PITCH_MAX, value.pitch + 0.14),
                         }))
                       }
-                      className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                      className={`inline-flex h-7 items-center justify-center rounded-md transition ${
                         isLight
                           ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
                       }`}
                     >
-                      <ArrowUp className="size-3 shrink-0" aria-hidden="true" />
-                      {t("Tilt up", "Nâng góc")}
+                      <ArrowUp className="size-3.5" aria-hidden="true" />
                     </button>
                     <button
                       type="button"
+                      title={t("Tilt down", "Hạ góc")}
+                      aria-label={t("Tilt down", "Hạ góc")}
                       onClick={() =>
                         setCamera((value) => ({
                           ...value,
                           pitch: Math.max(PITCH_MIN, value.pitch - 0.14),
                         }))
                       }
-                      className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                      className={`inline-flex h-7 items-center justify-center rounded-md transition ${
                         isLight
                           ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
                       }`}
                     >
-                      <ArrowDown className="size-3 shrink-0" aria-hidden="true" />
-                      {t("Tilt down", "Hạ góc")}
+                      <ArrowDown className="size-3.5" aria-hidden="true" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-1">
-                    {(
-                      [
-                        ["LAYERED", "Layered", "Theo tầng"],
-                        ["CIRCULAR", "Circular", "Vòng tròn"],
-                        ["GRID", "Grid", "Lưới"],
-                      ] as const
-                    ).map(([mode, labelEn, labelVi]) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        aria-pressed={layoutMode === mode}
-                        onClick={() => {
-                          setLayoutMode(mode);
-                          setCustomOffsets({});
-                          setPinnedPositions({});
-                        }}
-                        className={`whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition ${
-                          layoutMode === mode
-                            ? isLight
-                              ? "bg-slate-900 text-white"
-                              : "bg-slate-100 text-slate-950"
-                            : isLight
-                              ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-                              : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
-                        }`}
-                      >
-                        {t(labelEn, labelVi)}
-                      </button>
-                    ))}
-                  </div>
-                  <p
-                    className={`text-[10px] leading-tight ${
-                      isLight ? "text-slate-500" : "text-slate-400"
-                    }`}
-                  >
-                    {webglActive
-                      ? t("Right-drag to orbit · Left-drag blocks/pan · Scroll zoom", "Chuột phải xoay · Chuột trái kéo khối/nền · Cuộn zoom")
-                      : t("Right-drag to orbit · Scroll to zoom", "Chuột phải kéo xoay · Cuộn để zoom")}
-                  </p>
                 </div>
               )}
             </section>

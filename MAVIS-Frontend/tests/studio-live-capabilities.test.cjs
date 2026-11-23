@@ -1033,3 +1033,18 @@ test("3D node drag live-tracks architectural trust zones and deck floor at 60fps
   assert.ok(stageSrc.includes("const liveBounds = computeLiveDeckBounds(allLiveNodes);"));
   assert.ok(stageSrc.includes("const liveLayouts = computeLiveZoneRects(zoneRigs, liveNodePosRef.current"));
 });
+
+test("Floating 3D Camera card stays ultra-compact with 3 presets and a single 4-icon directional row", () => {
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const start = obsSrc.indexOf('data-testid="studio-3d-controls"');
+  const end = obsSrc.indexOf("</section>", start);
+  const card = obsSrc.slice(start, end);
+  assert.ok(card.includes("w-[196px]"), "3D Camera card should match compact 196px width");
+  assert.ok(card.includes("grid-cols-4"), "Rotate/tilt controls should share one compact 4-icon row");
+  assert.ok(card.includes('aria-label={t("Rotate left"') && card.includes('aria-label={t("Tilt down"'));
+  assert.ok(!card.includes("Right-drag to orbit"), "Verbose 2-line mouse hint should stay removed from floating card");
+  assert.ok(!card.includes('"CIRCULAR"'), "Redundant Layered/Circular/Grid row should stay removed from floating card");
+});
