@@ -383,12 +383,24 @@ def prepare(client, migration, backup, label="WF-01"):
     print(f"{label} schema verified. Pre-migration backup retained on the deployment host.")
 
 
-if __name__ == "__main__":
+def main(argv=None, stdin=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    stream = sys.stdin if stdin is None else stdin
     os.umask(0o077)
     try:
-        backend = json.load(sys.stdin)["services"]["backend"]["environment"]
-        migration = Path(sys.argv[1])
+        backend = json.load(stream)["services"]["backend"]["environment"]
+        if len(args) == 2 and args[0] == "--backup-only":
+            PostgresClient(connection(backend)).backup(Path(args[1]))
+            print(f"Database backup verified: {args[1]}")
+            return
+        if len(args) != 2:
+            raise ValueError("Expected <migration.sql> <backup.dump> or --backup-only <backup.dump>")
+        migration = Path(args[0])
         version, probe = MIGRATIONS[migration.name]
-        prepare(PostgresClient(connection(backend), version, probe), migration, Path(sys.argv[2]), f"V{version}")
+        prepare(PostgresClient(connection(backend), version, probe), migration, Path(args[1]), f"V{version}")
     except (KeyError, OSError, ValueError, subprocess.CalledProcessError):
         sys.exit("Course schema preparation failed before replacement. Check DB access, schema and backup.")
+
+
+if __name__ == "__main__":
+    main()

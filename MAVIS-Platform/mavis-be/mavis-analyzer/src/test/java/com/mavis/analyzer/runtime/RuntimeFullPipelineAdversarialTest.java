@@ -583,7 +583,7 @@ class RuntimeFullPipelineAdversarialTest {
         UUID projectId = UUID.randomUUID();
         UUID snapshotId = UUID.randomUUID();
         UUID baseModelId = UUID.randomUUID();
-        Project project = Project.builder().id(projectId).name("Polyglot Commerce").build();
+        Project project = Project.builder().id(projectId).name("Polyglot Commerce").projectType("PERSONAL").build();
         SourceSnapshot snapshot = SourceSnapshot.builder().id(snapshotId).project(project).storagePath(repoDir.toString()).artifactHash("poly-hash").build();
         ModelVersion baseModel = ModelVersion.builder().id(baseModelId).project(project).sourceSnapshot(snapshot).revision(1).origin("STATIC").isLatestValid(true).build();
 
@@ -891,7 +891,7 @@ class RuntimeFullPipelineAdversarialTest {
         UUID projectId = UUID.randomUUID();
         UUID snapshotId = UUID.randomUUID();
         UUID baseModelId = UUID.randomUUID();
-        Project project = Project.builder().id(projectId).name("Catalog Single Service").build();
+        Project project = Project.builder().id(projectId).name("Catalog Single Service").projectType("PERSONAL").build();
         SourceSnapshot snapshot = SourceSnapshot.builder().id(snapshotId).project(project).storagePath(repoDir.toString()).artifactHash("cat-hash").build();
         ModelVersion baseModel = ModelVersion.builder().id(baseModelId).project(project).sourceSnapshot(snapshot).revision(1).origin("STATIC").isLatestValid(true).build();
         ModelElement catEl = ModelElement.builder().id(UUID.randomUUID()).modelVersion(baseModel).name("CatalogService").elementType("SERVICE_CONTAINER").languageStack("java").build();
@@ -1044,7 +1044,7 @@ class RuntimeFullPipelineAdversarialTest {
         UUID projectId = UUID.randomUUID();
         UUID snapshotId = UUID.randomUUID();
         UUID baseModelId = UUID.randomUUID();
-        Project project = Project.builder().id(projectId).name("Adversarial Project").build();
+        Project project = Project.builder().id(projectId).name("Adversarial Project").projectType("PERSONAL").build();
         SourceSnapshot snapshot = SourceSnapshot.builder().id(snapshotId).project(project).storagePath(safeDir.toString()).artifactHash("adv-hash").build();
         ModelVersion baseModel = ModelVersion.builder().id(baseModelId).project(project).sourceSnapshot(snapshot).revision(1).origin("STATIC").isLatestValid(true).build();
         ModelElement gwEl = ModelElement.builder().id(UUID.randomUUID()).modelVersion(baseModel).name("api-gateway").elementType("SERVICE_CONTAINER").languageStack("java").build();
@@ -1279,7 +1279,7 @@ class RuntimeFullPipelineAdversarialTest {
         UUID dotnetPid = UUID.randomUUID();
         UUID dotnetSid = UUID.randomUUID();
         UUID dotnetMid = UUID.randomUUID();
-        Project dotnetProj = Project.builder().id(dotnetPid).name("Direct Dotnet Project").build();
+        Project dotnetProj = Project.builder().id(dotnetPid).name("Direct Dotnet Project").projectType("PERSONAL").build();
         SourceSnapshot dotnetSnap = SourceSnapshot.builder().id(dotnetSid).project(dotnetProj).storagePath(dotnetDir.toString()).artifactHash("dotnet-hash").build();
         ModelVersion dotnetModel = ModelVersion.builder().id(dotnetMid).project(dotnetProj).sourceSnapshot(dotnetSnap).revision(1).origin("STATIC").isLatestValid(true).build();
         ModelElement dotnetEl = ModelElement.builder().id(UUID.randomUUID()).modelVersion(dotnetModel).name("OrderApi").elementType("SERVICE_CONTAINER").languageStack("csharp").build();
@@ -1452,7 +1452,7 @@ class RuntimeFullPipelineAdversarialTest {
         UUID projectId = UUID.randomUUID();
         UUID snapshotId = UUID.randomUUID();
         UUID baseModelId = UUID.randomUUID();
-        Project project = Project.builder().id(projectId).name("Digit Service Security Suite").build();
+        Project project = Project.builder().id(projectId).name("Digit Service Security Suite").projectType("PERSONAL").build();
         SourceSnapshot snapshot = SourceSnapshot.builder().id(snapshotId).project(project).storagePath(repoDir.toString()).artifactHash("2fa-hash").build();
         ModelVersion baseModel = ModelVersion.builder()
                 .id(baseModelId).project(project).sourceSnapshot(snapshot)
@@ -2122,7 +2122,7 @@ class RuntimeFullPipelineAdversarialTest {
         UUID projectId = UUID.randomUUID();
         UUID snapshotId = UUID.randomUUID();
         UUID baseModelId = UUID.randomUUID();
-        Project project = Project.builder().id(projectId).name("Multi-DB Overflow Suite").build();
+        Project project = Project.builder().id(projectId).name("Multi-DB Overflow Suite").projectType("PERSONAL").build();
         SourceSnapshot snapshot = SourceSnapshot.builder().id(snapshotId).project(project).storagePath(repoDir.toString()).artifactHash("mdb-hash").build();
         ModelVersion baseModel = ModelVersion.builder().id(baseModelId).project(project).sourceSnapshot(snapshot).revision(1).origin("STATIC").isLatestValid(true).build();
         ModelElement twoFaEl = ModelElement.builder().id(UUID.randomUUID()).modelVersion(baseModel).name("2fa-service").elementType("SERVICE_CONTAINER").languageStack("java").build();

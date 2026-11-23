@@ -3199,7 +3199,7 @@ export function StudioObservability({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            {([1, 2, 4, 8] as const).map((preset) => (
+            {([1, 2, 3] as const).map((preset) => (
               <Button
                 key={preset}
                 type="button"
@@ -3468,6 +3468,9 @@ export function StudioObservability({
   );
 }
 
+const SNAPSHOT_MAX_DATA_URL_CHARS = 440_000;
+const SNAPSHOT_MAX_EDGES = [1280, 960, 720] as const;
+
 export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = false): Promise<string> {
   const styles = getComputedStyle(svg);
   const url = URL.createObjectURL(
@@ -3480,15 +3483,23 @@ export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = fals
       image.onerror = () => reject(new Error("Could not render Studio snapshot"));
       image.src = url;
     });
+    const naturalW = Math.max(1, image.naturalWidth);
+    const naturalH = Math.max(1, image.naturalHeight);
+    const longest = Math.max(naturalW, naturalH);
     const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Could not render Studio snapshot");
-    context.fillStyle = styles.backgroundColor;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0);
-    return canvas.toDataURL("image/png");
+    for (const maxEdge of SNAPSHOT_MAX_EDGES) {
+      const scale = Math.min(1, maxEdge / longest);
+      canvas.width = Math.max(1, Math.round(naturalW * scale));
+      canvas.height = Math.max(1, Math.round(naturalH * scale));
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Could not render Studio snapshot");
+      context.fillStyle = styles.backgroundColor;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/png");
+      if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
+    }
+    throw new Error("Snapshot image too large");
   } finally {
     URL.revokeObjectURL(url);
   }

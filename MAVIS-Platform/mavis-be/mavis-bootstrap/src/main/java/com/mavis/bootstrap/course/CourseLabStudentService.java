@@ -417,6 +417,16 @@ public class CourseLabStudentService {
         if (!preparedCompose.isBlank()) {
             profileNode.put("sandboxCompose", preparedCompose);
         }
+        if (refProfile != null && refProfile.isObject()) {
+            JsonNode allowedEnvKeys = refProfile.get("allowedEnvKeys");
+            if (allowedEnvKeys != null && !allowedEnvKeys.isNull()) {
+                profileNode.set("allowedEnvKeys", allowedEnvKeys.deepCopy());
+            }
+            JsonNode alternateImages = refProfile.get("alternateImages");
+            if (alternateImages != null && !alternateImages.isNull()) {
+                profileNode.set("alternateImages", alternateImages.deepCopy());
+            }
+        }
         if (resolvedTopology != null && resolvedTopology.isObject()) {
             profileNode.set("studioTopology", resolvedTopology.deepCopy());
         }

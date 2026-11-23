@@ -239,8 +239,8 @@ public class LabStudioExerciseService {
         List<ReplicaTarget> replicas = criteria.minReplicas() == null ? List.of()
                 : criteria.minReplicas().stream().map(target -> {
                     if (target == null || target.service() == null || target.service().isBlank()
-                            || target.count() == null || target.count() < 1 || target.count() > 8) {
-                        throw invalid("Replica targets need a service and a count of 1-8");
+                            || target.count() == null || target.count() < 1 || target.count() > 3) {
+                        throw invalid("Replica targets need a service and a count of 1-3");
                     }
                     return new ReplicaTarget(target.service().trim(), target.count());
                 }).toList();
@@ -269,8 +269,8 @@ public class LabStudioExerciseService {
         if (!CHANGE_ACTIONS.contains(kind) || service.isBlank() || service.length() > 128) {
             throw invalid("Invalid targetChangeAction");
         }
-        if ("SCALE".equals(kind) && (action.replicas() == null || action.replicas() < 1 || action.replicas() > 8)) {
-            throw invalid("SCALE targetChangeAction requires replicas 1-8");
+        if ("SCALE".equals(kind) && (action.replicas() == null || action.replicas() < 1 || action.replicas() > 3)) {
+            throw invalid("SCALE targetChangeAction requires replicas 1-3");
         }
         if ("THROTTLE_CPU".equals(kind) && (action.cpuPercent() == null || action.cpuPercent() < 10 || action.cpuPercent() > 100)) {
             throw invalid("THROTTLE_CPU targetChangeAction requires cpuPercent 10-100");

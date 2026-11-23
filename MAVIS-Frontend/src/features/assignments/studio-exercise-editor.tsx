@@ -800,12 +800,12 @@ export function StudioExerciseEditor({
             )}
           </label>
           <label className="space-y-1 text-xs text-muted-foreground">
-            <span>{t("Minimum replicas (1–8)", "Số replica tối thiểu (1–8)")}</span>
+            <span>{t("Minimum replicas (1–3)", "Số replica tối thiểu (1–3)")}</span>
             <Input
               className="h-8 font-mono text-xs"
               type="number"
               min={1}
-              max={8}
+              max={3}
               placeholder="2"
               value={form.replicaCount}
               onChange={(event) => setForm({ ...form, replicaCount: event.target.value })}

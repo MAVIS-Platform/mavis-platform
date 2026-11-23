@@ -502,3 +502,100 @@ test("LiveStudioWorkbench floating Inspector and Mission cards support header dr
   assert.ok(src.includes('data-drag-handle="inspector"'));
   assert.ok(src.includes('data-drag-handle="mission"'));
 });
+
+test("Author Mode visual save preserves Change Impact successCriteria fields", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  assert.match(src, /exerciseType\?:/);
+  assert.match(src, /predictionRequired\?:/);
+  assert.match(src, /minImpactF1\?:/);
+  assert.match(src, /targetChangeAction\?:/);
+  assert.match(src, /rules\?:/);
+  assert.match(
+    src,
+    /body:\s*JSON\.stringify\(\{\s*\.\.\.cur,[\s\S]*successCriteria:\s*\{\s*\.\.\.cur\?\.successCriteria,/,
+  );
+});
+
+test("Batch 2: LiveStudioWorkbench auto-opens prediction, locks Finish on 0 snapshots, and unifies Light/Dark servicePhase controls", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  // Task 2.1: auto-open prediction panel once per session + mission warning
+  assert.match(src, /const needsPrediction =/);
+  assert.match(src, /autoOpenedPredictionRef/);
+  assert.ok(src.includes("Lock your impact prediction before your first action."));
+  // Task 2.2: Finish requires >= 1 snapshot
+  assert.ok(src.includes("Capture at least one evidence snapshot before finishing."));
+  assert.match(src, /!hasConfirmedAction \|\|\s*\(data\.snapshots\?\.length \?\? 0\) === 0/);
+  // Task 2.3: shared servicePhase helper + Light/Dark parity for CPU [25, 50, 100], SET_LOAD [5, 15, 30, 50], Pause/Resume
+  assert.match(src, /function servicePhase\(/);
+  assert.ok(src.includes('selPhase !== "paused"'));
+  assert.ok(src.includes('darkPhase !== "paused"'));
+  assert.ok(!src.includes("CPU 20%"));
+  const cpuMatches = src.match(/\[25, 50, 100\]\.map/g) || [];
+  assert.ok(cpuMatches.length >= 2, "Both Light and Dark themes must expose CPU [25, 50, 100] presets");
+  const loadMatches = src.match(/\[5, 15, 30, 50\]\.map/g) || [];
+  assert.ok(loadMatches.length >= 2, "Both Light and Dark themes must expose SET_LOAD [5, 15, 30, 50] presets");
+});
+
+test("Batch 2: lab-submission-v2 removes sample dossiers and fake rubric score preview", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/lab-submission-v2.tsx"),
+    "utf8",
+  );
+  assert.doesNotMatch(src, /Fill Passing|Revision-Needed|baseQuiz|sampleDossier|RubricPreview|ScorePreview/);
+});
+
+test("Batch 2: Admin Studio Setup points to /workspaces and grading evidence displays exerciseEvaluation hint", () => {
+  const adminSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/administration/screens.tsx"),
+    "utf8",
+  );
+  assert.ok(!adminSrc.includes('href="/administration/studio"'));
+  assert.ok(adminSrc.includes("Open Studio Live (choose a lab)"));
+
+  const evidenceSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/studio-evidence.tsx"),
+    "utf8",
+  );
+  assert.ok(evidenceSrc.includes("Auto-check (grading hint, not a score)"));
+  assert.match(evidenceSrc, /exerciseEvaluation:\s*exerciseEvaluationSchema/);
+  assert.match(evidenceSrc, /\{\s*enabled:\s*available\s*\}/);
+});
+
+test("Batch 3: Scale capped at 1..3, PNG snapshot downscales within 440k chars, visible-tab heartbeat active", () => {
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  assert.ok(obsSrc.includes("[1, 2, 3] as const"));
+  assert.ok(obsSrc.includes("SNAPSHOT_MAX_DATA_URL_CHARS = 440_000"));
+  assert.ok(obsSrc.includes("[1280, 960, 720]"));
+  assert.ok(obsSrc.includes('toDataURL("image/png")'));
+  assert.ok(!obsSrc.includes('toDataURL("image/jpeg")'));
+
+  const paritySrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-sandbox-parity.tsx"),
+    "utf8",
+  );
+  assert.ok(paritySrc.includes("Replicas (1–3)"));
+  assert.ok(paritySrc.includes("[1, 2, 3].map"));
+  assert.ok(!paritySrc.includes("[1, 2, 4, 8].map"));
+
+  const sessionHookSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/use-studio-session.ts"),
+    "utf8",
+  );
+  assert.ok(sessionHookSrc.includes("visibilitychange"));
+  assert.ok(sessionHookSrc.includes("cancelledWhileQueued"));
+
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  assert.ok(workbenchSrc.includes("Your queued session was cancelled because the tab was inactive. Click Run again."));
+});

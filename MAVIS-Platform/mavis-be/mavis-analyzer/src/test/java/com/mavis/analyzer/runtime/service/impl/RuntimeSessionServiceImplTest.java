@@ -204,7 +204,7 @@ class RuntimeSessionServiceImplTest {
         projectId = UUID.randomUUID();
         snapshotId = UUID.randomUUID();
 
-        project = Project.builder().id(projectId).name("Ecommerce System").build();
+        project = Project.builder().id(projectId).name("Ecommerce System").projectType("PERSONAL").build();
         snapshot = SourceSnapshot.builder().id(snapshotId).project(project).storagePath("/tmp/test/compose.yml").build();
         validModel = ModelVersion.builder()
                 .id(UUID.randomUUID())
@@ -863,7 +863,7 @@ class RuntimeSessionServiceImplTest {
         when(modelVersionRepository.findById(validModel.getId())).thenReturn(Optional.of(validModel));
         when(modelElementRepository.findByModelVersionId(validModel.getId())).thenReturn(Collections.emptyList());
 
-        for (int badReplica : List.of(0, 9)) {
+        for (int badReplica : List.of(0, 4, 9)) {
             ObjectNode cfg = objectMapper.createObjectNode();
             cfg.putObject("profile").putObject("applications").putObject("order-service").put("runtime", "java");
             cfg.putArray("infrastructureActions").addObject()
@@ -976,5 +976,25 @@ class RuntimeSessionServiceImplTest {
                 .contains("payment-service:")
                 .doesNotContain("sandbox-postgres")
                 .doesNotContain("sandbox-kafka");
+    }
+
+    @Test
+    void studentWorkingProjectOwnerCannotUpdateRuntimeConfigOrStoreSecrets() {
+        project.setProjectType("STUDENT_WORKING");
+        var req = RuntimeProjectConfigRequestDTO.builder()
+                .environmentVariables(Map.of("LD_PRELOAD", "/tmp/evil.so"))
+                .build();
+
+        assertThatThrownBy(() -> runtimeSessionService.updateProjectRuntimeConfig(projectId, req))
+                .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+                    assertThat(ex.getStableCode()).isEqualTo("STUDENT_RUNTIME_CONFIG_FORBIDDEN");
+                });
+
+        assertThatThrownBy(() -> runtimeSessionService.storeProjectSecrets(projectId, Map.of("API_KEY", "x")))
+                .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+                    assertThat(ex.getStableCode()).isEqualTo("STUDENT_RUNTIME_CONFIG_FORBIDDEN");
+                });
     }
 }

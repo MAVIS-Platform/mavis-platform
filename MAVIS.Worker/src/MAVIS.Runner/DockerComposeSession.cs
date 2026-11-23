@@ -233,7 +233,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     await CheckpointAsync("RUNNING", 2, ct);
                     return;
                 }
-                await Task.Delay(1000, ct);
+                await Task.Delay(2000, ct);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -348,6 +348,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     }
                     await AcknowledgeActionSafeAsync(item.ActionId, status, result, ct);
                     // Publish the post-action frame before polling the next command or finishRequested so no action's state is lost.
+                    _forceTraceRefresh = true;
                     await PublishStudioTelemetrySafeAsync(ct);
                 }
             } finally {
@@ -409,7 +410,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             if (action is not ("STOP" or "START" or "SCALE" or "PAUSE" or "RESUME" or "THROTTLE_CPU" or "SET_LOAD" or "SET_ENV" or "SWAP_VERSION") || string.IsNullOrWhiteSpace(service) ||
                 !definition.Profile.Applications.ContainsKey(service))
                 throw new RuntimeStageException("INFRASTRUCTURE_ACTION_INVALID");
-            if (action == "SCALE" && item.Replicas is not (>= 1 and <= 8))
+            if (action == "SCALE" && item.Replicas is not (>= 1 and <= 3))
                 throw new RuntimeStageException("REPLICA_BOUNDS_EXCEEDED");
             if (action == "THROTTLE_CPU" && item.CpuPercent is not (>= 10 and <= 100))
                 throw new RuntimeStageException("CPU_THROTTLE_BOUNDS_EXCEEDED");
@@ -569,7 +570,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 if (!await ScenarioContainerCleanup.RemoveAsync(docker, _directory!, ResourceProject, ct))
                     throw new RuntimeStageException("STUDIO_READINESS_PROBE_CLEANUP_UNCONFIRMED");
             }
-            await Task.Delay(500, ct);
+            await Task.Delay(2000, ct);
         }
         ct.ThrowIfCancellationRequested();
         return false;
@@ -651,6 +652,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private JsonNode? _latestProbeNode;
     private JsonNode? _latestServiceGraphNode;
     private TraceCorrelationResult? _lastLiveTrace;
+    private int _telemetryPublishCount;
+    private volatile bool _forceTraceRefresh = true;
 
     private async Task<IAsyncDisposable?> StartLiveProbeAsync(string containerName, CancellationToken ct)
     {
@@ -785,7 +788,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             var text = RedactSecrets(logs.StandardOutput + (string.IsNullOrEmpty(logs.StandardError) ? "" : "\n" + logs.StandardError));
             services.Add(new { service = state.Service, replicas = state.Total, runningReplicas = state.Running, stats, logs = text[..Math.Min(text.Length, 4000)] });
         }
-        var trace=await ReadTraceEvidenceAsync(ct,live:true);
+        var publishCount = ++_telemetryPublishCount;
+        var shouldCopyTrace = _forceTraceRefresh || _lastLiveTrace is null || (publishCount % 3 == 1);
+        _forceTraceRefresh = false;
+        var trace = shouldCopyTrace ? await ReadTraceEvidenceAsync(ct, live: true) : _lastLiveTrace;
         // Correlator output is causal (topological) order; the live view needs the most recent spans by start time.
         var recentSpans = trace?.Spans.OrderBy(s => ulong.TryParse(s.StartTimeUnixNano, out var t) ? t : 0UL).TakeLast(200).ToArray() ?? [];
         var startBySpan = recentSpans.ToDictionary(s => (s.TraceId, s.SpanId), s => ulong.TryParse(s.StartTimeUnixNano, out var t) ? t : 0UL);

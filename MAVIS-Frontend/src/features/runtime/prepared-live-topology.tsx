@@ -76,8 +76,8 @@ export function PreparedLiveTopology({ data, selected, onSelect, busy, onCommand
           busy={busy}
           onQuickAction={(action) => {
             const block = topology.blocks.find((item) => item.service === action.service);
-            if (action.action === "SCALE" && (!block?.canScale || !action.replicas || action.replicas > 8)) {
-              setMessage("This block only supports the permitted replica range, up to 8.");
+            if (action.action === "SCALE" && (!block?.canScale || !action.replicas || action.replicas > 3)) {
+              setMessage("This block only supports the permitted replica range, up to 3.");
               return;
             }
             void command(action.action, action.service, action.replicas);
@@ -93,10 +93,10 @@ export function PreparedLiveTopology({ data, selected, onSelect, busy, onCommand
             <span>{running === undefined ? "Waiting for telemetry" : `${running} pods`}</span>
             <button type="button" disabled={busy || !running}
               onClick={() => void command("STOP", block.service)} className="text-red-300 disabled:opacity-40">Remove block</button>
-            {block.canScale && <button type="button" disabled={busy || !running || running >= 8}
+            {block.canScale && <button type="button" disabled={busy || !running || running >= 3}
               onClick={() => void command("SCALE", block.service, (running ?? 0) + 1)}
               className="text-sky-300 disabled:opacity-40">Clone replica</button>}
-            {block.canScale && <input type="number" min={1} max={8} step={1}
+            {block.canScale && <input type="number" min={1} max={3} step={1}
               aria-label={`Live replicas for ${block.label}`} defaultValue={Math.max(1, running ?? 1)}
               key={`${block.service}:${running}`} disabled={busy || !running} className="w-14 rounded border bg-background px-1"
               onKeyDown={(event) => {

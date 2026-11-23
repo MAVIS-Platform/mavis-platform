@@ -15,6 +15,8 @@ import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeConfiguration;
 import com.mavis.common.entity.RuntimeScenario;
 import com.mavis.common.entity.SourceSnapshot;
+import com.mavis.common.exception.BusinessException;
+import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.ModelVersionRepository;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.repository.RuntimeConfigurationRepository;
@@ -87,7 +89,7 @@ class RuntimePlanningServiceTest {
         projectId = UUID.randomUUID();
         snapshotId = UUID.randomUUID();
         modelId = UUID.randomUUID();
-        project = Project.builder().id(projectId).name("Test Project").build();
+        project = Project.builder().id(projectId).name("Test Project").projectType("PERSONAL").build();
         snapshot = SourceSnapshot.builder().id(snapshotId).project(project).build();
         model = ModelVersion.builder().id(modelId).project(project).sourceSnapshot(snapshot).revision(1).isLatestValid(true).build();
     }
@@ -1833,5 +1835,28 @@ class RuntimePlanningServiceTest {
         var viewAfter = planningService.configuration(projectId);
         assertThat(viewAfter.ready()).isTrue();
         assertThat(viewAfter.profile().path("effectiveRunnerIssues").size()).isZero();
+    }
+
+    @Test
+    void studentWorkingProjectCannotSaveConfigurationOrBuildSandboxImages() {
+        project.setProjectType("STUDENT_WORKING");
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+
+        assertThatThrownBy(() -> planningService.saveConfiguration(
+                projectId,
+                new RuntimePlanningService.ConfigurationRequest(
+                        snapshotId, modelId, "SPRING_BOOT_DOTNET_COMPOSE_V1", json.createObjectNode(), 0)))
+                .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+                    assertThat(ex.getStableCode()).isEqualTo("STUDENT_RUNTIME_CONFIG_FORBIDDEN");
+                });
+
+        assertThatThrownBy(() -> planningService.buildSandboxImages(
+                projectId,
+                new RuntimePlanningService.BuildImagesRequest(snapshotId, List.of("orders"))))
+                .isInstanceOfSatisfying(BusinessException.class, ex -> {
+                    assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+                    assertThat(ex.getStableCode()).isEqualTo("STUDENT_RUNTIME_CONFIG_FORBIDDEN");
+                });
     }
 }

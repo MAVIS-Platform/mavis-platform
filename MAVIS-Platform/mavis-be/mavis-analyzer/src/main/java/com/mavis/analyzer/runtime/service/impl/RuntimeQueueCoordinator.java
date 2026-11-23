@@ -108,6 +108,7 @@ public class RuntimeQueueCoordinator {
     private volatile long lastRuntimeProbeMillis = 0L;
     private volatile boolean cachedDockerReachable = false;
     private volatile boolean cachedGvisorAvailable = false;
+    private volatile Instant lastWorkerPollAt = null;
 
     public record CommandOutput(int exitCode, String stdout) {}
 
@@ -215,10 +216,21 @@ public class RuntimeQueueCoordinator {
         }
     }
 
+    public void recordWorkerPoll() {
+        lastWorkerPollAt = Instant.now();
+    }
+
+    public Instant getLastWorkerPollAt() {
+        return lastWorkerPollAt;
+    }
+
     /** Atomically claims the oldest QUEUED session for a remote Worker VPS (or local drain). */
     public WorkerClaimResult claimNextQueuedForRemoteWorker(String workerId, String isolationRuntime) {
         String safeWorker = (workerId == null || workerId.isBlank()) ? "remote-worker" : workerId.trim();
         String safeRuntime = (isolationRuntime == null || isolationRuntime.isBlank()) ? "runc" : isolationRuntime.trim();
+        if (!"local-dispatcher".equals(safeWorker)) {
+            lastWorkerPollAt = Instant.now();
+        }
         WorkerClaimResult result = runInTransaction(() -> {
             // FOR UPDATE SKIP LOCKED: two claimers can never receive the same row, and no stale cached entity is reused.
             RuntimeSession locked = runtimeSessionRepository.lockOldestQueued().orElse(null);
@@ -487,10 +499,13 @@ public class RuntimeQueueCoordinator {
     int reapAbandonedStudioSessions(Instant now) {
         List<RuntimeSession> running = runtimeSessionRepository
                 .findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("RUNNING");
-        Set<UUID> activeRunningIds = new HashSet<>();
-        boolean hasWaiters = countQueuedSessions() > 0;
+        List<RuntimeSession> queued = runtimeSessionRepository
+                .findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED");
+        Set<UUID> activeTrackedIds = new HashSet<>();
+        boolean hasWaiters = !queued.isEmpty() || countQueuedSessions() > 0;
         long baseIdle = Math.max(30, abandonedIdleSeconds);
         long idleThresholdSeconds = hasWaiters ? baseIdle : baseIdle * 2L;
+        long queuedIdleThresholdSeconds = Math.max(300L, baseIdle * 2L);
         long minWarmupSeconds = Math.min(60L, baseIdle);
         int reaped = 0;
 
@@ -499,7 +514,7 @@ public class RuntimeQueueCoordinator {
             if (id == null) {
                 continue;
             }
-            activeRunningIds.add(id);
+            activeTrackedIds.add(id);
             boolean interactiveStudio = candidate.getScenarioConfig() != null
                     && candidate.getScenarioConfig().path("interactiveStudio").asBoolean(false);
             if (!interactiveStudio || candidate.getStartedAt() == null) {
@@ -528,13 +543,58 @@ public class RuntimeQueueCoordinator {
             });
             if (Boolean.TRUE.equals(cancelled)) {
                 uiHeartbeats.remove(id);
+                activeTrackedIds.remove(id);
                 reaped++;
                 abandonedReapedTotal.incrementAndGet();
                 log.info("Auto-reaped abandoned Studio session {} after {}s idle (waiters={})",
                         id, Duration.between(lastSeen, now).getSeconds(), hasWaiters);
             }
         }
-        uiHeartbeats.keySet().retainAll(activeRunningIds);
+
+        for (RuntimeSession candidate : queued) {
+            UUID id = candidate.getId();
+            if (id == null) {
+                continue;
+            }
+            boolean interactiveStudio = candidate.getScenarioConfig() != null
+                    && candidate.getScenarioConfig().path("interactiveStudio").asBoolean(false);
+            if (!interactiveStudio) {
+                activeTrackedIds.add(id);
+                continue;
+            }
+            Instant created = candidate.getCreatedAt() != null ? candidate.getCreatedAt().toInstant() : now;
+            Instant lastSeen = latestActivityTimestamp(id, candidate, created);
+            if (Duration.between(lastSeen, now).getSeconds() < queuedIdleThresholdSeconds) {
+                activeTrackedIds.add(id);
+                continue;
+            }
+            Boolean cancelled = runInTransaction(() -> {
+                RuntimeSession locked = runtimeSessionRepository.findLockedById(id).orElse(null);
+                if (locked == null || !"QUEUED".equalsIgnoreCase(locked.getExecutionStatus())
+                        || locked.getCancelRequestedAt() != null || locked.getCompletedAt() != null) {
+                    return false;
+                }
+                OffsetDateTime cancelledAt = OffsetDateTime.now();
+                locked.setScenarioStatus("CANCELLED");
+                locked.setExecutionStatus("CANCELLED");
+                locked.setCleanupStatus("NOT_APPLICABLE");
+                locked.setCancelRequestedAt(cancelledAt);
+                locked.setCompletedAt(cancelledAt);
+                runtimeSessionRepository.save(locked);
+                return true;
+            });
+            if (Boolean.TRUE.equals(cancelled)) {
+                uiHeartbeats.remove(id);
+                reaped++;
+                abandonedReapedTotal.incrementAndGet();
+                log.info("Auto-reaped abandoned QUEUED Studio session {} after {}s inactive",
+                        id, Duration.between(lastSeen, now).getSeconds());
+            } else {
+                activeTrackedIds.add(id);
+            }
+        }
+
+        uiHeartbeats.keySet().retainAll(activeTrackedIds);
         return reaped;
     }
 
@@ -669,6 +729,10 @@ public class RuntimeQueueCoordinator {
     }
 
     public RuntimeHealthSnapshot getRuntimeHealth() {
+        return getRuntimeHealth(Instant.now());
+    }
+
+    RuntimeHealthSnapshot getRuntimeHealth(Instant now) {
         refreshDockerAndRuntimeProbe();
         long active = countActiveSessions();
         long queued = countQueuedSessions();
@@ -700,12 +764,29 @@ public class RuntimeQueueCoordinator {
             if ("READY".equals(readiness)) readiness = "DEGRADED";
             warnings.add("Host free disk space is low (" + freeMiB + " MiB free; threshold " + lowDiskThresholdMiB + " MiB).");
         }
+        if (isRemoteWorkerMode()) {
+            if (!cachedDockerReachable) {
+                if ("READY".equals(readiness)) readiness = "DEGRADED";
+                warnings.add("Control-plane Docker unreachable: lab image builds unavailable.");
+            }
+            Instant lastPoll = lastWorkerPollAt;
+            if (lastPoll == null) {
+                if ("READY".equals(readiness)) readiness = "DEGRADED";
+                warnings.add("No remote worker poll received yet in REMOTE_WORKER mode.");
+            } else {
+                long pollAgeSec = Math.max(0L, Duration.between(lastPoll, now).getSeconds());
+                if (pollAgeSec >= 30L) {
+                    if ("READY".equals(readiness)) readiness = "DEGRADED";
+                    warnings.add("Remote worker heartbeat is stale (" + pollAgeSec + "s since last poll; threshold 30s).");
+                }
+            }
+        }
         if (isRemoteWorkerMode() && (sandboxRegistry == null || sandboxRegistry.isBlank())) {
             if ("READY".equals(readiness)) readiness = "DEGRADED";
             warnings.add("REMOTE_WORKER mode without MAVIS_RUNNER_SANDBOX_REGISTRY: Dockerfile-built Labs need a shared registry so remote Worker VPSs can pull images.");
         }
 
-        long oldestWaitSec = computeOldestQueuedWaitSeconds(Instant.now());
+        long oldestWaitSec = computeOldestQueuedWaitSeconds(now);
         if (oldestWaitSec > Math.max(10L, alertQueueWaitSeconds)) {
             if ("READY".equals(readiness)) readiness = "DEGRADED";
             warnings.add("Oldest queued Studio session has waited " + oldestWaitSec + "s (threshold " + alertQueueWaitSeconds + "s).");

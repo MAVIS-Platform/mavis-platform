@@ -52,7 +52,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             .passwordHash("test-only-hash").fullName("Outside student").role(role).build());
         mvc.perform(get(url).header("Authorization",testAuthorization(outsider.getEmail()))).andExpect(status().isForbidden());
         String actionId = UUID.randomUUID().toString();
-        String command = mapper.writeValueAsString(Map.of("actionId",actionId,"action","SCALE","service","orders","replicas",4));
+        String command = mapper.writeValueAsString(Map.of("actionId",actionId,"action","SCALE","service","orders","replicas",3));
         for (int i=0;i<2;i++)
             mvc.perform(post(url+"/actions").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content(command))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.actions.length()").value(1));
@@ -63,9 +63,9 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             .header("X-Mavis-Runner-Key","mavis-runner-secret-key-test"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.command.actionId").value(actionId));
         var result = mapper.createObjectNode().put("action","SCALE").put("service","orders").put("confirmed",true)
-            .put("replicasBefore",1).put("replicasAfter",4);
+            .put("replicasBefore",1).put("replicasAfter",3);
         result.putObject("metricsBefore").put("replicas",1);
-        result.putObject("metricsAfter").put("replicas",4);
+        result.putObject("metricsAfter").put("replicas",3);
         String ack=mapper.writeValueAsString(Map.of("sessionId",session.getId(),"resourceProject",session.getResourceProject(),
             "actionId",actionId,"status","CONFIRMED","result",result));
         for (int i=0;i<2;i++)
@@ -184,7 +184,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
         var profile = scenarioConfig.putObject("profile")
             .put("collectorImage", "otel/opentelemetry-collector-contrib@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806")
             .put("instrumentationVolume", "mavis-poc-agents-ca65939a")
-            .put("memoryMiB", 512).put("cpus", 1).put("timeoutSeconds", 290).put("approvedForLocalPoc", true)
+            .put("memoryMiB", 512).put("cpus", 0.5).put("timeoutSeconds", 290).put("approvedForLocalPoc", true)
             .put("scenarioRunnerImage", "sha256:404e8ec20021c0efc870ee1d206d54bb19005ce27beb38ad04fe096db40cd06a");
         var apps = profile.putObject("applications");
         apps.putObject("orders").put("runtime", "dotnet8-linux-x64-glibc").put("containerPort", 8080);
@@ -503,7 +503,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             .put("sandboxCompose", composeYaml)
             .put("collectorImage", manifest.path("collectorImage").asText())
             .put("instrumentationVolume", manifest.path("instrumentationVolume").asText())
-            .put("memoryMiB", 512).put("cpus", 1).put("timeoutSeconds", 290).put("approvedForLocalPoc", true)
+            .put("memoryMiB", 512).put("cpus", 0.5).put("timeoutSeconds", 290).put("approvedForLocalPoc", true)
             .put("scenarioRunnerImage", images.path("runner").asText());
         var apps = profile.putObject("applications");
         apps.putObject("orders").put("runtime", "dotnet8-linux-x64-glibc").put("containerPort", 8080);
@@ -595,11 +595,11 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 .andExpect(status().isOk()).andReturn();
             String snapBeforeId = mapper.readTree(snapBeforeRes.getResponse().getContentAsString()).path("data").path("id").asText();
 
-            // Execute STOP payment -> START payment -> SCALE orders (1 -> 4)
+            // Execute STOP payment -> START payment -> SCALE orders (1 -> 3)
             for (var cmd : java.util.List.of(
                     Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "STOP", "service", "payment"),
                     Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "START", "service", "payment"),
-                    Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "SCALE", "service", "orders", "replicas", 4))) {
+                    Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "SCALE", "service", "orders", "replicas", 3))) {
                 String aid = (String) cmd.get("actionId");
                 mvc.perform(post(studioUrl + "/actions").header("Authorization", studentAuth)
                         .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(cmd)))
@@ -614,7 +614,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                         org.junit.jupiter.api.Assertions.assertNotEquals("FAILED", actionStatus, "Studio action: " + cmd.get("action"));
                         confirmed = "CONFIRMED".equals(actionStatus);
                         if (confirmed && "SCALE".equals(cmd.get("action"))) {
-                            org.junit.jupiter.api.Assertions.assertEquals(4, act.path("result").path("replicasAfter").asInt());
+                            org.junit.jupiter.api.Assertions.assertEquals(3, act.path("result").path("replicasAfter").asInt());
                         }
                         break;
                     }
@@ -632,7 +632,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 boolean scaled = java.util.stream.StreamSupport.stream(
                         stateData.path("telemetry").path("services").spliterator(), false)
                         .anyMatch(service -> "orders".equals(service.path("service").asText())
-                                && service.path("runningReplicas").asInt() == 4);
+                                && service.path("runningReplicas").asInt() == 3);
                 if (!obs.isBlank() && !obs.equals(observedBefore) && scaled) {
                     observedAfter = obs;
                     break;

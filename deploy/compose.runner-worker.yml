@@ -6,9 +6,9 @@
 #   MAVIS_WORKER_CONCURRENCY=4 \
 #   docker compose -f deploy/compose.runner-worker.yml up -d --build
 #
-# Note: On the main VPS, set `MAVIS_RUNNER_MODE=REMOTE_WORKER` (or keep `AUTO` for hybrid local + remote workers)
-# and set `MAVIS_RUNNER_SANDBOX_REGISTRY` (e.g. ghcr.io/<org>/mavis-sandbox) so Dockerfile-built Lab images
-# are pushed once and pulled automatically by every remote Worker VPS.
+# Note: Run this stack ONLY on a dedicated Runner VM — do NOT run it on the Control VPS alongside local backend execution.
+# On the Control VPS, set `MAVIS_RUNNER_MODE=REMOTE_WORKER` and `MAVIS_RUNNER_SANDBOX_REGISTRY`
+# (e.g. ghcr.io/<org>/mavis-sandbox) so Dockerfile-built Lab images are pushed once and pulled automatically by the Runner VM.
 name: mavis-runner-worker
 
 services:
@@ -20,6 +20,7 @@ services:
     restart: unless-stopped
     environment:
       MAVIS_RUNNER_ALLOW_LOCAL_POC: "1"
+      MAVIS_WORKER_DEDICATED_HOST: ${MAVIS_WORKER_DEDICATED_HOST:-1}
       MAVIS_RUNNER_SERVICE_KEY: ${MAVIS_RUNNER_SERVICE_KEY:?Set MAVIS_RUNNER_SERVICE_KEY matching the main backend}
       MAVIS_RUNNER_OCI_RUNTIME: ${MAVIS_RUNNER_OCI_RUNTIME:-auto}
       MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS: ${MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS:-1}

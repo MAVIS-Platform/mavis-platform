@@ -425,4 +425,93 @@ class RuntimeQueueCoordinatorTest {
         // After cooldown elapses, alerts fire again
         assertThat(stub.evaluateAndNotifyAlerts(now.plusSeconds(650))).isEqualTo(3);
     }
+
+    @Test
+    void reapAbandonedCancelsInactiveQueuedSessionAndPreservesActiveQueuedHeartbeat() {
+        Instant now = Instant.now();
+        UUID staleQueuedId = UUID.randomUUID();
+        UUID activeQueuedId = UUID.randomUUID();
+
+        var interactiveCfg = mapper.createObjectNode().put("interactiveStudio", true);
+        RuntimeSession staleQueued = RuntimeSession.builder()
+                .id(staleQueuedId)
+                .executionStatus("QUEUED")
+                .scenarioStatus("APPROVED")
+                .cleanupStatus("NOT_APPLICABLE")
+                .scenarioConfig(interactiveCfg)
+                .createdAt(OffsetDateTime.ofInstant(now.minusSeconds(400), ZoneOffset.UTC))
+                .build();
+        RuntimeSession activeQueued = RuntimeSession.builder()
+                .id(activeQueuedId)
+                .executionStatus("QUEUED")
+                .scenarioStatus("APPROVED")
+                .cleanupStatus("NOT_APPLICABLE")
+                .scenarioConfig(interactiveCfg)
+                .createdAt(OffsetDateTime.ofInstant(now.minusSeconds(400), ZoneOffset.UTC))
+                .build();
+
+        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("RUNNING"))
+                .thenReturn(List.of());
+        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED"))
+                .thenReturn(List.of(staleQueued, activeQueued));
+        when(repository.findLockedById(staleQueuedId)).thenReturn(Optional.of(staleQueued));
+
+        coordinator.recordUiHeartbeat(activeQueuedId);
+
+        int reaped = coordinator.reapAbandonedStudioSessions(now);
+        assertThat(reaped).isEqualTo(1);
+        assertThat(staleQueued.getExecutionStatus()).isEqualTo("CANCELLED");
+        assertThat(staleQueued.getScenarioStatus()).isEqualTo("CANCELLED");
+        assertThat(staleQueued.getCompletedAt()).isNotNull();
+        assertThat(activeQueued.getExecutionStatus()).isEqualTo("QUEUED");
+
+        // Second sweep immediately after must retain activeQueuedId's heartbeat (not wiped by retainAll)
+        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED"))
+                .thenReturn(List.of(activeQueued));
+        assertThat(coordinator.reapAbandonedStudioSessions(now.plusSeconds(10))).isZero();
+        assertThat(activeQueued.getExecutionStatus()).isEqualTo("QUEUED");
+    }
+
+    @Test
+    void remoteWorkerHealthRequiresRecentWorkerPollWithin30Seconds() {
+        java.util.concurrent.atomic.AtomicBoolean dockerOk = new java.util.concurrent.atomic.AtomicBoolean(true);
+        RuntimeQueueCoordinator stub = new RuntimeQueueCoordinator(repository, dispatcher, mapper) {
+            @Override
+            protected CommandOutput runHostCommand(List<String> command, long timeoutSeconds) {
+                return dockerOk.get()
+                        ? new CommandOutput(0, "{\"runc\":{}}")
+                        : new CommandOutput(1, "");
+            }
+            @Override
+            protected long usableDiskMiB() { return 20_000L; }
+            @Override
+            protected long totalDiskMiB() { return 40_000L; }
+        };
+        ReflectionTestUtils.setField(stub, "runnerMode", "REMOTE_WORKER");
+        ReflectionTestUtils.setField(stub, "sandboxRegistry", "ghcr.io/org/mavis-sandbox");
+        when(repository.lockOldestQueued()).thenReturn(Optional.empty());
+
+        var beforePoll = stub.getRuntimeHealth(Instant.now());
+        assertThat(beforePoll.surveyReadiness()).isEqualTo("DEGRADED");
+        assertThat(beforePoll.warnings()).anyMatch(w -> w.contains("No remote worker poll"));
+
+        stub.claimNextQueuedForRemoteWorker("worker-vps-1", "runc");
+        Instant polledAt = stub.getLastWorkerPollAt();
+        assertThat(polledAt).isNotNull();
+
+        var fresh = stub.getRuntimeHealth(polledAt.plusSeconds(10));
+        assertThat(fresh.surveyReadiness()).isEqualTo("READY");
+        assertThat(fresh.warnings()).isEmpty();
+
+        var stale = stub.getRuntimeHealth(polledAt.plusSeconds(45));
+        assertThat(stale.surveyReadiness()).isEqualTo("DEGRADED");
+        assertThat(stale.warnings()).anyMatch(w -> w.contains("Remote worker heartbeat is stale"));
+
+        // Control-plane Docker unreachable in REMOTE_WORKER (4A still builds lab images) -> DEGRADED, not BLOCKED
+        dockerOk.set(false);
+        ReflectionTestUtils.setField(stub, "lastRuntimeProbeMillis", 0L);
+        var dockerDown = stub.getRuntimeHealth(polledAt.plusSeconds(10));
+        assertThat(dockerDown.surveyReadiness()).isEqualTo("DEGRADED");
+        assertThat(dockerDown.warnings()).anyMatch(w -> w.contains("Control-plane Docker unreachable: lab image builds unavailable."));
+    }
 }

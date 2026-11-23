@@ -74,7 +74,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Start service": "Khởi động dịch vụ",
   "Scale replicas": "Điều chỉnh số bản chạy",
   "Target service": "Dịch vụ mục tiêu",
-  "Replicas (1–8)": "Số bản chạy (1–8)",
+  "Replicas (1–3)": "Số bản chạy (1–3)",
+  "Replicas (1–8)": "Số bản chạy (1–3)",
   "Action not confirmed": "Chưa xác nhận được thao tác",
   "Studio Action Palette": "Bảng công cụ kéo thả Studio",
   "Drag an action block onto any service node on the 2D/3D canvas":
@@ -101,7 +102,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Project Deployment & Scaling Impact Matrix":
     "Bảng thông số Triển khai & Tác động Nhân rộng Dự án",
   "Static Architecture Footprint": "Thông số Kiến trúc Tĩnh (Static AST/C4)",
-  "Live Deployment & Scaling Delta": "Thông số Triển khai & Biến thiên Scaling (1..8)",
+  "Live Deployment & Scaling Delta": "Thông số Triển khai & Biến thiên Scaling (1..3)",
   "Total running instances": "Tổng số instance đang chạy",
   "Total CPU load": "Tổng tải CPU",
   "Total RAM footprint": "Tổng bộ nhớ RAM",

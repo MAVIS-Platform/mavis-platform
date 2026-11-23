@@ -247,25 +247,25 @@ public final class CsharpCourseraCatalog {
                 V2CurriculumJsonLoader.toQuizQuestions(chapterIds),
                 new EssaySpec(
                         "Tự luận Capstone (.NET 8) · Thẩm Định 10 Tiêu Chí Project Trái Cây (`fruit-shop-dotnet-microservices`)",
-                        "Đánh giá hoàn chỉnh Solution .NET 8 từ Docker Multi-Stage đến Zero Secret Leaks & Horizontal Scale 1→8.",
+                        "Đánh giá hoàn chỉnh Solution .NET 8 từ Docker Multi-Stage đến Zero Secret Leaks & Horizontal Scale 1→3.",
                         """
                         ### Đồ án Tổng kết (`CSHARP-MS-2026` · Project Trái Cây)
                         Kiểm toán Solution `fruit-shop-dotnet-microservices` theo **10 tiêu chí Checklist Phụ lục C**:
                         1. Giải thích tối ưu Docker Layer Cache khi tách `COPY *.csproj` + `dotnet restore` trước `COPY . .`, và vì sao từ .NET 8 container mặc định chạy cổng `8080` với user `app` (non-root).
-                        2. Chứng minh Solution sẵn sàng **Scale `1 -> 8` bản sao** trên MAVIS Studio (không hard-code `container_name`, không lưu session local, có `IDistributedCache` + `healthcheck`).
+                        2. Chứng minh Solution sẵn sàng **Scale `1 -> 3` bản sao** trên MAVIS Studio (không hard-code `container_name`, không lưu session local, có `IDistributedCache` + `healthcheck`).
                         """,
                         List.of(
                                 new RubricCriterion("1. Docker Multi-Stage & .NET 8 Non-Root Security", 35,
                                         "Trình bày đúng tối ưu layer cache SDK -> aspnet:8.0 runtime gọn nhẹ và port 8080 non-root."),
                                 new RubricCriterion("2. Testing Pyramid (WebApplicationFactory & Testcontainers)", 35,
                                         "Phân biệt Integration Test dùng WebApplicationFactory + Testcontainers PostgreSQL/RabbitMQ."),
-                                new RubricCriterion("3. Horizontal Scale 1→8 & Zero Secret Leaks", 30,
+                                new RubricCriterion("3. Horizontal Scale 1→3 & Zero Secret Leaks", 30,
                                         "Đạt đủ checklist stateless, bỏ container_name cứng và ValidateOnStart cho mọi bí mật.")
                         )
                 ),
                 new VisualLabSpec(
                         "RUNTIME_LAB",
-                        "Studio Lab 05 (.NET) · Project Trái Cây Replica Scaling 1→8 & Production Audit",
+                        "Studio Lab 05 (.NET) · Project Trái Cây Replica Scaling 1→3 & Production Audit",
                         "Scale replica trên MAVIS Studio cho fruit-shop-dotnet-microservices, đo Throughput/p95 Latency và hoàn tất kiểm toán.",
                         true,
                         List.of("C4_CONTAINER", "DEPENDENCY_GRAPH")

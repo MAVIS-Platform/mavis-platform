@@ -182,17 +182,12 @@ public class StudioTelemetryHub {
         for (var entry : streams.entrySet()) {
             SessionStream stream = entry.getValue();
             if (stream.subscribers.isEmpty()) continue;
-            boolean anyAlive = false;
             for (SseEmitter emitter : stream.subscribers) {
                 try {
                     emitter.send(SseEmitter.event().comment("keepalive"));
-                    anyAlive = true;
                 } catch (Exception ex) {
                     stream.subscribers.remove(emitter);
                 }
-            }
-            if (anyAlive && queueCoordinator != null) {
-                queueCoordinator.recordUiHeartbeat(entry.getKey());
             }
         }
     }

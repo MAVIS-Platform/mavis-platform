@@ -54,13 +54,13 @@ export function liveCapabilities(input: LiveCapabilityInput): LiveCapability[] {
       state: input.hasSession ? (input.hasTopology ? "PREPARED" : "REAL") : "UNAVAILABLE",
       reason: input.hasSession
         ? input.hasTopology
-          ? "START and STOP target a prepared service; Clone requires canScale and stays at 8 or fewer replicas."
+          ? "START and STOP target a prepared service; Clone requires canScale and stays at 3 or fewer replicas."
           : "START, STOP and SCALE target a confirmed service in the pinned session."
         : "Start or select a Live Docker session before sending a real command.",
     },
     {
       id: "replicas-1-8",
-      label: "Replica presets 1–8",
+      label: "Replica presets 1–3",
       state: input.hasSession && input.canScale ? "REAL" : "UNAVAILABLE",
       reason: input.hasSession
         ? input.canScale
@@ -72,7 +72,7 @@ export function liveCapabilities(input: LiveCapabilityInput): LiveCapability[] {
       id: "replicas-16-32",
       label: "Replica presets 16 and 32",
       state: "UNAVAILABLE",
-      reason: "BR-07 bounds a Live session to 8 replicas.",
+      reason: "BR-07 bounds a Live session to 3 replicas.",
     },
     {
       id: "delete-block",

@@ -195,7 +195,7 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         [
             new("STOP", "payment-service"),
             new("START", "payment-service"),
-            new("SCALE", "order-service", 4)
+            new("SCALE", "order-service", 3)
         ]);
         var session = new DockerComposeSession(def, _root, "receivers: {}", docker);
 
@@ -230,13 +230,14 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         Assert.Equal("SCALE", results[2].Action);
         Assert.Equal("order-service", results[2].Service);
         Assert.Equal(1, results[2].ReplicasBefore);
-        Assert.Equal(4, results[2].ReplicasAfter);
+        Assert.Equal(3, results[2].ReplicasAfter);
         Assert.True(results[2].Confirmed);
         Assert.NotNull(results[2].MetricsAfter["p95LatencyMs"]);
     }
 
     [Theory]
     [InlineData(0)]
+    [InlineData(4)]
     [InlineData(9)]
     public async Task RejectsScaleOutOfBoundsWithReplicaBoundsExceeded(int invalidReplicas)
     {

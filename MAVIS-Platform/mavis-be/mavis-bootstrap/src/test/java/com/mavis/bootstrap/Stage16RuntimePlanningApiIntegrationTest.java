@@ -26,7 +26,7 @@ class Stage16RuntimePlanningApiIntegrationTest extends ApiIntegrationContext {
  String auth(User u){return "Bearer "+jwt.generateToken(u.getEmail(),u.getId(),"STUDENT");}
  String body(Object o)throws Exception{return json.writeValueAsString(o);}
  @Test void savedPlanPinsRevisionsAndQueuesWithoutClaimingRunning(@TempDir Path dir)throws Exception{
-  var owner=user();var stranger=user();var project=projects.saveAndFlush(Project.builder().name("Runtime fixture").owner(owner).build());
+  var owner=user();var stranger=user();var project=projects.saveAndFlush(Project.builder().name("Runtime fixture").owner(owner).projectType("PERSONAL").build());
   Path compose=dir.resolve("docker-compose.yml");Files.writeString(compose,"services:\n  orders:\n    image: example/orders@sha256:"+"a".repeat(64)+"\n");
   var source=sources.saveAndFlush(SourceSnapshot.builder().project(project).sourceType("ZIP_UPLOAD").artifactHash("a".repeat(64)).storagePath(compose.toString()).createdBy(owner).build());
   var model=models.saveAndFlush(ModelVersion.builder().project(project).sourceSnapshot(source).revision(1).schemaVersion("1.0").origin("GENERATED").isLatestValid(true).createdBy(owner).build());

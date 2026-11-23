@@ -566,8 +566,8 @@ export function AdminStudioSetup() {
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button asChild size="sm">
-            <Link href="/administration/studio">
-              {t("Open Studio Canvas", "Mở Studio Canvas")}
+            <Link href="/workspaces">
+              {t("Open Studio Live (choose a lab)", "Mở Studio Live (chọn Lab)")}
               <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
             </Link>
           </Button>
