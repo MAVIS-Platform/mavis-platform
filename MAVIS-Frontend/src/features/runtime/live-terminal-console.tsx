@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertTriangle, Check, Copy, Filter, Play, Search, Terminal } from "lucide-react";
+import { Activity, Check, Copy, Filter, Search, Terminal } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -313,23 +313,25 @@ export function buildTerminalEntries(
     entries.sort(compareTerminalEntries);
   }
 
-  const seenDiagnostics = new Set<string>();
-  for (const rawDiag of diagnosticLines) {
-    const trimmed = rawDiag.trim();
-    if (!trimmed || seenDiagnostics.has(trimmed)) continue;
-    seenDiagnostics.add(trimmed);
-    const friendly = explainRuntimeDiagnostic(trimmed) ?? undefined;
-    entries.push({
-      id: `diag-${seq}`,
-      seq: seq++,
-      service: "mavis-runner",
-      sourceLabel: "mavis-runner",
-      timestampMs: null,
-      timestampLabel: observedClockLabel,
-      level: "ERROR",
-      message: trimmed,
-      ...(friendly ? { friendlyMessage: friendly } : {}),
-    });
+  if (diagnosticLines.length > 0) {
+    const seenDiagnostics = new Set<string>();
+    for (const rawDiag of diagnosticLines) {
+      const trimmed = rawDiag.trim();
+      if (!trimmed || seenDiagnostics.has(trimmed)) continue;
+      seenDiagnostics.add(trimmed);
+      const friendly = explainRuntimeDiagnostic(trimmed) ?? undefined;
+      entries.push({
+        id: `diag-${seq}`,
+        seq: seq++,
+        service: "mavis-runner",
+        sourceLabel: "mavis-runner",
+        timestampMs: null,
+        timestampLabel: observedClockLabel,
+        level: "ERROR",
+        message: trimmed,
+        ...(friendly ? { friendlyMessage: friendly } : {}),
+      });
+    }
   }
 
   return entries;
@@ -360,7 +362,6 @@ type LiveTerminalConsoleProps = {
   diagnosticLines?: readonly string[] | undefined;
   selectedTraceId?: string | null | undefined;
   onSelectTrace?: ((traceId: string | null) => void) | undefined;
-  onRetryRun?: (() => void) | undefined;
   isLight?: boolean | undefined;
 };
 
@@ -375,7 +376,6 @@ export function LiveTerminalConsole({
   diagnosticLines = [],
   selectedTraceId,
   onSelectTrace,
-  onRetryRun,
   isLight = false,
 }: LiveTerminalConsoleProps) {
   const [view, setView] = useState<"console" | "traces">("console");
@@ -480,6 +480,7 @@ export function LiveTerminalConsole({
     lastTrackedErrorRef.current = trimmed;
     const now = new Date();
     const seq = eventSeqRef.current++;
+    const friendly = explainRuntimeDiagnostic(trimmed) ?? undefined;
     setRunnerEvents((prev) => [
       ...prev.slice(-49),
       {
@@ -491,6 +492,7 @@ export function LiveTerminalConsole({
         timestampLabel: formatClock(now),
         level: "ERROR",
         message: trimmed,
+        ...(friendly ? { friendlyMessage: friendly } : {}),
       },
     ]);
   }, [systemError]);
@@ -908,154 +910,6 @@ export function LiveTerminalConsole({
             isLight ? "bg-[#F8FAFC] text-slate-800" : ""
           }`}
         >
-          {/* Authentic compose command header */}
-          <div
-            className={`mb-1.5 flex flex-wrap items-center justify-between gap-2 border-b pb-1.5 text-[11px] ${
-              isLight ? "border-slate-200" : "border-slate-800/70"
-            }`}
-          >
-            <span className={isLight ? "text-slate-600" : "text-slate-400"}>
-              <span className={isLight ? "font-bold text-emerald-600" : "text-emerald-400"}>$</span> docker compose -p {projectSlug} logs -f
-              {activeServiceFilter !== "ALL" ? ` ${activeServiceFilter}` : ""}
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold">
-              <span
-                aria-hidden="true"
-                className={`size-1.5 rounded-full ${
-                  isBooting || waiting
-                    ? "animate-pulse bg-amber-500"
-                    : ["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
-                          data.executionStatus.toUpperCase(),
-                        ) ||
-                        Boolean(systemError) ||
-                        diagnosticLines.length > 0
-                      ? "bg-rose-500"
-                      : isPreviewMode
-                        ? "bg-slate-400"
-                        : data.executionStatus === "RUNNING"
-                          ? "animate-pulse bg-emerald-500"
-                          : "bg-slate-400"
-                }`}
-              />
-              <span
-                className={
-                  isBooting || waiting
-                    ? isLight ? "text-amber-700" : "text-amber-300"
-                    : ["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
-                          data.executionStatus.toUpperCase(),
-                        ) ||
-                        Boolean(systemError) ||
-                        diagnosticLines.length > 0
-                      ? isLight ? "text-rose-700" : "text-rose-300"
-                      : isPreviewMode
-                        ? isLight ? "text-slate-500" : "text-slate-400"
-                        : data.executionStatus === "RUNNING"
-                          ? isLight ? "text-emerald-700" : "text-emerald-300"
-                          : isLight ? "text-slate-700" : "text-slate-300"
-                }
-              >
-                {data.executionStatus === "QUEUED"
-                  ? `QUEUED${data.queuePosition ? ` · #${data.queuePosition}` : ""}`
-                  : isBooting
-                    ? `BOOTING · ${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus}`
-                  : waiting
-                    ? "APPLYING"
-                    : ["TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
-                          data.executionStatus.toUpperCase(),
-                        )
-                      ? "TIMED OUT"
-                    : data.executionStatus === "FAILED" ||
-                        Boolean(systemError) ||
-                        diagnosticLines.length > 0
-                      ? "FAILED"
-                      : isPreviewMode
-                        ? "STANDBY · PREVIEW"
-                        : data.executionStatus === "RUNNING"
-                          ? `LIVE${observedClock ? ` · ${observedClock}` : ""}`
-                          : statusLabel}
-              </span>
-            </span>
-          </div>
-
-          {/* Clear Session Failure Diagnostic Card (Real Docker errors surfaced cleanly — no simulated fallback) */}
-          {(["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
-            data.executionStatus.toUpperCase(),
-          ) ||
-            Boolean(systemError) ||
-            diagnosticLines.length > 0) &&
-            !isBooting && (
-              <div
-                data-testid="studio-logs-error-banner"
-                role="alert"
-                className={`mb-2 flex flex-wrap items-start justify-between gap-2 rounded-lg border px-3 py-2 font-sans text-xs ${
-                  isLight
-                    ? "border-rose-200 bg-rose-50/90 text-rose-950"
-                    : "border-rose-500/35 bg-rose-950/35 text-rose-100"
-                }`}
-              >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex flex-wrap items-center gap-1.5 font-semibold">
-                    <AlertTriangle
-                      aria-hidden="true"
-                      className={`size-3.5 shrink-0 ${isLight ? "text-rose-600" : "text-rose-400"}`}
-                    />
-                    <span>
-                      {["TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
-                        data.executionStatus.toUpperCase(),
-                      )
-                        ? "Docker session timed out"
-                        : "Docker session failed — live containers stopped"}
-                    </span>
-                    {diagnosticLines[0] && (
-                      <span
-                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
-                          isLight
-                            ? "bg-rose-100 text-rose-800"
-                            : "bg-rose-500/20 text-rose-200"
-                        }`}
-                      >
-                        {diagnosticLines[0].slice(0, 64)}
-                      </span>
-                    )}
-                  </div>
-                  <p className={`text-[11.5px] leading-snug ${isLight ? "text-rose-800" : "text-rose-200/90"}`}>
-                    {explainRuntimeDiagnostic(diagnosticLines[0] ?? systemError ?? data.executionStatus) ??
-                      systemError ??
-                      "Inspect the highlighted ERROR lines below to see which container failed, then click Run to boot a fresh Docker stack."}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {errorCount > 0 && levelFilter !== "ERROR" && (
-                    <button
-                      type="button"
-                      onClick={() => setLevelFilter("ERROR")}
-                      className={`inline-flex h-7 items-center rounded-md border px-2 text-[11px] font-semibold transition ${
-                        isLight
-                          ? "border-rose-300 bg-white text-rose-700 hover:bg-rose-100"
-                          : "border-rose-500/40 bg-rose-950/60 text-rose-200 hover:bg-rose-900/60"
-                      }`}
-                    >
-                      Errors only ({errorCount})
-                    </button>
-                  )}
-                  {onRetryRun && (
-                    <button
-                      type="button"
-                      onClick={onRetryRun}
-                      className={`inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-[11px] font-semibold transition ${
-                        isLight
-                          ? "bg-slate-900 text-white hover:bg-slate-800"
-                          : "bg-sky-500 text-slate-950 hover:bg-sky-400"
-                      }`}
-                    >
-                      <Play aria-hidden="true" className="size-3" />
-                      Run Fresh Session
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
           {filteredEntries.length > 0 ? (
             <div role="log" aria-live="polite" className="space-y-0.5">
               {filteredEntries.map((entry, idx) => {

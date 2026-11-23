@@ -1048,3 +1048,15 @@ test("Floating 3D Camera card stays ultra-compact with 3 presets and a single 4-
   assert.ok(!card.includes("Right-drag to orbit"), "Verbose 2-line mouse hint should stay removed from floating card");
   assert.ok(!card.includes('"CIRCULAR"'), "Redundant Layered/Circular/Grid row should stay removed from floating card");
 });
+
+test("LiveTerminalConsole omits fake compose header and red error card, streaming diagnostics inline in logs", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-terminal-console.tsx"),
+    "utf8",
+  );
+  assert.doesNotMatch(src, /docker compose -p \{projectSlug\} logs -f/);
+  assert.doesNotMatch(src, /studio-logs-error-banner/);
+  assert.doesNotMatch(src, /Run Fresh Session/);
+  assert.doesNotMatch(src, /Errors only \(/);
+  assert.match(src, /explainRuntimeDiagnostic\(trimmed\)/);
+});

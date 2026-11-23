@@ -3782,7 +3782,6 @@ export function LiveStudioWorkbench({
               diagnosticLines={failedDiagnostics}
               selectedTraceId={inspectedTraceId}
               onSelectTrace={setInspectedTraceId}
-              onRetryRun={onStartSession}
               isLight={isLight}
             />
           </div>
