@@ -32,8 +32,8 @@ function parseMetadataIds(raw: string | null, field: "underlyingNodeIds" | "unde
 interface ParsedSvgNode {
   id: string;
   mavisId: string;
-  canonicalId?: string;
-  underlyingIds?: string[];
+  canonicalId?: string | undefined;
+  underlyingIds?: string[] | undefined;
   role: string;
   parent: string;
   label: string;
@@ -50,8 +50,8 @@ interface ParsedSvgNode {
 interface ParsedSvgEdgeLabel {
   id: string;
   edgeId: string;
-  canonicalId?: string;
-  underlyingIds?: string[];
+  canonicalId?: string | undefined;
+  underlyingIds?: string[] | undefined;
   label: string;
   x: number;
   y: number;
@@ -62,8 +62,8 @@ interface ParsedSvgEdgeLabel {
 interface ParsedSvgEdge {
   id: string;
   mavisId: string;
-  canonicalId?: string;
-  underlyingIds?: string[];
+  canonicalId?: string | undefined;
+  underlyingIds?: string[] | undefined;
   source: string;
   target: string;
   sourcePoint: { x: number; y: number } | null;

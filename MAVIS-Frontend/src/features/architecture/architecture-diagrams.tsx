@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
+import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/shared/forms";
 import { DrawioEditor } from "./drawio-editor";
 import { ArchitectureSvgViewer } from "./architecture-svg-viewer";

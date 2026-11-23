@@ -501,19 +501,19 @@ public final class MocHuongReferenceArchitectureBuilder {
         // Gateway routes & JWT global filter
         addRelEvidence("gw-identity",
                 "api-gateway/src/main/resources/application.yml:26",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "- id: identity-service / uri: lb://identity-service / Path=/api/v1/auth/**,/api/v1/users/**");
         addRelEvidence("gw-catalog",
                 "api-gateway/src/main/resources/application.yml:30",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "- id: catalog-service / uri: lb://catalog-service / Path=/api/v1/products/**,/api/v1/categories/**");
         addRelEvidence("gw-order",
                 "api-gateway/src/main/resources/application.yml:34",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "- id: order-service / uri: lb://order-service / Path=/api/v1/orders/**");
         addRelEvidence("gw-notification",
                 "api-gateway/src/main/resources/application.yml:38",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "- id: notification-service / uri: lb://notification-service / Path=/api/v1/notifications/**");
         addRelEvidence("c3-gw-jwt-ver",
                 "api-gateway/src/main/java/com/mochuong/gateway/filter/JwtAuthenticationGatewayFilter.java:63",
@@ -549,25 +549,25 @@ public final class MocHuongReferenceArchitectureBuilder {
                 "@Cacheable(value = \"products\", key = \"#id\")");
         addRelEvidence("id-db",
                 "identity-service/src/main/resources/application.yml:8",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:identity_db}");
         addRelEvidence("cat-db",
                 "catalog-service/src/main/resources/application.yml:8",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:catalog_db}");
         addRelEvidence("ord-db",
                 "order-service/src/main/resources/application.yml:8",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:order_db}");
         addRelEvidence("noti-db",
                 "notification-service/src/main/resources/application.yml:8",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:notification_db}");
 
         // Eureka & OTel
         addRelEvidence("gw-otel",
                 "api-gateway/src/main/resources/application.yml:72",
-                "STATIC_CONFIG",
+                "CONFIG_FILE",
                 "management.otlp.tracing.endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}/v1/traces");
 
         // Node-level locator anchors for direct canvas element inspection

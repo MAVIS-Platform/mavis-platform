@@ -119,22 +119,42 @@ class MocHuongReferenceArchitectureTest {
     void enforcesStrictDatabasePerServiceRedisCacheAndKafkaMessaging() {
         var built = buildInMemoryModel();
 
-        Map<String, List<ModelRelationship>> dbAccessByTarget = built.relationships().stream()
+        Map<String, List<ModelRelationship>> allDbAccessByTarget = built.relationships().stream()
                 .filter(r -> "DATABASE_ACCESS".equals(r.getRelationType()))
                 .collect(Collectors.groupingBy(r -> r.getTargetElement().getName()));
 
-        assertThat(dbAccessByTarget.keySet()).containsExactlyInAnyOrder(
+        assertThat(allDbAccessByTarget.keySet()).containsExactlyInAnyOrder(
                 "identity-db", "catalog-db", "order-db", "notification-db", "redis");
-        assertThat(dbAccessByTarget.get("identity-db")).singleElement()
+
+        Map<String, List<ModelRelationship>> containerDbAccessByTarget = built.relationships().stream()
+                .filter(r -> "DATABASE_ACCESS".equals(r.getRelationType())
+                        && "SERVICE_CONTAINER".equals(r.getSourceElement().getElementType()))
+                .collect(Collectors.groupingBy(r -> r.getTargetElement().getName()));
+
+        assertThat(containerDbAccessByTarget.get("identity-db")).singleElement()
                 .extracting(r -> r.getSourceElement().getName()).isEqualTo("identity-service");
-        assertThat(dbAccessByTarget.get("catalog-db")).singleElement()
+        assertThat(containerDbAccessByTarget.get("catalog-db")).singleElement()
                 .extracting(r -> r.getSourceElement().getName()).isEqualTo("catalog-service");
-        assertThat(dbAccessByTarget.get("order-db")).singleElement()
+        assertThat(containerDbAccessByTarget.get("order-db")).singleElement()
                 .extracting(r -> r.getSourceElement().getName()).isEqualTo("order-service");
-        assertThat(dbAccessByTarget.get("notification-db")).singleElement()
+        assertThat(containerDbAccessByTarget.get("notification-db")).singleElement()
                 .extracting(r -> r.getSourceElement().getName()).isEqualTo("notification-service");
-        assertThat(dbAccessByTarget.get("redis")).singleElement()
+        assertThat(containerDbAccessByTarget.get("redis")).singleElement()
                 .extracting(r -> r.getSourceElement().getName()).isEqualTo("catalog-service");
+
+        Map<String, String> expectedOwnerByStore = Map.of(
+                "identity-db", "identity-service",
+                "catalog-db", "catalog-service",
+                "order-db", "order-service",
+                "notification-db", "notification-service",
+                "redis", "catalog-service");
+        expectedOwnerByStore.forEach((store, owner) -> assertThat(allDbAccessByTarget.get(store))
+                .isNotEmpty()
+                .allSatisfy(rel -> {
+                    ModelElement src = rel.getSourceElement();
+                    String resolvedOwner = src.getParentElement() != null ? src.getParentElement().getName() : src.getName();
+                    assertThat(resolvedOwner).isEqualTo(owner);
+                }));
 
         ModelElement redis = built.elements().stream()
                 .filter(el -> "redis".equals(el.getName()))
@@ -227,9 +247,15 @@ class MocHuongReferenceArchitectureTest {
         Set<String> catalogUpstreamNames = bfsNames(catalogId, reverseAdj, byId);
         assertThat(catalogUpstreamNames).contains("order-service", "api-gateway", "Customer", "Admin / Staff");
 
+        UUID kafkaId = built.elements().stream()
+                .filter(el -> "kafka".equals(el.getName()))
+                .findFirst().orElseThrow().getId();
+        Set<String> kafkaImpactedNames = bfsNames(kafkaId, reverseAdj, byId);
+        assertThat(kafkaImpactedNames).contains("order-service", "notification-service");
+
         UUID notificationId = built.serviceIds().get("notification-service");
         Set<String> notificationUpstreamNames = bfsNames(notificationId, reverseAdj, byId);
-        assertThat(notificationUpstreamNames).contains("api-gateway", "kafka", "order-service");
+        assertThat(notificationUpstreamNames).contains("api-gateway", "Customer", "Admin / Staff");
     }
 
     @Test

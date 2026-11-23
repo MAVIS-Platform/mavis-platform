@@ -429,11 +429,14 @@ class CourseLabSeederServiceTest {
                 "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT");
         Set<String> allowedEvidenceSources = Set.of("STATIC_CODE", "CONFIG_FILE", "DOCKER_COMPOSE", "RUNTIME_TRACE");
 
-        assertThat(savedElements).hasSize(9);
+        assertThat(savedElements.size()).isGreaterThanOrEqualTo(40);
+        assertThat(savedElements).extracting(ModelElement::getName).contains(
+                "service-discovery", "api-gateway", "identity-service",
+                "catalog-service", "order-service", "notification-service");
         assertThat(savedElements).allSatisfy(el -> assertThat(allowedStatuses).contains(el.getStatus()));
-        assertThat(savedRelationships).hasSize(6);
+        assertThat(savedRelationships.size()).isGreaterThanOrEqualTo(50);
         assertThat(savedRelationships).allSatisfy(rel -> assertThat(allowedRelationTypes).contains(rel.getRelationType()));
-        assertThat(savedEvidences).hasSize(1);
+        assertThat(savedEvidences.size()).isGreaterThanOrEqualTo(20);
         assertThat(savedEvidences).allSatisfy(ev -> assertThat(allowedEvidenceSources).contains(ev.getSourceType()));
         assertThat(savedProject.get().getReferenceSnapshotId()).isNotNull();
 

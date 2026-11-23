@@ -1947,7 +1947,7 @@ function StepContent({
                           guidedStatic
                           controlledKind={inlineC4View}
                           hideKindSelector
-                          systemName={refArch?.projectName || "Mộc Hương Shop Platform"}
+                          systemName={referenceArchitecture?.projectName || "Mộc Hương Shop Platform"}
                           selectedId={selectedGraphId}
                           onSelect={setSelectedGraphId}
                         />
