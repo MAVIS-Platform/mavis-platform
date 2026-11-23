@@ -1373,7 +1373,7 @@ export function StudioObservability({
     let maxNodeX = -Infinity;
     let minNodeZ = Infinity;
     let maxNodeZ = -Infinity;
-    const deckPadding = 105;
+    const deckPadding = 150;
     const pts = new Map<string, { wx: number; wz: number; tier: number }>();
     const total = Math.max(1, data.services.length);
 
@@ -3973,6 +3973,7 @@ export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = fals
           ? styles.backgroundColor
           : "#f3f8ff";
       context.fillRect(0, 0, canvas.width, canvas.height);
+      (webglCanvas as HTMLCanvasElement & { __mavisRenderNow?: () => void }).__mavisRenderNow?.();
       context.drawImage(webglCanvas, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL("image/png");
       if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;

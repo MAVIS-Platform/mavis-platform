@@ -762,7 +762,9 @@ test("Studio Live 3D mode uses real Three.js WebGL stage with dynamic import, 3D
   );
 
   assert.ok(stageSrc.includes('import("three")'), "Three.js must be dynamically imported for 3D mode");
-  assert.ok(stageSrc.includes("preserveDrawingBuffer: true"), "WebGL must preserve drawing buffer for PNG snapshots");
+  assert.ok(stageSrc.includes("__mavisRenderNow"), "WebGL must expose synchronous render hook for zero-copy PNG snapshots");
+  assert.ok(obsSrc.includes("__mavisRenderNow"), "captureStudioImage must flush WebGL frame before drawImage");
+  assert.ok(stageSrc.includes("shadowMap.autoUpdate = false"), "Static shadow maps must be cached so 3D orbit runs at 60fps");
   assert.ok(stageSrc.includes('data-testid="studio-3d-webgl"'));
   assert.ok(stageSrc.includes('data-studio-engine="three-webgl"'));
   assert.ok(stageSrc.includes("TubeGeometry"), "Observed traffic must render true 3D curved tubes");
@@ -948,7 +950,7 @@ test("3D stage implements SE-standard UML/C4/CodeCity nodes, trust zones, and se
   assert.ok(stageSrc.includes("createRoundedSlabGeo("));
   assert.ok(stageSrc.includes("createTopPlateTexture("));
   assert.ok(stageSrc.includes("attachFrontTelemetryBar("));
-  assert.ok(stageSrc.includes("createZonePlateMesh("));
+  assert.ok(stageSrc.includes("createZonePlateGroup("));
   assert.ok(stageSrc.includes("EDGE / INGRESS"));
   assert.ok(stageSrc.includes("CORE SERVICES · DOCKER NET"));
   assert.ok(stageSrc.includes("DATA & MESSAGING"));

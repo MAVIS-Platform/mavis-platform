@@ -415,7 +415,7 @@ function createRoundedSlabGeo(
   const geo = new T.ExtrudeGeometry(shape, {
     depth: Math.max(0.01, h - b * 2),
     bevelEnabled: true,
-    bevelSegments: 2,
+    bevelSegments: 1,
     steps: 1,
     bevelSize: b,
     bevelThickness: b,
@@ -650,60 +650,114 @@ function createTopPlateTexture(
 }
 
 /**
- * Ground-projected architectural trust zone plate (UML Deployment Environment / CodeCity District).
+ * Crisp 3D vector architectural trust zone (UML Deployment Environment / CodeCity District).
+ * Uses uniform-dash 3D vector lines + a fixed-scale non-stretched header tab centered on the
+ * outer top rim so dashes never stretch and nodes never cover the zone label.
  */
-function createZonePlateMesh(
+function createZonePlateGroup(
   T: ThreeModule,
   title: string,
   width: number,
   depth: number,
   accentHex: string,
   isLight: boolean,
-): THREE.Mesh {
+): THREE.Group {
+  const group = new T.Group();
+  const hw = width / 2;
+  const hd = depth / 2;
+  const r = Math.min(0.24, hw * 0.25, hd * 0.25);
+
+  // Rounded rectangle shape in XY -> rotated onto XZ floor
+  const shape = new T.Shape();
+  shape.moveTo(-hw + r, -hd);
+  shape.lineTo(hw - r, -hd);
+  shape.quadraticCurveTo(hw, -hd, hw, -hd + r);
+  shape.lineTo(hw, hd - r);
+  shape.quadraticCurveTo(hw, hd, hw - r, hd);
+  shape.lineTo(-hw + r, hd);
+  shape.quadraticCurveTo(-hw, hd, -hw, hd - r);
+  shape.lineTo(-hw, -hd + r);
+  shape.quadraticCurveTo(-hw, -hd, -hw + r, -hd);
+
+  // Subtle tinted architectural floor fill
+  const fillGeo = new T.ShapeGeometry(shape, 8);
+  fillGeo.rotateX(-Math.PI / 2);
+  const fillMesh = new T.Mesh(
+    fillGeo,
+    new T.MeshBasicMaterial({
+      color: new T.Color(accentHex),
+      transparent: true,
+      opacity: isLight ? 0.055 : 0.11,
+      depthWrite: false,
+    }),
+  );
+  fillMesh.position.y = 0.008;
+  fillMesh.renderOrder = 1;
+  group.add(fillMesh);
+
+  // Crisp uniform-dash 3D vector perimeter (identical dash size across every zone)
+  const pts2d = shape.getPoints(12);
+  const pts3d = pts2d.map((p) => new T.Vector3(p.x, 0.012, -p.y));
+  const borderGeo = new T.BufferGeometry().setFromPoints(pts3d);
+  const borderLine = new T.Line(
+    borderGeo,
+    new T.LineDashedMaterial({
+      color: new T.Color(accentHex),
+      dashSize: 0.16,
+      gapSize: 0.11,
+      transparent: true,
+      opacity: isLight ? 0.58 : 0.72,
+    }),
+  );
+  borderLine.computeLineDistances();
+  borderLine.renderOrder = 2;
+  group.add(borderLine);
+
+  // Fixed world-scale header pill centered squarely on the outer top rim (never stretched or covered)
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = Math.max(192, Math.round(512 * (depth / Math.max(0.5, width))));
+  const dpr = 2;
+  const font = `700 ${13 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const mctx = canvas.getContext("2d");
+  let textW = 180 * dpr;
+  if (mctx) {
+    mctx.font = font;
+    textW = Math.ceil(mctx.measureText(title).width);
+  }
+  const padX = 14 * dpr;
+  const pillW = textW + padX * 2;
+  const pillH = 26 * dpr;
+  const margin = 4 * dpr;
+  canvas.width = pillW + margin * 2;
+  canvas.height = pillH + margin * 2;
   const ctx = canvas.getContext("2d");
   if (ctx) {
-    const pad = 10;
-    const w = canvas.width - pad * 2;
-    const h = canvas.height - pad * 2;
-    drawRoundedRect(ctx, pad, pad, w, h, 18);
-    ctx.fillStyle = isLight ? `${accentHex}0d` : `${accentHex}18`;
+    drawRoundedRect(ctx, margin, margin, pillW, pillH, pillH / 2);
+    ctx.fillStyle = isLight ? "rgba(255,255,255,0.96)" : "rgba(10,15,24,0.94)";
     ctx.fill();
-    ctx.save();
-    ctx.setLineDash([12, 9]);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = isLight ? `${accentHex}55` : `${accentHex}75`;
+    ctx.lineWidth = 1.6 * dpr;
+    ctx.strokeStyle = isLight ? `${accentHex}75` : `${accentHex}99`;
     ctx.stroke();
-    ctx.restore();
-
-    // Crisp corner architectural zone label printed flat onto the deck
-    ctx.font = "700 18px ui-monospace, SFMono-Regular, Menlo, monospace";
-    const labelW = Math.ceil(ctx.measureText(title).width) + 22;
-    drawRoundedRect(ctx, pad + 14, pad + 12, labelW, 30, 8);
-    ctx.fillStyle = isLight ? "rgba(255,255,255,0.88)" : "rgba(9,13,22,0.88)";
-    ctx.fill();
-    ctx.strokeStyle = isLight ? `${accentHex}44` : `${accentHex}66`;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    ctx.font = font;
     ctx.fillStyle = accentHex;
-    ctx.textAlign = "left";
+    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(title, pad + 25, pad + 27.5);
+    ctx.fillText(title, canvas.width / 2, canvas.height / 2 + 0.5 * dpr);
   }
   const tex = new T.CanvasTexture(canvas);
   tex.colorSpace = T.SRGBColorSpace;
   tex.minFilter = T.LinearFilter;
-  const mat = new T.MeshBasicMaterial({
-    map: tex,
-    transparent: true,
-    depthWrite: false,
-  });
-  const mesh = new T.Mesh(new T.PlaneGeometry(width, depth), mat);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.renderOrder = 2;
-  return mesh;
+  const badgeH = 0.28;
+  const badgeW = Math.min(width - 0.2, badgeH * (canvas.width / canvas.height));
+  const badgeMesh = new T.Mesh(
+    new T.PlaneGeometry(badgeW, badgeH),
+    new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
+  );
+  badgeMesh.rotation.x = -Math.PI / 2;
+  badgeMesh.position.set(0, 0.016, -hd);
+  badgeMesh.renderOrder = 3;
+  group.add(badgeMesh);
+
+  return group;
 }
 
 function attachFrontTelemetryBar(
@@ -1243,7 +1297,7 @@ export function StudioThreeStage({
             canvas,
             antialias: true,
             alpha: true,
-            preserveDrawingBuffer: true,
+            preserveDrawingBuffer: false,
             powerPreference: "high-performance",
           });
         } catch {
@@ -1251,9 +1305,12 @@ export function StudioThreeStage({
           return;
         }
 
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        // Cap DPR at 1.5 and cache static shadow map so 3D camera orbit stays locked at 60-120fps
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = T.PCFSoftShadowMap;
+        renderer.shadowMap.autoUpdate = false;
+        renderer.shadowMap.needsUpdate = true;
         renderer.outputColorSpace = T.SRGBColorSpace;
         renderer.toneMapping = T.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.06;
@@ -1264,6 +1321,10 @@ export function StudioThreeStage({
         renderer.setSize(width, height, false);
 
         const perspCam = new T.PerspectiveCamera(34, width / height, 0.1, 140);
+        // Synchronous on-demand render hook used by captureStudioImage() without preserveDrawingBuffer GPU copy penalty
+        (canvas as HTMLCanvasElement & { __mavisRenderNow?: () => void }).__mavisRenderNow = () => {
+          renderer.render(scene, perspCam);
+        };
 
         const hemi = new T.HemisphereLight(0xffffff, 0xcbd5e1, 1.15);
         scene.add(hemi);
@@ -1317,10 +1378,12 @@ export function StudioThreeStage({
           const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
           lastTime = now;
 
-          // Smooth camera damping toward target state
+          // Frame-rate independent exponential inertial damping (OrbitControls-grade silky glide)
           const target = targetCamRef.current;
           const live = liveCamRef.current;
-          const smooth = dragRef.current ? 1 : Math.min(1, dt * 11);
+          const smooth = dragRef.current
+            ? 1 - Math.exp(-dt * 20)
+            : 1 - Math.exp(-dt * 9);
           live.yaw += (target.yaw - live.yaw) * smooth;
           live.pitch += (target.pitch - live.pitch) * smooth;
           live.zoom += (target.zoom - live.zoom) * smooth;
@@ -1339,31 +1402,25 @@ export function StudioThreeStage({
           perspCam.position.set(camX, camY, camZ);
           perspCam.lookAt(lookX, 0.32, lookZ);
 
-          // Subtle alive animation on 3D traffic packets & active replica pods
+          // Subtle alive animation on 3D traffic packets & halos
           const tSec = now * 0.001;
           for (const pkt of packetsRef.current) {
             const u = (tSec * pkt.speed + pkt.phase) % 1;
             pkt.curve.getPoint(u, pkt.mesh.position);
           }
           for (const rig of nodeRigsRef.current) {
-            if (rig.active) {
-              for (let i = 0; i < rig.replicaPods.length; i++) {
-                const pod = rig.replicaPods[i]!;
-                pod.position.y = 0.12 + Math.sin(tSec * 2.4 + rig.phase + i * 1.4) * 0.03;
-              }
-            }
             if (rig.halo) {
-              const pulse = 1 + Math.sin(tSec * 3.2 + rig.phase) * 0.04;
+              const pulse = 1 + Math.sin(tSec * 3.2 + rig.phase) * 0.03;
               rig.halo.scale.set(pulse, pulse, 1);
             }
           }
 
           renderer.render(scene, perspCam);
 
-          // Update invisible projected bounding box for Guided Tour step 2 only when bounds shift
+          // Update invisible projected bounding box for Guided Tour step 2 only when idle & bounds shift
           const tourBox = tourBoxRef.current;
           const rigs = nodeRigsRef.current;
-          if (tourBox && rigs.length > 0) {
+          if (tourBox && rigs.length > 0 && !dragRef.current) {
             const w = container.clientWidth;
             const h = container.clientHeight;
             let minX = w;
@@ -1549,29 +1606,39 @@ export function StudioThreeStage({
     }
 
     // Dynamic Architectural Trust Zones (UML 2.5 Deployment Environment / C4 System Boundary / CodeCity Districts)
-    const zoneSpecs: Array<{
-      title: string;
-      accent: string;
-      members: StudioThreeNode[];
-    }> = [
+    const rawZones = [
       {
+        key: "EDGE",
         title: "EDGE / INGRESS",
         accent: isLight ? "#0284c7" : "#38bdf8",
         members: nodes.filter((n) => n.archetype === "GATEWAY"),
       },
       {
+        key: "CORE",
         title: "CORE SERVICES · DOCKER NET",
         accent: isLight ? "#4f46e5" : "#818cf8",
         members: nodes.filter((n) => n.archetype === "SERVICE"),
       },
       {
+        key: "DATA",
         title: "DATA & MESSAGING",
         accent: isLight ? "#0d9488" : "#2dd4bf",
         members: nodes.filter((n) => n.archetype === "DATABASE" || n.archetype === "QUEUE"),
       },
-    ];
-    for (const zone of zoneSpecs) {
-      if (zone.members.length === 0) continue;
+    ].filter((z) => z.members.length > 0);
+
+    type ZoneRect = {
+      key: string;
+      title: string;
+      accent: string;
+      nodeMinX: number;
+      nodeMaxX: number;
+      bx0: number;
+      bx1: number;
+      bz0: number;
+      bz1: number;
+    };
+    const zoneRects: ZoneRect[] = rawZones.map((zone) => {
       let zMinX = Infinity;
       let zMaxX = -Infinity;
       let zMinZ = Infinity;
@@ -1584,17 +1651,38 @@ export function StudioThreeStage({
         zMinZ = Math.min(zMinZ, mz);
         zMaxZ = Math.max(zMaxZ, mz);
       }
-      const padX = 0.86;
-      const padZ = 0.78;
-      const bx0 = Math.max(minX + 0.14, zMinX - padX);
-      const bx1 = Math.min(maxX - 0.14, zMaxX + padX);
-      const bz0 = Math.max(minZ + 0.14, zMinZ - padZ);
-      const bz1 = Math.min(maxZ - 0.14, zMaxZ + padZ);
-      const zw = Math.max(1.5, bx1 - bx0);
-      const zd = Math.max(1.3, bz1 - bz0);
-      const plate = createZonePlateMesh(T, zone.title, zw, zd, zone.accent, isLight);
-      plate.position.set((bx0 + bx1) / 2, 0.011, (bz0 + bz1) / 2);
-      contentGroup.add(plate);
+      // Generous clearance outside 1.24x0.92 plinths + extra top headroom for the rim header badge
+      const padX = 0.96;
+      const padTopZ = 1.08;
+      const padBottomZ = 0.86;
+      return {
+        key: zone.key,
+        title: zone.title,
+        accent: zone.accent,
+        nodeMinX: zMinX,
+        nodeMaxX: zMaxX,
+        bx0: Math.max(minX + 0.16, zMinX - padX),
+        bx1: Math.min(maxX - 0.16, zMaxX + padX),
+        bz0: Math.max(minZ + 0.16, zMinZ - padTopZ),
+        bz1: Math.min(maxZ - 0.16, zMaxZ + padBottomZ),
+      };
+    });
+
+    // Keep adjacent horizontal zones cleanly separated so dashed borders never collide
+    const edgeRect = zoneRects.find((z) => z.key === "EDGE");
+    const coreRect = zoneRects.find((z) => z.key === "CORE");
+    if (edgeRect && coreRect && edgeRect.nodeMaxX < coreRect.nodeMinX && edgeRect.bx1 > coreRect.bx0 - 0.16) {
+      const splitX = (edgeRect.nodeMaxX + coreRect.nodeMinX) / 2;
+      edgeRect.bx1 = Math.max(edgeRect.nodeMaxX + 0.68, splitX - 0.1);
+      coreRect.bx0 = Math.min(coreRect.nodeMinX - 0.68, splitX + 0.1);
+    }
+
+    for (const zr of zoneRects) {
+      const zw = Math.max(1.75, zr.bx1 - zr.bx0);
+      const zd = Math.max(1.65, zr.bz1 - zr.bz0);
+      const zoneGroup = createZonePlateGroup(T, zr.title, zw, zd, zr.accent, isLight);
+      zoneGroup.position.set((zr.bx0 + zr.bx1) / 2, 0, (zr.bz0 + zr.bz1) / 2);
+      contentGroup.add(zoneGroup);
     }
 
     // 2. Real 3D SE-Standard Service Deployment Nodes
@@ -1789,6 +1877,9 @@ export function StudioThreeStage({
         isSevered: edge.isSevered,
       });
     }
+    if (rendererRef.current) {
+      rendererRef.current.shadowMap.needsUpdate = true;
+    }
   }, [engineReady, nodes, edges, deckBounds, styleId, dropHoverService]);
 
   function raycastServiceAt(clientX: number, clientY: number): string | null {
@@ -1926,6 +2017,9 @@ export function StudioThreeStage({
         }
       }
     }
+    if (rendererRef.current) {
+      rendererRef.current.shadowMap.needsUpdate = true;
+    }
   }
 
   return (
@@ -2040,11 +2134,6 @@ export function StudioThreeStage({
             );
             targetCamRef.current.yaw = nextYaw;
             targetCamRef.current.pitch = nextPitch;
-            const now = performance.now();
-            if (now - drag.lastSyncAt >= 100) {
-              drag.lastSyncAt = now;
-              callbacksRef.current.onCameraChange({ yaw: nextYaw, pitch: nextPitch });
-            }
           } else if (drag.mode === "NODE") {
             const floor = raycastGroundWorld(event.clientX, event.clientY);
             if (!floor) return;
