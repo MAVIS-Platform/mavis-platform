@@ -99,6 +99,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC3IdentityComponents();
         addC3CatalogComponents();
         addC3OrderComponents();
+        addC3NotificationComponents();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -107,11 +108,17 @@ public final class MocHuongReferenceArchitectureBuilder {
             }
         }
         List<ModelElement> containerNodes = c2ContainerNodes();
+        List<ModelElement> componentDiagramNodes = new ArrayList<>();
+        for (String svc : REAL_MICROSERVICES) {
+            componentDiagramNodes.add(node(svc));
+        }
+        componentDiagramNodes.addAll(c3ComponentNodes);
         List<DiagramVersion> diagramList = new ArrayList<>();
         if (node("customer") != null && node("admin-staff") != null && node("otel-observability") != null) {
             diagramList.add(buildC1ContextDiagram());
         }
         diagramList.add(buildDiagram("C4", "CONTAINER", containerNodes, c2Edges));
+        diagramList.add(buildDiagram("C4", "COMPONENT", componentDiagramNodes, c3ComponentEdges));
         List<DiagramVersion> savedDiagrams = hooks.saveDiagrams().apply(diagramList);
         ObjectNode metrics = json.createObjectNode()
                 .put("complianceScore", 96.0)
@@ -424,6 +431,40 @@ public final class MocHuongReferenceArchitectureBuilder {
                 props("client", "CatalogFeignClient", "targetService", "catalog-service", "endpoint", "/api/v1/products/{id}"));
         addC3Edge("c3-ord-pub-kafka", "ord-outbox-pub", "kafka", "MESSAGE_PUBLISH",
                 props("topics", "order.created,order.cancelled"));
+    }
+
+    private void addC3NotificationComponents() {
+        addComponent("noti-ctrl", "notification-service", "Spring MVC @RestController",
+                "NotificationController", "CONTROLLER",
+                "com.mochuong.notification.controller.NotificationController",
+                "Exposes GET /api/v1/notifications/my");
+        addComponent("noti-svc", "notification-service", "Spring @Service",
+                "NotificationService", "SERVICE",
+                "com.mochuong.notification.service.NotificationService",
+                "Queries persisted user notifications");
+        addComponent("noti-consumer", "notification-service", "Spring Kafka @KafkaListener",
+                "OrderEventConsumer", "CONSUMER",
+                "com.mochuong.notification.consumer.OrderEventConsumer",
+                "Idempotently consumes order.created and order.cancelled events via processed_events guard");
+        addComponent("noti-repo", "notification-service", "Spring Data JPA",
+                "NotificationRepository", "REPOSITORY",
+                "com.mochuong.notification.repository.NotificationRepository",
+                "Persists NotificationRecord rows in isolated notification_db");
+        addComponent("noti-proc-repo", "notification-service", "Spring Data JPA",
+                "ProcessedEventRepository", "REPOSITORY",
+                "com.mochuong.notification.repository.ProcessedEventRepository",
+                "Deduplicates Kafka eventId messages in isolated notification_db");
+
+        addC3Edge("c3-noti-ctrl-svc", "noti-ctrl", "noti-svc", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
+        addC3Edge("c3-noti-svc-repo", "noti-svc", "noti-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
+        addC3Edge("c3-kafka-noti-cons", "kafka", "noti-consumer", "MESSAGE_SUBSCRIBE",
+                props("topics", "order.created,order.cancelled", "groupId", "notification-group"));
+        addC3Edge("c3-noti-cons-proc", "noti-consumer", "noti-proc-repo", "CODE_DEPENDENCY",
+                props("pattern", "Idempotent Consumer"));
+        addC3Edge("c3-noti-cons-repo", "noti-consumer", "noti-repo", "CODE_DEPENDENCY",
+                props("tierEdge", "Consumer->Repository"));
+        addC3Edge("c3-noti-repo-db", "noti-repo", "notification-db", "DATABASE_ACCESS", props("schema", "notification_db"));
+        addC3Edge("c3-noti-procrepo-db", "noti-proc-repo", "notification-db", "DATABASE_ACCESS", props("schema", "notification_db"));
     }
 
     private DiagramVersion buildC1ContextDiagram() {
