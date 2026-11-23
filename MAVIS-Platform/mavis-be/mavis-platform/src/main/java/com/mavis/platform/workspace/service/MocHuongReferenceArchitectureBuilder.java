@@ -69,6 +69,8 @@ public final class MocHuongReferenceArchitectureBuilder {
     private final Map<String, ModelRelationship> relsByKey = new LinkedHashMap<>();
     private final List<ModelRelationship> allRelationships = new ArrayList<>();
     private final List<Evidence> allEvidences = new ArrayList<>();
+    private final List<ModelElement> c3ComponentNodes = new ArrayList<>();
+    private final List<ModelRelationship> c3ComponentEdges = new ArrayList<>();
 
     private MocHuongReferenceArchitectureBuilder(
             ObjectMapper json, ModelVersion model, SourceSnapshot snapshot, PersistenceHooks hooks) {
@@ -93,6 +95,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC2Microservices();
         addC2Infrastructure();
         List<ModelRelationship> c2Edges = addC2Relationships();
+        addC3GatewayAndDiscovery();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -246,6 +249,54 @@ public final class MocHuongReferenceArchitectureBuilder {
         list.add(addEdge("gw-otel", "api-gateway", "otel-observability", "TRACING_EXPORT", "STATIC",
                 props("protocol", "OTLP HTTP", "endpoint", "http://otel-collector:4318/v1/traces")));
         return list;
+    }
+
+    private ModelElement addComponent(
+            String key,
+            String parentServiceKey,
+            String languageStack,
+            String name,
+            String tier,
+            String qualifiedName,
+            String responsibility) {
+        ModelElement el = addNode(key, node(parentServiceKey), "COMPONENT", languageStack,
+                name, parentServiceKey,
+                props("tier", tier, "qualifiedName", qualifiedName, "responsibility", responsibility));
+        c3ComponentNodes.add(el);
+        return el;
+    }
+
+    private void addC3Edge(
+            String key,
+            String fromKey,
+            String toKey,
+            String relationType,
+            ObjectNode props) {
+        c3ComponentEdges.add(addEdge(key, fromKey, toKey, relationType, "STATIC", props));
+    }
+
+    private void addC3GatewayAndDiscovery() {
+        addComponent("gw-corr-filter", "api-gateway", "Spring WebFlux GlobalFilter",
+                "CorrelationIdGatewayFilter", "FILTER",
+                "com.mochuong.gateway.filter.CorrelationIdGatewayFilter",
+                "Injects and echoes X-Correlation-Id on every routed request");
+        addComponent("gw-jwt-filter", "api-gateway", "Spring WebFlux GlobalFilter",
+                "JwtAuthenticationGatewayFilter", "FILTER",
+                "com.mochuong.gateway.filter.JwtAuthenticationGatewayFilter",
+                "Validates Bearer JWT and forwards X-User-Id, X-User-Email, X-User-Role headers");
+        addComponent("gw-jwt-verifier", "api-gateway", "JJWT Security",
+                "JwtTokenVerifier", "SECURITY",
+                "com.mochuong.gateway.security.JwtTokenVerifier",
+                "Parses HMAC-SHA JWT claims (sub, email, role)");
+        addComponent("eureka-app", "service-discovery", "Spring Cloud Netflix",
+                "ServiceDiscoveryApplication", "INFRA",
+                "com.mochuong.discovery.ServiceDiscoveryApplication",
+                "@EnableEurekaServer service registry host on port 8761");
+
+        addC3Edge("c3-gw-corr-jwt", "gw-corr-filter", "gw-jwt-filter", "CODE_DEPENDENCY",
+                props("order", "-2 -> -1"));
+        addC3Edge("c3-gw-jwt-ver", "gw-jwt-filter", "gw-jwt-verifier", "CODE_DEPENDENCY",
+                props("call", "jwtTokenVerifier.verify(token)"));
     }
 
     private DiagramVersion buildC1ContextDiagram() {
