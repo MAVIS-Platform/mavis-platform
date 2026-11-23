@@ -184,7 +184,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
         var profile = scenarioConfig.putObject("profile")
             .put("collectorImage", "otel/opentelemetry-collector-contrib@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806")
             .put("instrumentationVolume", "mavis-poc-agents-ca65939a")
-            .put("memoryMiB", 512).put("cpus", 1).put("timeoutSeconds", 290).put("approvedForLocalPoc", true)
+            .put("memoryMiB", 512).put("cpus", 0.5).put("timeoutSeconds", 290).put("approvedForLocalPoc", true)
             .put("scenarioRunnerImage", "sha256:404e8ec20021c0efc870ee1d206d54bb19005ce27beb38ad04fe096db40cd06a");
         var apps = profile.putObject("applications");
         apps.putObject("orders").put("runtime", "dotnet8-linux-x64-glibc").put("containerPort", 8080);
@@ -503,7 +503,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             .put("sandboxCompose", composeYaml)
             .put("collectorImage", manifest.path("collectorImage").asText())
             .put("instrumentationVolume", manifest.path("instrumentationVolume").asText())
-            .put("memoryMiB", 512).put("cpus", 1).put("timeoutSeconds", 290).put("approvedForLocalPoc", true)
+            .put("memoryMiB", 512).put("cpus", 0.5).put("timeoutSeconds", 290).put("approvedForLocalPoc", true)
             .put("scenarioRunnerImage", images.path("runner").asText());
         var apps = profile.putObject("applications");
         apps.putObject("orders").put("runtime", "dotnet8-linux-x64-glibc").put("containerPort", 8080);
