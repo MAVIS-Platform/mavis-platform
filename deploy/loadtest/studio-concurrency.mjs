@@ -88,7 +88,7 @@ function createClient(baseUrl, auth, controlLatencies) {
   const origin = new URL(baseUrl).origin;
   const cleanBase = baseUrl.replace(/\/+$/, "");
 
-  async function request(method, path, body) {
+  async function send(method, path, body) {
     const headers =
       auth.mode === "cookie"
         ? { Cookie: serializeCookieMap(auth.jar) }
@@ -115,6 +115,20 @@ function createClient(baseUrl, auth, controlLatencies) {
       applySetCookies(auth.jar, res.headers);
     }
     const json = await res.json().catch(() => null);
+    return { res, json };
+  }
+
+  async function request(method, path, body) {
+    let { res, json } = await send(method, path, body);
+    // /api/mavis/* never refreshes tokens itself; only the `session` operation does, and only when
+    // mavis_session is absent. So on 401: drop the expired session cookie, refresh, retry once.
+    if (res.status === 401 && auth.mode === "cookie" && auth.jar.has("mavis_refresh")) {
+      auth.jar.delete("mavis_session");
+      await send("GET", `/api/mavis/session?input=${encodeURIComponent("{}")}`);
+      if (auth.jar.has("mavis_session")) {
+        ({ res, json } = await send(method, path, body));
+      }
+    }
     if (!res.ok) {
       const code =
         (typeof json?.errorCode === "string" && json.errorCode) ||

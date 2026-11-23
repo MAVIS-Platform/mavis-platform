@@ -11,6 +11,7 @@ const scriptPath = resolve(dirname(fileURLToPath(import.meta.url)), "../loadtest
 function startStubServer() {
   const sessions = new Map();
   let seq = 0;
+  let refreshCalls = 0;
 
   const server = http.createServer(async (req, res) => {
     const chunks = [];
@@ -34,36 +35,39 @@ function startStubServer() {
     // Launch Studio session
     if (req.method === "POST" && /\/studio-sessions$/.test(url.pathname)) {
       const id = `00000000-0000-0000-0000-${String(++seq).padStart(12, "0")}`;
-      sessions.set(id, { polls: 0, status: "QUEUED", actions: [], snapshots: 0, rotatedSeen: false });
+      sessions.set(id, { polls: 0, status: "QUEUED", actions: [], snapshots: 0, cookieMode: false });
       return send(200, { status: 200, data: { id, executionStatus: "QUEUED" } });
     }
 
-    // Cookie mode (/api/mavis/*)
+    // Cookie mode (/api/mavis/*) mirrors the real BFF: no refresh on 401, except the `session`
+    // operation which refreshes only when mavis_session is absent and mavis_refresh is present.
+    const cookies = Object.fromEntries(
+      String(req.headers.cookie || "")
+        .split(";")
+        .map((p) => p.trim().split("="))
+        .filter(([k]) => k),
+    );
+    if (url.pathname === "/api/mavis/session") {
+      if (!cookies.mavis_session && cookies.mavis_refresh) {
+        refreshCalls++;
+        return send(200, { user: { id: "u" } }, {
+          "Set-Cookie": [
+            `mavis_session=fresh-${cookies.mavis_refresh}; Path=/; HttpOnly; Max-Age=900`,
+            `mavis_refresh=${cookies.mavis_refresh}-rotated; Path=/; HttpOnly; Max-Age=604800`,
+          ],
+        });
+      }
+      return send(200, { user: cookies.mavis_session ? { id: "u" } : null });
+    }
+    if (url.pathname.startsWith("/api/mavis/") && !String(cookies.mavis_session || "").startsWith("fresh-")) {
+      return send(401, { error: "Request unavailable" });
+    }
     if (url.pathname === "/api/mavis/studioState") {
       const { sessionId } = JSON.parse(url.searchParams.get("input") || "{}");
       const s = sessions.get(sessionId);
       if (!s) return send(404, { message: "Not found" });
       s.polls++;
-      if (s.polls === 1) {
-        // Simulate BFF auto-refresh rotating mavis_session & mavis_refresh
-        return send(
-          200,
-          {
-            executionStatus: s.status,
-            telemetry: { services: [{ service: "payment-api", runningReplicas: 1 }] },
-            actions: s.actions,
-          },
-          {
-            "Set-Cookie": [
-              `mavis_session=rotated-${sessionId}; Path=/; HttpOnly`,
-              `mavis_refresh=refresh-${sessionId}; Path=/; HttpOnly`,
-            ],
-          },
-        );
-      }
-      if (String(req.headers.cookie || "").includes(`mavis_session=rotated-${sessionId}`)) {
-        s.rotatedSeen = true;
-      }
+      s.cookieMode = true;
       if (s.status === "QUEUED" && s.polls >= 2) s.status = "RUNNING";
       return send(200, {
         executionStatus: s.status,
@@ -73,8 +77,7 @@ function startStubServer() {
     }
     if (url.pathname === "/api/mavis/studioAction") {
       const s = sessions.get(body.sessionId);
-      assert.match(String(req.headers.cookie || ""), new RegExp(`mavis_session=rotated-${body.sessionId}`));
-      assert.match(String(req.headers.cookie || ""), new RegExp(`mavis_refresh=refresh-${body.sessionId}`));
+      assert.match(cookies.mavis_refresh, /-rotated$/);
       s.actions.push({ action: body.action, service: body.service, status: "CONFIRMED" });
       return send(200, { ok: true });
     }
@@ -128,15 +131,16 @@ function startStubServer() {
   return new Promise((resolveReady) => {
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address();
-      resolveReady({ server, baseUrl: `http://127.0.0.1:${port}`, sessions });
+      resolveReady({ server, baseUrl: `http://127.0.0.1:${port}`, sessions, refreshCount: () => refreshCalls });
     });
   });
 }
 
-const { server, baseUrl, sessions } = await startStubServer();
+const { server, baseUrl, sessions, refreshCount } = await startStubServer();
 try {
   for (const [label, auth] of [
-    ["cookie", "Cookie: mavis_session=s1; mavis_refresh=r1\nmavis_session=s2; mavis_refresh=r2"],
+    // Expired session cookies: every /api/mavis/* call 401s until the script refreshes via `session`.
+    ["cookie", "Cookie: mavis_session=expired-1; mavis_refresh=r1\nmavis_session=expired-2; mavis_refresh=r2"],
     ["bearer", "Bearer jwt-1\nAuthorization: Bearer jwt-2"],
   ]) {
     const { stdout } = await execFileAsync(process.execPath, [scriptPath], {
@@ -157,17 +161,18 @@ try {
     assert.equal(report.goNoGo.passed, true, `${label}: expected Go/No-Go pass`);
   }
   assert.equal(sessions.size, 4);
-  let cookieRotatedCount = 0;
+  let cookieSessions = 0;
   for (const s of sessions.values()) {
     assert.equal(s.status, "COMPLETED");
     assert.equal(s.snapshots, 1);
-    if (s.rotatedSeen) cookieRotatedCount++;
+    if (s.cookieMode) cookieSessions++;
     assert.deepEqual(
       s.actions.map((a) => `${a.action}:${a.service}`),
       ["STOP:payment-api", "START:payment-api"],
     );
   }
-  assert.equal(cookieRotatedCount, 2, "Expected both Cookie virtual students to pick up rotated Set-Cookie values");
+  assert.equal(cookieSessions, 2);
+  assert.equal(refreshCount(), 2, "Expected exactly one session refresh per expired Cookie account");
 
   // Fewer auth accounts than CONCURRENCY must exit 2
   let insufficientExit = 0;
@@ -188,7 +193,7 @@ try {
   }
   assert.equal(insufficientExit, 2, "Expected exit code 2 when auth entries < CONCURRENCY");
 
-  console.log("PASS: studio-concurrency.mjs verified for Cookie refresh, Bearer flow, and account-count guard.");
+  console.log("PASS: studio-concurrency.mjs verified for expired-cookie refresh via session, Bearer flow, and account-count guard.");
 } finally {
   server.close();
 }

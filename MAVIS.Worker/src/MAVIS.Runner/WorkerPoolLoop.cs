@@ -329,6 +329,8 @@ public static class WorkerPoolLoop
 
         var pending = Directory.EnumerateFiles(directory, "mavisrun-*.json")
             .Where(p => !p.EndsWith(".ack.json", StringComparison.Ordinal))
+            // Filter acked receipts before the batch cap so retained acks never crowd out undelivered receipts.
+            .Where(p => !File.Exists(Path.Combine(directory, Path.GetFileNameWithoutExtension(p) + ".ack.json")))
             .Order(StringComparer.Ordinal)
             .Take(256)
             .ToArray();
@@ -444,8 +446,9 @@ public static class WorkerPoolLoop
         {
             return false;
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // Treat unreadable or locked lease files as held: never reap what we cannot prove is free.
             return true;
         }
     }

@@ -453,7 +453,7 @@ Sau đó mở trang **Admin › Studio** kiểm tra trạng thái `surveyReadine
   CONCURRENCY=10 ROUNDS=3 \
   node deploy/loadtest/studio-concurrency.mjs
   ```
-  > **Lưu ý auth trên production:** Backend Java không public ra internet nên production chỉ dùng được chế độ **Cookie** qua Next.js BFF (`https://maviss.site`). File `10-student-cookies.txt` phải có **ít nhất 10 dòng cho 10 tài khoản SV khác nhau đã enroll** (thiếu sẽ thoát mã `2`), và mỗi dòng nên chứa đủ cả 2 cookie (`Cookie: mavis_session=...; mavis_refresh=...`) để script tự cập nhật khi BFF xoay vòng token sau 15 phút.
+  > **Lưu ý auth trên production:** Backend Java không public ra internet nên production chỉ dùng được chế độ **Cookie** qua Next.js BFF (`https://maviss.site`). File `10-student-cookies.txt` phải có **ít nhất 10 dòng cho 10 tài khoản SV khác nhau đã enroll** (thiếu sẽ thoát mã `2`), và mỗi dòng nên chứa đủ cả 2 cookie (`Cookie: mavis_session=...; mavis_refresh=...`). Khi token hết hạn (sau 15 phút), các route `/api/mavis/*` trả 401 mà không tự làm mới; script sẽ xóa `mavis_session`, gọi `GET /api/mavis/session` để BFF làm mới bằng `mavis_refresh`, rồi gửi lại request 1 lần. Thiếu `mavis_refresh` thì không làm mới được.
 - **Tiêu chí Go để nâng lên `10` slot:** `failPercent < 5%` (≤ 1/30), `bootMs.p95 < 60000`, `controlApiMs.p95 < 3000`, và kiểm tra trên Runner VM sau 10 phút có **0** stack `mavisrun-*` mồ côi (`docker ps -a --format '{{.Label "com.docker.compose.project"}}' | grep -c '^mavisrun-'`).
 - Nếu quá tải đột xuất trong giờ học: hạ nhanh `MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS` (ví dụ `10` → `5`) và `MAVIS_WORKER_CONCURRENCY`, restart backend/worker (ngoài thời điểm có phiên chạy).
 

@@ -325,6 +325,39 @@ public sealed class WorkerPoolHardeningTests : IDisposable
         Assert.DoesNotContain(dedicatedDocker.Calls, c => c is ["compose", "-p", var p, ..] && p == leasedProj);
     }
 
+    [Fact]
+    public async Task DeliverPendingSkipsAckedReceiptsBeforeBatchCap()
+    {
+        var receiptsDir = Path.Combine(_root, "receipts");
+        Directory.CreateDirectory(receiptsDir);
+        // 300 already-acked receipts sort before the single undelivered one ('0...' < 'f...').
+        for (var i = 0; i < 300; i++)
+        {
+            var acked = "mavisrun-0" + i.ToString("D31");
+            await File.WriteAllTextAsync(Path.Combine(receiptsDir, acked + ".json"), "{}");
+            await File.WriteAllTextAsync(Path.Combine(receiptsDir, acked + ".ack.json"), "{}");
+        }
+        var pendingProject = "mavisrun-" + new string('f', 32);
+        var receiptJson = $"{{\"sessionId\":\"s-9\",\"resourceProject\":\"{pendingProject}\",\"outcome\":{{\"cleanupStatus\":\"Confirmed\"}}}}";
+        RuntimeReceiptStore.Save(_root, pendingProject, receiptJson);
+
+        var handler = new FakeHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                status = 200,
+                data = new { sessionId = "s-9", resourceProject = pendingProject, receiptDigest = ReceiptCanonicalJson.Digest(receiptJson), persistenceStatus = "COMMITTED" }
+            }, RuntimeLifecycleJournal.Json), Encoding.UTF8, "application/json")
+        }));
+        using var java = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080/"), "test-runner-key", handler, (_, _) => Task.CompletedTask);
+
+        var delivered = await WorkerPoolLoop.DeliverPendingReceiptsAsync(java, _root, CancellationToken.None);
+
+        Assert.Equal(1, delivered);
+        Assert.Equal(1, handler.Calls);
+        Assert.True(File.Exists(Path.Combine(receiptsDir, pendingProject + ".ack.json")));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);

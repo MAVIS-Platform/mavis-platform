@@ -38,12 +38,15 @@
 | **Batch 4A** | 4.4 | Thêm `--backup-only <dest>` vào `deploy/apply-course-schema.py`, tạo `deploy/backup-db.sh` (LF, `chmod +x`), cập nhật `deploy/deploy-vps.sh` (copy cả `apply-course-schema.py` & `backup-db.sh` + cài `/etc/cron.d/mavis-db-backup` idempotent) và `.github/workflows/deploy-production.yml` (`retry_scp`) | `DONE` *(chạy `backup-db.sh` thật trên VPS + kiểm tra Aiven backup: `READY_FOR_OPS_VERIFY`)* | `41bf46f1` |
 | **Batch 4A** | 4.5 | Tạo script load test zero-dependency `deploy/loadtest/studio-concurrency.mjs` (hỗ trợ cả Cookie `/api/backend`+`/api/mavis` lẫn Bearer `/api/v1`, xuất JSON Go/No-Go) + test stub end-to-end `deploy/tests/test_studio_loadtest.mjs` | `DONE` *(test stub xanh; chạy 10 phiên × 3 vòng thật trên Runner VM: `READY_FOR_OPS_VERIFY`)* | `41bf46f1` |
 | **Batch 4A** | 4.6 | Bổ sung §6 Ops Runbook vào cuối `docs/ops/STUDIO_HARDENING_PLAN.md` | `DONE` | `41bf46f1` |
-| **Batch 5** | 5.1 | Giữ nguyên receipt chưa có `.ack.json` và các manifest `.allocation-*` / `.recovery-*`; chỉ xóa cặp receipt đã ack cũ > 7 ngày trong `WorkerPoolLoop.cs` | `DONE` | *(Batch 5)* |
-| **Batch 5** | 5.2 | Khóa orphan reaper sau `MAVIS_WORKER_DEDICATED_HOST=1` (`compose.runner-worker.yml` đặt mặc định `1`, bỏ gợi ý hybrid trên Control VPS) và bỏ qua project đang giữ lock `runner-<project>.lock` | `DONE` | *(Batch 5)* |
-| **Batch 5** | 5.3 | Đo dung lượng đĩa trống trên `stateRoot` (bind mount của host) và đổi tên log thành `hostStateFreeMiB` | `DONE` | *(Batch 5)* |
-| **Batch 5** | 5.4 | Khôi phục `refreshDockerAndRuntimeProbe()` trong `RuntimeQueueCoordinator.getRuntimeHealth` ở chế độ `REMOTE_WORKER` (trả `DEGRADED` khi Docker control-plane lỗi ở 4A) | `DONE` | *(Batch 5)* |
-| **Batch 5** | 5.5 | Thêm cookie jar tự cập nhật `Set-Cookie` và chặn thoát mã `2` nếu thiếu tài khoản (`< CONCURRENCY`) trong `studio-concurrency.mjs` + test stub | `DONE` | *(Batch 5)* |
-| **Batch 5** | 5.6 | Sửa mô tả Batch 1 / phạm vi test trong báo cáo sáng cho khớp code và thêm câu SQL chỉ đọc kiểm Scale > 3 (Batch 6) vào Runbook §6.6 | `DONE` | *(Batch 5)* |
+| **Batch 5** | 5.1 | Giữ nguyên receipt chưa có `.ack.json` và các manifest `.allocation-*` / `.recovery-*`; chỉ xóa cặp receipt đã ack cũ > 7 ngày trong `WorkerPoolLoop.cs` | `DONE` | `7778a6ba` |
+| **Batch 5** | 5.2 | Bỏ qua project đang giữ lock `runner-<project>.lock` khi dọn orphan (đây là lớp bảo vệ thật, vì worker và backend cùng mount `/tmp/mavis-runner-state`); thêm cờ `MAVIS_WORKER_DEDICATED_HOST` (mặc định `1` trong `compose.runner-worker.yml`, nên **không** chặn được việc chạy nhầm trên Control VPS) và bỏ gợi ý hybrid | `DONE` | `7778a6ba` |
+| **Batch 5** | 5.3 | Đo dung lượng đĩa trống trên `stateRoot` (bind mount của host) và đổi tên log thành `hostStateFreeMiB` | `DONE` | `7778a6ba` |
+| **Batch 5** | 5.4 | Khôi phục `refreshDockerAndRuntimeProbe()` trong `RuntimeQueueCoordinator.getRuntimeHealth` ở chế độ `REMOTE_WORKER` (trả `DEGRADED` khi Docker control-plane lỗi ở 4A) | `DONE` | `7778a6ba` |
+| **Batch 5** | 5.5 | Cookie jar + chặn thoát mã `2` nếu thiếu tài khoản (`< CONCURRENCY`) trong `studio-concurrency.mjs`. *Bản này chưa làm mới token được trên production — sửa ở 5.7* | `DONE` | `7778a6ba` |
+| **Batch 5** | 5.6 | Sửa mô tả Batch 1 / phạm vi test trong báo cáo sáng cho khớp code và thêm câu SQL chỉ đọc kiểm Scale > 3 (Batch 6) vào Runbook §6.6 | `DONE` | `7778a6ba` |
+| **Batch 5.1** | 5.7 | Load test: khi `/api/mavis/*` trả 401, xóa `mavis_session`, gọi `GET /api/mavis/session` để BFF làm mới bằng `mavis_refresh`, rồi gửi lại 1 lần (BFF không tự làm mới ở các route `/api/mavis/*` khác). Test stub giờ mô phỏng đúng hành vi BFF | `DONE` | *(commit Batch 5.1)* |
+| **Batch 5.1** | 5.8 | `DeliverPendingReceiptsAsync` lọc bỏ receipt đã ack **trước** giới hạn 256, tránh receipt chưa gửi bị đẩy ra ngoài cửa sổ | `DONE` | *(commit Batch 5.1)* |
+| **Batch 5.1** | 5.9 | `IsProjectLeaseHeld` coi `UnauthorizedAccessException` là lock đang giữ (không reap, không làm hỏng vòng dọn) | `DONE` | *(commit Batch 5.1)* |
 
 **Không có task nào `BLOCKED`.**
 
