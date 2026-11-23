@@ -585,6 +585,31 @@ test("Batch 3: Scale capped at 1..3, PNG snapshot downscales within 440k chars, 
   assert.ok(paritySrc.includes("Replicas (1–3)"));
   assert.ok(paritySrc.includes("[1, 2, 3].map"));
   assert.ok(!paritySrc.includes("[1, 2, 4, 8].map"));
+  assert.ok(paritySrc.includes('id: "palette-scale-2"'));
+  assert.ok(paritySrc.includes('id: "palette-scale-3"'));
+  assert.ok(!paritySrc.includes('badge: "×4"'));
+  assert.ok(!paritySrc.includes('badge: "×8"'));
+  assert.ok(!paritySrc.includes("Math.min(8,"));
+
+  // Canvas drop lookup IDs in studio-observability.tsx must stay paired with sidebar Action Toolbox IDs.
+  assert.ok(obsSrc.includes('id: "palette-scale-2"'));
+  assert.ok(obsSrc.includes('id: "palette-scale-3"'));
+  assert.ok(!obsSrc.includes('id: "palette-scale-4"'));
+  assert.ok(!obsSrc.includes('id: "palette-scale-8"'));
+  assert.ok(!obsSrc.includes("Math.min(8,"));
+
+  const standaloneSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  assert.ok(!standaloneSrc.includes("Math.min(8,"));
+
+  const controlsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-controls.tsx"),
+    "utf8",
+  );
+  assert.ok(controlsSrc.includes("Replicas (1–3)"));
+  assert.ok(!controlsSrc.includes("Math.min(8,"));
 
   const sessionHookSrc = fs.readFileSync(
     path.join(__dirname, "../src/features/runtime/use-studio-session.ts"),

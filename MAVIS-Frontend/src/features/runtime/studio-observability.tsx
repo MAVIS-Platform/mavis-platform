@@ -39,19 +39,19 @@ const PALETTE_ITEMS: DragPaletteItem[] = [
     tone: "primary",
   },
   {
-    id: "palette-scale-4",
-    label: "Scale ×4 Cluster",
-    badge: "×4 PODS",
+    id: "palette-scale-2",
+    label: "Scale ×2 Cluster",
+    badge: "×2 PODS",
     action: "SCALE",
-    replicas: 4,
+    replicas: 2,
     tone: "primary",
   },
   {
-    id: "palette-scale-8",
-    label: "Scale ×8 Max Load",
-    badge: "×8 PODS",
+    id: "palette-scale-3",
+    label: "Scale ×3 Max Load",
+    badge: "×3 PODS",
     action: "SCALE",
-    replicas: 8,
+    replicas: 3,
     tone: "warning",
   },
   {
@@ -1522,8 +1522,8 @@ export function StudioObservability({
     }
     const current = resolveLiveReplicas(targetService);
     const nextReplicas = tool.delta
-      ? Math.max(1, Math.min(8, (current <= 0 ? 1 : current) + tool.delta))
-      : Math.max(1, Math.min(8, tool.replicas ?? 2));
+      ? Math.max(1, Math.min(3, (current <= 0 ? 1 : current) + tool.delta))
+      : Math.max(1, Math.min(3, tool.replicas ?? 2));
     onQuickAction({ action: "SCALE", service: targetService, replicas: nextReplicas });
   }
 

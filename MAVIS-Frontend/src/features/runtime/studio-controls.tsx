@@ -87,23 +87,23 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
               : t("This prepared service is not marked canScale in the assigned topology.")
           }
         >
-          {t("Replicas (1–8)")}
+          {t("Replicas (1–3)")}
           <Input
             type="number"
             min={1}
-            max={8}
+            max={3}
             step={1}
             value={replicas}
             disabled={busy || !canScaleTarget}
             className="w-24"
             onChange={(event) =>
-              setReplicas(Math.max(1, Math.min(8, Math.trunc(Number(event.target.value)) || 1)))
+              setReplicas(Math.max(1, Math.min(3, Math.trunc(Number(event.target.value)) || 1)))
             }
           />
           <input
             type="range"
             min={1}
-            max={8}
+            max={3}
             step={1}
             value={replicas}
             disabled={busy || !canScaleTarget}

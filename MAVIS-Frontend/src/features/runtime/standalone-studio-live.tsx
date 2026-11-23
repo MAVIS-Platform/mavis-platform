@@ -687,7 +687,7 @@ function StandaloneStudioContent() {
             });
           },
           onSetReplicaTarget: (service, count) => {
-            const clamped = Math.max(1, Math.min(8, Math.round(count)));
+            const clamped = Math.max(1, Math.min(3, Math.round(count)));
             const nextTopology = previewTopology
               ? {
                   ...previewTopology,

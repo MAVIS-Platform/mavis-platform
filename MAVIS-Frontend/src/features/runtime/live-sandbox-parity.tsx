@@ -92,25 +92,25 @@ const LIVE_SCALE_TOOLS = [
     id: "palette-scale-plus-1",
     badge: "+1",
     sub: "Pod",
-    title: "Scale +1 replica (1–8)",
+    title: "Scale +1 replica (1–3)",
     action: "SCALE" as const,
     delta: 1,
   },
   {
-    id: "palette-scale-4",
-    badge: "×4",
+    id: "palette-scale-2",
+    badge: "×2",
     sub: "HA",
-    title: "Scale to 4 replicas",
+    title: "Scale to 2 replicas",
     action: "SCALE" as const,
-    replicas: 4,
+    replicas: 2,
   },
   {
-    id: "palette-scale-8",
-    badge: "×8",
+    id: "palette-scale-3",
+    badge: "×3",
     sub: "Max",
-    title: "Scale to 8 replicas (BR-07 max)",
+    title: "Scale to 3 replicas (BR-07 max)",
     action: "SCALE" as const,
-    replicas: 8,
+    replicas: 3,
   },
 ] as const;
 
@@ -757,7 +757,7 @@ export function LiveSandboxParity({
                     })}
                   </div>
 
-                  {/* Row 2: Scale Replicas (+1 / ×4 / ×8) */}
+                  {/* Row 2: Scale Replicas (+1 / ×2 / ×3) */}
                   <div className="grid grid-cols-3 gap-1.5">
                     {LIVE_SCALE_TOOLS.map((tool) => {
                       const scaleBlocked =
@@ -785,7 +785,7 @@ export function LiveSandboxParity({
                               "delta" in tool
                                 ? Math.max(
                                     1,
-                                    Math.min(8, (running && running > 0 ? running : 1) + tool.delta),
+                                    Math.min(3, (running && running > 0 ? running : 1) + tool.delta),
                                   )
                                 : tool.replicas;
                             void command("SCALE", selected, next);
