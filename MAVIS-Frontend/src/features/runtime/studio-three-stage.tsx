@@ -86,6 +86,104 @@ export function computeNextWheelZoom(
   return Math.max(THREE_ZOOM_MIN, Math.min(THREE_ZOOM_MAX, next));
 }
 
+export function computeLiveDeckBounds(
+  liveNodes: ReadonlyArray<{ wx: number; wz: number }>,
+): StudioThreeBounds {
+  const deckPadding = 150;
+  let minNodeX = Infinity;
+  let maxNodeX = -Infinity;
+  let minNodeZ = Infinity;
+  let maxNodeZ = -Infinity;
+  for (const n of liveNodes) {
+    minNodeX = Math.min(minNodeX, n.wx);
+    maxNodeX = Math.max(maxNodeX, n.wx);
+    minNodeZ = Math.min(minNodeZ, n.wz);
+    maxNodeZ = Math.max(maxNodeZ, n.wz);
+  }
+  return Number.isFinite(minNodeX) && Number.isFinite(minNodeZ)
+    ? {
+        minX: Math.min(-220, minNodeX - deckPadding),
+        maxX: Math.max(220, maxNodeX + deckPadding),
+        minZ: Math.min(-180, minNodeZ - deckPadding),
+        maxZ: Math.max(180, maxNodeZ + deckPadding),
+      }
+    : { minX: -260, maxX: 260, minZ: -200, maxZ: 200 };
+}
+
+export type LiveZoneLayout = {
+  key: string;
+  cx: number;
+  cz: number;
+  width: number;
+  depth: number;
+};
+
+export function computeLiveZoneRects(
+  zoneSpecs: ReadonlyArray<{ key: string; memberIds: readonly string[] }>,
+  posById: ReadonlyMap<string, { wx: number; wz: number }>,
+  minX: number,
+  maxX: number,
+  minZ: number,
+  maxZ: number,
+): LiveZoneLayout[] {
+  type RawRect = {
+    key: string;
+    nodeMinX: number;
+    nodeMaxX: number;
+    bx0: number;
+    bx1: number;
+    bz0: number;
+    bz1: number;
+  };
+  const padX = 0.96;
+  const padTopZ = 1.08;
+  const padBottomZ = 0.86;
+  const rects: RawRect[] = [];
+  for (const zone of zoneSpecs) {
+    let zMinX = Infinity;
+    let zMaxX = -Infinity;
+    let zMinZ = Infinity;
+    let zMaxZ = -Infinity;
+    for (const id of zone.memberIds) {
+      const pos = posById.get(id);
+      if (!pos) continue;
+      const mx = pos.wx * WORLD_SCALE;
+      const mz = pos.wz * WORLD_SCALE;
+      zMinX = Math.min(zMinX, mx);
+      zMaxX = Math.max(zMaxX, mx);
+      zMinZ = Math.min(zMinZ, mz);
+      zMaxZ = Math.max(zMaxZ, mz);
+    }
+    if (!Number.isFinite(zMinX)) continue;
+    rects.push({
+      key: zone.key,
+      nodeMinX: zMinX,
+      nodeMaxX: zMaxX,
+      bx0: Math.max(minX + 0.16, zMinX - padX),
+      bx1: Math.min(maxX - 0.16, zMaxX + padX),
+      bz0: Math.max(minZ + 0.16, zMinZ - padTopZ),
+      bz1: Math.min(maxZ - 0.16, zMaxZ + padBottomZ),
+    });
+  }
+
+  // Keep adjacent horizontal zones cleanly separated so dashed borders never collide
+  const edgeRect = rects.find((z) => z.key === "EDGE");
+  const coreRect = rects.find((z) => z.key === "CORE");
+  if (edgeRect && coreRect && edgeRect.nodeMaxX < coreRect.nodeMinX && edgeRect.bx1 > coreRect.bx0 - 0.16) {
+    const splitX = (edgeRect.nodeMaxX + coreRect.nodeMinX) / 2;
+    edgeRect.bx1 = Math.max(edgeRect.nodeMaxX + 0.68, splitX - 0.1);
+    coreRect.bx0 = Math.min(coreRect.nodeMinX - 0.68, splitX + 0.1);
+  }
+
+  return rects.map((zr) => ({
+    key: zr.key,
+    cx: (zr.bx0 + zr.bx1) / 2,
+    cz: (zr.bz0 + zr.bz1) / 2,
+    width: Math.max(1.75, zr.bx1 - zr.bx0),
+    depth: Math.max(1.65, zr.bz1 - zr.bz0),
+  }));
+}
+
 type ThreeModule = typeof import("three");
 
 type AnimatedPacket = {
@@ -664,25 +762,30 @@ function createTopPlateTexture(
   return texture;
 }
 
-/**
- * Crisp 3D vector architectural trust zone (UML Deployment Environment / CodeCity District).
- * Uses uniform-dash 3D vector lines + a fixed-scale non-stretched header tab centered on the
- * outer top rim so dashes never stretch and nodes never cover the zone label.
- */
-function createZonePlateGroup(
-  T: ThreeModule,
-  title: string,
-  width: number,
-  depth: number,
-  accentHex: string,
-  isLight: boolean,
-): THREE.Group {
-  const group = new T.Group();
+type ZoneRig = {
+  key: string;
+  memberIds: string[];
+  group: THREE.Group;
+  fillMesh: THREE.Mesh;
+  borderLine: THREE.Line;
+  badgeMesh: THREE.Mesh;
+  badgeNaturalW: number;
+  width: number;
+  depth: number;
+};
+
+type DeckRig = {
+  mesh: THREE.Mesh;
+  baseW: number;
+  baseD: number;
+  deckH: number;
+  gridLine: THREE.LineSegments | null;
+};
+
+function buildZoneGeometries(T: ThreeModule, width: number, depth: number) {
   const hw = width / 2;
   const hd = depth / 2;
   const r = Math.min(0.24, hw * 0.25, hd * 0.25);
-
-  // Rounded rectangle shape in XY -> rotated onto XZ floor
   const shape = new T.Shape();
   shape.moveTo(-hw + r, -hd);
   shape.lineTo(hw - r, -hd);
@@ -694,9 +797,47 @@ function createZonePlateGroup(
   shape.lineTo(-hw, -hd + r);
   shape.quadraticCurveTo(-hw, -hd, -hw + r, -hd);
 
-  // Subtle tinted architectural floor fill
   const fillGeo = new T.ShapeGeometry(shape, 8);
   fillGeo.rotateX(-Math.PI / 2);
+  const pts2d = shape.getPoints(12);
+  const pts3d = pts2d.map((p) => new T.Vector3(p.x, 0.012, -p.y));
+  const borderGeo = new T.BufferGeometry().setFromPoints(pts3d);
+  return { fillGeo, borderGeo, hd };
+}
+
+function buildDeckGridGeometry(T: ThreeModule, minX: number, maxX: number, minZ: number, maxZ: number) {
+  const gridVerts: number[] = [];
+  const gridStep = 1.0;
+  for (let gx = Math.ceil(minX / gridStep) * gridStep; gx <= maxX; gx += gridStep) {
+    gridVerts.push(gx, 0.006, minZ, gx, 0.006, maxZ);
+  }
+  for (let gz = Math.ceil(minZ / gridStep) * gridStep; gz <= maxZ; gz += gridStep) {
+    gridVerts.push(minX, 0.006, gz, maxX, 0.006, gz);
+  }
+  const gridGeo = new T.BufferGeometry();
+  gridGeo.setAttribute("position", new T.Float32BufferAttribute(gridVerts, 3));
+  return gridGeo;
+}
+
+/**
+ * Crisp 3D vector architectural trust zone (UML Deployment Environment / CodeCity District).
+ * Uses uniform-dash 3D vector lines + a fixed-scale non-stretched header tab centered on the
+ * outer top rim so dashes never stretch and nodes never cover the zone label.
+ */
+function createZonePlateGroup(
+  T: ThreeModule,
+  key: string,
+  memberIds: string[],
+  title: string,
+  width: number,
+  depth: number,
+  accentHex: string,
+  isLight: boolean,
+): ZoneRig {
+  const group = new T.Group();
+  const { fillGeo, borderGeo, hd } = buildZoneGeometries(T, width, depth);
+
+  // Subtle tinted architectural floor fill
   const fillMesh = new T.Mesh(
     fillGeo,
     new T.MeshBasicMaterial({
@@ -711,9 +852,6 @@ function createZonePlateGroup(
   group.add(fillMesh);
 
   // Crisp uniform-dash 3D vector perimeter (identical dash size across every zone)
-  const pts2d = shape.getPoints(12);
-  const pts3d = pts2d.map((p) => new T.Vector3(p.x, 0.012, -p.y));
-  const borderGeo = new T.BufferGeometry().setFromPoints(pts3d);
   const borderLine = new T.Line(
     borderGeo,
     new T.LineDashedMaterial({
@@ -762,17 +900,29 @@ function createZonePlateGroup(
   tex.colorSpace = T.SRGBColorSpace;
   tex.minFilter = T.LinearFilter;
   const badgeH = 0.28;
-  const badgeW = Math.min(width - 0.2, badgeH * (canvas.width / canvas.height));
+  const badgeNaturalW = badgeH * (canvas.width / canvas.height);
+  const badgeW = Math.min(width - 0.2, badgeNaturalW);
   const badgeMesh = new T.Mesh(
-    new T.PlaneGeometry(badgeW, badgeH),
+    new T.PlaneGeometry(1, badgeH),
     new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
   );
+  badgeMesh.scale.set(badgeW, 1, 1);
   badgeMesh.rotation.x = -Math.PI / 2;
   badgeMesh.position.set(0, 0.016, -hd);
   badgeMesh.renderOrder = 3;
   group.add(badgeMesh);
 
-  return group;
+  return {
+    key,
+    memberIds,
+    group,
+    fillMesh,
+    borderLine,
+    badgeMesh,
+    badgeNaturalW,
+    width,
+    depth,
+  };
 }
 
 function attachFrontTelemetryBar(
@@ -1264,6 +1414,8 @@ export function StudioThreeStage({
   const packetsRef = useRef<AnimatedPacket[]>([]);
   const nodeRigsRef = useRef<AnimatedNodeRig[]>([]);
   const edgeRigsRef = useRef<EdgeRig[]>([]);
+  const zoneRigsRef = useRef<ZoneRig[]>([]);
+  const deckRigRef = useRef<DeckRig | null>(null);
   const liveNodePosRef = useRef<Map<string, { wx: number; wz: number }>>(new Map());
   const raycasterRef = useRef<THREE.Raycaster | null>(null);
   const ndcRef = useRef<THREE.Vector2 | null>(null);
@@ -1537,6 +1689,8 @@ export function StudioThreeStage({
       packetsRef.current = [];
       nodeRigsRef.current = [];
       edgeRigsRef.current = [];
+      zoneRigsRef.current = [];
+      deckRigRef.current = null;
       liveNodePosRef.current.clear();
     };
   }, [onReadyChange]);
@@ -1556,6 +1710,8 @@ export function StudioThreeStage({
     packetsRef.current = [];
     nodeRigsRef.current = [];
     edgeRigsRef.current = [];
+    zoneRigsRef.current = [];
+    deckRigRef.current = null;
     liveNodePosRef.current.clear();
 
     const styleCfg = STUDIO_STYLES[styleId];
@@ -1637,27 +1793,23 @@ export function StudioThreeStage({
     contentGroup.add(deckMesh);
 
     // Uniform subtle CAD drafting grid across the deck surface
-    const gridVerts: number[] = [];
-    const gridStep = 1.0;
-    for (let gx = Math.ceil(minX / gridStep) * gridStep; gx <= maxX; gx += gridStep) {
-      gridVerts.push(gx, 0.006, minZ, gx, 0.006, maxZ);
-    }
-    for (let gz = Math.ceil(minZ / gridStep) * gridStep; gz <= maxZ; gz += gridStep) {
-      gridVerts.push(minX, 0.006, gz, maxX, 0.006, gz);
-    }
-    if (gridVerts.length > 0) {
-      const gridGeo = new T.BufferGeometry();
-      gridGeo.setAttribute("position", new T.Float32BufferAttribute(gridVerts, 3));
-      const gridLine = new T.LineSegments(
-        gridGeo,
-        new T.LineBasicMaterial({
-          color: new T.Color(styleCfg.deckGridStroke),
-          transparent: true,
-          opacity: isLight ? 0.16 : 0.14,
-        }),
-      );
-      contentGroup.add(gridLine);
-    }
+    const gridGeo = buildDeckGridGeometry(T, minX, maxX, minZ, maxZ);
+    const gridLine = new T.LineSegments(
+      gridGeo,
+      new T.LineBasicMaterial({
+        color: new T.Color(styleCfg.deckGridStroke),
+        transparent: true,
+        opacity: isLight ? 0.16 : 0.14,
+      }),
+    );
+    contentGroup.add(gridLine);
+    deckRigRef.current = {
+      mesh: deckMesh,
+      baseW: deckW,
+      baseD: deckD,
+      deckH,
+      gridLine,
+    };
 
     // Dynamic Architectural Trust Zones (UML 2.5 Deployment Environment / C4 System Boundary / CodeCity Districts)
     const rawZones = [
@@ -1665,78 +1817,46 @@ export function StudioThreeStage({
         key: "EDGE",
         title: "EDGE / INGRESS",
         accent: isLight ? "#0284c7" : "#38bdf8",
-        members: nodes.filter((n) => n.archetype === "GATEWAY"),
+        memberIds: nodes.filter((n) => n.archetype === "GATEWAY").map((n) => n.id),
       },
       {
         key: "CORE",
         title: "CORE SERVICES · DOCKER NET",
         accent: isLight ? "#4f46e5" : "#818cf8",
-        members: nodes.filter((n) => n.archetype === "SERVICE"),
+        memberIds: nodes.filter((n) => n.archetype === "SERVICE").map((n) => n.id),
       },
       {
         key: "DATA",
         title: "DATA & MESSAGING",
         accent: isLight ? "#0d9488" : "#2dd4bf",
-        members: nodes.filter((n) => n.archetype === "DATABASE" || n.archetype === "QUEUE"),
+        memberIds: nodes
+          .filter((n) => n.archetype === "DATABASE" || n.archetype === "QUEUE")
+          .map((n) => n.id),
       },
-    ].filter((z) => z.members.length > 0);
+    ].filter((z) => z.memberIds.length > 0);
 
-    type ZoneRect = {
-      key: string;
-      title: string;
-      accent: string;
-      nodeMinX: number;
-      nodeMaxX: number;
-      bx0: number;
-      bx1: number;
-      bz0: number;
-      bz1: number;
-    };
-    const zoneRects: ZoneRect[] = rawZones.map((zone) => {
-      let zMinX = Infinity;
-      let zMaxX = -Infinity;
-      let zMinZ = Infinity;
-      let zMaxZ = -Infinity;
-      for (const m of zone.members) {
-        const mx = m.wx * WORLD_SCALE;
-        const mz = m.wz * WORLD_SCALE;
-        zMinX = Math.min(zMinX, mx);
-        zMaxX = Math.max(zMaxX, mx);
-        zMinZ = Math.min(zMinZ, mz);
-        zMaxZ = Math.max(zMaxZ, mz);
-      }
-      // Generous clearance outside 1.24x0.92 plinths + extra top headroom for the rim header badge
-      const padX = 0.96;
-      const padTopZ = 1.08;
-      const padBottomZ = 0.86;
-      return {
-        key: zone.key,
-        title: zone.title,
-        accent: zone.accent,
-        nodeMinX: zMinX,
-        nodeMaxX: zMaxX,
-        bx0: Math.max(minX + 0.16, zMinX - padX),
-        bx1: Math.min(maxX - 0.16, zMaxX + padX),
-        bz0: Math.max(minZ + 0.16, zMinZ - padTopZ),
-        bz1: Math.min(maxZ - 0.16, zMaxZ + padBottomZ),
-      };
-    });
+    const initialPosById = new Map<string, { wx: number; wz: number }>(
+      nodes.map((n) => [n.id, { wx: n.wx, wz: n.wz }]),
+    );
+    const zoneLayouts = computeLiveZoneRects(rawZones, initialPosById, minX, maxX, minZ, maxZ);
+    const zoneSpecByKey = new Map(rawZones.map((z) => [z.key, z]));
 
-    // Keep adjacent horizontal zones cleanly separated so dashed borders never collide
-    const edgeRect = zoneRects.find((z) => z.key === "EDGE");
-    const coreRect = zoneRects.find((z) => z.key === "CORE");
-    if (edgeRect && coreRect && edgeRect.nodeMaxX < coreRect.nodeMinX && edgeRect.bx1 > coreRect.bx0 - 0.16) {
-      const splitX = (edgeRect.nodeMaxX + coreRect.nodeMinX) / 2;
-      edgeRect.bx1 = Math.max(edgeRect.nodeMaxX + 0.68, splitX - 0.1);
-      coreRect.bx0 = Math.min(coreRect.nodeMinX - 0.68, splitX + 0.1);
-    }
-
-    for (const zr of zoneRects) {
-      const zw = Math.max(1.75, zr.bx1 - zr.bx0);
-      const zd = Math.max(1.65, zr.bz1 - zr.bz0);
-      const zoneGroup = createZonePlateGroup(T, zr.title, zw, zd, zr.accent, isLight);
-      zoneGroup.position.set((zr.bx0 + zr.bx1) / 2, 0, (zr.bz0 + zr.bz1) / 2);
-      contentGroup.add(zoneGroup);
+    for (const zl of zoneLayouts) {
+      const spec = zoneSpecByKey.get(zl.key);
+      if (!spec) continue;
+      const zoneRig = createZonePlateGroup(
+        T,
+        spec.key,
+        spec.memberIds,
+        spec.title,
+        zl.width,
+        zl.depth,
+        spec.accent,
+        isLight,
+      );
+      zoneRig.group.position.set(zl.cx, 0, zl.cz);
+      contentGroup.add(zoneRig.group);
+      zoneRigsRef.current.push(zoneRig);
     }
 
     // 2. Real 3D SE-Standard Service Deployment Nodes
@@ -2071,6 +2191,49 @@ export function StudioThreeStage({
         }
       }
     }
+
+    // Live-track 3D deck floor + grid and every architectural trust zone plate smoothly at 60fps
+    const liveBounds = computeLiveDeckBounds(allLiveNodes);
+    const minX = liveBounds.minX * WORLD_SCALE;
+    const maxX = liveBounds.maxX * WORLD_SCALE;
+    const minZ = liveBounds.minZ * WORLD_SCALE;
+    const maxZ = liveBounds.maxZ * WORLD_SCALE;
+    const deck = deckRigRef.current;
+    if (deck) {
+      const deckW = Math.max(4.6, maxX - minX);
+      const deckD = Math.max(3.6, maxZ - minZ);
+      deck.mesh.scale.set(deckW / deck.baseW, 1, deckD / deck.baseD);
+      deck.mesh.position.set((minX + maxX) / 2, -deck.deckH / 2, (minZ + maxZ) / 2);
+      if (deck.gridLine) {
+        const nextGridGeo = buildDeckGridGeometry(T, minX, maxX, minZ, maxZ);
+        deck.gridLine.geometry.dispose();
+        deck.gridLine.geometry = nextGridGeo;
+      }
+    }
+
+    const zoneRigs = zoneRigsRef.current;
+    if (zoneRigs.length > 0) {
+      const liveLayouts = computeLiveZoneRects(zoneRigs, liveNodePosRef.current, minX, maxX, minZ, maxZ);
+      const layoutByKey = new Map(liveLayouts.map((z) => [z.key, z]));
+      for (const zone of zoneRigs) {
+        const next = layoutByKey.get(zone.key);
+        if (!next) continue;
+        zone.group.position.set(next.cx, 0, next.cz);
+        if (Math.abs(next.width - zone.width) > 0.002 || Math.abs(next.depth - zone.depth) > 0.002) {
+          const { fillGeo, borderGeo, hd } = buildZoneGeometries(T, next.width, next.depth);
+          zone.fillMesh.geometry.dispose();
+          zone.fillMesh.geometry = fillGeo;
+          zone.borderLine.geometry.dispose();
+          zone.borderLine.geometry = borderGeo;
+          zone.borderLine.computeLineDistances();
+          zone.badgeMesh.position.set(0, 0.016, -hd);
+          zone.badgeMesh.scale.set(Math.min(next.width - 0.2, zone.badgeNaturalW), 1, 1);
+          zone.width = next.width;
+          zone.depth = next.depth;
+        }
+      }
+    }
+
     if (rendererRef.current) {
       rendererRef.current.shadowMap.needsUpdate = true;
     }

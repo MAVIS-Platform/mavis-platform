@@ -987,3 +987,49 @@ test("3D wheel zoom uses native non-passive listener, delta-proportional scaling
   assert.ok(stageSrc.includes("const { w, h } = viewportSizeRef.current;"));
   assert.ok(stageSrc.includes("!isWheeling && !isCameraSettling"));
 });
+
+test("3D node drag live-tracks architectural trust zones and deck floor at 60fps before pointer release", () => {
+  const stageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const {
+    computeLiveDeckBounds,
+    computeLiveZoneRects,
+  } = require("../src/features/runtime/studio-three-stage.tsx");
+
+  const specs = [
+    { key: "EDGE", memberIds: ["api-gateway"] },
+    { key: "CORE", memberIds: ["order-service", "catalog-service"] },
+  ];
+  const beforePos = new Map([
+    ["api-gateway", { wx: -200, wz: 0 }],
+    ["order-service", { wx: 40, wz: 0 }],
+    ["catalog-service", { wx: 180, wz: 120 }],
+  ]);
+  const b0 = computeLiveDeckBounds([...beforePos.values()]);
+  const z0 = computeLiveZoneRects(specs, beforePos, b0.minX / 82, b0.maxX / 82, b0.minZ / 82, b0.maxZ / 82);
+  const edgeBefore = z0.find((z) => z.key === "EDGE");
+  const coreBefore = z0.find((z) => z.key === "CORE");
+
+  // Drag api-gateway downward/left — EDGE zone center must move immediately with it and deck must expand
+  const afterPos = new Map(beforePos);
+  afterPos.set("api-gateway", { wx: -340, wz: 220 });
+  const b1 = computeLiveDeckBounds([...afterPos.values()]);
+  assert.ok(b1.minX < b0.minX && b1.maxZ > b0.maxZ, "Deck bounds must expand live as node moves outward");
+  const z1 = computeLiveZoneRects(specs, afterPos, b1.minX / 82, b1.maxX / 82, b1.minZ / 82, b1.maxZ / 82);
+  const edgeAfter = z1.find((z) => z.key === "EDGE");
+  assert.ok(edgeAfter.cx < edgeBefore.cx - 1.2, "EDGE zone X center must follow dragged api-gateway");
+  assert.ok(edgeAfter.cz > edgeBefore.cz + 2.0, "EDGE zone Z center must follow dragged api-gateway");
+
+  // Drag catalog-service further right — CORE zone must grow wider live
+  afterPos.set("catalog-service", { wx: 360, wz: 120 });
+  const b2 = computeLiveDeckBounds([...afterPos.values()]);
+  const z2 = computeLiveZoneRects(specs, afterPos, b2.minX / 82, b2.maxX / 82, b2.minZ / 82, b2.maxZ / 82);
+  const coreAfter = z2.find((z) => z.key === "CORE");
+  assert.ok(coreAfter.width > coreBefore.width + 1.5, "CORE zone must expand smoothly as a member drags outward");
+
+  // Wired directly into updateLiveNodeAndEdges (no React re-render required mid-drag)
+  assert.ok(stageSrc.includes("const liveBounds = computeLiveDeckBounds(allLiveNodes);"));
+  assert.ok(stageSrc.includes("const liveLayouts = computeLiveZoneRects(zoneRigs, liveNodePosRef.current"));
+});
