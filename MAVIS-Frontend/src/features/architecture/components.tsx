@@ -792,6 +792,7 @@ export function ArchitectureGraph({
   onSelect,
   highlightIds = [],
   onClearHighlight,
+  guidedStatic = false,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
@@ -800,6 +801,7 @@ export function ArchitectureGraph({
    * changing the student's current selection. */
   highlightIds?: string[];
   onClearHighlight?: (() => void) | undefined;
+  guidedStatic?: boolean;
 }) {
   const localeCtx = useLocale();
   const t = localeCtx.t;
@@ -834,12 +836,14 @@ export function ArchitectureGraph({
   ];
   return (
     <div className="space-y-3">
-      <SelectField
-        label={t("Architecture layer", "Tầng kiến trúc")}
-        value={layer}
-        onChange={setLayer}
-        options={layerOptions}
-      />
+      {!guidedStatic && (
+        <SelectField
+          label={t("Architecture layer", "Tầng kiến trúc")}
+          value={layer}
+          onChange={setLayer}
+          options={layerOptions}
+        />
+      )}
       <DependencyNetwork
         model={model}
         selectedId={selectedId}
@@ -851,6 +855,8 @@ export function ArchitectureGraph({
         onToggleExpanded={() => setExpanded((value) => !value)}
         origin={origin}
         onOriginChange={setOrigin}
+        guidedStatic={guidedStatic}
+        showPresentationOptions={!guidedStatic}
       />
       {(group?.underlyingEdgeIds?.length ?? 0) > 1 && (
         <SelectField

@@ -1989,6 +1989,7 @@ function StepContent({
                     <div className="min-w-0 overflow-x-auto">
                       <ArchitectureGraph
                         model={activeModel}
+                        guidedStatic
                         selectedId={selectedGraphId}
                         onSelect={setSelectedGraphId}
                         highlightIds={impactHighlightIds}
