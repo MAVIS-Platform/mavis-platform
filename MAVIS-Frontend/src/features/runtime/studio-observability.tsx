@@ -23,6 +23,12 @@ import { STUDIO_STYLES, resolveStudioStyle, type StudioStyleId } from "./studio-
 
 type Studio = Response<"studioState">;
 
+const PITCH_MIN = 0.44;
+const PITCH_MAX = 1.12;
+const DEFAULT_3D_CAMERA = { yaw: 0.68, pitch: 0.58 };
+const TOP_DOWN_3D_CAMERA = { yaw: 0.0, pitch: 1.05 };
+const ELEVATION_3D_CAMERA = { yaw: 0.35, pitch: 0.44 };
+
 export type StudioQuickAction = {
   action: "START" | "STOP" | "SCALE";
   service: string;
@@ -1142,7 +1148,7 @@ export function StudioObservability({
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [camera, setCamera] = useState({ yaw: 0.78, pitch: 0.52 });
+  const [camera, setCamera] = useState(DEFAULT_3D_CAMERA);
   const [cameraFormOpen, setCameraFormOpen] = useState(true);
   const [customOffsets, setCustomOffsets] = useState<Record<string, { x: number; y: number }>>({});
   const [pinnedPositions, setPinnedPositions] = useState<Record<string, { x: number; y: number }>>(
@@ -1323,29 +1329,38 @@ export function StudioObservability({
     return depths;
   }, [data.services, staticEdges]);
 
-  const clampedPitch = Math.max(0.18, Math.min(1.15, camera.pitch));
+  const clampedPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, camera.pitch));
   const project3DPoint = useMemo(() => {
     const cosY = Math.cos(camera.yaw);
     const sinY = Math.sin(camera.yaw);
     const cosP = Math.cos(clampedPitch);
     const sinP = Math.sin(clampedPitch);
+    const focal = 1950;
     return (wx: number, wy: number, wz: number) => {
       const rx = wx * cosY - wz * sinY;
       const rz = wx * sinY + wz * cosY;
       const ry = wy * cosP + rz * sinP;
       const depthZ = -wy * sinP + rz * cosP;
+      const persp = focal / Math.max(600, focal - depthZ);
       return {
-        x: 600 + rx,
-        y: 325 + ry,
+        x: 615 + rx * persp,
+        y: 318 + ry * persp,
         z: depthZ,
+        persp,
       };
     };
   }, [camera.yaw, clampedPitch]);
 
   const { positions, deckBounds } = useMemo(() => {
-    const deckBounds = { minX: -380, maxX: 380, minZ: -380, maxZ: 380 };
-    const deckPadding = 80;
-    const raw = new Map<string, { x: number; y: number; z: number; tier: number }>();
+    let minNodeX = Infinity;
+    let maxNodeX = -Infinity;
+    let minNodeZ = Infinity;
+    let maxNodeZ = -Infinity;
+    const deckPadding = 105;
+    const raw = new Map<
+      string,
+      { x: number; y: number; z: number; tier: number; wx: number; wz: number; persp: number }
+    >();
     const total = Math.max(1, data.services.length);
 
     const tierGroups = new Map<number, string[]>();
@@ -1385,7 +1400,7 @@ export function StudioObservability({
         let wz = 0;
         if (layoutMode === "CIRCULAR") {
           const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
-          const radius = Math.min(340, 210 + total * 8);
+          const radius = Math.min(270, 175 + total * 12);
           wx = Math.cos(angle) * radius;
           wz = Math.sin(angle) * radius;
         } else if (layoutMode === "GRID") {
@@ -1393,29 +1408,32 @@ export function StudioObservability({
           const col = index % cols;
           const row = Math.floor(index / cols);
           const rows = Math.ceil(total / cols);
-          const spX = Math.min(200, 680 / Math.max(1, cols - 1));
-          const spZ = Math.min(185, 560 / Math.max(1, rows - 1));
+          const spX = Math.min(220, 520 / Math.max(1, cols - 1));
+          const spZ = Math.min(210, 460 / Math.max(1, rows - 1));
           wx = (col - (cols - 1) / 2) * spX;
           wz = (row - (rows - 1) / 2) * spZ;
         } else {
           const loc = colLocation.get(name) ?? { colIdx: 0, rowIdx: 0, rowCount: 1 };
-          const spX = totalCols <= 1 ? 0 : Math.min(220, 720 / (totalCols - 1));
-          const spZ = loc.rowCount <= 1 ? 0 : Math.min(185, 520 / (loc.rowCount - 1));
+          const spX = totalCols <= 1 ? 0 : Math.min(220, 560 / (totalCols - 1));
+          const spZ = loc.rowCount <= 1 ? 0 : Math.min(230, 480 / (loc.rowCount - 1));
           wx = (loc.colIdx - (totalCols - 1) / 2) * spX;
           wz = (loc.rowIdx - (loc.rowCount - 1) / 2) * spZ;
         }
         const nodeX = (pinned?.x ?? wx) + offset.x;
         const nodeZ = (pinned?.y ?? wz) + offset.y;
-        deckBounds.minX = Math.min(deckBounds.minX, nodeX - deckPadding);
-        deckBounds.maxX = Math.max(deckBounds.maxX, nodeX + deckPadding);
-        deckBounds.minZ = Math.min(deckBounds.minZ, nodeZ - deckPadding);
-        deckBounds.maxZ = Math.max(deckBounds.maxZ, nodeZ + deckPadding);
+        minNodeX = Math.min(minNodeX, nodeX);
+        maxNodeX = Math.max(maxNodeX, nodeX);
+        minNodeZ = Math.min(minNodeZ, nodeZ);
+        maxNodeZ = Math.max(maxNodeZ, nodeZ);
         const proj = project3DPoint(nodeX, 0, nodeZ);
         raw.set(name, {
           x: proj.x,
           y: proj.y,
           z: proj.z,
           tier,
+          wx: nodeX,
+          wz: nodeZ,
+          persp: proj.persp,
         });
         return;
       }
@@ -1454,8 +1472,21 @@ export function StudioObservability({
         y: py,
         z: tier,
         tier,
+        wx: 0,
+        wz: 0,
+        persp: 1,
       });
     });
+
+    const deckBounds =
+      Number.isFinite(minNodeX) && Number.isFinite(minNodeZ)
+        ? {
+            minX: Math.min(-220, minNodeX - deckPadding),
+            maxX: Math.max(220, maxNodeX + deckPadding),
+            minZ: Math.min(-180, minNodeZ - deckPadding),
+            maxZ: Math.max(180, maxNodeZ + deckPadding),
+          }
+        : { minX: -260, maxX: 260, minZ: -200, maxZ: 200 };
 
     return { positions: raw, deckBounds };
   }, [
@@ -1649,18 +1680,18 @@ export function StudioObservability({
               data-testid="studio-3d-controls"
               aria-label={t("3D Camera & Layout", "Góc nhìn 3D & Bố cục")}
               className={`pointer-events-auto absolute bottom-16 left-4 z-20 ${
-                cameraFormOpen ? "w-[234px]" : "w-auto"
+                cameraFormOpen ? "w-[252px]" : "w-auto"
               } ${styleCfg.floatingCardClass}`}
             >
               <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-tight">
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-bold tracking-tight">
                   <Box className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-                  {t("3D Camera & Layout", "Góc nhìn 3D & Bố cục")}
+                  {t("3D Camera", "Góc nhìn 3D")}
                 </span>
                 <div className="flex items-center gap-1">
                   {cameraFormOpen && (
                     <span
-                      className={`font-mono text-[10px] ${isLight ? "text-slate-500" : "text-slate-400"}`}
+                      className={`font-mono text-[10px] whitespace-nowrap ${isLight ? "text-slate-500" : "text-slate-400"}`}
                     >
                       {Math.round(((((camera.yaw * 180) / Math.PI) % 360) + 360) % 360)}°·
                       {Math.round((clampedPitch * 180) / Math.PI)}°
@@ -1698,21 +1729,25 @@ export function StudioObservability({
                   <div className="grid grid-cols-3 gap-1">
                     {(
                       [
-                        ["Isometric", "Isometric", 0.78, 0.52],
-                        ["Top-down", "Từ trên", 0.0, 0.98],
-                        ["Elevation", "Ngang", 0.22, 0.22],
+                        ["Isometric", "Isometric", DEFAULT_3D_CAMERA.yaw, DEFAULT_3D_CAMERA.pitch],
+                        ["Top-down", "Từ trên", TOP_DOWN_3D_CAMERA.yaw, TOP_DOWN_3D_CAMERA.pitch],
+                        ["Elevation", "Góc thấp", ELEVATION_3D_CAMERA.yaw, ELEVATION_3D_CAMERA.pitch],
                       ] as const
                     ).map(([labelEn, labelVi, presetYaw, presetPitch]) => {
                       const active =
-                        Math.abs(camera.yaw - presetYaw) < 0.05 &&
+                        Math.abs((((camera.yaw - presetYaw) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI) < 0.06 &&
                         Math.abs(clampedPitch - presetPitch) < 0.05;
                       return (
                         <button
                           key={labelEn}
                           type="button"
                           aria-pressed={active}
-                          onClick={() => setCamera({ yaw: presetYaw, pitch: presetPitch })}
-                          className={`rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition ${
+                          onClick={() => {
+                            setPan({ x: 0, y: 0 });
+                            setZoom(1);
+                            setCamera({ yaw: presetYaw, pitch: presetPitch });
+                          }}
+                          className={`whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition ${
                             active
                               ? isLight
                                 ? "bg-slate-900 text-white"
@@ -1730,8 +1765,8 @@ export function StudioObservability({
                   <div className="grid grid-cols-2 gap-1">
                     <button
                       type="button"
-                      onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.25 }))}
-                      className={`inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                      onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.26 }))}
+                      className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
                         isLight
                           ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
@@ -1742,8 +1777,8 @@ export function StudioObservability({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.25 }))}
-                      className={`inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                      onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.26 }))}
+                      className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
                         isLight
                           ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
@@ -1757,10 +1792,10 @@ export function StudioObservability({
                       onClick={() =>
                         setCamera((value) => ({
                           ...value,
-                          pitch: Math.min(1.15, value.pitch + 0.14),
+                          pitch: Math.min(PITCH_MAX, value.pitch + 0.14),
                         }))
                       }
-                      className={`inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                      className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
                         isLight
                           ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
@@ -1774,10 +1809,10 @@ export function StudioObservability({
                       onClick={() =>
                         setCamera((value) => ({
                           ...value,
-                          pitch: Math.max(0.18, value.pitch - 0.14),
+                          pitch: Math.max(PITCH_MIN, value.pitch - 0.14),
                         }))
                       }
-                      className={`inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                      className={`inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
                         isLight
                           ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
@@ -1804,7 +1839,7 @@ export function StudioObservability({
                           setCustomOffsets({});
                           setPinnedPositions({});
                         }}
-                        className={`rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition ${
+                        className={`whitespace-nowrap rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition ${
                           layoutMode === mode
                             ? isLight
                               ? "bg-slate-900 text-white"
@@ -1882,7 +1917,7 @@ export function StudioObservability({
               onClick={() => {
                 setPan({ x: 0, y: 0 });
                 setZoom(1);
-                setCamera({ yaw: 0.78, pitch: 0.52 });
+                setCamera(DEFAULT_3D_CAMERA);
               }}
               className={`rounded-full p-1 transition ${
                 isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
@@ -1972,7 +2007,7 @@ export function StudioObservability({
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  setCamera((value) => ({ ...value, pitch: Math.min(1.15, value.pitch + 0.14) }))
+                  setCamera((value) => ({ ...value, pitch: Math.min(PITCH_MAX, value.pitch + 0.14) }))
                 }
               >
                 {t("Tilt up")}
@@ -1981,7 +2016,7 @@ export function StudioObservability({
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  setCamera((value) => ({ ...value, pitch: Math.max(0.18, value.pitch - 0.14) }))
+                  setCamera((value) => ({ ...value, pitch: Math.max(PITCH_MIN, value.pitch - 0.14) }))
                 }
               >
                 {t("Tilt down")}
@@ -1989,21 +2024,21 @@ export function StudioObservability({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCamera({ yaw: 0.78, pitch: 0.52 })}
+                onClick={() => setCamera(DEFAULT_3D_CAMERA)}
               >
                 {t("Isometric")}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCamera({ yaw: 0.0, pitch: 0.98 })}
+                onClick={() => setCamera(TOP_DOWN_3D_CAMERA)}
               >
                 {t("Top-down")}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCamera({ yaw: 0.22, pitch: 0.22 })}
+                onClick={() => setCamera(ELEVATION_3D_CAMERA)}
               >
                 {t("Elevation")}
               </Button>
@@ -2171,12 +2206,12 @@ export function StudioObservability({
               const point = graphPoint(event.clientX, event.clientY);
               if (!point) return;
               const { x: worldX, y: worldY } = point;
-              const sinP = Math.max(0.18, Math.sin(clampedPitch));
+              const sinP = Math.max(0.4, Math.sin(clampedPitch));
               setPinnedPositions((prev) => ({
                 ...prev,
                 [view === "3D" ? "3D:" + createdName : createdName]: {
-                  x: Math.round(view === "3D" ? (worldX-600)*Math.cos(camera.yaw)+((worldY-325)/sinP)*Math.sin(camera.yaw) : worldX),
-                  y: Math.round(view === "3D" ? -(worldX-600)*Math.sin(camera.yaw)+((worldY-325)/sinP)*Math.cos(camera.yaw) : worldY),
+                  x: Math.round(view === "3D" ? (worldX-615)*Math.cos(camera.yaw)+((worldY-318)/sinP)*Math.sin(camera.yaw) : worldX),
+                  y: Math.round(view === "3D" ? -(worldX-615)*Math.sin(camera.yaw)+((worldY-318)/sinP)*Math.cos(camera.yaw) : worldY),
                 },
               }));
             }
@@ -2238,7 +2273,7 @@ export function StudioObservability({
               const current = new DOMPoint(event.clientX,event.clientY).matrixTransform(inverse);
               const screenDx = (current.x-start.x)/zoom;
               const screenDy = (current.y-start.y)/zoom;
-              const sinP = Math.max(0.18, Math.sin(clampedPitch));
+              const sinP = Math.max(0.4, Math.sin(clampedPitch));
               const dx = view === "3D" ? screenDx*Math.cos(camera.yaw)+(screenDy/sinP)*Math.sin(camera.yaw) : screenDx;
               const dy = view === "3D" ? -screenDx*Math.sin(camera.yaw)+(screenDy/sinP)*Math.cos(camera.yaw) : screenDy;
               if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
@@ -2266,9 +2301,12 @@ export function StudioObservability({
               moved: cameraDrag.current.moved || Math.abs(dx) > 2 || Math.abs(dy) > 2,
             };
             if (cameraDrag.current.mode === "ROTATE") {
+              const intentionalTilt = Math.abs(dy) > Math.abs(dx) * 0.35;
               setCamera((value) => ({
-                yaw: value.yaw - dx * 0.0085,
-                pitch: Math.max(0.18, Math.min(1.15, value.pitch + dy * 0.006)),
+                yaw: value.yaw - dx * 0.008,
+                pitch: intentionalTilt
+                  ? Math.max(PITCH_MIN, Math.min(PITCH_MAX, value.pitch + dy * 0.004))
+                  : Math.max(PITCH_MIN, Math.min(PITCH_MAX, value.pitch)),
               }));
             } else {
               const matrix = svg.current?.getScreenCTM();
@@ -2359,12 +2397,15 @@ export function StudioObservability({
               const topCorners = corners.map(({ x, z }) => project3DPoint(x, 14, z));
               const botCorners = corners.map(({ x, z }) => project3DPoint(x, 28, z));
               const topPoly = topCorners.map((p) => `${p.x},${p.y}`).join(" ");
-              const div1A = project3DPoint(-380 * 0.33, 14, minZ);
-              const div1B = project3DPoint(-380 * 0.33, 14, maxZ);
-              const div2A = project3DPoint(380 * 0.33, 14, minZ);
-              const div2B = project3DPoint(380 * 0.33, 14, maxZ);
-              const crossA = project3DPoint(minX, 14, 0);
-              const crossB = project3DPoint(maxX, 14, 0);
+              const thirdX1 = minX + (maxX - minX) / 3;
+              const thirdX2 = minX + ((maxX - minX) * 2) / 3;
+              const midZ = (minZ + maxZ) / 2;
+              const div1A = project3DPoint(thirdX1, 14, minZ);
+              const div1B = project3DPoint(thirdX1, 14, maxZ);
+              const div2A = project3DPoint(thirdX2, 14, minZ);
+              const div2B = project3DPoint(thirdX2, 14, maxZ);
+              const crossA = project3DPoint(minX, 14, midZ);
+              const crossB = project3DPoint(maxX, 14, midZ);
               return (
                 <g>
                   {/* Solid Top-Down Tabletop Surface (adapts cleanly to bright architectural diorama or dark NOC stage) */}
@@ -2515,7 +2556,7 @@ export function StudioObservability({
                   strokeWidth={targetStopped ? "2.1" : "1.6"}
                   opacity={targetStopped ? "0.9" : "0.75"}
                 />
-                {renderWireArrow(isSkipColumn ? { x: ctrlX, y: ctrlY } : from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#94a3b8", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) : 1)}
+                {renderWireArrow(isSkipColumn ? { x: ctrlX, y: ctrlY } : from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#94a3b8", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) * Math.max(0.86, Math.min(1.12, to.persp)) : 1)}
                 {targetStopped && !hasObservedOverlay && (
                   <g>
                     <rect
@@ -2590,8 +2631,18 @@ export function StudioObservability({
               const wireLabel = edgeSevered ? faultLabel : latencyLabel;
               const badgeWidth = wireLabel ? Math.max(42, wireLabel.length * 6 + 12) : 0;
               const targetReplicas = resolveLiveReplicas(edge.toService);
-              const mx = (from.x + to.x) / 2;
-              const my = (from.y + to.y) / 2;
+              const dist3D = view === "3D" ? Math.hypot(to.wx - from.wx, to.wz - from.wz) : 0;
+              const arcLift = Math.min(68, Math.max(24, dist3D * 0.16));
+              const arcCtrl =
+                view === "3D"
+                  ? project3DPoint((from.wx + to.wx) / 2, -arcLift, (from.wz + to.wz) / 2)
+                  : null;
+              const mx = arcCtrl
+                ? 0.25 * from.x + 0.5 * arcCtrl.x + 0.25 * to.x
+                : (from.x + to.x) / 2;
+              const my = arcCtrl
+                ? 0.25 * from.y + 0.5 * arcCtrl.y + 0.25 * to.y
+                : (from.y + to.y) / 2;
               const qx1 = from.x + (to.x - from.x) * 0.28;
               const qy1 = from.y + (to.y - from.y) * 0.28;
               const qx2 = from.x + (to.x - from.x) * 0.72;
@@ -2599,9 +2650,11 @@ export function StudioObservability({
               const cx1 = from.x + (to.x - from.x) * 0.5;
               const cx2 = from.x + (to.x - from.x) * 0.5;
               const pathD =
-                view === "2D" && styleCfg.wireMode === "orthogonal"
-                  ? `M ${from.x} ${from.y} L ${cx1} ${from.y} L ${cx1} ${to.y} L ${to.x} ${to.y}`
-                  : `M ${from.x} ${from.y} C ${cx1} ${from.y}, ${cx2} ${to.y}, ${to.x} ${to.y}`;
+                view === "3D" && arcCtrl
+                  ? `M ${from.x} ${from.y} Q ${arcCtrl.x} ${arcCtrl.y} ${to.x} ${to.y}`
+                  : view === "2D" && styleCfg.wireMode === "orthogonal"
+                    ? `M ${from.x} ${from.y} L ${cx1} ${from.y} L ${cx1} ${to.y} L ${to.x} ${to.y}`
+                    : `M ${from.x} ${from.y} C ${cx1} ${from.y}, ${cx2} ${to.y}, ${to.x} ${to.y}`;
               const speedSec = Math.max(0.7, 2.2 / Math.max(1, Math.min(targetReplicas, 6))).toFixed(
                 2,
               );
@@ -2674,7 +2727,7 @@ export function StudioObservability({
                     strokeWidth={strokeWeight}
                     opacity={wireSelected || edgeSevered || (sg && sg.rps > 0) ? "0.95" : "0.6"}
                   />
-                  {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.toService] ?? edge.toService, view), wireSelected || edgeSevered || edgeDegraded || (sg && sg.rps > 0) ? edgeColor : "#94a3b8", true, view === "3D" ? sculptureScale(targetReplicas) : 1)}
+                  {renderWireArrow(arcCtrl ?? from, to, getNodeLabel(nodeNames?.[edge.toService] ?? edge.toService, view), wireSelected || edgeSevered || edgeDegraded || (sg && sg.rps > 0) ? edgeColor : "#94a3b8", true, view === "3D" ? sculptureScale(targetReplicas) * Math.max(0.86, Math.min(1.12, to.persp)) : 1)}
                   {wireLabel && (
                     <g data-studio-wire-metric>
                       <rect
@@ -2723,7 +2776,7 @@ export function StudioObservability({
 
           {/* Interactive Draggable 2D/3D Service Blocks + True Volumetric 3D Isometric Server Racks & Stacked Replica Cubes */}
           {[...positions.entries()]
-            .sort((a, b) => a[1].y - b[1].y)
+            .sort((a, b) => (view === "3D" ? a[1].z - b[1].z : a[1].y - b[1].y))
             .map(([name, point]) => {
               const live = telemetry?.services.find((item) => item.service === name);
               const elId = data.serviceMappings?.[name];
@@ -2740,7 +2793,8 @@ export function StudioObservability({
               const isStopped = live !== undefined && live.runningReplicas === 0;
               const selectedIsStopped = selected ? resolveLiveReplicas(selected) === 0 : false;
               const isImpactedByOutage = isAffected && selectedIsStopped && !isStopped;
-              const scale = sculptureScale(live?.runningReplicas ?? 1);
+              const depthScale = view === "3D" ? Math.max(0.86, Math.min(1.12, point.persp)) : 1;
+              const scale = sculptureScale(live?.runningReplicas ?? 1) * depthScale;
               const nodeName = nodeNames?.[name] ?? name;
               const { text: displayName, width: labelWidth, y: labelY, height: labelHeight } = getNodeLabel(nodeName, view);
 

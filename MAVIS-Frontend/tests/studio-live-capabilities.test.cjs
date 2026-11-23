@@ -639,7 +639,11 @@ test("Studio Live defaults to 3D with dynamic camera pitch and interactive 3D ca
   assert.ok(obsSrc.includes('data-testid="studio-3d-controls"'));
   assert.ok(obsSrc.includes("Math.cos(clampedPitch)"));
   assert.ok(obsSrc.includes("Math.sin(clampedPitch)"));
+  assert.ok(obsSrc.includes("const PITCH_MIN = 0.44;"));
+  assert.ok(obsSrc.includes("const persp = focal / Math.max(600, focal - depthZ);"));
+  assert.ok(obsSrc.includes("project3DPoint((from.wx + to.wx) / 2, -arcLift, (from.wz + to.wz) / 2)"));
   assert.ok(!obsSrc.includes("const sinP = 0.5;"));
+  assert.ok(!obsSrc.includes("-380 * 0.33"));
   for (const label of [
     "Isometric",
     "Top-down",
