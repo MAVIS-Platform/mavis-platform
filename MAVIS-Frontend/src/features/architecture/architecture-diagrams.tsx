@@ -363,14 +363,10 @@ export function ArchitectureDiagrams({
         </p>
       ) : (
         <div className={guidedStatic ? "" : "space-y-2.5"}>
-          {/* C4 Top 3E Element & Relationship Inspector Bar */}
-          {c4DocNodes.length > 0 && (
+          {/* C4 Top 3E Element & Relationship Inspector Bar (omitted in student guidedStatic mode) */}
+          {!guidedStatic && c4DocNodes.length > 0 && (
             <div
-              className={
-                guidedStatic
-                  ? "border-b border-border/60 bg-muted/10 px-4 py-2.5"
-                  : "rounded-xl border bg-card p-3"
-              }
+              className="rounded-xl border bg-card p-3"
               data-testid={`c4-${kind.toLowerCase()}-top-inspector-card`}
             >
               <div className="grid gap-3 sm:grid-cols-2">

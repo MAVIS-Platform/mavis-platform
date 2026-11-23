@@ -573,6 +573,7 @@ export type StudentLabReferenceElement = {
   languageStack: string | null;
   parentElementId: string | null;
   status: string | null;
+  properties?: Record<string, unknown> | null;
 };
 
 export type StudentLabReferenceRelationship = {
@@ -583,11 +584,13 @@ export type StudentLabReferenceRelationship = {
   targetName: string | null;
   relationType: string;
   originLayer: string | null;
+  properties?: Record<string, unknown> | null;
 };
 
 export type StudentLabReferenceEvidence = {
   id: string;
-  relationshipId: string;
+  elementId?: string | null;
+  relationshipId: string | null;
   locator: string | null;
   sourceType: string | null;
   excerpt: string | null;
@@ -611,6 +614,7 @@ export type StudentLabReferenceEvaluation = {
 
 export type StudentLabReferenceArchitecture = {
   projectId: string;
+  projectName?: string | null;
   snapshotId: string;
   modelVersionId: string;
   revision: number | null;
