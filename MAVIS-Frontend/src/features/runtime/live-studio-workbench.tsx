@@ -3789,23 +3789,6 @@ export function LiveStudioWorkbench({
 
           {tab === "snapshots" && (
             <section aria-label="Snapshots and runtime recording" className="space-y-3">
-              {/* BR-08 (INCOMPLETE_SCENARIO guard): warn students before sealing an empty session */}
-              {!authoring && data.actions.length === 0 && !isPreviewMode && (
-                <p
-                  role="note"
-                  className={`rounded-lg border px-3 py-1.5 text-xs ${
-                    isLight
-                      ? "border-amber-200 bg-amber-50/80 text-amber-900"
-                      : "border-amber-500/35 bg-amber-500/10 text-amber-200"
-                  }`}
-                >
-                  {t(
-                    "Run at least one live action (Stop, Start, Pause, or Scale) before sealing your signed receipt.",
-                    "Thực hiện ít nhất 1 thao tác live (Stop, Start, Pause hoặc Scale) trước khi niêm phong biên nhận.",
-                  )}
-                </p>
-              )}
-
               {/* Primary Capture Bar + Compact Secondary Tools */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative flex min-w-[240px] flex-1 items-center">

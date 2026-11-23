@@ -18,7 +18,8 @@ test("Studio Live & Studio Workbench inspector action buttons use 2x2 grid with 
   assert.match(parity, /whitespace-nowrap/);
   assert.match(workbench, /<div className="grid grid-cols-2 gap-1\.5">[\s\S]*Stop[\s\S]*Start[\s\S]*\+ Clone/);
   assert.match(workbench, /whitespace-nowrap/);
-  assert.match(live, /BR-08 \(INCOMPLETE_SCENARIO guard\)/);
+  assert.match(live, /!hasConfirmedAction/);
+  assert.doesNotMatch(live, /before sealing your signed receipt/);
   assert.match(live, /mavis-tabular/);
 });
 
