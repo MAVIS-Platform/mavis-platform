@@ -92,6 +92,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC1ActorsAndExternals();
         addC2Microservices();
         addC2Infrastructure();
+        List<ModelRelationship> c2Edges = addC2Relationships();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -99,10 +100,12 @@ public final class MocHuongReferenceArchitectureBuilder {
                 serviceIds.put(svc, el.getId());
             }
         }
+        List<ModelElement> containerNodes = c2ContainerNodes();
         List<DiagramVersion> diagramList = new ArrayList<>();
         if (node("customer") != null && node("admin-staff") != null && node("otel-observability") != null) {
             diagramList.add(buildC1ContextDiagram());
         }
+        diagramList.add(buildDiagram("C4", "CONTAINER", containerNodes, c2Edges));
         List<DiagramVersion> savedDiagrams = hooks.saveDiagrams().apply(diagramList);
         ObjectNode metrics = json.createObjectNode()
                 .put("complianceScore", 96.0)
@@ -175,6 +178,74 @@ public final class MocHuongReferenceArchitectureBuilder {
         addNode("kafka", null, "MESSAGE_CHANNEL", "Apache Kafka 3.7 KRaft (:9092)",
                 "kafka", "Event broker carrying order.created and order.cancelled domain events",
                 props("protocol", "Kafka KRaft · order.created, order.cancelled", "topics", "order.created,order.cancelled"));
+    }
+
+    private List<ModelElement> c2ContainerNodes() {
+        return List.of(
+                node("api-gateway"),
+                node("service-discovery"),
+                node("identity-service"),
+                node("catalog-service"),
+                node("order-service"),
+                node("notification-service"),
+                node("identity-db"),
+                node("catalog-db"),
+                node("order-db"),
+                node("notification-db"),
+                node("redis"),
+                node("kafka")
+        );
+    }
+
+    private List<ModelRelationship> addC2Relationships() {
+        List<ModelRelationship> list = new ArrayList<>();
+        list.add(addEdge("cust-gw", "customer", "api-gateway", "SERVICE_HTTP_CALL", "STATIC",
+                props("transport", "HTTPS", "paths", "/api/v1/auth,/api/v1/products,/api/v1/orders,/api/v1/notifications")));
+        list.add(addEdge("admin-gw", "admin-staff", "api-gateway", "SERVICE_HTTP_CALL", "STATIC",
+                props("transport", "HTTPS + JWT", "paths", "/api/v1/categories,/api/v1/products")));
+
+        list.add(addEdge("gw-identity", "api-gateway", "identity-service", "GATEWAY_ROUTE", "STATIC",
+                props("route", "lb://identity-service", "predicates", "/api/v1/auth/**,/api/v1/users/**")));
+        list.add(addEdge("gw-catalog", "api-gateway", "catalog-service", "GATEWAY_ROUTE", "STATIC",
+                props("route", "lb://catalog-service", "predicates", "/api/v1/products/**,/api/v1/categories/**")));
+        list.add(addEdge("gw-order", "api-gateway", "order-service", "GATEWAY_ROUTE", "STATIC",
+                props("route", "lb://order-service", "predicates", "/api/v1/orders/**")));
+        list.add(addEdge("gw-notification", "api-gateway", "notification-service", "GATEWAY_ROUTE", "STATIC",
+                props("route", "lb://notification-service", "predicates", "/api/v1/notifications/**")));
+
+        list.add(addEdge("gw-eureka", "api-gateway", "service-discovery", "SERVICE_DISCOVERY", "STATIC",
+                props("eureka", "http://service-discovery:8761/eureka")));
+        list.add(addEdge("id-eureka", "identity-service", "service-discovery", "SERVICE_DISCOVERY", "STATIC",
+                props("eureka", "http://service-discovery:8761/eureka")));
+        list.add(addEdge("cat-eureka", "catalog-service", "service-discovery", "SERVICE_DISCOVERY", "STATIC",
+                props("eureka", "http://service-discovery:8761/eureka")));
+        list.add(addEdge("ord-eureka", "order-service", "service-discovery", "SERVICE_DISCOVERY", "STATIC",
+                props("eureka", "http://service-discovery:8761/eureka")));
+        list.add(addEdge("noti-eureka", "notification-service", "service-discovery", "SERVICE_DISCOVERY", "STATIC",
+                props("eureka", "http://service-discovery:8761/eureka")));
+
+        list.add(addEdge("order-catalog-feign", "order-service", "catalog-service", "SERVICE_HTTP_CALL", "STATIC",
+                props("client", "CatalogFeignClient", "resilience", "CircuitBreaker+Retry+Bulkhead", "paths", "/api/v1/products/{id},/reserve,/release")));
+
+        list.add(addEdge("id-db", "identity-service", "identity-db", "DATABASE_ACCESS", "STATIC",
+                props("protocol", "JDBC PostgreSQL", "schema", "identity_db")));
+        list.add(addEdge("cat-db", "catalog-service", "catalog-db", "DATABASE_ACCESS", "STATIC",
+                props("protocol", "JDBC PostgreSQL", "schema", "catalog_db")));
+        list.add(addEdge("ord-db", "order-service", "order-db", "DATABASE_ACCESS", "STATIC",
+                props("protocol", "JDBC PostgreSQL", "schema", "order_db")));
+        list.add(addEdge("noti-db", "notification-service", "notification-db", "DATABASE_ACCESS", "STATIC",
+                props("protocol", "JDBC PostgreSQL", "schema", "notification_db")));
+        list.add(addEdge("cat-redis", "catalog-service", "redis", "DATABASE_ACCESS", "STATIC",
+                props("protocol", "Redis Cache-Aside", "cacheName", "products")));
+
+        list.add(addEdge("ord-kafka", "order-service", "kafka", "MESSAGE_PUBLISH", "STATIC",
+                props("topics", "order.created,order.cancelled", "pattern", "Transactional Outbox")));
+        list.add(addEdge("kafka-noti", "kafka", "notification-service", "MESSAGE_SUBSCRIBE", "STATIC",
+                props("topics", "order.created,order.cancelled", "groupId", "notification-group")));
+
+        list.add(addEdge("gw-otel", "api-gateway", "otel-observability", "TRACING_EXPORT", "STATIC",
+                props("protocol", "OTLP HTTP", "endpoint", "http://otel-collector:4318/v1/traces")));
+        return list;
     }
 
     private DiagramVersion buildC1ContextDiagram() {
