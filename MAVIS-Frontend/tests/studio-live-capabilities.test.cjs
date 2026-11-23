@@ -624,3 +624,34 @@ test("Batch 3: Scale capped at 1..3, PNG snapshot downscales within 440k chars, 
   );
   assert.ok(workbenchSrc.includes("Your queued session was cancelled because the tab was inactive. Click Run again."));
 });
+
+test("Studio Live defaults to 3D with dynamic camera pitch and interactive 3D camera/layout form", () => {
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+
+  assert.match(workbenchSrc, /defaultView="3D"/);
+  assert.ok(obsSrc.includes('data-testid="studio-3d-controls"'));
+  assert.ok(obsSrc.includes("Math.cos(clampedPitch)"));
+  assert.ok(obsSrc.includes("Math.sin(clampedPitch)"));
+  assert.ok(!obsSrc.includes("const sinP = 0.5;"));
+  for (const label of [
+    "Isometric",
+    "Top-down",
+    "Elevation",
+    "Rotate left",
+    "Rotate right",
+    "Tilt up",
+    "Tilt down",
+    "Layered",
+    "Circular",
+    "Grid",
+  ]) {
+    assert.ok(obsSrc.includes(label), `Missing 3D form control: ${label}`);
+  }
+});

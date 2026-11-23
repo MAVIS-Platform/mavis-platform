@@ -1,7 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LayoutGrid, Maximize2, Minus, Plus } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Box,
+  ChevronDown,
+  ChevronUp,
+  LayoutGrid,
+  Maximize2,
+  Minus,
+  Plus,
+  RotateCcw,
+  RotateCw,
+} from "lucide-react";
 import { useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -1128,9 +1140,10 @@ export function StudioObservability({
   const [view, setView] = useState<"2D" | "3D">(defaultView);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("LAYERED");
   const [snapToGrid, setSnapToGrid] = useState(true);
-  const [zoom, setZoom] = useState(() => (canvasOnly && defaultView === "3D" ? 1.28 : 1));
+  const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState({ yaw: 0.78, pitch: 0.52 });
+  const [cameraFormOpen, setCameraFormOpen] = useState(true);
   const [customOffsets, setCustomOffsets] = useState<Record<string, { x: number; y: number }>>({});
   const [pinnedPositions, setPinnedPositions] = useState<Record<string, { x: number; y: number }>>(
     {},
@@ -1310,12 +1323,12 @@ export function StudioObservability({
     return depths;
   }, [data.services, staticEdges]);
 
+  const clampedPitch = Math.max(0.18, Math.min(1.15, camera.pitch));
   const project3DPoint = useMemo(() => {
     const cosY = Math.cos(camera.yaw);
     const sinY = Math.sin(camera.yaw);
-    // Lock standard 2:1 orthographic isometric elevation (30° tilt) so the board never flips or warps
-    const cosP = 0.866;
-    const sinP = 0.5;
+    const cosP = Math.cos(clampedPitch);
+    const sinP = Math.sin(clampedPitch);
     return (wx: number, wy: number, wz: number) => {
       const rx = wx * cosY - wz * sinY;
       const rz = wx * sinY + wz * cosY;
@@ -1327,7 +1340,7 @@ export function StudioObservability({
         z: depthZ,
       };
     };
-  }, [camera.yaw]);
+  }, [camera.yaw, clampedPitch]);
 
   const { positions, deckBounds } = useMemo(() => {
     const deckBounds = { minX: -380, maxX: 380, minZ: -380, maxZ: 380 };
@@ -1628,89 +1641,279 @@ export function StudioObservability({
     <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
-      {/* Floating Bottom-Left Viewport Controls Pill (Original MAVIS Layout) */}
+      {/* Floating Bottom-Left Viewport Controls Pill + Collapsible 3D Camera & Layout Form */}
       {canvasOnly ? (
-        <div
-          className={`pointer-events-auto absolute bottom-4 left-4 z-20 inline-flex items-center gap-1 px-1.5 py-1 ${styleCfg.floatingPillClass}`}
-        >
-          {(["2D", "3D"] as const).map((mode) => (
+        <>
+          {view === "3D" && (
+            <section
+              data-testid="studio-3d-controls"
+              aria-label={t("3D Camera & Layout", "Góc nhìn 3D & Bố cục")}
+              className={`pointer-events-auto absolute bottom-16 left-4 z-20 ${
+                cameraFormOpen ? "w-[234px]" : "w-auto"
+              } ${styleCfg.floatingCardClass}`}
+            >
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-tight">
+                  <Box className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                  {t("3D Camera & Layout", "Góc nhìn 3D & Bố cục")}
+                </span>
+                <div className="flex items-center gap-1">
+                  {cameraFormOpen && (
+                    <span
+                      className={`font-mono text-[10px] ${isLight ? "text-slate-500" : "text-slate-400"}`}
+                    >
+                      {Math.round(((((camera.yaw * 180) / Math.PI) % 360) + 360) % 360)}°·
+                      {Math.round((clampedPitch * 180) / Math.PI)}°
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-expanded={cameraFormOpen}
+                    aria-label={
+                      cameraFormOpen
+                        ? t("Collapse 3D controls", "Thu gọn điều khiển 3D")
+                        : t("Expand 3D controls", "Mở điều khiển 3D")
+                    }
+                    onClick={() => setCameraFormOpen((open) => !open)}
+                    className={`rounded p-0.5 transition ${
+                      isLight
+                        ? "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                        : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {cameraFormOpen ? (
+                      <ChevronDown className="size-3.5" aria-hidden="true" />
+                    ) : (
+                      <ChevronUp className="size-3.5" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              {cameraFormOpen && (
+                <div
+                  className={`space-y-2 border-t px-2.5 py-2 ${
+                    isLight ? "border-slate-200/80" : "border-slate-700/70"
+                  }`}
+                >
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        ["Isometric", "Isometric", 0.78, 0.52],
+                        ["Top-down", "Từ trên", 0.0, 0.98],
+                        ["Elevation", "Ngang", 0.22, 0.22],
+                      ] as const
+                    ).map(([labelEn, labelVi, presetYaw, presetPitch]) => {
+                      const active =
+                        Math.abs(camera.yaw - presetYaw) < 0.05 &&
+                        Math.abs(clampedPitch - presetPitch) < 0.05;
+                      return (
+                        <button
+                          key={labelEn}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setCamera({ yaw: presetYaw, pitch: presetPitch })}
+                          className={`rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition ${
+                            active
+                              ? isLight
+                                ? "bg-slate-900 text-white"
+                                : "bg-slate-100 text-slate-950"
+                              : isLight
+                                ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                                : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
+                          }`}
+                        >
+                          {t(labelEn, labelVi)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.25 }))}
+                      className={`inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                        isLight
+                          ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                          : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      <RotateCcw className="size-3 shrink-0" aria-hidden="true" />
+                      {t("Rotate left", "Xoay trái")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.25 }))}
+                      className={`inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                        isLight
+                          ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                          : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      <RotateCw className="size-3 shrink-0" aria-hidden="true" />
+                      {t("Rotate right", "Xoay phải")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCamera((value) => ({
+                          ...value,
+                          pitch: Math.min(1.15, value.pitch + 0.14),
+                        }))
+                      }
+                      className={`inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                        isLight
+                          ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                          : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      <ArrowUp className="size-3 shrink-0" aria-hidden="true" />
+                      {t("Tilt up", "Nâng góc")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCamera((value) => ({
+                          ...value,
+                          pitch: Math.max(0.18, value.pitch - 0.14),
+                        }))
+                      }
+                      className={`inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-medium transition ${
+                        isLight
+                          ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                          : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      <ArrowDown className="size-3 shrink-0" aria-hidden="true" />
+                      {t("Tilt down", "Hạ góc")}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        ["LAYERED", "Layered", "Theo tầng"],
+                        ["CIRCULAR", "Circular", "Vòng tròn"],
+                        ["GRID", "Grid", "Lưới"],
+                      ] as const
+                    ).map(([mode, labelEn, labelVi]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        aria-pressed={layoutMode === mode}
+                        onClick={() => {
+                          setLayoutMode(mode);
+                          setCustomOffsets({});
+                          setPinnedPositions({});
+                        }}
+                        className={`rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition ${
+                          layoutMode === mode
+                            ? isLight
+                              ? "bg-slate-900 text-white"
+                              : "bg-slate-100 text-slate-950"
+                            : isLight
+                              ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                              : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
+                        }`}
+                      >
+                        {t(labelEn, labelVi)}
+                      </button>
+                    ))}
+                  </div>
+                  <p
+                    className={`text-[10px] leading-tight ${
+                      isLight ? "text-slate-500" : "text-slate-400"
+                    }`}
+                  >
+                    {t(
+                      "Right-drag to orbit · Scroll to zoom",
+                      "Chuột phải kéo xoay · Cuộn để zoom",
+                    )}
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+          <div
+            className={`pointer-events-auto absolute bottom-4 left-4 z-20 inline-flex items-center gap-0.5 px-1 py-1 ${styleCfg.floatingPillClass}`}
+          >
+            {(["2D", "3D"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={view === mode}
+                onClick={() => {
+                  if (view !== mode) onSound?.("select");
+                  setView(mode);
+                }}
+                className={`rounded-full px-2 py-0.5 font-mono text-xs font-semibold transition ${
+                  view === mode
+                    ? isLight
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "bg-slate-100 text-slate-950 shadow-xs"
+                    : isLight
+                      ? "text-slate-500 hover:text-slate-900"
+                      : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {mode}
+              </button>
+            ))}
+            <span
+              className={`mx-0.5 h-4 w-px ${isLight ? "bg-slate-200" : "bg-slate-700"}`}
+              aria-hidden="true"
+            />
             <button
-              key={mode}
               type="button"
-              aria-pressed={view === mode}
+              title={t("Auto-layout", "Tự sắp xếp")}
+              aria-label={t("Auto-layout", "Tự sắp xếp")}
               onClick={() => {
-                if (view !== mode) onSound?.("select");
-                setView(mode);
+                setCustomOffsets({});
+                setPinnedPositions({});
               }}
-              className={`rounded-full px-2.5 py-1 font-mono text-xs font-semibold transition ${
-                view === mode
-                  ? isLight
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "bg-slate-100 text-slate-950 shadow-xs"
-                  : isLight
-                    ? "text-slate-500 hover:text-slate-900"
-                    : "text-slate-400 hover:text-slate-200"
+              className={`rounded-full p-1 transition ${
+                isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
               }`}
             >
-              {mode}
+              <LayoutGrid className="size-3.5" aria-hidden="true" />
             </button>
-          ))}
-          <span
-            className={`mx-0.5 h-4 w-px ${isLight ? "bg-slate-200" : "bg-slate-700"}`}
-            aria-hidden="true"
-          />
-          <button
-            type="button"
-            title={t("Auto-layout", "Tự sắp xếp")}
-            aria-label={t("Auto-layout", "Tự sắp xếp")}
-            onClick={() => {
-              setCustomOffsets({});
-              setPinnedPositions({});
-            }}
-            className={`rounded-full p-1.5 transition ${
-              isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
-            }`}
-          >
-            <LayoutGrid className="size-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            title={t("Fit to view", "Vừa khung hình")}
-            aria-label={t("Fit to view", "Vừa khung hình")}
-            onClick={() => {
-              setPan({ x: 0, y: 0 });
-              setZoom(1);
-              setCamera({ yaw: 0.55, pitch: 0.38 });
-            }}
-            className={`rounded-full p-1.5 transition ${
-              isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
-            }`}
-          >
-            <Maximize2 className="size-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            title={t("Zoom out", "Thu nhỏ")}
-            aria-label={t("Zoom out", "Thu nhỏ")}
-            onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
-            className={`rounded-full p-1.5 transition ${
-              isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
-            }`}
-          >
-            <Minus className="size-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            title={t("Zoom in", "Phóng to")}
-            aria-label={t("Zoom in", "Phóng to")}
-            onClick={() => setZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
-            className={`rounded-full p-1.5 transition ${
-              isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
-            }`}
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-          </button>
-        </div>
+            <button
+              type="button"
+              title={t("Fit to view", "Vừa khung hình")}
+              aria-label={t("Fit to view", "Vừa khung hình")}
+              onClick={() => {
+                setPan({ x: 0, y: 0 });
+                setZoom(1);
+                setCamera({ yaw: 0.78, pitch: 0.52 });
+              }}
+              className={`rounded-full p-1 transition ${
+                isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+              }`}
+            >
+              <Maximize2 className="size-3.5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              title={t("Zoom out", "Thu nhỏ")}
+              aria-label={t("Zoom out", "Thu nhỏ")}
+              onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
+              className={`rounded-full p-1 transition ${
+                isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+              }`}
+            >
+              <Minus className="size-3.5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              title={t("Zoom in", "Phóng to")}
+              aria-label={t("Zoom in", "Phóng to")}
+              onClick={() => setZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
+              className={`rounded-full p-1 transition ${
+                isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+              }`}
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        </>
       ) : (
         <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2">
           <h3 className="mr-auto font-medium">{t("Runtime topology and impact")}</h3>
@@ -1769,7 +1972,7 @@ export function StudioObservability({
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  setCamera((value) => ({ ...value, pitch: Math.min(0.95, value.pitch + 0.15) }))
+                  setCamera((value) => ({ ...value, pitch: Math.min(1.15, value.pitch + 0.14) }))
                 }
               >
                 {t("Tilt up")}
@@ -1778,7 +1981,7 @@ export function StudioObservability({
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  setCamera((value) => ({ ...value, pitch: Math.max(-0.6, value.pitch - 0.15) }))
+                  setCamera((value) => ({ ...value, pitch: Math.max(0.18, value.pitch - 0.14) }))
                 }
               >
                 {t("Tilt down")}
@@ -1786,21 +1989,21 @@ export function StudioObservability({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCamera({ yaw: 0.55, pitch: 0.38 })}
+                onClick={() => setCamera({ yaw: 0.78, pitch: 0.52 })}
               >
                 {t("Isometric")}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCamera({ yaw: 0.0, pitch: 0.92 })}
+                onClick={() => setCamera({ yaw: 0.0, pitch: 0.98 })}
               >
                 {t("Top-down")}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCamera({ yaw: 0.2, pitch: 0.08 })}
+                onClick={() => setCamera({ yaw: 0.22, pitch: 0.22 })}
               >
                 {t("Elevation")}
               </Button>
@@ -1968,11 +2171,12 @@ export function StudioObservability({
               const point = graphPoint(event.clientX, event.clientY);
               if (!point) return;
               const { x: worldX, y: worldY } = point;
+              const sinP = Math.max(0.18, Math.sin(clampedPitch));
               setPinnedPositions((prev) => ({
                 ...prev,
                 [view === "3D" ? "3D:" + createdName : createdName]: {
-                  x: Math.round(view === "3D" ? (worldX-600)*Math.cos(camera.yaw)+((worldY-325)/0.5)*Math.sin(camera.yaw) : worldX),
-                  y: Math.round(view === "3D" ? -(worldX-600)*Math.sin(camera.yaw)+((worldY-325)/0.5)*Math.cos(camera.yaw) : worldY),
+                  x: Math.round(view === "3D" ? (worldX-600)*Math.cos(camera.yaw)+((worldY-325)/sinP)*Math.sin(camera.yaw) : worldX),
+                  y: Math.round(view === "3D" ? -(worldX-600)*Math.sin(camera.yaw)+((worldY-325)/sinP)*Math.cos(camera.yaw) : worldY),
                 },
               }));
             }
@@ -2034,8 +2238,9 @@ export function StudioObservability({
               const current = new DOMPoint(event.clientX,event.clientY).matrixTransform(inverse);
               const screenDx = (current.x-start.x)/zoom;
               const screenDy = (current.y-start.y)/zoom;
-              const dx = view === "3D" ? screenDx*Math.cos(camera.yaw)+(screenDy/0.5)*Math.sin(camera.yaw) : screenDx;
-              const dy = view === "3D" ? -screenDx*Math.sin(camera.yaw)+(screenDy/0.5)*Math.cos(camera.yaw) : screenDy;
+              const sinP = Math.max(0.18, Math.sin(clampedPitch));
+              const dx = view === "3D" ? screenDx*Math.cos(camera.yaw)+(screenDy/sinP)*Math.sin(camera.yaw) : screenDx;
+              const dy = view === "3D" ? -screenDx*Math.sin(camera.yaw)+(screenDy/sinP)*Math.cos(camera.yaw) : screenDy;
               if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
                 nodeDrag.current.moved = true;
               }
@@ -2062,10 +2267,8 @@ export function StudioObservability({
             };
             if (cameraDrag.current.mode === "ROTATE") {
               setCamera((value) => ({
-                ...value,
-                // Smooth 360° horizontal turntable rotation (left-to-right around the top-down view)
                 yaw: value.yaw - dx * 0.0085,
-                pitch: 0.52,
+                pitch: Math.max(0.18, Math.min(1.15, value.pitch + dy * 0.006)),
               }));
             } else {
               const matrix = svg.current?.getScreenCTM();

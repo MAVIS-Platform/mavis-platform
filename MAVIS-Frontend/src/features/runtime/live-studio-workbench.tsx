@@ -2099,7 +2099,7 @@ export function LiveStudioWorkbench({
                 }}
                 busy={isPreviewMode ? false : busy}
                 canvasOnly
-                defaultView="2D"
+                defaultView="3D"
                 studioStyle={studioStyle}
                 surfaceTheme={isLight ? "light" : "dark"}
                 nodeNames={nodeNames}
