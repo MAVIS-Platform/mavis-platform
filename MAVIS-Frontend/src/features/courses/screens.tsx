@@ -195,11 +195,28 @@ function toInlineArchitecturalModel(
 ): ArchitecturalModel | undefined {
   if (!refArch || !refArch.modelVersionId) return undefined;
   const evidencesByRel = new Map<string, StudentLabReferenceArchitecture["evidences"]>();
+  const evidencesByEl = new Map<string, StudentLabReferenceArchitecture["evidences"]>();
   for (const ev of refArch.evidences) {
-    const arr = evidencesByRel.get(ev.relationshipId) ?? [];
-    arr.push(ev);
-    evidencesByRel.set(ev.relationshipId, arr);
+    if (ev.relationshipId) {
+      const arr = evidencesByRel.get(ev.relationshipId) ?? [];
+      arr.push(ev);
+      evidencesByRel.set(ev.relationshipId, arr);
+    }
+    if (ev.elementId) {
+      const arr = evidencesByEl.get(ev.elementId) ?? [];
+      arr.push(ev);
+      evidencesByEl.set(ev.elementId, arr);
+    }
   }
+  const toEvidenceItems = (items: StudentLabReferenceArchitecture["evidences"]) =>
+    items.map((ev) => ({
+      id: ev.id,
+      kind: "source" as const,
+      sourceType: ev.sourceType ?? undefined,
+      location: ev.locator ?? "Source",
+      snippet: ev.excerpt ?? "",
+      complete: true,
+    }));
   const elements: ArchitecturalModel["elements"] = refArch.elements.map((el) => ({
     id: el.id,
     name: el.name,
@@ -207,8 +224,9 @@ function toInlineArchitecturalModel(
     elementType: el.elementType,
     parentId: el.parentElementId ?? null,
     technology: el.languageStack ?? null,
+    ...(el.properties ? { properties: el.properties } : {}),
     description: el.scope && el.scope !== "null" ? el.scope.trim() : "",
-    evidence: [],
+    evidence: toEvidenceItems(evidencesByEl.get(el.id) ?? []),
   }));
   const nodeIds = new Set(elements.map((el) => el.id));
   const edges: ArchitecturalModel["edges"] = refArch.relationships
@@ -220,14 +238,8 @@ function toInlineArchitecturalModel(
       protocol: rel.relationType,
       originLayer: rel.originLayer ?? undefined,
       uncertain: false,
-      evidence: (evidencesByRel.get(rel.id) ?? []).map((ev) => ({
-        id: ev.id,
-        kind: "source" as const,
-        sourceType: ev.sourceType ?? undefined,
-        location: ev.locator ?? "Source",
-        snippet: ev.excerpt ?? "",
-        complete: true,
-      })),
+      ...(rel.properties ? { properties: rel.properties } : {}),
+      evidence: toEvidenceItems(evidencesByRel.get(rel.id) ?? []),
     }));
   return {
     id: refArch.modelVersionId,
@@ -1365,15 +1377,22 @@ function StepContent({
         !studioStateQuery.data.telemetry &&
         !(studioStateQuery.data as Record<string, unknown>)["simulatedSandbox"])),
   );
-  const selectedElement = activeModel?.elements.find((item) => item.id === selectedGraphId);
-  const selectedConnection = activeModel?.edges.find((item) => item.id === selectedGraphId);
+  const normalizedSelectedId = selectedGraphId?.replace(/^projection:/, "") ?? selectedGraphId;
+  const selectedElement =
+    activeModel?.elements.find((item) => item.id === selectedGraphId) ??
+    activeModel?.elements.find((item) => item.id === normalizedSelectedId);
+  const selectedConnection =
+    activeModel?.edges.find((item) => item.id === selectedGraphId) ??
+    activeModel?.edges.find((item) => item.id === normalizedSelectedId) ??
+    activeModel?.edges.find((item) =>
+      selectedGraphId ? item.underlyingEdgeIds?.includes(selectedGraphId) : false,
+    );
   const selectedArchitectureLabel =
     selectedElement?.name ??
     (selectedConnection
       ? `${activeModel?.elements.find((item) => item.id === selectedConnection.from)?.name ?? selectedConnection.from} → ${activeModel?.elements.find((item) => item.id === selectedConnection.to)?.name ?? selectedConnection.to}`
       : null);
-  const selectedTutorElement =
-    activeModel?.elements.find((el) => el.id === selectedGraphId) ?? activeModel?.elements[0];
+  const selectedTutorElement = selectedElement ?? activeModel?.elements[0];
   const closeImpactAnalysis = () => {
     setImpactAnalysisOpen(false);
     setImpactHighlightIds([]);
@@ -1388,7 +1407,12 @@ function StepContent({
     const q = rawQuestion.trim();
     if (!q || tutorLoading) return;
     const targetId =
-      selectedGraphId ?? activeModel?.elements[0]?.id ?? activeModel?.edges[0]?.id ?? "";
+      selectedElement?.id ??
+      selectedConnection?.id ??
+      normalizedSelectedId ??
+      activeModel?.elements[0]?.id ??
+      activeModel?.edges[0]?.id ??
+      "";
     if (!activeModel || !targetId) {
       setTutorReply({
         question: q,
@@ -1923,7 +1947,7 @@ function StepContent({
                           guidedStatic
                           controlledKind={inlineC4View}
                           hideKindSelector
-                          systemName={labTitle}
+                          systemName={referenceArchitecture?.projectName || "Mộc Hương Shop Platform"}
                           selectedId={selectedGraphId}
                           onSelect={setSelectedGraphId}
                         />
@@ -1977,6 +2001,7 @@ function StepContent({
                     <div className="min-w-0 overflow-x-auto">
                       <ArchitectureGraph
                         model={activeModel}
+                        guidedStatic
                         selectedId={selectedGraphId}
                         onSelect={setSelectedGraphId}
                         highlightIds={impactHighlightIds}

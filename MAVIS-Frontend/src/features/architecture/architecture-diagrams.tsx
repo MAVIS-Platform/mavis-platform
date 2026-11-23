@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
+import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/shared/forms";
 import { DrawioEditor } from "./drawio-editor";
 import { ArchitectureSvgViewer } from "./architecture-svg-viewer";
@@ -75,7 +76,7 @@ export function ArchitectureDiagrams({
   const resolveKind = guidedStatic ? resolveGuidedDiagramKind : resolveDiagramKind;
   const initialKind = controlledKind ?? resolveKind(requestedKindParam);
   const [kind, setKind] = useState<DiagramKind>(initialKind),
-    [service, setService] = useState(""),
+    [service, setService] = useState(guidedStatic ? "ALL" : ""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
     [c4AiEnrichment, setC4AiEnrichment] = useState<C4AiDiagramEnrichment | null>(null),
     [generatedState, setGeneratedState] = useState<{ targetKey: string; xml: string }>({
@@ -86,16 +87,40 @@ export function ArchitectureDiagrams({
   const api = useApi(),
     cache = useQueryClient();
   const model = sourceModel;
+  const canonicalOrder = [
+    "api-gateway",
+    "identity-service",
+    "catalog-service",
+    "order-service",
+    "notification-service",
+    "service-discovery",
+  ];
   const allContainers = model.elements
     .filter((node) => node.elementType === "SERVICE_CONTAINER")
     .map((node) => ({
       ...node,
       count: model.elements.filter((child) => child.parentId === node.id).length,
     }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      if (guidedStatic) {
+        const ia = canonicalOrder.indexOf(a.name);
+        const ib = canonicalOrder.indexOf(b.name);
+        if (ia !== -1 || ib !== -1) {
+          return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+        }
+      }
+      return b.count - a.count || a.name.localeCompare(b.name);
+    });
   const populatedContainers = allContainers.filter((node) => node.count > 0);
   const containers = populatedContainers.length > 0 ? populatedContainers : allContainers;
-  const container = containers.find((node) => node.id === service) ?? containers[0];
+  const container =
+    guidedStatic && service === "ALL"
+      ? undefined
+      : (containers.find((node) => node.id === service) ?? containers[0]);
+  const selectedC3TargetId =
+    guidedStatic && kind === "COMPONENT" && (service === "ALL" || !service)
+      ? "ALL"
+      : (container?.id ?? containers[0]?.id);
   const isUmlWorkspaceKind = [
     "UML_CLASS",
     "UML_PACKAGE",
@@ -152,8 +177,8 @@ export function ArchitectureDiagrams({
   }, [isC4EnrichableKind, kind, model, container?.id, systemName, locale]);
 
   const selection = useMemo(
-    () => selectDiagram(model, kind, container?.id, { systemName }),
-    [model, kind, container?.id, systemName],
+    () => selectDiagram(model, kind, selectedC3TargetId, { systemName }),
+    [model, kind, selectedC3TargetId, systemName],
   );
   const document = useMemo(
     () =>
@@ -256,6 +281,25 @@ export function ArchitectureDiagrams({
   }
   const showServiceSelect = ["COMPONENT", "LOGICAL"].includes(kind);
   const showServiceScopeSelect = ["UML_CLASS", "UML_PACKAGE"].includes(kind);
+  const resolveCanvasSelect = (rawId: string) => {
+    const stripped = rawId.replace(/^projection:/, "");
+    if (
+      model.elements.some((el) => el.id === rawId) ||
+      model.edges.some((edge) => edge.id === rawId)
+    ) {
+      onSelect(rawId);
+      return;
+    }
+    if (
+      model.elements.some((el) => el.id === stripped) ||
+      model.edges.some((edge) => edge.id === stripped)
+    ) {
+      onSelect(stripped);
+      return;
+    }
+    const matchedDocEdge = c4DocEdges.find((edge) => edge.key === rawId);
+    onSelect(matchedDocEdge?.canonicalId ?? rawId);
+  };
   return (
     <section
       aria-label="Architecture diagrams"
@@ -280,19 +324,52 @@ export function ArchitectureDiagrams({
               />
             </div>
           )}
-          {showServiceSelect && (
-            <div className="w-full sm:w-80">
-              <SelectField
-                label={t("Service to inspect (C3 Component)", "Chọn Service để xem C3 Component")}
-                value={container?.id ?? ""}
-                onChange={setService}
-                options={containers.map((node) => ({
-                  value: node.id,
-                  label: `${node.name}${node.count === 0 ? ` · ${t("no components extracted", "chưa tách thành phần con")}` : ""}`,
-                }))}
-              />
-            </div>
-          )}
+          {showServiceSelect &&
+            (guidedStatic ? (
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label={t("Service filter (C3 Component)", "Chọn Service để xem C3 Component")}
+              >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={service === "ALL" || !service ? "default" : "outline"}
+                  className="h-7 px-2.5 text-xs"
+                  onClick={() => setService("ALL")}
+                >
+                  {t(`All Services (${containers.length})`, `Tổng quan (${containers.length} Services)`)}
+                </Button>
+                {containers.map((node) => {
+                  const active = service === node.id;
+                  return (
+                    <Button
+                      key={node.id}
+                      type="button"
+                      size="sm"
+                      variant={active ? "default" : "outline"}
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => setService(node.id)}
+                    >
+                      {node.name}
+                      <span className="ml-1 text-[10px] opacity-75">({node.count})</span>
+                    </Button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="w-full sm:w-80">
+                <SelectField
+                  label={t("Service to inspect (C3 Component)", "Chọn Service để xem C3 Component")}
+                  value={container?.id ?? ""}
+                  onChange={setService}
+                  options={containers.map((node) => ({
+                    value: node.id,
+                    label: `${node.name}${node.count === 0 ? ` · ${t("no components extracted", "chưa tách thành phần con")}` : ""}`,
+                  }))}
+                />
+              </div>
+            ))}
           {showServiceScopeSelect && (
             <div className="w-full sm:w-80">
               <SelectField
@@ -363,14 +440,10 @@ export function ArchitectureDiagrams({
         </p>
       ) : (
         <div className={guidedStatic ? "" : "space-y-2.5"}>
-          {/* C4 Top 3E Element & Relationship Inspector Bar */}
-          {c4DocNodes.length > 0 && (
+          {/* C4 Top 3E Element & Relationship Inspector Bar (omitted in student guidedStatic mode) */}
+          {!guidedStatic && c4DocNodes.length > 0 && (
             <div
-              className={
-                guidedStatic
-                  ? "border-b border-border/60 bg-muted/10 px-4 py-2.5"
-                  : "rounded-xl border bg-card p-3"
-              }
+              className="rounded-xl border bg-card p-3"
               data-testid={`c4-${kind.toLowerCase()}-top-inspector-card`}
             >
               <div className="grid gap-3 sm:grid-cols-2">
@@ -418,7 +491,7 @@ export function ArchitectureDiagrams({
             <ArchitectureSvgViewer
               xml={xml}
               selectedId={selectedId}
-              onSelect={onSelect}
+              onSelect={resolveCanvasSelect}
             />
           ) : <DrawioEditor
             key={`${model.id}:${key}`}

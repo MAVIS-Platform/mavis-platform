@@ -41,8 +41,10 @@ class CourseraCatalogCrossReferenceTest {
         );
 
         assertEquals("moc-huong-shop", JavaCourseraCatalog.CURATED_REPO_SLUG);
+        assertEquals("https://github.com/MAVIS-Platform/Moc-Huong-Shop.git", JavaCourseraCatalog.CURATED_REPO_URL);
         assertTrue(JavaCourseraCatalog.CURATED_SERVICES.containsAll(
-                List.of("api-gateway", "catalog-service", "order-service", "payment-service")));
+                List.of("service-discovery", "api-gateway", "identity-service", "catalog-service", "order-service", "notification-service")));
+        assertFalse(JavaCourseraCatalog.CURATED_SERVICES.contains("payment-service"));
 
         assertEquals("fruit-shop-dotnet-microservices", CsharpCourseraCatalog.CURATED_REPO_SLUG);
         assertTrue(CsharpCourseraCatalog.CURATED_SERVICES.containsAll(

@@ -162,8 +162,8 @@ class CourseLabSeederServiceTest {
         var resolvedArchive = archiveResolver.resolve(savedSnap.get(), true);
         assertThat(resolvedArchive.exists()).isTrue();
         try (var zip = new java.util.zip.ZipFile(resolvedArchive.getFile())) {
-            assertThat(zip.getEntry("order-service/src/main/java/com/curated/order/PaymentClient.java")).isNotNull();
-            assertThat(zip.getEntry("inventory-service/src/main/java/com/curated/inventory/InventoryController.java")).isNotNull();
+            assertThat(zip.getEntry("order-service/src/main/java/com/mochuong/order/client/CatalogFeignClient.java")).isNotNull();
+            assertThat(zip.getEntry("catalog-service/src/main/java/com/mochuong/catalog/controller/ProductController.java")).isNotNull();
             assertThat(zip.getEntry("Orders/Program.cs")).isNotNull();
             assertThat(zip.getEntry("Catalog/Program.cs")).isNotNull();
         }
@@ -176,7 +176,7 @@ class CourseLabSeederServiceTest {
         assertThat(savedAssignments.get(0).getStudioTopologySnapshot()).isNull();
         assertThat(savedAssignments.get(1).getLabMode()).isEqualTo("THEORY_QUIZ_STUDIO");
         assertThat(savedAssignments.get(1).getStudioTopologySnapshot()).isNotNull();
-        assertThat(savedAssignments.get(1).getStudioTopologySnapshot().path("blocks").size()).isEqualTo(4);
+        assertThat(savedAssignments.get(1).getStudioTopologySnapshot().path("blocks").size()).isEqualTo(6);
         assertThat(savedAssignments.get(1).getStudioTopologyRevision()).isEqualTo(1);
         assertThat(savedAssignments.get(2).getLabMode()).isEqualTo("THEORY_QUIZ_STUDIO");
         assertThat(savedAssignments.get(2).getStudioTopologySnapshot()).isNotNull();
@@ -429,11 +429,14 @@ class CourseLabSeederServiceTest {
                 "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT");
         Set<String> allowedEvidenceSources = Set.of("STATIC_CODE", "CONFIG_FILE", "DOCKER_COMPOSE", "RUNTIME_TRACE");
 
-        assertThat(savedElements).hasSize(9);
+        assertThat(savedElements.size()).isGreaterThanOrEqualTo(40);
+        assertThat(savedElements).extracting(ModelElement::getName).contains(
+                "service-discovery", "api-gateway", "identity-service",
+                "catalog-service", "order-service", "notification-service");
         assertThat(savedElements).allSatisfy(el -> assertThat(allowedStatuses).contains(el.getStatus()));
-        assertThat(savedRelationships).hasSize(6);
+        assertThat(savedRelationships.size()).isGreaterThanOrEqualTo(50);
         assertThat(savedRelationships).allSatisfy(rel -> assertThat(allowedRelationTypes).contains(rel.getRelationType()));
-        assertThat(savedEvidences).hasSize(1);
+        assertThat(savedEvidences.size()).isGreaterThanOrEqualTo(20);
         assertThat(savedEvidences).allSatisfy(ev -> assertThat(allowedEvidenceSources).contains(ev.getSourceType()));
         assertThat(savedProject.get().getReferenceSnapshotId()).isNotNull();
 

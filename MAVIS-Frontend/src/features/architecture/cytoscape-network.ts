@@ -15,6 +15,8 @@ export function networkBadge(type?: string) {
       return "[QUEUE]";
     case "COMPONENT":
       return "[COMP]";
+    case "PERSON":
+      return "[ACTOR]";
     case "EXTERNAL_SYSTEM":
       return "[EXT]";
     default:
@@ -31,6 +33,8 @@ export function networkColor(type?: string) {
     case "QUEUE_BROKER":
     case "MESSAGE_CHANNEL":
       return "#9455c9";
+    case "PERSON":
+      return "#4f46e5";
     case "EXTERNAL_SYSTEM":
       return "#b7791f";
     case "COMPONENT":

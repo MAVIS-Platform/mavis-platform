@@ -24,14 +24,15 @@ public final class JavaCourseraCatalog {
                     + "Resilience4j, OpenTelemetry Distributed Tracing & Docker Production-Readiness.";
 
     public static final String CURATED_REPO_SLUG = "moc-huong-shop";
+    public static final String CURATED_REPO_URL = "https://github.com/MAVIS-Platform/Moc-Huong-Shop.git";
+    public static final String CURATED_COMMIT_SHA = "84f8e6c5c3aee575c2464f40d6742fb847f3a3e4";
     public static final List<String> CURATED_SERVICES = List.of(
             "service-discovery",
             "api-gateway",
             "identity-service",
             "catalog-service",
             "order-service",
-            "notification-service",
-            "payment-service"
+            "notification-service"
     );
 
     private JavaCourseraCatalog() {}
@@ -63,7 +64,7 @@ public final class JavaCourseraCatalog {
                 "Module 1 · Nền Tảng Kiến Trúc Microservices, DDD & Java 21 / Spring Boot 3",
                 "Làm chủ Scale Cube, C4 Model (C1–C3), phân rã Bounded Context với DDD và thiết kế Microservice chuẩn C3 với Java 21 Record + Spring Boot 3.",
                 "Mộc Hương Shop C1–C3 Decomposition & DTO Boundaries",
-                "Khám phá kiến trúc C1–C3 của hệ thống Mộc Hương Shop, phân rã Bounded Context (Catalog, Order, Inventory) và kiểm chứng ranh giới Record DTO.",
+                "Khám phá kiến trúc C1–C3 của hệ thống Mộc Hương Shop, phân rã Bounded Context (Identity, Catalog, Order, Notification) và kiểm chứng ranh giới Record DTO.",
                 "java-v2-ch01",
                 List.of(
                         V2CurriculumJsonLoader.toLessonSpec("java-v2-ch01",
@@ -125,8 +126,8 @@ public final class JavaCourseraCatalog {
                         "Tính độ khả dụng chuỗi gọi đồng bộ và đề xuất kiến trúc phá vỡ Cyclic Dependency.",
                         """
                         ### Bài tập phân tích Kiến trúc Sync IPC
-                        1. Một luồng đặt hàng đi qua `api-gateway -> order-service -> catalog-service -> payment-service` (mỗi service có SLA `99.5%`). Hãy tính độ khả dụng tổng thể và giải thích giới hạn của lời gọi đồng bộ nối tiếp.
-                        2. Khi phát hiện chu trình `order-service -> payment-service -> order-service` bằng **DFS 3 màu**, đề xuất cách cắt chu trình bằng Event bất đồng bộ.
+                        1. Một luồng đặt hàng và xác thực đi qua `api-gateway -> identity-service -> order-service -> catalog-service` (mỗi service có SLA `99.5%`). Hãy tính độ khả dụng tổng thể và giải thích giới hạn của lời gọi đồng bộ nối tiếp.
+                        2. Khi phát hiện chu trình giả định `order-service -> catalog-service -> order-service` bằng **DFS 3 màu**, đề xuất cách cắt chu trình bằng Transactional Outbox & Kafka Event bất đồng bộ.
                         3. Trình bày cơ chế xác thực JWT tại Gateway và truyền ngữ cảnh người dùng (`X-User-Id`, `traceId`) xuống downstream.
                         """,
                         List.of(
@@ -155,7 +156,7 @@ public final class JavaCourseraCatalog {
                 "Module 3 · Database-per-Service, Apache Kafka Outbox & Giao Dịch Phân Tán Saga",
                 "Loại bỏ Anti-Pattern Shared Database, triển khai CQRS/API Composition, Kafka Idempotency + Transactional Outbox và Saga Choreography/Orchestration.",
                 "Shared DB Audit, Kafka Outbox & Saga Compensation Flows",
-                "Kiểm tra ranh giới Database độc lập của Mộc Hương Shop và mô phỏng chuỗi sự kiện Order -> Catalog/Inventory -> Notification.",
+                "Kiểm tra ranh giới Database độc lập của Mộc Hương Shop (identity_db, catalog_db, order_db, notification_db) và mô phỏng chuỗi sự kiện Order -> Catalog & Notification.",
                 "java-v2-ch07",
                 List.of(
                         V2CurriculumJsonLoader.toLessonSpec("java-v2-ch07",
@@ -201,7 +202,7 @@ public final class JavaCourseraCatalog {
                 "Module 4 · Khả Năng Chịu Lỗi (Resilience4j) & Quan Sát Hệ Thống (OpenTelemetry)",
                 "Áp dụng Timeout, Retry có Exponential Backoff, Circuit Breaker & Bulkhead bằng Resilience4j cùng Actuator + OpenTelemetry Distributed Tracing.",
                 "Resilience4j Chaos Stop Container & OpenTelemetry W3C Traceparent",
-                "Thực hiện thí nghiệm Chaos: dừng payment-service trên MAVIS Studio, quan sát Circuit Breaker chuyển OPEN và đối chiếu Latency p95 Trước/Sau.",
+                "Thực hiện thí nghiệm Chaos: dừng catalog-service trên MAVIS Studio, quan sát Circuit Breaker ở order-service chuyển OPEN và đối chiếu Latency p95 Trước/Sau.",
                 "java-v2-ch10",
                 List.of(
                         V2CurriculumJsonLoader.toLessonSpec("java-v2-ch10",
@@ -216,7 +217,7 @@ public final class JavaCourseraCatalog {
                         """
                         ### Bài tập Chịu lỗi & Observability
                         1. Giải thích vì sao thứ tự bọc chuẩn trong Resilience4j là `Bulkhead -> TimeLimiter -> CircuitBreaker -> Retry` (hoặc `Retry` ngoài/trong tùy mục tiêu tránh Retry Storm).
-                        2. Khi thí nghiệm **Stop `payment-service`** trên MAVIS Studio, trình bày cách đọc W3C `traceparent` qua 3 dịch vụ và cách so sánh `p95 Latency` + `Error Rate %` Trước/Sau một cách khoa học (cùng workload và sample count `N`).
+                        2. Khi thí nghiệm **Stop `catalog-service`** trên MAVIS Studio, trình bày cách đọc W3C `traceparent` qua 3 dịch vụ và cách so sánh `p95 Latency` + `Error Rate %` Trước/Sau một cách khoa học (cùng workload và sample count `N`).
                         """,
                         List.of(
                                 new RubricCriterion("1. Resilience4j Patterns & Anti-Retry-Storm", 40,

@@ -41,6 +41,7 @@ export function DependencyNetwork({
   onHiddenCategoriesChange,
   active = true,
   fillHeight = false,
+  guidedStatic = false,
   showPresentationOptions = true,
   relationshipScopeCount = 0,
   connections: controlledConnections,
@@ -54,6 +55,7 @@ export function DependencyNetwork({
   onClearConnection?: () => void;
   active?: boolean;
   fillHeight?: boolean;
+  guidedStatic?: boolean;
   showPresentationOptions?: boolean;
   relationshipScopeCount?: number;
   model: ArchitecturalModel;
@@ -848,71 +850,75 @@ export function DependencyNetwork({
           )}
         </div>
       )}
-      <details hidden={fillHeight && !dockToolsOpen} className="border-b p-3 text-sm">
-        <summary className="cursor-pointer">Graph elements (keyboard navigation)</summary>
-        <div className="mt-3 max-h-64 space-y-2 overflow-auto">
-          {matchingNodes.slice((page - 1) * 30, page * 30).map((node) => (
-            <button
-              key={node.id}
-              type="button"
-              className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
-              aria-label={`Select ${node.name}`}
-              aria-pressed={selectedId === node.id}
-              onClick={() => onSelect(selectedId === node.id ? null : node.id)}
-            >
-              {node.name} · {node.elementType}
-            </button>
-          ))}
-          {connections.slice((page - 1) * 50, page * 50).map((connection) => (
-            <button
-              key={connection.key}
-              type="button"
-              className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
-              aria-label={`Inspect connection ${byId.get(connection.elementIds[0])?.name} and ${byId.get(connection.elementIds[1])?.name}`}
-              aria-pressed={
-                selectedConnectionKey === connection.key ||
-                connection.relationshipIds.includes(selectedId ?? "")
-              }
-              onClick={() => inspectConnection(connection)}
-            >
-              {byId.get(connection.elementIds[0])?.name} —{" "}
-              {byId.get(connection.elementIds[1])?.name} · {connection.relationshipIds.length}{" "}
-              relationship(s)
-            </button>
-          ))}
-        </div>
-        {pageCount > 1 && (
-          <Pagination page={page} pageCount={pageCount} onPageChange={setElementPage} />
-        )}
-      </details>
-      <details hidden={fillHeight && !dockToolsOpen} className="border-b p-3 text-sm">
-        <summary className="cursor-pointer">Graph options</summary>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          {showPresentationOptions && (
-            <SelectField
-              label="Relationship origin"
-              value={origin}
-              onChange={(v) => {
-                changeOrigin(v as typeof origin);
-              }}
-              options={[
-                { value: "all", label: "All relationships" },
-                { value: "source", label: "Source and configuration" },
-                { value: "deployment", label: "Deployment dependencies" },
-                { value: "runtime", label: "Runtime observations" },
-              ]}
-            />
-          )}
-          <Button
-            variant="outline"
-            onClick={() => {
-              toggleExpanded();
-            }}
-          >
-            {expanded ? "Collapse service internals" : "Expand service internals"}
-          </Button>
-        </div>
-      </details>
+      {!guidedStatic && (
+        <>
+          <details hidden={fillHeight && !dockToolsOpen} className="border-b p-3 text-sm">
+            <summary className="cursor-pointer">Graph elements (keyboard navigation)</summary>
+            <div className="mt-3 max-h-64 space-y-2 overflow-auto">
+              {matchingNodes.slice((page - 1) * 30, page * 30).map((node) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
+                  aria-label={`Select ${node.name}`}
+                  aria-pressed={selectedId === node.id}
+                  onClick={() => onSelect(selectedId === node.id ? null : node.id)}
+                >
+                  {node.name} · {node.elementType}
+                </button>
+              ))}
+              {connections.slice((page - 1) * 50, page * 50).map((connection) => (
+                <button
+                  key={connection.key}
+                  type="button"
+                  className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
+                  aria-label={`Inspect connection ${byId.get(connection.elementIds[0])?.name} and ${byId.get(connection.elementIds[1])?.name}`}
+                  aria-pressed={
+                    selectedConnectionKey === connection.key ||
+                    connection.relationshipIds.includes(selectedId ?? "")
+                  }
+                  onClick={() => inspectConnection(connection)}
+                >
+                  {byId.get(connection.elementIds[0])?.name} —{" "}
+                  {byId.get(connection.elementIds[1])?.name} · {connection.relationshipIds.length}{" "}
+                  relationship(s)
+                </button>
+              ))}
+            </div>
+            {pageCount > 1 && (
+              <Pagination page={page} pageCount={pageCount} onPageChange={setElementPage} />
+            )}
+          </details>
+          <details hidden={fillHeight && !dockToolsOpen} className="border-b p-3 text-sm">
+            <summary className="cursor-pointer">Graph options</summary>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              {showPresentationOptions && (
+                <SelectField
+                  label="Relationship origin"
+                  value={origin}
+                  onChange={(v) => {
+                    changeOrigin(v as typeof origin);
+                  }}
+                  options={[
+                    { value: "all", label: "All relationships" },
+                    { value: "source", label: "Source and configuration" },
+                    { value: "deployment", label: "Deployment dependencies" },
+                    { value: "runtime", label: "Runtime observations" },
+                  ]}
+                />
+              )}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  toggleExpanded();
+                }}
+              >
+                {expanded ? "Collapse service internals" : "Expand service internals"}
+              </Button>
+            </div>
+          </details>
+        </>
+      )}
       <div className={fillHeight ? "relative min-h-24 flex-1" : "relative"}>
         <div
           ref={viewport}

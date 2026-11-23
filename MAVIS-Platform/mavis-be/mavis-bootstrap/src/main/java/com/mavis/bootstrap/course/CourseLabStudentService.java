@@ -44,6 +44,7 @@ import com.mavis.platform.assignment.service.AssignmentService;
 import com.mavis.platform.submission.dto.SubmissionResponseDTO;
 import com.mavis.platform.submission.service.SubmissionService;
 import com.mavis.platform.submission.service.impl.SubmissionReviewService;
+import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import com.mavis.platform.workspace.service.CourseQuizService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -167,7 +168,8 @@ public class CourseLabStudentService {
             String scope,
             String languageStack,
             UUID parentElementId,
-            String status) {}
+            String status,
+            JsonNode properties) {}
 
     public record ReferenceRelationshipView(
             UUID id,
@@ -176,10 +178,12 @@ public class CourseLabStudentService {
             UUID targetElementId,
             String targetName,
             String relationType,
-            String originLayer) {}
+            String originLayer,
+            JsonNode properties) {}
 
     public record ReferenceEvidenceView(
             UUID id,
+            UUID elementId,
             UUID relationshipId,
             String locator,
             String sourceType,
@@ -201,6 +205,7 @@ public class CourseLabStudentService {
 
     public record ReferenceArchitectureView(
             UUID projectId,
+            String projectName,
             UUID snapshotId,
             UUID modelVersionId,
             Integer revision,
@@ -452,7 +457,7 @@ public class CourseLabStudentService {
         if (stepsNode.isEmpty()) {
             String defaultPath = primaryService.toLowerCase(Locale.ROOT).contains("gateway")
                     && appsNode != null && appsNode.has("order-service")
-                    ? (appsNode.has("payment-service") ? "/api/gateway/orders/1" : "/api/gateway/orders")
+                    ? "/api/gateway/orders"
                     : "/health";
             stepsNode.addObject()
                     .put("id", "studio-smoke")
@@ -567,7 +572,8 @@ public class CourseLabStudentService {
                         e.getScope(),
                         e.getLanguageStack(),
                         e.getParentElement() != null ? e.getParentElement().getId() : null,
-                        e.getStatus()))
+                        e.getStatus(),
+                        e.getProperties()))
                 .toList();
 
         List<ReferenceRelationshipView> relationshipViews = relationships.findByModelVersionId(modelId).stream()
@@ -578,7 +584,8 @@ public class CourseLabStudentService {
                         r.getTargetElement() != null ? r.getTargetElement().getId() : null,
                         r.getTargetElement() != null ? r.getTargetElement().getName() : null,
                         r.getRelationType(),
-                        r.getOriginLayer()))
+                        r.getOriginLayer(),
+                        r.getProperties()))
                 .toList();
 
         if (!elementViews.isEmpty() && (diagramViews.isEmpty()
@@ -601,6 +608,7 @@ public class CourseLabStudentService {
         List<ReferenceEvidenceView> evidenceViews = evidences.findByModelVersionId(modelId).stream()
                 .map(ev -> new ReferenceEvidenceView(
                         ev.getId(),
+                        ev.getElement() != null ? ev.getElement().getId() : null,
                         ev.getRelationship() != null ? ev.getRelationship().getId() : null,
                         ev.getLocator(),
                         ev.getSourceType(),
@@ -620,6 +628,7 @@ public class CourseLabStudentService {
 
         return new ReferenceArchitectureView(
                 refModel.getProject().getId(),
+                refModel.getProject().getName(),
                 refModel.getSourceSnapshot().getId(),
                 modelId,
                 refModel.getRevision(),
@@ -894,7 +903,7 @@ public class CourseLabStudentService {
                 .filter(el -> "SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType()) && el.getName() != null)
                 .toList();
         if (containers.isEmpty()) {
-            for (String svc : List.of("api-gateway", "order-service", "payment-service", "inventory-service")) {
+            for (String svc : JavaCourseraCatalog.CURATED_SERVICES) {
                 blocks.addObject().put("service", svc).put("label", svc).put("canScale", true).put("initiallyStopped", false);
             }
         } else {

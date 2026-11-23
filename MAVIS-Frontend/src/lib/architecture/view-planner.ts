@@ -458,3 +458,109 @@ export function planArchitectureViews(
     views,
   };
 }
+
+const CANONICAL_SERVICE_ORDER = [
+  "api-gateway",
+  "identity-service",
+  "catalog-service",
+  "order-service",
+  "notification-service",
+  "service-discovery",
+];
+
+/**
+ * Builds a single grouped C3 Component overview containing all populated
+ * microservices as boundary containers and their internal + cross-service component
+ * interactions (synchronous Feign/HTTP & asynchronous Kafka messaging).
+ */
+export function buildAllServicesComponentDocument(raw: unknown): DiagramDocument | null {
+  const model = diagramDocument.parse(raw);
+  const nodes = model.layoutJson.nodes;
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+
+  const populatedContainers = nodes
+    .filter((node) => kindOf(node) === "SERVICE_CONTAINER")
+    .filter((container) =>
+      nodes.some((child) => child.parentId === container.id && kindOf(child) === "COMPONENT"),
+    )
+    .sort((a, b) => {
+      const ia = CANONICAL_SERVICE_ORDER.indexOf(a.name);
+      const ib = CANONICAL_SERVICE_ORDER.indexOf(b.name);
+      if (ia !== -1 || ib !== -1) {
+        return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+  if (populatedContainers.length === 0) return null;
+
+  const selectedIds = new Set<string>();
+  const componentIds = new Set<string>();
+  const MAX_NODES = 90;
+
+  for (const container of populatedContainers) {
+    if (selectedIds.size >= MAX_NODES) break;
+    const children = nodes
+      .filter((child) => child.parentId === container.id && kindOf(child) === "COMPONENT")
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (selectedIds.size + 1 + children.length > MAX_NODES && selectedIds.size > 0) {
+      continue;
+    }
+    selectedIds.add(container.id);
+    for (const child of children) {
+      if (selectedIds.size >= MAX_NODES) break;
+      selectedIds.add(child.id);
+      componentIds.add(child.id);
+    }
+  }
+
+  const candidateEdges = model.layoutJson.edges
+    .filter((edge) => !deployment(edge))
+    .filter((edge) => {
+      const { from, to } = ends(edge);
+      const fromEl = byId.get(from);
+      const toEl = byId.get(to);
+      if (!fromEl || !toEl) return false;
+      const fromIsComp = componentIds.has(from);
+      const toIsComp = componentIds.has(to);
+      if (fromIsComp && toIsComp) return true;
+      const fromIsChannel = ["MESSAGE_CHANNEL", "QUEUE_BROKER"].includes(kindOf(fromEl));
+      const toIsChannel = ["MESSAGE_CHANNEL", "QUEUE_BROKER"].includes(kindOf(toEl));
+      return (fromIsComp && toIsChannel) || (fromIsChannel && toIsComp);
+    })
+    .slice(0, 180);
+
+  for (const edge of candidateEdges) {
+    const { from, to } = ends(edge);
+    if (byId.has(from)) selectedIds.add(from);
+    if (byId.has(to)) selectedIds.add(to);
+  }
+
+  const selectedNodes = nodes.filter((node) => selectedIds.has(node.id));
+  const includedEdges = new Set(candidateEdges.map((edge) => edge.id));
+
+  return {
+    ...model,
+    notation: "C4",
+    level: "COMPONENT",
+    viewId: "components:all",
+    viewTitle: "C4 · Component · All Services",
+    policyVersion: VIEW_POLICY_VERSION,
+    omittedNodes: nodes.filter((node) => !selectedIds.has(node.id)).length,
+    omittedEdges: model.layoutJson.edges.filter((edge) => !includedEdges.has(edge.id)).length,
+    projection: {
+      includedNodeIds: [...selectedIds],
+      includedEdgeIds: [...includedEdges],
+      excludedNodes: nodes
+        .filter((node) => !selectedIds.has(node.id))
+        .map((node) => ({ id: node.id, reason: "outside-view-scope" })),
+      excludedEdges: model.layoutJson.edges
+        .filter((edge) => !includedEdges.has(edge.id))
+        .map((edge) => ({ id: edge.id, reason: "outside-view-scope" })),
+    },
+    layoutJson: {
+      nodes: selectedNodes,
+      edges: candidateEdges,
+    },
+  };
+}

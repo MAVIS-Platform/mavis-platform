@@ -66,6 +66,7 @@ export function projectGraphModel(
     "DATABASE",
     "QUEUE_BROKER",
     "MESSAGE_CHANNEL",
+    "PERSON",
     "EXTERNAL_SYSTEM",
   ]);
   const implementationTypes = new Set([
@@ -258,6 +259,7 @@ export function graphCategory(type: string | undefined): GraphCategory {
       return "messaging";
     case "COMPONENT":
       return "component";
+    case "PERSON":
     case "EXTERNAL_SYSTEM":
       return "external";
     default:

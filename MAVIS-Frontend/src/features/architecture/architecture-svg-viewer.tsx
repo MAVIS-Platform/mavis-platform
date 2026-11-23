@@ -18,9 +18,22 @@ function formatLocalizedScopeMeta(
   return raw.replace(/^Semantic review required\s*·?\s*/i, "").trim();
 }
 
+function parseMetadataIds(raw: string | null, field: "underlyingNodeIds" | "underlyingEdgeIds"): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const list = parsed?.[field];
+    return Array.isArray(list) ? list.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 interface ParsedSvgNode {
   id: string;
   mavisId: string;
+  canonicalId?: string | undefined;
+  underlyingIds?: string[] | undefined;
   role: string;
   parent: string;
   label: string;
@@ -37,6 +50,8 @@ interface ParsedSvgNode {
 interface ParsedSvgEdgeLabel {
   id: string;
   edgeId: string;
+  canonicalId?: string | undefined;
+  underlyingIds?: string[] | undefined;
   label: string;
   x: number;
   y: number;
@@ -47,12 +62,15 @@ interface ParsedSvgEdgeLabel {
 interface ParsedSvgEdge {
   id: string;
   mavisId: string;
+  canonicalId?: string | undefined;
+  underlyingIds?: string[] | undefined;
   source: string;
   target: string;
   sourcePoint: { x: number; y: number } | null;
   targetPoint: { x: number; y: number } | null;
   label: string;
   dashed: boolean;
+  relationType?: string;
   exitX: number | null;
   exitY: number | null;
   entryX: number | null;
@@ -75,6 +93,7 @@ interface ParsedDiagram {
   viewBox: string;
   hasBoundary: boolean;
   hasDatabase: boolean;
+  hasCache: boolean;
   hasChannel: boolean;
   hasDashedEdge: boolean;
 }
@@ -102,6 +121,27 @@ export function getSvgNodePalette(
           headerFill: "#e2e8f0",
           title: "#0f172a",
           tag: "#334155",
+          sub: "#475569",
+        };
+  }
+  if (role === "CACHE_DATABASE") {
+    return isDark
+      ? {
+          fill: "#2c0b16",
+          stroke: "#fb7185",
+          accent: "#fda4af",
+          headerFill: "#4c0519",
+          title: "#ffe4e6",
+          tag: "#fda4af",
+          sub: "#cbd5e1",
+        }
+      : {
+          fill: "#fff1f2",
+          stroke: "#e11d48",
+          accent: "#e11d48",
+          headerFill: "#ffe4e6",
+          title: "#881337",
+          tag: "#be123c",
           sub: "#475569",
         };
   }
@@ -199,7 +239,28 @@ export function getSvgNodePalette(
           sub: "#57534e",
         };
   }
-  if (role === "SYSTEM" || role === "SOFTWARE_SYSTEM" || role === "PERSON") {
+  if (role === "PERSON") {
+    return isDark
+      ? {
+          fill: "#17153b",
+          stroke: "#818cf8",
+          accent: "#a5b4fc",
+          headerFill: "#1e1b4b",
+          title: "#e0e7ff",
+          tag: "#a5b4fc",
+          sub: "#94a3b8",
+        }
+      : {
+          fill: "#eef2ff",
+          stroke: "#4f46e5",
+          accent: "#4f46e5",
+          headerFill: "#e0e7ff",
+          title: "#1e1b4b",
+          tag: "#4338ca",
+          sub: "#475569",
+        };
+  }
+  if (role === "SYSTEM" || role === "SOFTWARE_SYSTEM") {
     return isDark
       ? {
           fill: "#0c1f36",
@@ -434,10 +495,28 @@ function parseDiagramXml(xml: string): ParsedDiagram | null {
                   ? "rhombus"
                   : "card";
 
+        const mavisProps = cell.getAttribute("mavisProperties") || "";
+        const underlyingIds = parseMetadataIds(
+          cell.getAttribute("mavisNodeMetadata"),
+          "underlyingNodeIds",
+        );
+        const canonicalId =
+          mavisId &&
+          /^(?:system:|projection:|view:|external:)/.test(mavisId) &&
+          underlyingIds.length > 0
+            ? underlyingIds[0]!
+            : mavisId.replace(/^projection:/, "");
+        const isCache =
+          (role === "DATABASE" || role === "DATASTORE_GROUP") &&
+          (mavisProps.includes('"CACHE"') || /\bredis\b/i.test(label));
+        const resolvedRole = isCache ? "CACHE_DATABASE" : role;
+
         nodesById.set(id, {
           id,
           mavisId,
-          role,
+          canonicalId,
+          underlyingIds,
+          role: resolvedRole,
           parent,
           label,
           x,
@@ -452,6 +531,12 @@ function parseDiagramXml(xml: string): ParsedDiagram | null {
       } else if (cell.getAttribute("edge") === "1") {
         const source = cell.getAttribute("source") || "";
         const target = cell.getAttribute("target") || "";
+        const relationType = cell.getAttribute("mavisRelationType") || "";
+        const underlyingIds = parseMetadataIds(
+          cell.getAttribute("mavisEdgeMetadata"),
+          "underlyingEdgeIds",
+        );
+        const canonicalId = underlyingIds[0] ?? mavisId.replace(/^projection:/, "");
         const dashed = getStyleProp(style, "dashed", "0") === "1";
         const pts: Array<{ x: number; y: number }> = [];
         const arr = cell.querySelector('mxGeometry > Array[as="points"]');
@@ -474,18 +559,36 @@ function parseDiagramXml(xml: string): ParsedDiagram | null {
         edges.push({
           id,
           mavisId,
+          canonicalId,
+          underlyingIds,
           source,
           target,
           sourcePoint: readPoint("sourcePoint"),
           targetPoint: readPoint("targetPoint"),
           label,
           dashed,
+          relationType,
           exitX: getStyleNum(style, "exitX"),
           exitY: getStyleNum(style, "exitY"),
           entryX: getStyleNum(style, "entryX"),
           entryY: getStyleNum(style, "entryY"),
           points: pts,
         });
+      }
+    }
+
+    const edgeByAnyId = new Map<string, ParsedSvgEdge>();
+    for (const edge of edges) {
+      edgeByAnyId.set(edge.id, edge);
+      if (edge.mavisId) edgeByAnyId.set(edge.mavisId, edge);
+    }
+    for (const lbl of edgeLabels) {
+      const matchedEdge = edgeByAnyId.get(lbl.edgeId);
+      if (matchedEdge) {
+        lbl.canonicalId = matchedEdge.canonicalId;
+        lbl.underlyingIds = matchedEdge.underlyingIds;
+      } else if (lbl.edgeId) {
+        lbl.canonicalId = lbl.edgeId.replace(/^projection:/, "");
       }
     }
 
@@ -567,7 +670,10 @@ function parseDiagramXml(xml: string): ParsedDiagram | null {
       vbH,
       viewBox: `${vbX} ${vbY} ${vbW} ${vbH}`,
       hasBoundary: resolvedNodes.some((n) => n.shape === "boundary"),
-      hasDatabase: resolvedNodes.some((n) => n.shape === "cylinder"),
+      hasDatabase: resolvedNodes.some(
+        (n) => n.shape === "cylinder" && n.role !== "CACHE_DATABASE",
+      ),
+      hasCache: resolvedNodes.some((n) => n.role === "CACHE_DATABASE"),
       hasChannel: resolvedNodes.some((n) => n.shape === "channel"),
       hasDashedEdge: validEdges.some((e) => e.dashed),
     };
@@ -1059,7 +1165,23 @@ export function ArchitectureSvgViewer({
             {parsed.edges.map((edge) => {
               const allPts = resolveEdgePoints(edge, parsed.resolvedById);
               const pathD = buildRoundedPolylinePath(allPts, 6);
-              const isSelected = Boolean(selectedId && edge.mavisId && selectedId === edge.mavisId);
+              const selectTarget = edge.canonicalId || edge.mavisId;
+              const isSelected = Boolean(
+                selectedId &&
+                  (selectedId === edge.mavisId ||
+                    selectedId === selectTarget ||
+                    edge.underlyingIds?.includes(selectedId)),
+              );
+              const isAsyncEdge =
+                edge.relationType === "MESSAGE_PUBLISH" ||
+                edge.relationType === "MESSAGE_SUBSCRIBE";
+              const strokeColor = isSelected
+                ? edgeStrokeSelected
+                : isAsyncEdge
+                  ? isDark
+                    ? "#a78bfa"
+                    : "#7c3aed"
+                  : edgeStrokeDefault;
               const startPt = allPts[0] ?? { x: 0, y: 0 };
               const endPt = allPts.at(-1) ?? startPt;
               const mid = allPts[Math.floor(allPts.length / 2)] ?? {
@@ -1071,17 +1193,17 @@ export function ArchitectureSvgViewer({
                 <g
                   key={edge.id}
                   onClick={
-                    onSelect && edge.mavisId ? () => onSelect(edge.mavisId) : undefined
+                    onSelect && selectTarget ? () => onSelect(selectTarget) : undefined
                   }
-                  className={onSelect && edge.mavisId ? "cursor-pointer" : undefined}
+                  className={onSelect && selectTarget ? "cursor-pointer" : undefined}
                 >
                   <path d={pathD} fill="none" stroke="transparent" strokeWidth={12} />
                   <path
                     d={pathD}
                     fill="none"
-                    stroke={isSelected ? edgeStrokeSelected : edgeStrokeDefault}
-                    strokeWidth={isSelected ? 2.4 : 1.65}
-                    strokeDasharray={edge.dashed ? "6,4" : undefined}
+                    stroke={strokeColor}
+                    strokeWidth={isSelected ? 2.4 : isAsyncEdge ? 1.8 : 1.65}
+                    strokeDasharray={edge.dashed ? "6,4" : isAsyncEdge ? "5,3" : undefined}
                     markerEnd={
                       isSelected ? `url(#${arrowActiveId})` : `url(#${arrowId})`
                     }
@@ -1119,8 +1241,12 @@ export function ArchitectureSvgViewer({
               .filter((n) => n.shape !== "boundary")
               .map((node) => {
                 const c = getSvgNodePalette(node.role, node.shape, isDark);
+                const selectTarget = node.canonicalId || node.mavisId;
                 const isSelected = Boolean(
-                  selectedId && node.mavisId && selectedId === node.mavisId,
+                  selectedId &&
+                    (selectedId === node.mavisId ||
+                      selectedId === selectTarget ||
+                      node.underlyingIds?.includes(selectedId)),
                 );
                 const maxChars = Math.max(20, Math.floor((node.width - 28) / 6.4));
                 const rawLines = node.label.split("\n").filter(Boolean);
@@ -1139,9 +1265,9 @@ export function ArchitectureSvgViewer({
                     transform={`translate(${node.x}, ${node.y})`}
                     filter={`url(#${shadowId})`}
                     onClick={
-                      onSelect && node.mavisId ? () => onSelect(node.mavisId) : undefined
+                      onSelect && selectTarget ? () => onSelect(selectTarget) : undefined
                     }
-                    className={onSelect && node.mavisId ? "cursor-pointer" : undefined}
+                    className={onSelect && selectTarget ? "cursor-pointer" : undefined}
                   >
                     {isSelected && (
                       <rect
@@ -1267,16 +1393,22 @@ export function ArchitectureSvgViewer({
             {/* Layer 4: Standalone Edge Labels (clean floating pills) */}
             {parsed.edgeLabels.map((lbl) => {
               const lines = lbl.label.split("\n").slice(0, 3);
-              const isSelected = Boolean(selectedId && lbl.edgeId && selectedId === lbl.edgeId);
+              const selectTarget = lbl.canonicalId || lbl.edgeId;
+              const isSelected = Boolean(
+                selectedId &&
+                  (selectedId === lbl.edgeId ||
+                    selectedId === selectTarget ||
+                    lbl.underlyingIds?.includes(selectedId)),
+              );
               const pillH = Math.max(22, lines.length * 14 + 8);
               const pillY = lbl.y + (lbl.height - pillH) / 2;
               return (
                 <g
                   key={lbl.id}
                   onClick={
-                    onSelect && lbl.edgeId ? () => onSelect(lbl.edgeId) : undefined
+                    onSelect && selectTarget ? () => onSelect(selectTarget) : undefined
                   }
-                  className={onSelect && lbl.edgeId ? "cursor-pointer" : undefined}
+                  className={onSelect && selectTarget ? "cursor-pointer" : undefined}
                 >
                   <rect
                     x={lbl.x}
@@ -1325,7 +1457,13 @@ export function ArchitectureSvgViewer({
           {parsed.hasDatabase && (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-3 w-3.5 rounded-full border border-emerald-600 bg-emerald-100 dark:border-emerald-500/70 dark:bg-emerald-500/20" />
-              {t("Database", "Cơ sở dữ liệu")}
+              {t("PostgreSQL DB", "Cơ sở dữ liệu PostgreSQL")}
+            </span>
+          )}
+          {parsed.hasCache && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3.5 rounded-full border border-rose-600 bg-rose-100 dark:border-rose-500/70 dark:bg-rose-500/20" />
+              {t("Redis Cache", "Bộ nhớ đệm Redis")}
             </span>
           )}
           {parsed.hasChannel && (
