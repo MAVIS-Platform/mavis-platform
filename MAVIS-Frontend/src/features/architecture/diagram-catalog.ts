@@ -4,7 +4,7 @@ import {
   isDeclarativeClientElement,
 } from "./classifier-semantics";
 import { contextProjection, logicalProjection, processProjection } from "./diagram-projections";
-import { planArchitectureViews } from "@/lib/architecture/view-planner";
+import { buildAllServicesComponentDocument, planArchitectureViews } from "@/lib/architecture/view-planner";
 import type { DiagramDocument } from "@/lib/drawio/rules";
 export type DiagramFamily = "C4" | "4+1" | "UML";
 export type DiagramKind =
@@ -240,7 +240,11 @@ export function selectDiagram(
         ...document,
         viewId: key,
         viewTitle: ["COMPONENT", "LOGICAL"].includes(kind)
-          ? `${kind === "COMPONENT" ? "C4 · Component" : "4+1 · Logical"} · ${model.elements.find((n) => n.id === containerId)?.name ?? "Service"}`
+          ? `${kind === "COMPONENT" ? "C4 · Component" : "4+1 · Logical"} · ${
+              containerId === "ALL"
+                ? "All Services"
+                : (model.elements.find((n) => n.id === containerId)?.name ?? "Service")
+            }`
           : kind === "CONTAINER"
             ? "C4 · Container"
             : `4+1 · ${diagramKinds["4+1"].find((item) => item.value === kind)?.label ?? kind}`,
@@ -250,6 +254,10 @@ export function selectDiagram(
   }
   if (kind === "CONTAINER") return ready(pack.views.find((v) => v.id === "containers")!.document);
   if (kind === "COMPONENT") {
+    if (containerId === "ALL") {
+      const allServicesDoc = buildAllServicesComponentDocument(raw);
+      if (allServicesDoc) return ready(allServicesDoc);
+    }
     const view = pack.views.find((v) => v.id === `components:${containerId}`);
     return view
       ? ready(view.document)
