@@ -1366,17 +1366,115 @@ export function StudioObservability({
     };
   }, [camera.yaw, clampedPitch]);
 
-  const { positions, deckBounds } = useMemo(() => {
+  // Camera-independent 3D world layout so orbiting/panning never rebuilds the WebGL scene
+  const { worldPoints, deckBounds } = useMemo(() => {
     let minNodeX = Infinity;
     let maxNodeX = -Infinity;
     let minNodeZ = Infinity;
     let maxNodeZ = -Infinity;
     const deckPadding = 105;
+    const pts = new Map<string, { wx: number; wz: number; tier: number }>();
+    const total = Math.max(1, data.services.length);
+
+    const tierGroups = new Map<number, string[]>();
+    data.services.forEach((name) => {
+      const tier = serviceDepth.get(name) ?? 0;
+      const list = tierGroups.get(tier) ?? [];
+      list.push(name);
+      tierGroups.set(tier, list);
+    });
+    const tierKeys = [...tierGroups.keys()].sort((a, b) => a - b);
+    const effectiveColumns: Array<{ tier: number; nodes: string[] }> = [];
+    for (const tier of tierKeys) {
+      const list = tierGroups.get(tier) ?? [];
+      for (let i = 0; i < list.length; i += 4) {
+        effectiveColumns.push({ tier, nodes: list.slice(i, i + 4) });
+      }
+    }
+    const colLocation = new Map<string, { colIdx: number; rowIdx: number; rowCount: number }>();
+    effectiveColumns.forEach((col, colIdx) => {
+      col.nodes.forEach((name, rowIdx) => {
+        colLocation.set(name, { colIdx, rowIdx, rowCount: col.nodes.length });
+      });
+    });
+    const totalCols = Math.max(1, effectiveColumns.length);
+
+    data.services.forEach((name, index) => {
+      const tier = serviceDepth.get(name) ?? 0;
+      const positionKey = "3D:" + name;
+      const offset = customOffsets[positionKey] ?? { x: 0, y: 0 };
+      const pinned = pinnedPositions[positionKey];
+      let wx = 0;
+      let wz = 0;
+      if (layoutMode === "CIRCULAR") {
+        const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
+        const radius = Math.min(270, 175 + total * 12);
+        wx = Math.cos(angle) * radius;
+        wz = Math.sin(angle) * radius;
+      } else if (layoutMode === "GRID") {
+        const cols = Math.max(2, Math.ceil(Math.sqrt(total)));
+        const col = index % cols;
+        const row = Math.floor(index / cols);
+        const rows = Math.ceil(total / cols);
+        const spX = Math.min(220, 520 / Math.max(1, cols - 1));
+        const spZ = Math.min(210, 460 / Math.max(1, rows - 1));
+        wx = (col - (cols - 1) / 2) * spX;
+        wz = (row - (rows - 1) / 2) * spZ;
+      } else {
+        const loc = colLocation.get(name) ?? { colIdx: 0, rowIdx: 0, rowCount: 1 };
+        const spX = totalCols <= 1 ? 0 : Math.min(220, 560 / (totalCols - 1));
+        const spZ = loc.rowCount <= 1 ? 0 : Math.min(230, 480 / (loc.rowCount - 1));
+        wx = (loc.colIdx - (totalCols - 1) / 2) * spX;
+        wz = (loc.rowIdx - (loc.rowCount - 1) / 2) * spZ;
+      }
+      const nodeX = (pinned?.x ?? wx) + offset.x;
+      const nodeZ = (pinned?.y ?? wz) + offset.y;
+      minNodeX = Math.min(minNodeX, nodeX);
+      maxNodeX = Math.max(maxNodeX, nodeX);
+      minNodeZ = Math.min(minNodeZ, nodeZ);
+      maxNodeZ = Math.max(maxNodeZ, nodeZ);
+      pts.set(name, { wx: nodeX, wz: nodeZ, tier });
+    });
+
+    const bounds =
+      Number.isFinite(minNodeX) && Number.isFinite(minNodeZ)
+        ? {
+            minX: Math.min(-220, minNodeX - deckPadding),
+            maxX: Math.max(220, maxNodeX + deckPadding),
+            minZ: Math.min(-180, minNodeZ - deckPadding),
+            maxZ: Math.max(180, maxNodeZ + deckPadding),
+          }
+        : { minX: -260, maxX: 260, minZ: -200, maxZ: 200 };
+
+    return { worldPoints: pts, deckBounds: bounds };
+  }, [data.services, serviceDepth, layoutMode, customOffsets, pinnedPositions]);
+
+  const svgProject3D = webglActive ? null : project3DPoint;
+
+  const positions = useMemo(() => {
     const raw = new Map<
       string,
       { x: number; y: number; z: number; tier: number; wx: number; wz: number; persp: number }
     >();
     const total = Math.max(1, data.services.length);
+
+    if (view === "3D") {
+      for (const [name, pt] of worldPoints.entries()) {
+        const proj = svgProject3D
+          ? svgProject3D(pt.wx, 0, pt.wz)
+          : { x: 615 + pt.wx, y: 318 + pt.wz, z: 0, persp: 1 };
+        raw.set(name, {
+          x: proj.x,
+          y: proj.y,
+          z: proj.z,
+          tier: pt.tier,
+          wx: pt.wx,
+          wz: pt.wz,
+          persp: proj.persp,
+        });
+      }
+      return raw;
+    }
 
     const tierGroups = new Map<number, string[]>();
     data.services.forEach((name) => {
@@ -1406,52 +1504,8 @@ export function StudioObservability({
 
     data.services.forEach((name, index) => {
       const tier = serviceDepth.get(name) ?? 0;
-      const positionKey = view === "3D" ? "3D:" + name : name;
-      const offset = customOffsets[positionKey] ?? { x: 0, y: 0 };
-      const pinned = pinnedPositions[positionKey];
-
-      if (view === "3D") {
-        let wx = 0;
-        let wz = 0;
-        if (layoutMode === "CIRCULAR") {
-          const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
-          const radius = Math.min(270, 175 + total * 12);
-          wx = Math.cos(angle) * radius;
-          wz = Math.sin(angle) * radius;
-        } else if (layoutMode === "GRID") {
-          const cols = Math.max(2, Math.ceil(Math.sqrt(total)));
-          const col = index % cols;
-          const row = Math.floor(index / cols);
-          const rows = Math.ceil(total / cols);
-          const spX = Math.min(220, 520 / Math.max(1, cols - 1));
-          const spZ = Math.min(210, 460 / Math.max(1, rows - 1));
-          wx = (col - (cols - 1) / 2) * spX;
-          wz = (row - (rows - 1) / 2) * spZ;
-        } else {
-          const loc = colLocation.get(name) ?? { colIdx: 0, rowIdx: 0, rowCount: 1 };
-          const spX = totalCols <= 1 ? 0 : Math.min(220, 560 / (totalCols - 1));
-          const spZ = loc.rowCount <= 1 ? 0 : Math.min(230, 480 / (loc.rowCount - 1));
-          wx = (loc.colIdx - (totalCols - 1) / 2) * spX;
-          wz = (loc.rowIdx - (loc.rowCount - 1) / 2) * spZ;
-        }
-        const nodeX = (pinned?.x ?? wx) + offset.x;
-        const nodeZ = (pinned?.y ?? wz) + offset.y;
-        minNodeX = Math.min(minNodeX, nodeX);
-        maxNodeX = Math.max(maxNodeX, nodeX);
-        minNodeZ = Math.min(minNodeZ, nodeZ);
-        maxNodeZ = Math.max(maxNodeZ, nodeZ);
-        const proj = project3DPoint(nodeX, 0, nodeZ);
-        raw.set(name, {
-          x: proj.x,
-          y: proj.y,
-          z: proj.z,
-          tier,
-          wx: nodeX,
-          wz: nodeZ,
-          persp: proj.persp,
-        });
-        return;
-      }
+      const offset = customOffsets[name] ?? { x: 0, y: 0 };
+      const pinned = pinnedPositions[name];
 
       // 2D Mode Coordinates
       let x = 0;
@@ -1493,23 +1547,14 @@ export function StudioObservability({
       });
     });
 
-    const deckBounds =
-      Number.isFinite(minNodeX) && Number.isFinite(minNodeZ)
-        ? {
-            minX: Math.min(-220, minNodeX - deckPadding),
-            maxX: Math.max(220, maxNodeX + deckPadding),
-            minZ: Math.min(-180, minNodeZ - deckPadding),
-            maxZ: Math.max(180, maxNodeZ + deckPadding),
-          }
-        : { minX: -260, maxX: 260, minZ: -200, maxZ: 200 };
-
-    return { positions: raw, deckBounds };
+    return raw;
   }, [
     data.services,
     serviceDepth,
     layoutMode,
     view,
-    project3DPoint,
+    worldPoints,
+    svgProject3D,
     customOffsets,
     pinnedPositions,
     snapToGrid,
@@ -1525,7 +1570,7 @@ export function StudioObservability({
     };
     const selectedIsStopped = selected ? replicasFor(selected) === 0 : false;
     const builtNodes: StudioThreeNode[] = [];
-    for (const [name, point] of positions.entries()) {
+    for (const [name, point] of worldPoints.entries()) {
       const live = telemetry?.services.find((item) => item.service === name);
       const elId = data.serviceMappings?.[name];
       const element = reference.data?.elements.find((el) => el.id === elId);
@@ -1637,7 +1682,7 @@ export function StudioObservability({
     return { threeNodes: builtNodes, threeEdges: builtEdges };
   }, [
     view,
-    positions,
+    worldPoints,
     telemetry,
     data.serviceMappings,
     reference.data,
@@ -2016,7 +2061,7 @@ export function StudioObservability({
                     }`}
                   >
                     {webglActive
-                      ? t("Drag to orbit 3D · Scroll to zoom", "Kéo để xoay 3D · Cuộn để zoom")
+                      ? t("Right-drag to orbit · Left-drag blocks/pan · Scroll zoom", "Chuột phải xoay · Chuột trái kéo khối/nền · Cuộn zoom")
                       : t("Right-drag to orbit · Scroll to zoom", "Chuột phải kéo xoay · Cuộn để zoom")}
                   </p>
                 </div>
@@ -2327,6 +2372,19 @@ export function StudioObservability({
             onCameraChange={setCamera}
             onZoomChange={setZoom}
             onPanChange={setPan}
+            onMoveNode={(svc, deltaWx, deltaWz) => {
+              const key = `3D:${svc}`;
+              setCustomOffsets((prev) => {
+                const cur = prev[key] ?? { x: 0, y: 0 };
+                return {
+                  ...prev,
+                  [key]: {
+                    x: Math.round(cur.x + deltaWx),
+                    y: Math.round(cur.y + deltaWz),
+                  },
+                };
+              });
+            }}
             onSelect={(svc) => {
               if (svc && svc !== selected) onSound?.("select");
               onSelect(svc);

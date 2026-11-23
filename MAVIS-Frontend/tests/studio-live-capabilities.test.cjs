@@ -867,3 +867,31 @@ test("Service inspector RAM card spans full width on a single non-wrapping line"
   assert.ok(ramBlock.includes("whitespace-nowrap"), "RAM value must not wrap onto multiple lines");
   assert.ok(workbenchSrc.includes("parseMemoryMiB"), "Workbench should reuse parseMemoryMiB for utilization ratio");
 });
+
+test("3D WebGL stage uses right-drag orbit, left-drag block movement, and camera-independent world layout", () => {
+  const stageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  // Right-click orbits, left-click drags 3D blocks or pans empty floor
+  assert.ok(stageSrc.includes("if (event.button === 2)"), "Right-drag must trigger 3D orbit");
+  assert.ok(stageSrc.includes('mode: "NODE"'), "Left-drag on a 3D service block must drag the block");
+  assert.ok(stageSrc.includes("raycastGroundWorld("), "3D block dragging must project cursor onto floor plane");
+  assert.ok(stageSrc.includes("onMoveNode"), "3D stage must persist dragged block offset via onMoveNode");
+  // Scene rebuild effect must NOT depend on hoveredService (prevents lag on mouse hover)
+  assert.ok(
+    stageSrc.includes("[engineReady, nodes, edges, deckBounds, styleId, dropHoverService]"),
+    "Three.js scene rebuild must not re-run on hoveredService",
+  );
+  // Camera-independent worldPoints keeps orbit at 60fps without rebuilding WebGL meshes
+  const threeNodesBlock = obsSrc.slice(
+    obsSrc.indexOf("const { threeNodes, threeEdges } = useMemo("),
+    obsSrc.indexOf("function nodeAt("),
+  );
+  assert.ok(threeNodesBlock.includes("worldPoints"), "threeNodes must read from camera-independent worldPoints");
+  assert.ok(!threeNodesBlock.includes("positions"), "threeNodes must not depend on camera-projected positions");
+});

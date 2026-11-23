@@ -51,6 +51,7 @@ export type StudioThreeStageProps = {
   onCameraChange: (next: { yaw: number; pitch: number }) => void;
   onZoomChange: (next: number) => void;
   onPanChange: (next: { x: number; y: number }) => void;
+  onMoveNode?: (service: string, deltaWx: number, deltaWz: number) => void;
   onSelect: (service: string) => void;
   onDropTool?: (toolId: string, service: string) => void;
   onReadyChange?: (ready: boolean) => void;
@@ -68,6 +69,36 @@ type AnimatedPacket = {
   speed: number;
   phase: number;
 };
+
+type EdgeRig = {
+  from: string;
+  to: string;
+  kind: "static" | "observed";
+  line?: THREE.Line | undefined;
+  tubeMesh?: THREE.Mesh | undefined;
+  arrowMesh?: THREE.Mesh | undefined;
+  badgeSprite?: THREE.Sprite | undefined;
+  curve?: THREE.QuadraticBezierCurve3 | undefined;
+  isSevered?: boolean | undefined;
+};
+
+type StageDrag =
+  | { mode: "ORBIT"; x: number; y: number; moved: boolean; pointerId: number; lastSyncAt: number }
+  | { mode: "PAN"; x: number; y: number; moved: boolean; pointerId: number }
+  | {
+      mode: "NODE";
+      serviceId: string;
+      x: number;
+      y: number;
+      grabOffsetX: number;
+      grabOffsetZ: number;
+      startWx: number;
+      startWz: number;
+      currentWx: number;
+      currentWz: number;
+      moved: boolean;
+      pointerId: number;
+    };
 
 type AnimatedNodeRig = {
   id: string;
@@ -557,6 +588,7 @@ export function StudioThreeStage({
   onCameraChange,
   onZoomChange,
   onPanChange,
+  onMoveNode,
   onSelect,
   onDropTool,
   onReadyChange,
@@ -565,6 +597,7 @@ export function StudioThreeStage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tourBoxRef = useRef<HTMLDivElement>(null);
   const [hoveredService, setHoveredService] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [dropHoverService, setDropHoverService] = useState<string | null>(null);
   const [engineReady, setEngineReady] = useState(false);
 
@@ -580,21 +613,27 @@ export function StudioThreeStage({
   } | null>(null);
   const packetsRef = useRef<AnimatedPacket[]>([]);
   const nodeRigsRef = useRef<AnimatedNodeRig[]>([]);
+  const edgeRigsRef = useRef<EdgeRig[]>([]);
+  const liveNodePosRef = useRef<Map<string, { wx: number; wz: number }>>(new Map());
+  const raycasterRef = useRef<THREE.Raycaster | null>(null);
+  const ndcRef = useRef<THREE.Vector2 | null>(null);
+  const groundPlaneRef = useRef<THREE.Plane | null>(null);
+  const hitVecRef = useRef<THREE.Vector3 | null>(null);
+  const lastTourRectRef = useRef({ l: -1, t: -1, w: -1, h: -1 });
 
   // Smooth target vs current camera state (mutated inside RAF with zero React re-renders)
   const targetCamRef = useRef({ yaw: camera.yaw, pitch: camera.pitch, zoom, panX: pan.x, panY: pan.y });
   const liveCamRef = useRef({ yaw: camera.yaw, pitch: camera.pitch, zoom, panX: pan.x, panY: pan.y });
-  const dragRef = useRef<{
-    mode: "ORBIT" | "PAN";
-    x: number;
-    y: number;
-    moved: boolean;
-    pointerId: number;
-  } | null>(null);
-  const callbacksRef = useRef({ onCameraChange, onZoomChange, onPanChange, onSelect, onDropTool });
-  callbacksRef.current = { onCameraChange, onZoomChange, onPanChange, onSelect, onDropTool };
+  const dragRef = useRef<StageDrag | null>(null);
+  const callbacksRef = useRef({ onCameraChange, onZoomChange, onPanChange, onMoveNode, onSelect, onDropTool });
+  callbacksRef.current = { onCameraChange, onZoomChange, onPanChange, onMoveNode, onSelect, onDropTool };
 
   useEffect(() => {
+    // Do not fight active pointer drag with throttled/stale React camera props
+    if (dragRef.current && (dragRef.current.mode === "ORBIT" || dragRef.current.mode === "PAN")) {
+      targetCamRef.current.zoom = zoom;
+      return;
+    }
     targetCamRef.current = {
       yaw: camera.yaw,
       pitch: Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, camera.pitch)),
@@ -709,7 +748,7 @@ export function StudioThreeStage({
 
           const clampedPitch = Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, live.pitch));
           const dist = 13.0 / Math.max(0.4, Math.min(2.2, live.zoom));
-          const panScale = 0.0085 / Math.max(0.4, live.zoom);
+          const panScale = 0.0085;
           const lookX = -live.panX * panScale;
           const lookZ = -live.panY * panScale;
           const camX = lookX + dist * Math.cos(clampedPitch) * Math.sin(live.yaw);
@@ -740,7 +779,7 @@ export function StudioThreeStage({
 
           renderer.render(scene, perspCam);
 
-          // Update invisible projected bounding box for Guided Tour step 2 (zero React re-renders)
+          // Update invisible projected bounding box for Guided Tour step 2 only when bounds shift
           const tourBox = tourBoxRef.current;
           const rigs = nodeRigsRef.current;
           if (tourBox && rigs.length > 0) {
@@ -764,14 +803,23 @@ export function StudioThreeStage({
             }
             const padX = 76;
             const padY = 44;
-            const left = Math.max(8, minX - padX);
-            const top = Math.max(8, minY - padY);
-            const right = Math.min(w - 8, maxX + padX);
-            const bottom = Math.min(h - 8, maxY + padY);
-            tourBox.style.left = `${Math.round(left)}px`;
-            tourBox.style.top = `${Math.round(top)}px`;
-            tourBox.style.width = `${Math.max(40, Math.round(right - left))}px`;
-            tourBox.style.height = `${Math.max(40, Math.round(bottom - top))}px`;
+            const nextL = Math.round(Math.max(8, minX - padX));
+            const nextT = Math.round(Math.max(8, minY - padY));
+            const nextW = Math.max(40, Math.round(Math.min(w - 8, maxX + padX) - nextL));
+            const nextH = Math.max(40, Math.round(Math.min(h - 8, maxY + padY) - nextT));
+            const prev = lastTourRectRef.current;
+            if (
+              Math.abs(nextL - prev.l) >= 2 ||
+              Math.abs(nextT - prev.t) >= 2 ||
+              Math.abs(nextW - prev.w) >= 2 ||
+              Math.abs(nextH - prev.h) >= 2
+            ) {
+              lastTourRectRef.current = { l: nextL, t: nextT, w: nextW, h: nextH };
+              tourBox.style.left = `${nextL}px`;
+              tourBox.style.top = `${nextT}px`;
+              tourBox.style.width = `${nextW}px`;
+              tourBox.style.height = `${nextH}px`;
+            }
           }
         };
 
@@ -796,6 +844,8 @@ export function StudioThreeStage({
       lightsRef.current = null;
       packetsRef.current = [];
       nodeRigsRef.current = [];
+      edgeRigsRef.current = [];
+      liveNodePosRef.current.clear();
     };
   }, [onReadyChange]);
 
@@ -813,6 +863,8 @@ export function StudioThreeStage({
     }
     packetsRef.current = [];
     nodeRigsRef.current = [];
+    edgeRigsRef.current = [];
+    liveNodePosRef.current.clear();
 
     const styleCfg = STUDIO_STYLES[styleId];
     const isLight = !styleCfg.isDark;
@@ -915,9 +967,10 @@ export function StudioThreeStage({
     const nodeById = new Map<string, StudioThreeNode>();
     for (const node of nodes) {
       nodeById.set(node.id, node);
+      liveNodePosRef.current.set(node.id, { wx: node.wx, wz: node.wz });
       const effectiveNode =
-        dropHoverService === node.id || hoveredService === node.id
-          ? { ...node, isDropTarget: dropHoverService === node.id || node.isDropTarget }
+        dropHoverService === node.id
+          ? { ...node, isDropTarget: true }
           : node;
       const rig = buildServiceRig(T, effectiveNode, styleId);
       contentGroup.add(rig.group);
@@ -950,6 +1003,7 @@ export function StudioThreeStage({
         const line = new T.Line(lineGeo, lineMat);
         line.computeLineDistances();
         contentGroup.add(line);
+        edgeRigsRef.current.push({ from: edge.from, to: edge.to, kind: "static", line });
         continue;
       }
 
@@ -990,30 +1044,46 @@ export function StudioThreeStage({
       });
 
       // Floating Traffic Metric Badge at Apex
+      let badgeSprite: THREE.Sprite | undefined;
       if (edge.label) {
-        const badgeSprite = createEdgeBadgeSprite(T, edge.label, edge, isLight);
+        badgeSprite = createEdgeBadgeSprite(T, edge.label, edge, isLight);
         const apex = curve.getPoint(0.5);
         badgeSprite.position.set(apex.x, apex.y + 0.22, apex.z);
         contentGroup.add(badgeSprite);
       }
+
+      edgeRigsRef.current.push({
+        from: edge.from,
+        to: edge.to,
+        kind: "observed",
+        tubeMesh,
+        arrowMesh,
+        badgeSprite,
+        curve,
+        isSevered: edge.isSevered,
+      });
     }
-  }, [engineReady, nodes, edges, deckBounds, styleId, hoveredService, dropHoverService]);
+  }, [engineReady, nodes, edges, deckBounds, styleId, dropHoverService]);
 
   function raycastServiceAt(clientX: number, clientY: number): string | null {
     const T = threeRef.current;
     const canvas = canvasRef.current;
     const perspCam = cameraRef.current;
-    const contentGroup = contentGroupRef.current;
-    if (!T || !canvas || !perspCam || !contentGroup) return null;
+    const rigs = nodeRigsRef.current;
+    if (!T || !canvas || !perspCam || rigs.length === 0) return null;
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
-    const ndc = new T.Vector2(
+    const ndc = ndcRef.current ?? (ndcRef.current = new T.Vector2());
+    const raycaster = raycasterRef.current ?? (raycasterRef.current = new T.Raycaster());
+    ndc.set(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
-    const raycaster = new T.Raycaster();
     raycaster.setFromCamera(ndc, perspCam);
-    const hits = raycaster.intersectObjects(contentGroup.children, true);
+    const hits = raycaster.intersectObjects(
+      rigs.map((r) => r.group),
+      true,
+    );
     for (const hit of hits) {
       let cur: THREE.Object3D | null = hit.object;
       while (cur) {
@@ -1025,6 +1095,74 @@ export function StudioThreeStage({
       }
     }
     return null;
+  }
+
+  function raycastGroundWorld(clientX: number, clientY: number): { wx: number; wz: number } | null {
+    const T = threeRef.current;
+    const canvas = canvasRef.current;
+    const perspCam = cameraRef.current;
+    if (!T || !canvas || !perspCam) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const ndc = ndcRef.current ?? (ndcRef.current = new T.Vector2());
+    const raycaster = raycasterRef.current ?? (raycasterRef.current = new T.Raycaster());
+    const plane =
+      groundPlaneRef.current ?? (groundPlaneRef.current = new T.Plane(new T.Vector3(0, 1, 0), 0));
+    const hit = hitVecRef.current ?? (hitVecRef.current = new T.Vector3());
+    ndc.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(ndc, perspCam);
+    if (!raycaster.ray.intersectPlane(plane, hit)) return null;
+    return { wx: hit.x / WORLD_SCALE, wz: hit.z / WORLD_SCALE };
+  }
+
+  function updateLiveNodeAndEdges(serviceId: string, wx: number, wz: number) {
+    const T = threeRef.current;
+    if (!T) return;
+    liveNodePosRef.current.set(serviceId, { wx, wz });
+    const rig = nodeRigsRef.current.find((item) => item.id === serviceId);
+    if (rig) {
+      rig.group.position.set(wx * WORLD_SCALE, 0, wz * WORLD_SCALE);
+    }
+    const up = new T.Vector3(0, 1, 0);
+    for (const edge of edgeRigsRef.current) {
+      if (edge.from !== serviceId && edge.to !== serviceId) continue;
+      const a = liveNodePosRef.current.get(edge.from);
+      const b = liveNodePosRef.current.get(edge.to);
+      if (!a || !b) continue;
+      const ax = a.wx * WORLD_SCALE;
+      const az = a.wz * WORLD_SCALE;
+      const bx = b.wx * WORLD_SCALE;
+      const bz = b.wz * WORLD_SCALE;
+      if (edge.kind === "static" && edge.line) {
+        const pos = edge.line.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+        if (pos) {
+          pos.setXYZ(0, ax, 0.024, az);
+          pos.setXYZ(1, bx, 0.024, bz);
+          pos.needsUpdate = true;
+          edge.line.computeLineDistances();
+        }
+      } else if (edge.kind === "observed" && edge.curve && edge.tubeMesh) {
+        edge.curve.v0.set(ax, 0.06, az);
+        edge.curve.v2.set(bx, 0.06, bz);
+        const dist = edge.curve.v0.distanceTo(edge.curve.v2);
+        const lift = Math.min(1.55, Math.max(0.62, dist * 0.27));
+        edge.curve.v1.set((ax + bx) / 2, lift, (az + bz) / 2);
+        const nextGeo = new T.TubeGeometry(edge.curve, 24, edge.isSevered ? 0.032 : 0.036, 8, false);
+        edge.tubeMesh.geometry.dispose();
+        edge.tubeMesh.geometry = nextGeo;
+        if (edge.arrowMesh) {
+          edge.arrowMesh.position.copy(edge.curve.getPoint(0.84));
+          edge.arrowMesh.quaternion.setFromUnitVectors(up, edge.curve.getTangent(0.84).normalize());
+        }
+        if (edge.badgeSprite) {
+          const apex = edge.curve.getPoint(0.5);
+          edge.badgeSprite.position.set(apex.x, apex.y + 0.22, apex.z);
+        }
+      }
+    }
   }
 
   return (
@@ -1049,26 +1187,72 @@ export function StudioThreeStage({
         data-camera-pitch={String(Math.round((Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, camera.pitch)) * 180) / Math.PI))}
         aria-label="Live 3D WebGL runtime topology"
         className={`block h-full w-full touch-none select-none ${
-          hoveredService ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
+          isDragging ? "cursor-grabbing" : hoveredService ? "cursor-grab" : "cursor-default"
         }`}
         onContextMenu={(event) => event.preventDefault()}
         onWheel={(event) => {
           event.preventDefault();
           const factor = event.deltaY < 0 ? 1.1 : 0.91;
           const nextZoom = Math.max(0.45, Math.min(2.2, Number((targetCamRef.current.zoom * factor).toFixed(2))));
+          targetCamRef.current.zoom = nextZoom;
           callbacksRef.current.onZoomChange(nextZoom);
         }}
         onPointerDown={(event) => {
           if (![0, 1, 2].includes(event.button)) return;
           event.preventDefault();
-          const isPan = event.button === 1 || (event.button === 0 && event.shiftKey);
+
+          // Right mouse button = Orbit 3D camera 360°
+          if (event.button === 2) {
+            dragRef.current = {
+              mode: "ORBIT",
+              x: event.clientX,
+              y: event.clientY,
+              moved: false,
+              pointerId: event.pointerId,
+              lastSyncAt: performance.now(),
+            };
+            setIsDragging(true);
+            event.currentTarget.setPointerCapture(event.pointerId);
+            return;
+          }
+
+          // Left mouse button on a 3D service block = Drag block smoothly across the 3D deck
+          if (event.button === 0 && !event.shiftKey) {
+            const hitService = raycastServiceAt(event.clientX, event.clientY);
+            if (hitService) {
+              const current = liveNodePosRef.current.get(hitService);
+              const floor = raycastGroundWorld(event.clientX, event.clientY);
+              if (current && floor) {
+                dragRef.current = {
+                  mode: "NODE",
+                  serviceId: hitService,
+                  x: event.clientX,
+                  y: event.clientY,
+                  grabOffsetX: current.wx - floor.wx,
+                  grabOffsetZ: current.wz - floor.wz,
+                  startWx: current.wx,
+                  startWz: current.wz,
+                  currentWx: current.wx,
+                  currentWz: current.wz,
+                  moved: false,
+                  pointerId: event.pointerId,
+                };
+                setIsDragging(true);
+                event.currentTarget.setPointerCapture(event.pointerId);
+                return;
+              }
+            }
+          }
+
+          // Left-drag on empty floor or Middle-drag = Pan camera along deck plane
           dragRef.current = {
-            mode: isPan ? "PAN" : "ORBIT",
+            mode: "PAN",
             x: event.clientX,
             y: event.clientY,
             moved: false,
             pointerId: event.pointerId,
           };
+          setIsDragging(true);
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
@@ -1093,30 +1277,66 @@ export function StudioThreeStage({
             );
             targetCamRef.current.yaw = nextYaw;
             targetCamRef.current.pitch = nextPitch;
-            callbacksRef.current.onCameraChange({ yaw: nextYaw, pitch: nextPitch });
+            const now = performance.now();
+            if (now - drag.lastSyncAt >= 100) {
+              drag.lastSyncAt = now;
+              callbacksRef.current.onCameraChange({ yaw: nextYaw, pitch: nextPitch });
+            }
+          } else if (drag.mode === "NODE") {
+            const floor = raycastGroundWorld(event.clientX, event.clientY);
+            if (!floor) return;
+            const nextWx = Math.max(-520, Math.min(520, floor.wx + drag.grabOffsetX));
+            const nextWz = Math.max(-420, Math.min(420, floor.wz + drag.grabOffsetZ));
+            drag.currentWx = nextWx;
+            drag.currentWz = nextWz;
+            updateLiveNodeAndEdges(drag.serviceId, nextWx, nextWz);
           } else {
-            const nextPanX = Math.max(-900, Math.min(900, targetCamRef.current.panX + dx));
-            const nextPanY = Math.max(-600, Math.min(600, targetCamRef.current.panY + dy));
-            targetCamRef.current.panX = nextPanX;
-            targetCamRef.current.panY = nextPanY;
-            callbacksRef.current.onPanChange({ x: nextPanX, y: nextPanY });
+            const cosY = Math.cos(liveCamRef.current.yaw);
+            const sinY = Math.sin(liveCamRef.current.yaw);
+            const invZoom = 1 / Math.max(0.45, liveCamRef.current.zoom);
+            const worldDx = (dx * cosY + dy * sinY) * invZoom;
+            const worldDz = (-dx * sinY + dy * cosY) * invZoom;
+            targetCamRef.current.panX = Math.max(-900, Math.min(900, targetCamRef.current.panX + worldDx));
+            targetCamRef.current.panY = Math.max(-600, Math.min(600, targetCamRef.current.panY + worldDz));
           }
         }}
         onPointerUp={(event) => {
           const drag = dragRef.current;
           if (!drag || drag.pointerId !== event.pointerId) return;
-          const wasClick = !drag.moved && event.button === 0;
           dragRef.current = null;
+          setIsDragging(false);
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
-          if (wasClick) {
-            const hit = raycastServiceAt(event.clientX, event.clientY);
-            callbacksRef.current.onSelect(hit ?? "");
+          if (drag.mode === "ORBIT") {
+            callbacksRef.current.onCameraChange({
+              yaw: targetCamRef.current.yaw,
+              pitch: targetCamRef.current.pitch,
+            });
+          } else if (drag.mode === "NODE") {
+            if (!drag.moved) {
+              callbacksRef.current.onSelect(drag.serviceId);
+            } else {
+              const deltaWx = drag.currentWx - drag.startWx;
+              const deltaWz = drag.currentWz - drag.startWz;
+              if (Math.abs(deltaWx) >= 1 || Math.abs(deltaWz) >= 1) {
+                callbacksRef.current.onMoveNode?.(drag.serviceId, deltaWx, deltaWz);
+              }
+            }
+          } else {
+            if (!drag.moved && event.button === 0) {
+              callbacksRef.current.onSelect("");
+            } else if (drag.moved) {
+              callbacksRef.current.onPanChange({
+                x: Math.round(targetCamRef.current.panX),
+                y: Math.round(targetCamRef.current.panY),
+              });
+            }
           }
         }}
         onPointerCancel={() => {
           dragRef.current = null;
+          setIsDragging(false);
         }}
         onPointerLeave={() => {
           if (!dragRef.current) setHoveredService(null);
