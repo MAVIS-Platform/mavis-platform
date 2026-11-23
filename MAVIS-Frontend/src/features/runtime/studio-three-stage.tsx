@@ -86,6 +86,24 @@ export function computeNextWheelZoom(
   return Math.max(THREE_ZOOM_MIN, Math.min(THREE_ZOOM_MAX, next));
 }
 
+export function computeNodeLabelPlacement(
+  yaw: number,
+  pitch: number,
+  zoom: number,
+  baseY: number,
+): { x: number; y: number; z: number; scale: number } {
+  const pitchFactor = Math.max(0, Math.min(1.2, (pitch - 0.42) / 0.72));
+  const zoomFactor = Math.max(0, Math.min(1, (zoom - 1.15) / 0.85));
+  // Slide floating service tag toward the block's upper-back rim (away from camera) so top-deck stats stay readable
+  const rimShift = 0.24 + pitchFactor * 0.52 + zoomFactor * 0.34;
+  return {
+    x: -Math.sin(yaw) * rimShift,
+    y: baseY + 0.06 + zoomFactor * 0.08,
+    z: -Math.cos(yaw) * rimShift,
+    scale: 1 - zoomFactor * 0.26,
+  };
+}
+
 export function computeLiveDeckBounds(
   liveNodes: ReadonlyArray<{ wx: number; wz: number }>,
 ): StudioThreeBounds {
@@ -291,6 +309,10 @@ type AnimatedNodeRig = {
   active: boolean;
   halo?: THREE.Mesh | undefined;
   replicaPods: THREE.Object3D[];
+  labelSprite: THREE.Sprite;
+  labelBaseY: number;
+  labelBaseW: number;
+  labelBaseH: number;
 };
 
 function drawRoundedRect(
@@ -1340,7 +1362,8 @@ function buildServiceRig(
 
   // Crisp 3D Floating Service Pill Sprite
   const labelSprite = createNodeLabelSprite(T, node, styleId);
-  labelSprite.position.set(0, topY + 0.30, 0);
+  const labelBaseY = topY + 0.30;
+  labelSprite.position.set(0, labelBaseY, 0);
   labelSprite.userData = { serviceId: node.id };
   group.add(labelSprite);
 
@@ -1352,6 +1375,10 @@ function buildServiceRig(
     active: !node.isStopped,
     halo,
     replicaPods: [],
+    labelSprite,
+    labelBaseY,
+    labelBaseW: labelSprite.scale.x,
+    labelBaseH: labelSprite.scale.y,
   };
 }
 
@@ -1609,6 +1636,9 @@ export function StudioThreeStage({
               const pulse = 1 + Math.sin(tSec * 3.2 + rig.phase) * 0.03;
               rig.halo.scale.set(pulse, pulse, 1);
             }
+            const lp = computeNodeLabelPlacement(live.yaw, clampedPitch, live.zoom, rig.labelBaseY);
+            rig.labelSprite.position.set(lp.x, lp.y, lp.z);
+            rig.labelSprite.scale.set(rig.labelBaseW * lp.scale, rig.labelBaseH * lp.scale, 1);
           }
 
           renderer.render(scene, perspCam);

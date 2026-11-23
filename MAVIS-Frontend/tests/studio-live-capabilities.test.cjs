@@ -1042,7 +1042,7 @@ test("Floating 3D Camera card stays ultra-compact with 3 presets and a single 4-
   const start = obsSrc.indexOf('data-testid="studio-3d-controls"');
   const end = obsSrc.indexOf("</section>", start);
   const card = obsSrc.slice(start, end);
-  assert.ok(card.includes("w-[196px]"), "3D Camera card should match compact 196px width");
+  assert.ok(card.includes("w-[216px]"), "3D Camera card should stay compact (216px) with clean preset padding");
   assert.ok(card.includes("grid-cols-4"), "Rotate/tilt controls should share one compact 4-icon row");
   assert.ok(card.includes('aria-label={t("Rotate left"') && card.includes('aria-label={t("Tilt down"'));
   assert.ok(!card.includes("Right-drag to orbit"), "Verbose 2-line mouse hint should stay removed from floating card");
@@ -1073,4 +1073,18 @@ test("Stats tab shows only Cluster Overview metrics without 4-step checklist or 
   assert.doesNotMatch(statsHeaderAndKpis, /Timed out/);
   assert.doesNotMatch(statsHeaderAndKpis, /Setup preview/);
   assert.match(statsHeaderAndKpis, /Cluster Overview[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
+});
+
+test("3D service tag shifts smoothly toward the block's back-top rim and shrinks on close zoom so top-deck stats stay unobstructed", () => {
+  const { computeNodeLabelPlacement } = require("../src/features/runtime/studio-three-stage.tsx");
+  const iso = computeNodeLabelPlacement(0.68, 0.58, 1.0, 0.88);
+  const topDown = computeNodeLabelPlacement(0, 1.05, 1.0, 0.88);
+  const zoomedIn = computeNodeLabelPlacement(0.68, 0.58, 2.0, 0.88);
+
+  const dist = (p) => Math.hypot(p.x, p.z);
+  assert.ok(dist(topDown) > dist(iso) + 0.25, "Top-down pitch must shift tag further off the top-deck stats screen");
+  assert.ok(topDown.z < -0.55, "At yaw=0, shift must move along -Z (upward on screen away from camera)");
+  assert.ok(dist(zoomedIn) > dist(iso) + 0.25, "Close zoom must push tag toward the upper rim");
+  assert.ok(zoomedIn.scale < 0.8 && zoomedIn.scale > 0.65, "Close zoom must smoothly shrink tag without hiding it");
+  assert.equal(iso.scale, 1, "Default 1x zoom preserves full label legibility");
 });

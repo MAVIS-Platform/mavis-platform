@@ -1948,7 +1948,7 @@ export function StudioObservability({
               data-testid="studio-3d-controls"
               aria-label={t("3D Camera", "Góc nhìn 3D")}
               className={`pointer-events-auto ${
-                cameraFormOpen ? "w-[196px]" : "w-auto"
+                cameraFormOpen ? "w-[216px]" : "w-auto"
               } ${styleCfg.floatingCardClass}`}
             >
               <div className="flex items-center justify-between gap-1.5 px-2 py-1">
