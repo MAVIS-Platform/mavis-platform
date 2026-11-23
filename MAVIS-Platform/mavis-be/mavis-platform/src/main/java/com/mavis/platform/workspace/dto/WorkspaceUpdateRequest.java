@@ -20,6 +20,6 @@ public class WorkspaceUpdateRequest {
 
     private String description;
 
-    @Pattern(regexp = "^(ACTIVE|ARCHIVED)?$", message = "Trạng thái chỉ có thể là ACTIVE hoặc ARCHIVED")
+    @Pattern(regexp = "^(ACTIVE|INACTIVE|ARCHIVED)?$", message = "Trạng thái chỉ có thể là ACTIVE, INACTIVE hoặc ARCHIVED")
     private String status;
 }

@@ -46,6 +46,7 @@ class WorkspaceServiceImplTest {
 
     @Mock private com.mavis.common.security.AccessPolicyService accessPolicyService;
     @Mock private com.mavis.platform.workspace.service.CourseAccessService courseAccessService;
+    @Mock private com.mavis.platform.workspace.service.CourseLifecycleService courseLifecycleService;
 
     @InjectMocks
     private WorkspaceServiceImpl workspaceService;

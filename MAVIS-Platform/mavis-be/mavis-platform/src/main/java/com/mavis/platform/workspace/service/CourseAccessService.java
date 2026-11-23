@@ -714,7 +714,7 @@ public class CourseAccessService {
         access.requireCurrentActiveUser();
         Workspace workspace = lock(workspaceId);
         access.requireWorkspaceLecturer(workspaceId);
-        if (!"ACTIVE".equals(workspace.getStatus())) {
+        if ("ARCHIVED".equals(workspace.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT, "This workspace is archived");
         }
         return workspace;

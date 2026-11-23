@@ -6,6 +6,8 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   BookOpen,
   ChevronDown,
+  ClipboardCheck,
+  Home,
   Info,
   LogOut,
   Menu,
@@ -386,8 +388,35 @@ function ShellChrome({
       : pathname === "/workspace-overview" && params.get("view") === "course-authoring"
         ? "Modules"
         : (pageTitle ?? activeItem?.label ?? route.title);
+  const lecturerHeader = role === "lecturer" && !live;
   const showSidebar =
-    (live || role !== "student") && !(pathname === "/workspaces" && !selectedWorkspaceId);
+    !lecturerHeader &&
+    (live || role !== "student") &&
+    !(pathname === "/workspaces" && !selectedWorkspaceId);
+  const lecturerHeaderLinks = [
+    {
+      href: "/workspaces",
+      label: t("Home", "Trang chủ"),
+      icon: Home,
+      active: pathname === "/workspaces" && !selectedWorkspaceId,
+    },
+    {
+      href: selectedWorkspaceId
+        ? `/workspace-overview?workspace=${encodeURIComponent(selectedWorkspaceId)}`
+        : "/workspaces",
+      label: t("Course Workspace", "Không gian khóa học"),
+      icon: BookOpen,
+      active: scope === "workspace" && pathname !== "/submissions",
+    },
+    {
+      href: selectedWorkspaceId
+        ? `/submissions?workspace=${encodeURIComponent(selectedWorkspaceId)}`
+        : "/submissions",
+      label: t("Grades", "Chấm điểm"),
+      icon: ClipboardCheck,
+      active: pathname === "/submissions" || pathname.startsWith("/submissions/"),
+    },
+  ];
 
   useEffect(() => {
     const compactViewport = window.matchMedia("(max-width: 1279px)").matches;
@@ -534,6 +563,38 @@ function ShellChrome({
         {showSidebar && <Sidebar collapsed={collapsed}>{navigation(collapsed)}</Sidebar>}
         <div className="flex min-w-0 flex-1 flex-col">
           <Header>
+            {lecturerHeader && (
+              <>
+                <Link
+                  href="/workspaces"
+                  aria-label={t("MAVIS home", "Trang chủ MAVIS")}
+                  className="flex shrink-0 items-center gap-2 font-bold tracking-tight"
+                >
+                  <MavisLogo compact className="size-9 rounded-lg" />
+                  <span>MAVIS</span>
+                </Link>
+                <nav
+                  aria-label={t("Lecturer navigation", "Điều hướng giảng viên")}
+                  className="ml-3 hidden h-full items-center gap-1 md:flex"
+                >
+                  {lecturerHeaderLinks.map(({ href, label, icon: Icon, active }) => (
+                    <Link
+                      key={label}
+                      href={href}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "relative inline-flex h-full items-center gap-2 px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-primary",
+                        active &&
+                          "text-primary after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary",
+                      )}
+                    >
+                      <Icon className="size-4" aria-hidden="true" />
+                      {label}
+                    </Link>
+                  ))}
+                </nav>
+              </>
+            )}
             {showSidebar && (
               <>
                 <Button
@@ -576,39 +637,42 @@ function ShellChrome({
                 </Sheet>
               </>
             )}
-            <Breadcrumbs
-              items={[
-                {
-                  label: "MAVIS",
-                  href: defaultLoginDestination(role),
-                  visibility: "sm",
-                },
-                ...(scope !== "global"
-                  ? [
-                      {
-                        label: role === "admin" && scope === "project" ? "Analysis Jobs" : context,
-                        href:
-                          scope === "project"
-                            ? role === "admin"
-                              ? adminJobsReturnHref(new URLSearchParams(navigationQuery))
-                              : role === "student"
-                                ? `/roadmap${navigationQuery}`
-                                : `/project-overview${navigationQuery}`
-                            : scope === "review"
-                              ? `/submissions${navigationQuery}`
-                              : role === "student"
-                                ? `/courses${navigationQuery}`
-                                : selectedWorkspaceId
-                                  ? `/workspace-overview?workspace=${encodeURIComponent(selectedWorkspaceId)}`
-                                  : `/workspaces${navigationQuery}`,
-                        visibility: "lg" as const,
-                      },
-                    ]
-                  : []),
-                { label: title },
-              ]}
-            />
-            <div className="flex shrink-0 items-center gap-1.5">
+            {!lecturerHeader && (
+              <Breadcrumbs
+                items={[
+                  {
+                    label: "MAVIS",
+                    href: defaultLoginDestination(role),
+                    visibility: "sm",
+                  },
+                  ...(scope !== "global"
+                    ? [
+                        {
+                          label:
+                            role === "admin" && scope === "project" ? "Analysis Jobs" : context,
+                          href:
+                            scope === "project"
+                              ? role === "admin"
+                                ? adminJobsReturnHref(new URLSearchParams(navigationQuery))
+                                : role === "student"
+                                  ? `/roadmap${navigationQuery}`
+                                  : `/project-overview${navigationQuery}`
+                              : scope === "review"
+                                ? `/submissions${navigationQuery}`
+                                : role === "student"
+                                  ? `/courses${navigationQuery}`
+                                  : selectedWorkspaceId
+                                    ? `/workspace-overview?workspace=${encodeURIComponent(selectedWorkspaceId)}`
+                                    : `/workspaces${navigationQuery}`,
+                          visibility: "lg" as const,
+                        },
+                      ]
+                    : []),
+                  { label: title },
+                ]}
+              />
+            )}
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
               {!live && (role === "student" || role === "lecturer") && workspaces.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

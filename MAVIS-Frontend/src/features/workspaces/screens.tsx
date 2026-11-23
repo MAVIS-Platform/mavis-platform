@@ -44,7 +44,6 @@ export function Workspaces() {
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [page, setPage] = useState(1);
   const [changingStatusId, setChangingStatusId] = useState<string | null>(null);
-  const archiveWorkspace = useApiMutation("archiveWorkspace");
   const updateWorkspace = useApiMutation("updateWorkspace");
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
   const submissions = useApiQuery("submissions", {}, { enabled: canCreate });
@@ -52,9 +51,9 @@ export function Workspaces() {
   const visibleWorkspaces = useMemo(() => {
     const term = search.trim().toLowerCase();
     return (query.data ?? []).filter((workspace) => {
-      const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
-      if (statusFilter === "active" && archived) return false;
-      if (statusFilter === "inactive" && !archived) return false;
+      const inactive = (workspace.status ?? "ACTIVE") !== "ACTIVE";
+      if (statusFilter === "active" && inactive) return false;
+      if (statusFilter === "inactive" && !inactive) return false;
       return (
         !term ||
         workspace.name.toLowerCase().includes(term) ||
@@ -242,7 +241,7 @@ export function Workspaces() {
                     .find((member) => member.role.toUpperCase() === "LECTURER")
                     ?.name?.trim() ||
                   "";
-                const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
+                const inactive = (workspace.status ?? "ACTIVE") !== "ACTIVE";
                 const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
                 return (
                   <article
@@ -272,24 +271,32 @@ export function Workspaces() {
                         onKeyDown={(event) => event.stopPropagation()}
                       >
                         <Switch
-                          checked={!archived}
+                          checked={!inactive}
                           disabled={changingStatusId === workspace.id}
                           aria-label={t(
-                            `Set ${workspace.name} ${archived ? "active" : "inactive"}`,
-                            `Chuyển ${workspace.name} sang ${archived ? "hoạt động" : "không hoạt động"}`,
+                            `Set ${workspace.name} ${inactive ? "active" : "inactive"}`,
+                            `Chuyển ${workspace.name} sang ${inactive ? "hoạt động" : "không hoạt động"}`,
                           )}
                           onCheckedChange={async (active) => {
+                            const confirmed = window.confirm(
+                              active
+                                ? t(
+                                    "Activate this course? All valid Labs and the latest course draft will be published for students.",
+                                    "Kích hoạt khóa học? Tất cả Lab hợp lệ và bản nháp mới nhất sẽ được xuất bản cho sinh viên.",
+                                  )
+                                : t(
+                                    "Set this course to Inactive? Students will temporarily lose access while you edit its content.",
+                                    "Chuyển khóa học sang Inactive? Sinh viên sẽ tạm mất quyền truy cập trong lúc bạn chỉnh sửa nội dung.",
+                                  ),
+                            );
+                            if (!confirmed) return;
                             setChangingStatusId(workspace.id);
                             try {
-                              if (active) {
-                                await updateWorkspace.mutateAsync({
-                                  workspaceId: workspace.id,
-                                  name: workspace.name,
-                                  status: "ACTIVE",
-                                });
-                              } else {
-                                await archiveWorkspace.mutateAsync({ workspaceId: workspace.id });
-                              }
+                              await updateWorkspace.mutateAsync({
+                                workspaceId: workspace.id,
+                                name: workspace.name,
+                                status: active ? "ACTIVE" : "INACTIVE",
+                              });
                             } catch {
                               // The mutation retains its error for the shared error state below.
                             } finally {
@@ -299,14 +306,14 @@ export function Workspaces() {
                         />
                         <span
                           className={
-                            archived
+                            inactive
                               ? "text-xs font-medium text-slate-600"
                               : "text-xs font-medium text-emerald-700"
                           }
                         >
                           {changingStatusId === workspace.id
                             ? t("Updating…", "Đang cập nhật…")
-                            : archived
+                            : inactive
                               ? t("Inactive", "Không hoạt động")
                               : t("Active", "Đang hoạt động")}
                         </span>
@@ -382,9 +389,7 @@ export function Workspaces() {
                 </p>
               )}
             </div>
-            {(archiveWorkspace.error || updateWorkspace.error) && (
-              <ErrorState error={archiveWorkspace.error ?? updateWorkspace.error} />
-            )}
+            {updateWorkspace.error && <ErrorState error={updateWorkspace.error} />}
             {pageCount > 1 && (
               <div className="mt-6">
                 <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
@@ -455,7 +460,7 @@ export function WorkspaceOverview() {
                 key={`student-roadmap-${workspace.id}`}
                 workspaceId={workspace.id}
                 canManage={false}
-                active={workspace.status !== "ARCHIVED"}
+                active={workspace.status === "ACTIVE"}
               />
             )}
             {activeTab === "outline" && canManage && canEdit && (
@@ -468,7 +473,7 @@ export function WorkspaceOverview() {
               <CourseOutline
                 workspaceId={workspace.id}
                 canManage={false}
-                active={workspace.status !== "ARCHIVED"}
+                active={workspace.status === "ACTIVE"}
               />
             )}
             {activeTab === "authoring" && canManage && canEdit && (
@@ -490,7 +495,7 @@ export function WorkspaceOverview() {
                   key={workspace.id}
                   workspaceId={workspace.id}
                   canManage
-                  active={workspace.status !== "ARCHIVED"}
+                  active={workspace.status === "ACTIVE"}
                 />
               </div>
             )}

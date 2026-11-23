@@ -1,4 +1,4 @@
-import {documentDiagramType} from "@/lib/architecture/coursework-diagram-types";
+import { documentDiagramType } from "@/lib/architecture/coursework-diagram-types";
 import {
   contracts,
   type ApiAdapter,
@@ -140,25 +140,130 @@ export class MockAdapter implements ApiAdapter {
     },
   ];
   private submissions: Submission[] = [];
-  private savedDocuments:Array<{modelId:string;viewId:string;revision:number;xml:string;savedAt:string}> = [];
-  private grading=new Map<string,Response<"submissionReview">>();
-  private frozenBundles=new Map<string,{modelId:string;layout:Record<string,unknown>}>();
-  private classrooms: Array<{id:string; code:string; name:string; status:string; ownerId:string; members:Array<{id:string;name:string;role:string}>}> = [];
+  private savedDocuments: Array<{
+    modelId: string;
+    viewId: string;
+    revision: number;
+    xml: string;
+    savedAt: string;
+  }> = [];
+  private grading = new Map<string, Response<"submissionReview">>();
+  private frozenBundles = new Map<string, { modelId: string; layout: Record<string, unknown> }>();
+  private classrooms: Array<{
+    id: string;
+    code: string;
+    name: string;
+    status: string;
+    ownerId: string;
+    members: Array<{ id: string; name: string; role: string }>;
+  }> = [];
   private courseworkAssignments: Array<Response<"assignments">[number]> = [
-    { id:"assignment-1", workspaceId:"workspace-1", title:"Analyze checkout architecture", instructions:"Submit a source snapshot and an immutable model revision. Runtime evidence is optional.", dueAt:"2026-11-01T16:59:00Z" },
-    { id:"java-ms-lab-1", workspaceId:"workspace-java-ms-2026", title:"Lab 01 · Java 21 DTO Boundaries, Stream Pipeline & Multi-Environment Config", instructions:"Thiết kế DTO bất biến sâu bằng Java 21 Record và Stream API thuần khiết.", dueAt:"No deadline", labOrder: 1, labMode: "THEORY_QUIZ", requireRuntimeTrace: false },
-    { id:"java-ms-lab-2", workspaceId:"workspace-java-ms-2026", title:"Lab 02 · C4 Model (C1–C3), DDD Bounded Context & Database-per-Service", instructions:"Phân rã hệ thống theo Scale Cube Y-axis và kiểm toán Shared Database.", dueAt:"No deadline", labOrder: 2, labMode: "THEORY_QUIZ", requireRuntimeTrace: false },
-    { id:"java-ms-lab-3", workspaceId:"workspace-java-ms-2026", title:"Lab 03 · Synchronous OpenFeign, Cycle-Safe Reverse BFS & API Gateway", instructions:"Tìm Blast Radius bằng Cycle-Safe Reverse BFS từ tâm chấn catalog-service (Mộc Hương Shop).", dueAt:"No deadline", labOrder: 3, labMode: "THEORY_QUIZ", requireRuntimeTrace: false },
-    { id:"java-ms-lab-4", workspaceId:"workspace-java-ms-2026", title:"Lab 04 · Resilience4j Circuit Breaker, Timeout Budget & Idempotent Consumer", instructions:"Chạy thực nghiệm chống sập dây chuyền Circuit Breaker & Stop/Scale Studio.", dueAt:"No deadline", labOrder: 4, labMode: "THEORY_QUIZ_STUDIO", requireRuntimeTrace: true },
-    { id:"java-ms-lab-5", workspaceId:"workspace-java-ms-2026", title:"Lab 05 · Distributed Saga, Transactional Outbox & OAuth2/JWT Zero Secret Leaks", instructions:"Thiết kế Compensating Transaction và kiểm toán Zero Secret Leaks [REDACTED].", dueAt:"No deadline", labOrder: 5, labMode: "THEORY_QUIZ_STUDIO", requireRuntimeTrace: true },
-    { id:"java-ms-lab-6", workspaceId:"workspace-java-ms-2026", title:"Lab 06 · OpenTelemetry Traceparent, Testcontainers & Production Readiness", instructions:"Đo kiểm Before vs After theo chuẩn OpenTelemetry và Health Probes.", dueAt:"No deadline", labOrder: 6, labMode: "THEORY_QUIZ_STUDIO", requireRuntimeTrace: true },
+    {
+      id: "assignment-1",
+      workspaceId: "workspace-1",
+      title: "Analyze checkout architecture",
+      instructions:
+        "Submit a source snapshot and an immutable model revision. Runtime evidence is optional.",
+      dueAt: "2026-11-01T16:59:00Z",
+    },
+    {
+      id: "java-ms-lab-1",
+      workspaceId: "workspace-java-ms-2026",
+      title: "Lab 01 · Java 21 DTO Boundaries, Stream Pipeline & Multi-Environment Config",
+      instructions: "Thiết kế DTO bất biến sâu bằng Java 21 Record và Stream API thuần khiết.",
+      dueAt: "No deadline",
+      labOrder: 1,
+      labMode: "THEORY_QUIZ",
+      requireRuntimeTrace: false,
+    },
+    {
+      id: "java-ms-lab-2",
+      workspaceId: "workspace-java-ms-2026",
+      title: "Lab 02 · C4 Model (C1–C3), DDD Bounded Context & Database-per-Service",
+      instructions: "Phân rã hệ thống theo Scale Cube Y-axis và kiểm toán Shared Database.",
+      dueAt: "No deadline",
+      labOrder: 2,
+      labMode: "THEORY_QUIZ",
+      requireRuntimeTrace: false,
+    },
+    {
+      id: "java-ms-lab-3",
+      workspaceId: "workspace-java-ms-2026",
+      title: "Lab 03 · Synchronous OpenFeign, Cycle-Safe Reverse BFS & API Gateway",
+      instructions:
+        "Tìm Blast Radius bằng Cycle-Safe Reverse BFS từ tâm chấn catalog-service (Mộc Hương Shop).",
+      dueAt: "No deadline",
+      labOrder: 3,
+      labMode: "THEORY_QUIZ",
+      requireRuntimeTrace: false,
+    },
+    {
+      id: "java-ms-lab-4",
+      workspaceId: "workspace-java-ms-2026",
+      title: "Lab 04 · Resilience4j Circuit Breaker, Timeout Budget & Idempotent Consumer",
+      instructions: "Chạy thực nghiệm chống sập dây chuyền Circuit Breaker & Stop/Scale Studio.",
+      dueAt: "No deadline",
+      labOrder: 4,
+      labMode: "THEORY_QUIZ_STUDIO",
+      requireRuntimeTrace: true,
+    },
+    {
+      id: "java-ms-lab-5",
+      workspaceId: "workspace-java-ms-2026",
+      title: "Lab 05 · Distributed Saga, Transactional Outbox & OAuth2/JWT Zero Secret Leaks",
+      instructions: "Thiết kế Compensating Transaction và kiểm toán Zero Secret Leaks [REDACTED].",
+      dueAt: "No deadline",
+      labOrder: 5,
+      labMode: "THEORY_QUIZ_STUDIO",
+      requireRuntimeTrace: true,
+    },
+    {
+      id: "java-ms-lab-6",
+      workspaceId: "workspace-java-ms-2026",
+      title: "Lab 06 · OpenTelemetry Traceparent, Testcontainers & Production Readiness",
+      instructions: "Đo kiểm Before vs After theo chuẩn OpenTelemetry và Health Probes.",
+      dueAt: "No deadline",
+      labOrder: 6,
+      labMode: "THEORY_QUIZ_STUDIO",
+      requireRuntimeTrace: true,
+    },
   ];
   private accounts: Account[] = [
-    { id: "sample-student", name: "Sample learner", email:"student@example.com", role: "student", locked: false },
-    { id: "sample-lecturer", name: "Sample lecturer", email:"lecturer@example.com", role: "lecturer", locked: false },
-    { id: "gv-java", name: "Thầy Hoàng · Giảng Viên Java Microservices", email:"gv.java@mavis.edu.vn", role: "lecturer", locked: false },
-    { id: "sv-java", name: "Lê Minh Triết · Sinh Viên SE181979", email:"sv.java@mavis.edu.vn", role: "student", locked: false },
-    { id: "admin-java", name: "Quản Trị Viên Hệ Thống MAVIS", email:"admin@mavis.edu.vn", role: "admin", locked: false },
+    {
+      id: "sample-student",
+      name: "Sample learner",
+      email: "student@example.com",
+      role: "student",
+      locked: false,
+    },
+    {
+      id: "sample-lecturer",
+      name: "Sample lecturer",
+      email: "lecturer@example.com",
+      role: "lecturer",
+      locked: false,
+    },
+    {
+      id: "gv-java",
+      name: "Thầy Hoàng · Giảng Viên Java Microservices",
+      email: "gv.java@mavis.edu.vn",
+      role: "lecturer",
+      locked: false,
+    },
+    {
+      id: "sv-java",
+      name: "Lê Minh Triết · Sinh Viên SE181979",
+      email: "sv.java@mavis.edu.vn",
+      role: "student",
+      locked: false,
+    },
+    {
+      id: "admin-java",
+      name: "Quản Trị Viên Hệ Thống MAVIS",
+      email: "admin@mavis.edu.vn",
+      role: "admin",
+      locked: false,
+    },
   ];
   private integrations: Integration[] = [
     { id: "integration-1", name: "Source analyzer (sample)", enabled: false, revision: 1 },
@@ -244,22 +349,45 @@ export class MockAdapter implements ApiAdapter {
     return item;
   }
   private classroom(id: string, manage = false) {
-    const room = this.find(this.classrooms, w => w.id === id);
-    const member = room.members.find(m => m.id === this.user?.id);
-    if (this.user?.role !== "admin" && (!member || (manage && member.role !== "lecturer"))) throw new ApiError("forbidden",403);
+    const room = this.find(this.classrooms, (w) => w.id === id);
+    const member = room.members.find((m) => m.id === this.user?.id);
+    if (this.user?.role !== "admin" && (!member || (manage && member.role !== "lecturer")))
+      throw new ApiError("forbidden", 403);
     return room;
   }
   private assignmentReference(workspaceId: string, modelId?: string) {
     if (!modelId) return null;
-    const model = this.find(this.models, m => m.id === modelId);
-    const project = this.find(this.projects, p => p.id === model.projectId && p.workspaceId === workspaceId && !!p.isReferenceTemplate);
-    const snapshot = this.find(this.snapshots, s => s.id === model.snapshotId && s.projectId === project.id);
-    return { projectId: project.id, projectName: project.name, snapshotId: snapshot.id, modelId: model.id,
-      revision: model.revision, sourceType: "ZIP_UPLOAD", repositoryUrl: project.repository || null };
+    const model = this.find(this.models, (m) => m.id === modelId);
+    const project = this.find(
+      this.projects,
+      (p) => p.id === model.projectId && p.workspaceId === workspaceId && !!p.isReferenceTemplate,
+    );
+    const snapshot = this.find(
+      this.snapshots,
+      (s) => s.id === model.snapshotId && s.projectId === project.id,
+    );
+    return {
+      projectId: project.id,
+      projectName: project.name,
+      snapshotId: snapshot.id,
+      modelId: model.id,
+      revision: model.revision,
+      sourceType: "ZIP_UPLOAD",
+      repositoryUrl: project.repository || null,
+    };
   }
   private classroomView(room: MockAdapter["classrooms"][number]) {
     const ownerName = room.members.find((m) => m.id === room.ownerId)?.name;
-    return { id:room.id,code:room.code,name:room.name,status:room.status,createdById:room.ownerId,...(ownerName ? { createdByName: ownerName } : {}),myRole:room.members.find(m => m.id === this.user?.id)?.role.toUpperCase() ?? null,members:room.members };
+    return {
+      id: room.id,
+      code: room.code,
+      name: room.name,
+      status: room.status,
+      createdById: room.ownerId,
+      ...(ownerName ? { createdByName: ownerName } : {}),
+      myRole: room.members.find((m) => m.id === this.user?.id)?.role.toUpperCase() ?? null,
+      members: room.members,
+    };
   }
   private record(operation: string, resourceId: string) {
     this.audit.push({
@@ -273,7 +401,8 @@ export class MockAdapter implements ApiAdapter {
   private perform<K extends Operation>(operation: K, raw: Request<K>): unknown {
     // Parsing per branch preserves discriminated request types without `any`.
     switch (operation) {
-      case "contextCandidates": return { entries: [] } as Response<K>;
+      case "contextCandidates":
+        return { entries: [] } as Response<K>;
       case "session":
         return { user: this.user };
       case "mockLogin": {
@@ -289,11 +418,27 @@ export class MockAdapter implements ApiAdapter {
       case "projects":
         return this.scenario === "empty" ? [] : this.projects;
       case "createProject": {
-        const p=contracts.createProject.input.parse(raw);
-        if(p.workspaceId) this.classroom(p.workspaceId);
-        if(p.assignmentId) this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);
-        const project: Project={id:crypto.randomUUID(),name:p.name,repository:p.repositoryUrl??"",defaultBranch:p.defaultBranch??null,status:"unknown",services:null,runtimeSupported:null,workspaceId:p.workspaceId??null,assignmentId:p.assignmentId??null,projectType:p.workspaceId?"STUDENT_WORKING":"PERSONAL"};
-        this.projects.push(project);return project;
+        const p = contracts.createProject.input.parse(raw);
+        if (p.workspaceId) this.classroom(p.workspaceId);
+        if (p.assignmentId)
+          this.find(
+            this.courseworkAssignments,
+            (a) => a.id === p.assignmentId && a.workspaceId === p.workspaceId,
+          );
+        const project: Project = {
+          id: crypto.randomUUID(),
+          name: p.name,
+          repository: p.repositoryUrl ?? "",
+          defaultBranch: p.defaultBranch ?? null,
+          status: "unknown",
+          services: null,
+          runtimeSupported: null,
+          workspaceId: p.workspaceId ?? null,
+          assignmentId: p.assignmentId ?? null,
+          projectType: p.workspaceId ? "STUDENT_WORKING" : "PERSONAL",
+        };
+        this.projects.push(project);
+        return project;
       }
       case "projectOverviews":
         return this.scenario === "empty" ? [] : this.projects;
@@ -308,13 +453,29 @@ export class MockAdapter implements ApiAdapter {
           : this.snapshots.filter(
               (s) => s.projectId === contracts.snapshots.input.parse(raw).projectId,
             );
-      case "githubBranches": return {branches:["main","develop"],defaultBranch:"main",truncated:false};
+      case "githubBranches":
+        return { branches: ["main", "develop"], defaultBranch: "main", truncated: false };
       case "importGithub": {
-        const input=contracts.importGithub.input.parse(raw);const project=this.find(this.projects,p=>p.id===input.projectId);
-        if(project.repository&&project.repository.toLowerCase().replace(/\.git$/,'')!==input.repositoryUrl.toLowerCase().replace(/\.git$/,''))throw new ApiError("invalid",400);
-        project.repository=input.repositoryUrl;project.defaultBranch=project.defaultBranch||input.branchName;
-        const snapshot:SourceSnapshot={id:crypto.randomUUID(),projectId:input.projectId,name:`GitHub ${input.branchName}`,createdAt:new Date().toISOString(),validation:'valid',evidenceComplete:null};
-        this.snapshots.push(snapshot);return snapshot;
+        const input = contracts.importGithub.input.parse(raw);
+        const project = this.find(this.projects, (p) => p.id === input.projectId);
+        if (
+          project.repository &&
+          project.repository.toLowerCase().replace(/\.git$/, "") !==
+            input.repositoryUrl.toLowerCase().replace(/\.git$/, "")
+        )
+          throw new ApiError("invalid", 400);
+        project.repository = input.repositoryUrl;
+        project.defaultBranch = project.defaultBranch || input.branchName;
+        const snapshot: SourceSnapshot = {
+          id: crypto.randomUUID(),
+          projectId: input.projectId,
+          name: `GitHub ${input.branchName}`,
+          createdAt: new Date().toISOString(),
+          validation: "valid",
+          evidenceComplete: null,
+        };
+        this.snapshots.push(snapshot);
+        return snapshot;
       }
       case "importSource": {
         const p = contracts.importSource.input.parse(raw);
@@ -338,14 +499,41 @@ export class MockAdapter implements ApiAdapter {
         return s;
       }
       case "projectActivity": {
-        const args=contracts.projectActivity.input.parse(raw);
-        const rows=this.jobs.map(job=>({id:job.id,kind:"ANALYSIS",projectId:job.projectId,projectName:this.projects.find(p=>p.id===job.projectId)?.name??job.projectId,occurredAt:null,projectDeleted:false,targetId:job.snapshotId,targetName:null,actorId:null,actorName:null,job}));
-        return {items:rows.slice(args.page*args.size,(args.page+1)*args.size),total:rows.length,page:args.page,size:args.size};
+        const args = contracts.projectActivity.input.parse(raw);
+        const rows = this.jobs.map((job) => ({
+          id: job.id,
+          kind: "ANALYSIS",
+          projectId: job.projectId,
+          projectName: this.projects.find((p) => p.id === job.projectId)?.name ?? job.projectId,
+          occurredAt: null,
+          projectDeleted: false,
+          targetId: job.snapshotId,
+          targetName: null,
+          actorId: null,
+          actorName: null,
+          job,
+        }));
+        return {
+          items: rows.slice(args.page * args.size, (args.page + 1) * args.size),
+          total: rows.length,
+          page: args.page,
+          size: args.size,
+        };
       }
       case "projectAnalysisActivity": {
-        const args=contracts.projectAnalysisActivity.input.parse(raw);
-        const rows=this.jobs.map(job=>({...job,projectName:this.projects.find(p=>p.id===job.projectId)?.name??job.projectId,startedAt:null,completedAt:null}));
-        return {items:rows.slice(args.page*args.size,(args.page+1)*args.size),total:rows.length,page:args.page,size:args.size};
+        const args = contracts.projectAnalysisActivity.input.parse(raw);
+        const rows = this.jobs.map((job) => ({
+          ...job,
+          projectName: this.projects.find((p) => p.id === job.projectId)?.name ?? job.projectId,
+          startedAt: null,
+          completedAt: null,
+        }));
+        return {
+          items: rows.slice(args.page * args.size, (args.page + 1) * args.size),
+          total: rows.length,
+          page: args.page,
+          size: args.size,
+        };
       }
       case "analysisJobs":
         return this.jobs
@@ -505,16 +693,30 @@ export class MockAdapter implements ApiAdapter {
       case "createScenario": {
         const p = contracts.createScenario.input.parse(raw);
         this.find(this.projects, (proj) => proj.id === p.projectId);
-        const created = { id: crypto.randomUUID(), projectId: p.projectId, name: p.name, steps: p.steps, revision: 1 };
+        const created = {
+          id: crypto.randomUUID(),
+          projectId: p.projectId,
+          name: p.name,
+          steps: p.steps,
+          revision: 1,
+        };
         this.scenarios.push(created);
         return created;
       }
       case "generateRuntimeScenario": {
         const p = contracts.generateRuntimeScenario.input.parse(raw);
         this.find(this.projects, (proj) => proj.id === p.projectId);
-        const model = (p.modelId ? this.models.find((m) => m.id === p.modelId) : undefined) ?? (p.snapshotId ? this.models.find((m) => m.snapshotId === p.snapshotId) : undefined) ?? this.models.find((m) => m.projectId === p.projectId) ?? this.models[0];
-        const containerElems = (model?.elements ?? []).filter((e) => e.elementType === "SERVICE_CONTAINER");
-        const runnableServices = (containerElems.length > 0 ? containerElems : (model?.elements ?? [])).map((e) => e.name);
+        const model =
+          (p.modelId ? this.models.find((m) => m.id === p.modelId) : undefined) ??
+          (p.snapshotId ? this.models.find((m) => m.snapshotId === p.snapshotId) : undefined) ??
+          this.models.find((m) => m.projectId === p.projectId) ??
+          this.models[0];
+        const containerElems = (model?.elements ?? []).filter(
+          (e) => e.elementType === "SERVICE_CONTAINER",
+        );
+        const runnableServices = (
+          containerElems.length > 0 ? containerElems : (model?.elements ?? [])
+        ).map((e) => e.name);
         const svc = runnableServices[0] ?? "gateway";
         return {
           projectId: p.projectId,
@@ -602,7 +804,9 @@ export class MockAdapter implements ApiAdapter {
           mappingStatus: view.mappingStatus,
           startedAt: s.approvedAt,
           completedAt: view.completedAt,
-          limitations: s.traces.length ? ["PREVIEW_SAMPLE_TRACE"] : ["NO_OBSERVED_SEQUENCE_AVAILABLE"],
+          limitations: s.traces.length
+            ? ["PREVIEW_SAMPLE_TRACE"]
+            : ["NO_OBSERVED_SEQUENCE_AVAILABLE"],
           steps: s.traces.map((tr, idx) => ({
             stepOrder: idx + 1,
             messageId: `msg-obs-${idx + 1}`,
@@ -705,11 +909,15 @@ export class MockAdapter implements ApiAdapter {
       }
       case "elementEvidenceContext": {
         const p = contracts.elementEvidenceContext.input.parse(raw);
-        const model = this.find(this.models, m => m.id === p.modelId);
-        const element = this.find(model.elements, e => e.id === p.elementId);
-        return { modelId: model.id, elementId: element.id, directEvidence: element.evidence,
-          relationshipEvidence: model.edges.filter(e => e.from === element.id || e.to === element.id)
-            .flatMap(e => e.evidence.map(evidence => ({ relationshipId: e.id, evidence }))),
+        const model = this.find(this.models, (m) => m.id === p.modelId);
+        const element = this.find(model.elements, (e) => e.id === p.elementId);
+        return {
+          modelId: model.id,
+          elementId: element.id,
+          directEvidence: element.evidence,
+          relationshipEvidence: model.edges
+            .filter((e) => e.from === element.id || e.to === element.id)
+            .flatMap((e) => e.evidence.map((evidence) => ({ relationshipId: e.id, evidence }))),
         };
       }
       case "explain": {
@@ -749,74 +957,363 @@ export class MockAdapter implements ApiAdapter {
           sample: true,
         };
       }
-      case "submissionReview": {const p=contracts.submissionReview.input.parse(raw),submission=this.find(this.submissions,s=>s.id===p.submissionId);const value=this.grading.get(p.submissionId);if(this.user?.id!==submission.studentId&&!["lecturer","admin"].includes(this.user?.role??""))throw new ApiError("forbidden",403);return value&&!(this.user?.id===submission.studentId&&value.status==="DRAFT")?value:{submissionId:p.submissionId,revision:0,status:"PENDING",score:null,summary:"",lecturerId:null,lecturerName:null,updatedAt:null,snapshotGrades:[],labOutcome:"PENDING"};}
-      case "gradeSubmission": {const p=contracts.gradeSubmission.input.parse(raw),submission=this.find(this.submissions,s=>s.id===p.submissionId);if(this.user?.id===submission.studentId)throw new ApiError("forbidden",403);const current=this.grading.get(p.submissionId);if((current?.revision??0)!==p.expectedRevision)throw new ApiError("conflict",409);const grades=p.snapshotGrades??[];const hasGrades=grades.length>0;const allSnapPass=!hasGrades||grades.every(g=>g.score>5);const resolvedScore=hasGrades&&p.score===null?Number(((grades.reduce((acc,g)=>acc+g.score,0)/grades.length)*10).toFixed(2)):p.score;if((p.status==="GRADED"&&resolvedScore===null)||(p.status==="GRADED"&&!p.summary.trim())||(p.status==="RETURNED"&&!p.summary.trim()))throw new ApiError("validation",422);const labOutcome: "PENDING" | "PASSED" | "NEEDS_REVISION"=p.status==="GRADED"?(allSnapPass?"PASSED":"NEEDS_REVISION"):(p.status==="RETURNED"?"NEEDS_REVISION":"PENDING");const value={submissionId:p.submissionId,revision:p.expectedRevision+1,status:p.status,score:resolvedScore,summary:p.summary,lecturerId:this.user!.id,lecturerName:this.user!.name,updatedAt:new Date().toISOString(),...(hasGrades?{snapshotGrades:grades}:{}),labOutcome};this.grading.set(p.submissionId,value);return value;}
-      case "diagrams": {const p=contracts.diagrams.input.parse(raw);this.find(this.models,m=>m.id===p.modelId);return [{id:`generated-${p.modelId}`,modelId:p.modelId,notation:"C4",level:"CONTAINER"}];}
-      case "evaluations": return [];
-      case "documentRevisions": {const p=contracts.documentRevisions.input.parse(raw);return this.savedDocuments.filter(d=>d.modelId===p.modelId).map(d=>({modelId:d.modelId,viewId:d.viewId,revision:d.revision,savedAt:d.savedAt}));}
-      case "architectureDocument": {const p=contracts.architectureDocument.input.parse(raw), d=this.savedDocuments.filter(d=>d.modelId===p.modelId&&d.viewId===p.viewId&&(!p.revision||d.revision===p.revision)).sort((a,b)=>b.revision-a.revision)[0];return d??{modelId:p.modelId,viewId:p.viewId,revision:0,xml:null};}
-      case "saveArchitectureDocument": {const p=contracts.saveArchitectureDocument.input.parse(raw), latest=this.savedDocuments.filter(d=>d.modelId===p.modelId&&d.viewId===p.viewId).sort((a,b)=>b.revision-a.revision)[0];if((latest?.revision??0)!==p.expectedRevision)throw new ApiError("conflict",409);const doc={modelId:p.modelId,viewId:p.viewId,revision:p.expectedRevision+1,xml:p.xml,savedAt:new Date().toISOString()};this.savedDocuments.push(doc);return doc;}
-      case "freezeArtifacts": {const p=contracts.freezeArtifacts.input.parse(raw);this.find(this.models,m=>m.id===p.modelId);if(!p.documents.length&&!p.diagramVersionIds.length)throw new ApiError("validation",422);const artifacts:Array<Record<string,unknown>>=[];for(const selected of p.documents){const doc=this.find(this.savedDocuments,d=>d.modelId===p.modelId&&d.viewId===selected.viewId&&d.revision===selected.revision);const diagramType=documentDiagramType(doc.viewId);const notation=diagramType.startsWith("C4_")?"C4":diagramType;artifacts.push({notation,layoutJson:{diagramType,drawioXml:doc.xml,viewId:doc.viewId,documentRevision:doc.revision}});}for(const id of p.diagramVersionIds){if(id!==`generated-${p.modelId}`)throw new ApiError("validation",422);artifacts.push({notation:"C4",layoutJson:{nodes:[],edges:[]}});}const diagramVersionId=crypto.randomUUID();this.frozenBundles.set(diagramVersionId,{modelId:p.modelId,layout:{frozenDocument:true,artifacts}});return {modelId:p.modelId,diagramVersionId};}
-      case "workspaceProjects": {const p=contracts.workspaceProjects.input.parse(raw);this.classroom(p.workspaceId);return this.projects.filter(project=>project.workspaceId===p.workspaceId);}
-      case "createReferenceProject": {const p=contracts.createReferenceProject.input.parse(raw);this.classroom(p.workspaceId,true);const project:Project={id:crypto.randomUUID(),name:p.name,workspaceId:p.workspaceId,isReferenceTemplate:true,projectType:"TEACHER_REFERENCE",repository:"",status:"unknown",services:null,runtimeSupported:null};this.projects.push(project);return project;}
-      case "publishReference": {const p=contracts.publishReference.input.parse(raw);this.classroom(p.workspaceId,true);this.find(this.projects,project=>project.id===p.projectId&&project.workspaceId===p.workspaceId);return this.find(this.snapshots,snapshot=>snapshot.id===p.snapshotId&&snapshot.projectId===p.projectId);}
-      case "batchWorkspaceMembers": {const p=contracts.batchWorkspaceMembers.input.parse(raw),room=this.classroom(p.workspaceId,true);const addedEmails:string[]=[],alreadyMemberEmails:string[]=[],notFoundEmails:string[]=[];for(const email of p.emails){const account=this.accounts.find(a=>a.email===email);if(!account)notFoundEmails.push(email);else if(room.members.some(m=>m.id===account.id))alreadyMemberEmails.push(email);else{room.members.push({id:account.id,name:account.name,role:"student"});addedEmails.push(email);}}return {addedCount:addedEmails.length,addedEmails,alreadyMemberEmails,notFoundEmails};}
-      case "updateAssignment": {const p=contracts.updateAssignment.input.parse(raw);this.classroom(p.workspaceId,true);const a=this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);if(p.clearReferenceSource && p.referenceModelId)throw new ApiError("validation",422);if(p.clearReferenceSource)a.referenceSource=null;else if(p.referenceModelId)a.referenceSource=this.assignmentReference(p.workspaceId,p.referenceModelId);Object.assign(a,{title:p.title,instructions:p.description,dueAt:p.dueAt??"No deadline",requiredDiagramTypes:p.requiredDiagramTypes,requireRuntimeTrace:p.requireRuntimeTrace,...(p.ruleSetVersion!==undefined?{ruleSetVersion:p.ruleSetVersion}:{}),...(p.aiPolicy!==undefined?{aiPolicy:p.aiPolicy}:{}),...(p.labOrder!==undefined?{labOrder:p.labOrder}:{})});return a;}
-      case "deleteAssignment": {const p=contracts.deleteAssignment.input.parse(raw);this.classroom(p.workspaceId,true);this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);if(this.submissions.some(s=>s.assignmentId===p.assignmentId))throw new ApiError("validation",422);this.courseworkAssignments=this.courseworkAssignments.filter(a=>a.id!==p.assignmentId);return {ok:true};}
-      case "submissionExport": {const p=contracts.submissionExport.input.parse(raw);return this.find(this.submissions,s=>s.id===p.submissionId);}
-      case "updateFeedback": {const p=contracts.updateFeedback.input.parse(raw),s=this.find(this.submissions,s=>s.id===p.submissionId),feedback=this.find(s.feedback,f=>f.id===p.feedbackId);if(feedback.authorId!==this.user?.id)throw new ApiError("forbidden",403);feedback.text=p.text;return s;}
-      case "deleteFeedback": {const p=contracts.deleteFeedback.input.parse(raw),s=this.find(this.submissions,s=>s.id===p.submissionId),feedback=this.find(s.feedback,f=>f.id===p.feedbackId);if(feedback.authorId!==this.user?.id)throw new ApiError("forbidden",403);s.feedback=s.feedback.filter(f=>f.id!==p.feedbackId);return s;}
+      case "submissionReview": {
+        const p = contracts.submissionReview.input.parse(raw),
+          submission = this.find(this.submissions, (s) => s.id === p.submissionId);
+        const value = this.grading.get(p.submissionId);
+        if (
+          this.user?.id !== submission.studentId &&
+          !["lecturer", "admin"].includes(this.user?.role ?? "")
+        )
+          throw new ApiError("forbidden", 403);
+        return value && !(this.user?.id === submission.studentId && value.status === "DRAFT")
+          ? value
+          : {
+              submissionId: p.submissionId,
+              revision: 0,
+              status: "PENDING",
+              score: null,
+              summary: "",
+              lecturerId: null,
+              lecturerName: null,
+              updatedAt: null,
+              snapshotGrades: [],
+              labOutcome: "PENDING",
+            };
+      }
+      case "gradeSubmission": {
+        const p = contracts.gradeSubmission.input.parse(raw),
+          submission = this.find(this.submissions, (s) => s.id === p.submissionId);
+        if (this.user?.id === submission.studentId) throw new ApiError("forbidden", 403);
+        const current = this.grading.get(p.submissionId);
+        if ((current?.revision ?? 0) !== p.expectedRevision) throw new ApiError("conflict", 409);
+        const grades = p.snapshotGrades ?? [];
+        const hasGrades = grades.length > 0;
+        const allSnapPass = !hasGrades || grades.every((g) => g.score > 5);
+        const resolvedScore =
+          hasGrades && p.score === null
+            ? Number(
+                ((grades.reduce((acc, g) => acc + g.score, 0) / grades.length) * 10).toFixed(2),
+              )
+            : p.score;
+        if (
+          (p.status === "GRADED" && resolvedScore === null) ||
+          (p.status === "GRADED" && !p.summary.trim()) ||
+          (p.status === "RETURNED" && !p.summary.trim())
+        )
+          throw new ApiError("validation", 422);
+        const labOutcome: "PENDING" | "PASSED" | "NEEDS_REVISION" =
+          p.status === "GRADED"
+            ? allSnapPass
+              ? "PASSED"
+              : "NEEDS_REVISION"
+            : p.status === "RETURNED"
+              ? "NEEDS_REVISION"
+              : "PENDING";
+        const value = {
+          submissionId: p.submissionId,
+          revision: p.expectedRevision + 1,
+          status: p.status,
+          score: resolvedScore,
+          summary: p.summary,
+          lecturerId: this.user!.id,
+          lecturerName: this.user!.name,
+          updatedAt: new Date().toISOString(),
+          ...(hasGrades ? { snapshotGrades: grades } : {}),
+          labOutcome,
+        };
+        this.grading.set(p.submissionId, value);
+        return value;
+      }
+      case "diagrams": {
+        const p = contracts.diagrams.input.parse(raw);
+        this.find(this.models, (m) => m.id === p.modelId);
+        return [
+          { id: `generated-${p.modelId}`, modelId: p.modelId, notation: "C4", level: "CONTAINER" },
+        ];
+      }
+      case "evaluations":
+        return [];
+      case "documentRevisions": {
+        const p = contracts.documentRevisions.input.parse(raw);
+        return this.savedDocuments
+          .filter((d) => d.modelId === p.modelId)
+          .map((d) => ({
+            modelId: d.modelId,
+            viewId: d.viewId,
+            revision: d.revision,
+            savedAt: d.savedAt,
+          }));
+      }
+      case "architectureDocument": {
+        const p = contracts.architectureDocument.input.parse(raw),
+          d = this.savedDocuments
+            .filter(
+              (d) =>
+                d.modelId === p.modelId &&
+                d.viewId === p.viewId &&
+                (!p.revision || d.revision === p.revision),
+            )
+            .sort((a, b) => b.revision - a.revision)[0];
+        return d ?? { modelId: p.modelId, viewId: p.viewId, revision: 0, xml: null };
+      }
+      case "saveArchitectureDocument": {
+        const p = contracts.saveArchitectureDocument.input.parse(raw),
+          latest = this.savedDocuments
+            .filter((d) => d.modelId === p.modelId && d.viewId === p.viewId)
+            .sort((a, b) => b.revision - a.revision)[0];
+        if ((latest?.revision ?? 0) !== p.expectedRevision) throw new ApiError("conflict", 409);
+        const doc = {
+          modelId: p.modelId,
+          viewId: p.viewId,
+          revision: p.expectedRevision + 1,
+          xml: p.xml,
+          savedAt: new Date().toISOString(),
+        };
+        this.savedDocuments.push(doc);
+        return doc;
+      }
+      case "freezeArtifacts": {
+        const p = contracts.freezeArtifacts.input.parse(raw);
+        this.find(this.models, (m) => m.id === p.modelId);
+        if (!p.documents.length && !p.diagramVersionIds.length)
+          throw new ApiError("validation", 422);
+        const artifacts: Array<Record<string, unknown>> = [];
+        for (const selected of p.documents) {
+          const doc = this.find(
+            this.savedDocuments,
+            (d) =>
+              d.modelId === p.modelId &&
+              d.viewId === selected.viewId &&
+              d.revision === selected.revision,
+          );
+          const diagramType = documentDiagramType(doc.viewId);
+          const notation = diagramType.startsWith("C4_") ? "C4" : diagramType;
+          artifacts.push({
+            notation,
+            layoutJson: {
+              diagramType,
+              drawioXml: doc.xml,
+              viewId: doc.viewId,
+              documentRevision: doc.revision,
+            },
+          });
+        }
+        for (const id of p.diagramVersionIds) {
+          if (id !== `generated-${p.modelId}`) throw new ApiError("validation", 422);
+          artifacts.push({ notation: "C4", layoutJson: { nodes: [], edges: [] } });
+        }
+        const diagramVersionId = crypto.randomUUID();
+        this.frozenBundles.set(diagramVersionId, {
+          modelId: p.modelId,
+          layout: { frozenDocument: true, artifacts },
+        });
+        return { modelId: p.modelId, diagramVersionId };
+      }
+      case "workspaceProjects": {
+        const p = contracts.workspaceProjects.input.parse(raw);
+        this.classroom(p.workspaceId);
+        return this.projects.filter((project) => project.workspaceId === p.workspaceId);
+      }
+      case "createReferenceProject": {
+        const p = contracts.createReferenceProject.input.parse(raw);
+        this.classroom(p.workspaceId, true);
+        const project: Project = {
+          id: crypto.randomUUID(),
+          name: p.name,
+          workspaceId: p.workspaceId,
+          isReferenceTemplate: true,
+          projectType: "TEACHER_REFERENCE",
+          repository: "",
+          status: "unknown",
+          services: null,
+          runtimeSupported: null,
+        };
+        this.projects.push(project);
+        return project;
+      }
+      case "publishReference": {
+        const p = contracts.publishReference.input.parse(raw);
+        this.classroom(p.workspaceId, true);
+        this.find(
+          this.projects,
+          (project) => project.id === p.projectId && project.workspaceId === p.workspaceId,
+        );
+        return this.find(
+          this.snapshots,
+          (snapshot) => snapshot.id === p.snapshotId && snapshot.projectId === p.projectId,
+        );
+      }
+      case "batchWorkspaceMembers": {
+        const p = contracts.batchWorkspaceMembers.input.parse(raw),
+          room = this.classroom(p.workspaceId, true);
+        const addedEmails: string[] = [],
+          alreadyMemberEmails: string[] = [],
+          notFoundEmails: string[] = [];
+        for (const email of p.emails) {
+          const account = this.accounts.find((a) => a.email === email);
+          if (!account) notFoundEmails.push(email);
+          else if (room.members.some((m) => m.id === account.id)) alreadyMemberEmails.push(email);
+          else {
+            room.members.push({ id: account.id, name: account.name, role: "student" });
+            addedEmails.push(email);
+          }
+        }
+        return { addedCount: addedEmails.length, addedEmails, alreadyMemberEmails, notFoundEmails };
+      }
+      case "updateAssignment": {
+        const p = contracts.updateAssignment.input.parse(raw);
+        this.classroom(p.workspaceId, true);
+        const a = this.find(
+          this.courseworkAssignments,
+          (a) => a.id === p.assignmentId && a.workspaceId === p.workspaceId,
+        );
+        if (p.clearReferenceSource && p.referenceModelId) throw new ApiError("validation", 422);
+        if (p.clearReferenceSource) a.referenceSource = null;
+        else if (p.referenceModelId)
+          a.referenceSource = this.assignmentReference(p.workspaceId, p.referenceModelId);
+        Object.assign(a, {
+          title: p.title,
+          instructions: p.description,
+          dueAt: p.dueAt ?? "No deadline",
+          requiredDiagramTypes: p.requiredDiagramTypes,
+          requireRuntimeTrace: p.requireRuntimeTrace,
+          ...(p.ruleSetVersion !== undefined ? { ruleSetVersion: p.ruleSetVersion } : {}),
+          ...(p.aiPolicy !== undefined ? { aiPolicy: p.aiPolicy } : {}),
+          ...(p.labOrder !== undefined ? { labOrder: p.labOrder } : {}),
+        });
+        return a;
+      }
+      case "deleteAssignment": {
+        const p = contracts.deleteAssignment.input.parse(raw);
+        this.classroom(p.workspaceId, true);
+        this.find(
+          this.courseworkAssignments,
+          (a) => a.id === p.assignmentId && a.workspaceId === p.workspaceId,
+        );
+        if (this.submissions.some((s) => s.assignmentId === p.assignmentId))
+          throw new ApiError("validation", 422);
+        this.courseworkAssignments = this.courseworkAssignments.filter(
+          (a) => a.id !== p.assignmentId,
+        );
+        return { ok: true };
+      }
+      case "submissionExport": {
+        const p = contracts.submissionExport.input.parse(raw);
+        return this.find(this.submissions, (s) => s.id === p.submissionId);
+      }
+      case "updateFeedback": {
+        const p = contracts.updateFeedback.input.parse(raw),
+          s = this.find(this.submissions, (s) => s.id === p.submissionId),
+          feedback = this.find(s.feedback, (f) => f.id === p.feedbackId);
+        if (feedback.authorId !== this.user?.id) throw new ApiError("forbidden", 403);
+        feedback.text = p.text;
+        return s;
+      }
+      case "deleteFeedback": {
+        const p = contracts.deleteFeedback.input.parse(raw),
+          s = this.find(this.submissions, (s) => s.id === p.submissionId),
+          feedback = this.find(s.feedback, (f) => f.id === p.feedbackId);
+        if (feedback.authorId !== this.user?.id) throw new ApiError("forbidden", 403);
+        s.feedback = s.feedback.filter((f) => f.id !== p.feedbackId);
+        return s;
+      }
       case "workspaces":
-        return this.classrooms.filter(w => this.user?.role === "admin" || w.members.some(m => m.id === this.user?.id)).map(w => this.classroomView(w));
+        return this.classrooms
+          .filter(
+            (w) => this.user?.role === "admin" || w.members.some((m) => m.id === this.user?.id),
+          )
+          .map((w) => this.classroomView(w));
       case "createWorkspace": {
         const p = contracts.createWorkspace.input.parse(raw);
-        if (this.classrooms.some(w => w.code === p.code)) throw new ApiError("conflict",409);
-        const room = {id:crypto.randomUUID(),code:p.code,name:p.name,status:"ACTIVE",ownerId:this.user!.id,members:[{id:this.user!.id,name:this.user!.name,role:"lecturer"}]};
-        this.classrooms.push(room); return this.classroomView(room);
+        if (this.classrooms.some((w) => w.code === p.code)) throw new ApiError("conflict", 409);
+        const room = {
+          id: crypto.randomUUID(),
+          code: p.code,
+          name: p.name,
+          status: "INACTIVE",
+          ownerId: this.user!.id,
+          members: [{ id: this.user!.id, name: this.user!.name, role: "lecturer" }],
+        };
+        this.classrooms.push(room);
+        return this.classroomView(room);
       }
       case "updateWorkspace": {
-        const p=contracts.updateWorkspace.input.parse(raw), room=this.classroom(p.workspaceId,true);
-        room.name=p.name;if(p.status)room.status=p.status; return this.classroomView(room);
+        const p = contracts.updateWorkspace.input.parse(raw),
+          room = this.classroom(p.workspaceId, true);
+        room.name = p.name;
+        if (p.status) room.status = p.status;
+        return this.classroomView(room);
       }
       case "archiveWorkspace": {
-        const p=contracts.archiveWorkspace.input.parse(raw), room=this.classroom(p.workspaceId,true);
-        room.status="ARCHIVED"; return this.classroomView(room);
+        const p = contracts.archiveWorkspace.input.parse(raw),
+          room = this.classroom(p.workspaceId, true);
+        room.status = "ARCHIVED";
+        return this.classroomView(room);
       }
       case "addWorkspaceMember": {
-        const p=contracts.addWorkspaceMember.input.parse(raw), room=this.classroom(p.workspaceId,true);
-        if(room.status === "ARCHIVED") throw new ApiError("validation",422);
-        const account=this.find(this.accounts,a=>a.email?.toLowerCase()===p.email.toLowerCase());
-        if(room.members.some(m=>m.id===account.id)) throw new ApiError("conflict",409);
-        room.members.push({id:account.id,name:account.name,role:p.memberRole.toLowerCase()}); return this.classroomView(room);
+        const p = contracts.addWorkspaceMember.input.parse(raw),
+          room = this.classroom(p.workspaceId, true);
+        if (room.status === "ARCHIVED") throw new ApiError("validation", 422);
+        const account = this.find(
+          this.accounts,
+          (a) => a.email?.toLowerCase() === p.email.toLowerCase(),
+        );
+        if (room.members.some((m) => m.id === account.id)) throw new ApiError("conflict", 409);
+        room.members.push({ id: account.id, name: account.name, role: p.memberRole.toLowerCase() });
+        return this.classroomView(room);
       }
       case "removeWorkspaceMember": {
-        const p=contracts.removeWorkspaceMember.input.parse(raw), room=this.classroom(p.workspaceId,true);
-        if(p.userId===room.ownerId) throw new ApiError("forbidden",403);
-        room.members=room.members.filter(m=>m.id!==p.userId); return this.classroomView(room);
+        const p = contracts.removeWorkspaceMember.input.parse(raw),
+          room = this.classroom(p.workspaceId, true);
+        if (p.userId === room.ownerId) throw new ApiError("forbidden", 403);
+        room.members = room.members.filter((m) => m.id !== p.userId);
+        return this.classroomView(room);
       }
       case "assignments": {
-        const p=contracts.assignments.input.parse(raw); this.classroom(p.workspaceId);
-        return this.courseworkAssignments.filter(a=>a.workspaceId===p.workspaceId);
+        const p = contracts.assignments.input.parse(raw);
+        this.classroom(p.workspaceId);
+        return this.courseworkAssignments.filter((a) => a.workspaceId === p.workspaceId);
       }
       case "createAssignment": {
-        const p=contracts.createAssignment.input.parse(raw),room=this.classroom(p.workspaceId,true);
-        if(room.status === "ARCHIVED") throw new ApiError("validation",422);
-        if(p.clearReferenceSource && p.referenceModelId)throw new ApiError("validation",422);
-        const assignment={referenceSource:this.assignmentReference(p.workspaceId,p.referenceModelId),id:crypto.randomUUID(),workspaceId:p.workspaceId,title:p.title,instructions:p.description??"",dueAt:p.dueAt??"No deadline",requiredDiagramTypes:p.requiredDiagramTypes,ruleSetVersion:p.ruleSetVersion??"SWD_DEFAULT_V1",requireRuntimeTrace:p.requireRuntimeTrace,aiPolicy:p.aiPolicy??null,labOrder:p.labOrder??null};
-        this.courseworkAssignments.push(assignment); return assignment;
+        const p = contracts.createAssignment.input.parse(raw),
+          room = this.classroom(p.workspaceId, true);
+        if (room.status === "ARCHIVED") throw new ApiError("validation", 422);
+        if (p.clearReferenceSource && p.referenceModelId) throw new ApiError("validation", 422);
+        const assignment = {
+          referenceSource: this.assignmentReference(p.workspaceId, p.referenceModelId),
+          id: crypto.randomUUID(),
+          workspaceId: p.workspaceId,
+          title: p.title,
+          instructions: p.description ?? "",
+          dueAt: p.dueAt ?? "No deadline",
+          requiredDiagramTypes: p.requiredDiagramTypes,
+          ruleSetVersion: p.ruleSetVersion ?? "SWD_DEFAULT_V1",
+          requireRuntimeTrace: p.requireRuntimeTrace,
+          aiPolicy: p.aiPolicy ?? null,
+          labOrder: p.labOrder ?? null,
+        };
+        this.courseworkAssignments.push(assignment);
+        return assignment;
       }
       case "workspaceSubmissions": {
         const p = contracts.workspaceSubmissions.input.parse(raw);
         this.classroom(p.workspaceId, true);
         const ids = new Set(
-          this.courseworkAssignments.filter((a) => a.workspaceId === p.workspaceId).map((a) => a.id),
+          this.courseworkAssignments
+            .filter((a) => a.workspaceId === p.workspaceId)
+            .map((a) => a.id),
         );
         return this.submissions.filter((s) => ids.has(s.assignmentId));
       }
       case "assignmentSubmissions": {
-        const p=contracts.assignmentSubmissions.input.parse(raw); this.classroom(p.workspaceId,true);
-        this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);
-        return this.submissions.filter(s=>s.assignmentId===p.assignmentId);
+        const p = contracts.assignmentSubmissions.input.parse(raw);
+        this.classroom(p.workspaceId, true);
+        this.find(
+          this.courseworkAssignments,
+          (a) => a.id === p.assignmentId && a.workspaceId === p.workspaceId,
+        );
+        return this.submissions.filter((s) => s.assignmentId === p.assignmentId);
       }
       case "referenceVersions":
         return contracts.referenceVersions.input.parse(raw).workspaceId === "workspace-1" &&
@@ -857,7 +1354,7 @@ export class MockAdapter implements ApiAdapter {
         );
       case "submit": {
         const p = contracts.submit.input.parse(raw);
-        const assignment=this.find(this.courseworkAssignments,a=>a.id===p.assignmentId);
+        const assignment = this.find(this.courseworkAssignments, (a) => a.id === p.assignmentId);
         this.classroom(assignment.workspaceId);
         const m = this.find(this.models, (m) => m.id === p.modelId);
         const s = this.find(this.snapshots, (s) => s.id === p.snapshotId && s.id === m.snapshotId);
@@ -868,14 +1365,16 @@ export class MockAdapter implements ApiAdapter {
                 r.id === p.runtimeSessionId && r.snapshotId === s.id && r.status === "completed",
             )
           : null;
-        const bundle=p.diagramVersionId?this.frozenBundles.get(p.diagramVersionId):undefined;
+        const bundle = p.diagramVersionId ? this.frozenBundles.get(p.diagramVersionId) : undefined;
         const submission: Submission = {
           id: crypto.randomUUID(),
           assignmentId: p.assignmentId,
-          ...(p.diagramVersionId?{diagramVersionId:p.diagramVersionId}:{}),
-          ...(bundle?{diagramLayout:structuredClone(bundle.layout),diagramNotation:"BUNDLE"}:{}),
-          ...(p.studentSnapshots?{studentSnapshots:structuredClone(p.studentSnapshots)}:{}),
-          submissionNotes:p.submissionNotes??"",
+          ...(p.diagramVersionId ? { diagramVersionId: p.diagramVersionId } : {}),
+          ...(bundle
+            ? { diagramLayout: structuredClone(bundle.layout), diagramNotation: "BUNDLE" }
+            : {}),
+          ...(p.studentSnapshots ? { studentSnapshots: structuredClone(p.studentSnapshots) } : {}),
+          submissionNotes: p.submissionNotes ?? "",
           studentId: this.user?.id ?? "",
           submittedAt: new Date().toISOString(),
           model: structuredClone(m),
@@ -891,7 +1390,8 @@ export class MockAdapter implements ApiAdapter {
         const s = this.find(this.submissions, (s) => s.id === p.submissionId);
         if (s.model.id !== p.modelId) throw new ApiError("conflict", 409);
         s.feedback.push({
-          elementId:p.elementId??null,relationshipId:p.relationshipId??null,
+          elementId: p.elementId ?? null,
+          relationshipId: p.relationshipId ?? null,
           id: crypto.randomUUID(),
           text: p.text,
           createdAt: new Date().toISOString(),
@@ -924,8 +1424,11 @@ export class MockAdapter implements ApiAdapter {
         return { sessionId: s.id, executionStatus: "STOPPED" };
       }
       case "setAccountRole": {
-        const p=contracts.setAccountRole.input.parse(raw), account=this.find(this.accounts,a=>a.id===p.accountId);
-        account.role=p.role; this.record("setAccountRole",account.id); return account;
+        const p = contracts.setAccountRole.input.parse(raw),
+          account = this.find(this.accounts, (a) => a.id === p.accountId);
+        account.role = p.role;
+        this.record("setAccountRole", account.id);
+        return account;
       }
       case "setAccountLock": {
         const p = contracts.setAccountLock.input.parse(raw);
@@ -976,28 +1479,100 @@ export class MockAdapter implements ApiAdapter {
       case "adminJobs":
         return this.jobs.map((job) => this.advanceJob(job));
       case "adminHealth":
-        return { status:"UNKNOWN", checkedAt:new Date().toISOString(), scope:"Preview data. No live health probes have been performed.", checks:[{id:"backend",name:"Application API",status:"UNKNOWN",latencyMs:null,message:"Live checks are unavailable in preview mode.",action:"Connect to the backend to run health checks."}], jvm:{usedBytes:0,maxBytes:0,uptimeSeconds:0},storage:{} };
+        return {
+          status: "UNKNOWN",
+          checkedAt: new Date().toISOString(),
+          scope: "Preview data. No live health probes have been performed.",
+          checks: [
+            {
+              id: "backend",
+              name: "Application API",
+              status: "UNKNOWN",
+              latencyMs: null,
+              message: "Live checks are unavailable in preview mode.",
+              action: "Connect to the backend to run health checks.",
+            },
+          ],
+          jvm: { usedBytes: 0, maxBytes: 0, uptimeSeconds: 0 },
+          storage: {},
+        };
       case "adminRuntimeHealth":
-        return { surveyReadiness:"READY", runnerMode:"AUTO", configuredOciRuntime:"auto", effectiveOciRuntime:"runsc", dockerReachable:true, gvisorAvailable:true, sandboxRegistryConfigured:false, activeSessions:0, queuedSessions:0, maxActiveSessions:2, maxQueuedSessions:30, diskFreeMiB:20480, diskTotalMiB:40960, diskLowWarning:false, orphansReapedTotal:0, abandonedReapedTotal:0, staleDispatchesReapedTotal:0, oldestQueuedWaitSeconds:0, alertsConfigured:false, warnings:[] };
+        return {
+          surveyReadiness: "READY",
+          runnerMode: "AUTO",
+          configuredOciRuntime: "auto",
+          effectiveOciRuntime: "runsc",
+          dockerReachable: true,
+          gvisorAvailable: true,
+          sandboxRegistryConfigured: false,
+          activeSessions: 0,
+          queuedSessions: 0,
+          maxActiveSessions: 2,
+          maxQueuedSessions: 30,
+          diskFreeMiB: 20480,
+          diskTotalMiB: 40960,
+          diskLowWarning: false,
+          orphansReapedTotal: 0,
+          abandonedReapedTotal: 0,
+          staleDispatchesReapedTotal: 0,
+          oldestQueuedWaitSeconds: 0,
+          alertsConfigured: false,
+          warnings: [],
+        };
       case "adminSweepOrphans":
-        return { orphansRemoved:0, diskPruned:false };
+        return { orphansRemoved: 0, diskPruned: false };
       case "adminAiUsage":
-        return {status:"UNAVAILABLE",updatedAt:new Date().toISOString(),message:"Token tracking is not available in preview mode.",providers:[]};
-      case "notifications": return {items:[],total:0,unreadCount:0,page:0,size:20,asOf:new Date().toISOString()};
+        return {
+          status: "UNAVAILABLE",
+          updatedAt: new Date().toISOString(),
+          message: "Token tracking is not available in preview mode.",
+          providers: [],
+        };
+      case "notifications":
+        return {
+          items: [],
+          total: 0,
+          unreadCount: 0,
+          page: 0,
+          size: 20,
+          asOf: new Date().toISOString(),
+        };
       case "announcements":
-      case "adminAnnouncements": return [];
+      case "adminAnnouncements":
+        return [];
       case "createAnnouncement":
       case "updateAnnouncement": {
-        const value = operation === "createAnnouncement" ? contracts.createAnnouncement.input.parse(raw) : contracts.updateAnnouncement.input.parse(raw);
+        const value =
+          operation === "createAnnouncement"
+            ? contracts.createAnnouncement.input.parse(raw)
+            : contracts.updateAnnouncement.input.parse(raw);
         const now = new Date().toISOString();
-        return { id:"00000000-0000-4000-8000-000000000041", title:value.title, content:value.content, priority:value.priority, status:value.status, audienceType:value.audienceType, pinned:value.pinned, publishAt:value.publishAt, expireAt:value.expireAt, createdByName:"Sample administrator", createdAt:now, updatedAt:now };
+        return {
+          id: "00000000-0000-4000-8000-000000000041",
+          title: value.title,
+          content: value.content,
+          priority: value.priority,
+          status: value.status,
+          audienceType: value.audienceType,
+          pinned: value.pinned,
+          publishAt: value.publishAt,
+          expireAt: value.expireAt,
+          createdByName: "Sample administrator",
+          createdAt: now,
+          updatedAt: now,
+        };
       }
       case "publishAnnouncement":
-      case "unpublishAnnouncement": throw new ApiError("not-found",404);
-      case "deleteAnnouncement": return {ok:true};
-      case "catalogCourses": return {items:[],total:0,page:0,size:24,categories:[]};
-      case "readNotification": throw new ApiError("not-found",404);
-      case "readAllNotifications": return {ok:true};
+      case "unpublishAnnouncement":
+        throw new ApiError("not-found", 404);
+      case "deleteAnnouncement":
+        return { ok: true };
+      case "catalogCourses":
+        return { items: [], total: 0, page: 0, size: 24, categories: [] };
+      case "readNotification":
+        throw new ApiError("not-found", 404);
+      case "readAllNotifications":
+        return { ok: true };
       case "platformSummary":
         return {
           health: "unknown",
@@ -1083,7 +1658,10 @@ export class MockAdapter implements ApiAdapter {
         enriched = structuredClone(baseModel);
         enriched.id = candidateId;
         enriched.revision =
-          Math.max(0, ...this.models.filter((m) => m.projectId === s.projectId).map((m) => m.revision)) + 1;
+          Math.max(
+            0,
+            ...this.models.filter((m) => m.projectId === s.projectId).map((m) => m.revision),
+          ) + 1;
         enriched.label = `Runtime enriched · revision ${enriched.revision}`;
         (enriched as unknown as Record<string, unknown>)["origin"] = "RUNTIME_ENRICHED";
         this.models.push(enriched);
@@ -1148,8 +1726,7 @@ export class MockAdapter implements ApiAdapter {
         statusCode: stepStatus === "PASSED" ? expectedStatus : stepStatus === "FAILED" ? 500 : null,
         status: stepStatus,
         durationMs: stepStatus === "PASSED" ? 42 : null,
-        failureReason:
-          stepStatus === "FAILED" ? `HTTP 500 (expected ${expectedStatus})` : null,
+        failureReason: stepStatus === "FAILED" ? `HTTP 500 (expected ${expectedStatus})` : null,
         traceId: null,
         parentSpanId: null,
       };
@@ -1182,8 +1759,7 @@ export class MockAdapter implements ApiAdapter {
       stepResults,
       createdAt: s.approvedAt,
       startedAt: s.approvedAt,
-      completedAt:
-        s.status === "running" ? null : (s.events.at(-1)?.at ?? s.approvedAt),
+      completedAt: s.status === "running" ? null : (s.events.at(-1)?.at ?? s.approvedAt),
     };
   }
   private advanceSession(session: RuntimeSession) {

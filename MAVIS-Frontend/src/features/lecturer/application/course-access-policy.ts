@@ -11,19 +11,18 @@ export type LecturerCourseAccess = {
 /**
  * Single source of truth for the Lecturer course lifecycle.
  *
- * The current API exposes ACTIVE/ARCHIVED. Until the backend introduces an
- * explicit INACTIVE state, ARCHIVED is the API representation of an inactive
- * course in the Lecturer application.
+ * ACTIVE is the learner-facing, immutable published state. INACTIVE is the
+ * Lecturer authoring state. ARCHIVED remains a terminal legacy state.
  */
 export function lecturerCourseAccess(status: LecturerCourseStatus): LecturerCourseAccess {
-  const isActive = status !== "ARCHIVED";
+  const isActive = status === "ACTIVE";
+  const isAuthoring = !isActive && status !== "ARCHIVED";
   return {
     isActive,
-    // Active courses remain operational. Only structural creation is frozen.
-    isEditable: true,
-    canCreateModules: !isActive,
-    canCreateLabs: !isActive,
-    mode: "edit",
+    isEditable: isAuthoring,
+    canCreateModules: isAuthoring,
+    canCreateLabs: isAuthoring,
+    mode: isActive ? "read-only" : "edit",
   };
 }
 

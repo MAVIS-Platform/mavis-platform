@@ -43,22 +43,41 @@ const announcementPriority = z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]);
 const announcementAudience = z.enum(["ALL", "STUDENT", "LECTURER", "WORKSPACE"]);
 const announcementStatus = z.enum(["DRAFT", "SCHEDULED", "PUBLISHED", "EXPIRED", "ARCHIVED"]);
 const announcement = z.object({
-  id: z.string().uuid(), title: z.string(), content: z.string(), priority: announcementPriority,
-  status: announcementStatus, audienceType: announcementAudience, pinned: z.boolean(),
-  publishAt: z.string().datetime().nullable(), expireAt: z.string().datetime().nullable(),
-  createdByName: z.string(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  id: z.string().uuid(),
+  title: z.string(),
+  content: z.string(),
+  priority: announcementPriority,
+  status: announcementStatus,
+  audienceType: announcementAudience,
+  pinned: z.boolean(),
+  publishAt: z.string().datetime().nullable(),
+  expireAt: z.string().datetime().nullable(),
+  createdByName: z.string(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 });
 const announcementWrite = z.object({
-  title: z.string().trim().min(1).max(160), content: z.string().trim().min(1).max(12000),
-  priority: announcementPriority, status: announcementStatus, audienceType: announcementAudience,
-  pinned: z.boolean(), publishAt: z.string().datetime({ offset: true }).nullable(),
-  expireAt: z.string().datetime({ offset: true }).nullable(), workspaceIds: z.array(z.string().uuid()).max(100),
+  title: z.string().trim().min(1).max(160),
+  content: z.string().trim().min(1).max(12000),
+  priority: announcementPriority,
+  status: announcementStatus,
+  audienceType: announcementAudience,
+  pinned: z.boolean(),
+  publishAt: z.string().datetime({ offset: true }).nullable(),
+  expireAt: z.string().datetime({ offset: true }).nullable(),
+  workspaceIds: z.array(z.string().uuid()).max(100),
 });
 const catalogCourse = z.object({
-  workspaceId: z.string().uuid(), code: z.string().nullable(), title: z.string(),
-  description: z.string().nullable(), lecturerName: z.string(), enrolled: z.boolean(),
-  categories: z.array(z.string()), difficulties: z.array(z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"])),
-  labCount: z.number().int().nonnegative(), createdAt: z.string().datetime(),
+  workspaceId: z.string().uuid(),
+  code: z.string().nullable(),
+  title: z.string(),
+  description: z.string().nullable(),
+  lecturerName: z.string(),
+  enrolled: z.boolean(),
+  categories: z.array(z.string()),
+  difficulties: z.array(z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"])),
+  labCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
 });
 const activityBase = z.object({
   id,
@@ -83,19 +102,37 @@ export const contracts = {
     z.array(announcement),
   ),
   createAnnouncement: contract(announcementWrite, announcement, true),
-  updateAnnouncement: contract(announcementWrite.extend({ announcementId: z.string().uuid() }), announcement, true),
-  publishAnnouncement: contract(z.object({ announcementId: z.string().uuid() }), announcement, true),
-  unpublishAnnouncement: contract(z.object({ announcementId: z.string().uuid() }), announcement, true),
+  updateAnnouncement: contract(
+    announcementWrite.extend({ announcementId: z.string().uuid() }),
+    announcement,
+    true,
+  ),
+  publishAnnouncement: contract(
+    z.object({ announcementId: z.string().uuid() }),
+    announcement,
+    true,
+  ),
+  unpublishAnnouncement: contract(
+    z.object({ announcementId: z.string().uuid() }),
+    announcement,
+    true,
+  ),
   deleteAnnouncement: contract(z.object({ announcementId: z.string().uuid() }), ok, true),
   catalogCourses: contract(
     z.object({
-      q: z.string().max(160), category: z.string().max(80).optional(),
+      q: z.string().max(160),
+      category: z.string().max(80).optional(),
       difficulty: z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]).optional(),
-      sort: z.enum(["NAME", "NEWEST"]), page: z.number().int().min(0), size: z.number().int().min(1).max(48),
+      sort: z.enum(["NAME", "NEWEST"]),
+      page: z.number().int().min(0),
+      size: z.number().int().min(1).max(48),
     }),
     z.object({
-      items: z.array(catalogCourse), total: z.number().int().nonnegative(), page: z.number().int().nonnegative(),
-      size: z.number().int().positive(), categories: z.array(z.string()),
+      items: z.array(catalogCourse),
+      total: z.number().int().nonnegative(),
+      page: z.number().int().nonnegative(),
+      size: z.number().int().positive(),
+      categories: z.array(z.string()),
     }),
   ),
   notifications: contract(
@@ -678,146 +715,364 @@ export const contracts = {
     true,
   ),
   runtimeSessions: contract(project, z.array(d.runtimeSessionSchema)),
-  studioState: contract(z.object({sessionId:id}), z.object({
-    topology:z.object({
-      version:z.literal(1),
-      blocks:z.array(z.object({service:z.string(),label:z.string(),canScale:z.boolean(),initiallyStopped:z.boolean()})),
-      connections:z.array(z.object({from:z.string(),to:z.string(),controllerService:z.string(),protocol:z.string(),initiallyStopped:z.boolean()})),
-    }).optional(),
-    projectId:z.string().optional(),modelVersionId:z.string().optional(),sourceSnapshotId:z.string().optional(),
-    serviceMappings:z.record(z.string(), z.string()).optional(),
-    limits:z.object({
-      memoryMiB:z.number().optional(),cpus:z.number().optional(),timeoutSeconds:z.number().optional(),
-      services:z.record(z.string(), z.object({runtime:z.string(),containerPort:z.number(),readinessPath:z.string()})).optional(),
-    }).optional(),
-    receiptDigest:z.string().nullable().optional(),telemetryReceivedAt:z.string().nullable().optional(),
-    receiptSignature:z.string().nullable().optional(),
-    telemetry:z.object({
-      observedAt:z.string(),services:z.array(z.object({
-        service:z.string(),replicas:z.number(),runningReplicas:z.number(),
-        stats:z.array(z.object({containerId:z.string().nullable(),cpu:z.string().nullable(),memory:z.string().nullable(),network:z.string().nullable()})),
-        logs:z.string(),
-      })),spans:z.array(z.object({
-        traceId:z.string(),spanId:z.string(),runtimeService:z.string(),operationName:z.string().nullable().optional(),circuitOpen:z.boolean().optional(),spanStatus:z.string().nullable().optional(),
-        httpStatusCode:z.number().nullable().optional(),durationNanoseconds:z.string().nullable().optional(),
-        parentSpanId:z.string().nullish(),startTimeUnixNano:z.string().nullish(),kind:z.union([z.string(),z.number()]).nullish(),
-        scenarioStepId:z.string().nullish(),httpMethod:z.string().nullish(),route:z.string().nullish(),
-      }).transform((span)=>({
-        ...span,
-        // Real Runner spans carry route/method labels instead of operationName; the simulation sets operationName.
-        operationName:span.operationName ?? (span.route ? `${span.httpMethod ? `${span.httpMethod} ` : ""}${span.route}` : null),
-      }))),interactions:z.array(z.object({traceId:z.string(),fromService:z.string(),toService:z.string(),parentSpanId:z.string(),childSpanId:z.string()})),
-      warnings:z.array(z.string()).optional(),
-      probe:z.object({
-        targetRps:z.number().optional(),rps:z.number(),requests:z.number(),errors:z.number(),errorRatePercent:z.number(),
-        p50Ms:z.number().nullable().optional(),p95Ms:z.number().nullable().optional(),p99Ms:z.number().nullable().optional(),
-        routes:z.array(z.object({
-          stepId:z.string(),service:z.string(),method:z.string(),path:z.string(),
-          rps:z.number(),requests:z.number(),errors:z.number(),errorRatePercent:z.number(),
-          p50Ms:z.number().nullable().optional(),p95Ms:z.number().nullable().optional(),p99Ms:z.number().nullable().optional(),
-        })).optional(),
-      }).nullable().optional(),
-      serviceGraph:z.array(z.object({
-        client:z.string(),server:z.string(),rps:z.number(),errorsPerSec:z.number(),
-        errorRatePercent:z.number(),p95Ms:z.number().nullable().optional(),
-      })).nullish(),
-    }).optional(),
-    telemetryHistory:z.array(z.object({
-      observedAt:z.string(),
-      services:z.array(z.object({
-        service:z.string(),replicas:z.number(),runningReplicas:z.number(),
-        stats:z.array(z.object({containerId:z.string().nullable(),cpu:z.string().nullable(),memory:z.string().nullable(),network:z.string().nullable()})).optional(),
-      })).optional(),
-      spanCount:z.number().optional(),
-      errorSpanCount:z.number().optional(),
-      probe:z.record(z.string(), z.unknown()).nullable().optional(),
-      serviceGraph:z.array(z.record(z.string(), z.unknown())).optional(),
-    })).optional(),
-    snapshots:z.array(z.object({id:z.string(),sessionId:z.string(),sourceSnapshotId:z.string(),modelVersionId:z.string(),
-      capturedAt:z.string(),explanation:z.string(),digest:z.string()})).optional(),
-    sessionId:id, interactive:z.boolean(), simulatedSandbox:z.boolean().optional(), services:z.array(z.string()), finishRequested:z.boolean().default(false), executionStatus:z.string(),
-    queuePosition:z.number().int().positive().nullable().optional(),
-    activeSlots:z.number().int().nonnegative().nullable().optional(),
-    maxSlots:z.number().int().positive().nullable().optional(),
-    cleanupStatus:z.string(),
-    prediction:z.object({
-      predictedServices:z.array(z.string()),
-      rationale:z.string().optional(),
-      lockedAt:z.string().optional(),
-    }).nullish(),
-    exerciseCriteria:z.record(z.string(), z.unknown()).nullish(),
-    exerciseEvaluation:z.object({
-      exerciseType:z.string(),
-      predictionRequired:z.boolean(),
-      predictionLocked:z.boolean(),
-      predictedServices:z.array(z.string()),
-      observedAffectedServices:z.array(z.string()),
-      impactDetails:z.array(z.object({
-        service:z.string(),
-        reasons:z.array(z.string()),
-        errorDeltaPct:z.number().nullish(),
-        p95DeltaMs:z.number().nullish(),
-        replicasBefore:z.number().nullish(),
-        replicasAfter:z.number().nullish(),
-      })).optional(),
-      impact:z.object({
-        truePositives:z.array(z.string()),
-        falsePositives:z.array(z.string()),
-        falseNegatives:z.array(z.string()),
-        precision:z.number(),
-        recall:z.number(),
-        f1Score:z.number(),
-      }).nullish(),
-      rules:z.array(z.object({
-        id:z.string(),
-        label:z.string(),
-        metric:z.string(),
-        target:z.string(),
-        operator:z.string(),
-        threshold:z.number(),
-        observedValue:z.number().nullish(),
-        passed:z.boolean(),
-        reason:z.string(),
-      })),
-      passedRules:z.number(),
-      totalRules:z.number(),
-      evaluated:z.boolean(),
-      autoScorePercent:z.number(),
-      passed:z.boolean(),
-    }).nullish(),
-    actions:z.array(z.object({
-      actionId:z.string().uuid(), action:z.enum(["START","STOP","SCALE","PAUSE","RESUME","THROTTLE_CPU","SET_LOAD","SET_ENV","SWAP_VERSION"]), service:z.string(),
-      replicas:z.number().nullable().optional(), cpuPercent:z.number().int().min(10).max(100).nullable().optional(),
-      targetRps:z.number().int().min(1).max(50).nullable().optional(),
-      envKey:z.string().max(64).nullish(), envValue:z.string().max(256).nullish(), targetImage:z.string().max(256).nullish(),
-      status:z.enum(["PENDING","RUNNING","CONFIRMED","FAILED","INTERRUPTED"]),
-      requestedAt:z.string(), completedAt:z.string().nullable().optional(), result:z.object({
-        action:z.string(),service:z.string(),replicasBefore:z.number(),replicasAfter:z.number(),confirmed:z.boolean(),
-        metricsBefore:z.record(z.string(), z.unknown()),metricsAfter:z.record(z.string(), z.unknown()),
-      }).nullable().optional(),
-    })),
-  })),
-  studioAction: contract(z.object({sessionId:id,actionId:z.string().uuid(),action:z.enum(["START","STOP","SCALE","PAUSE","RESUME","THROTTLE_CPU","SET_LOAD","SET_ENV","SWAP_VERSION"]),
-    service:z.string().min(1),replicas:z.number().int().min(1).max(8).optional(),
-    cpuPercent:z.number().int().min(10).max(100).optional(),
-    targetRps:z.number().int().min(1).max(50).optional(),
-    envKey:z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/).optional(),
-    envValue:z.string().max(256).optional(),
-    targetImage:z.string().min(10).max(256).optional()}), z.unknown(), true),
-  studioPrediction: contract(z.object({
-    sessionId:id,
-    predictedServices:z.array(z.string().min(1).max(128)).min(1).max(20),
-    rationale:z.string().max(2000).optional(),
-  }), z.unknown(), true),
-  studioFinish: contract(z.object({sessionId:id}),z.unknown(),true),
-  studioCapture: contract(z.object({sessionId:id,explanation:z.string().trim().min(1).max(4000),
-    imageData:z.string().max(1500000).optional(),observedAt:z.string().max(100).optional()}),z.record(z.string(), z.unknown()),true),
-  studioSnapshot: contract(z.object({sessionId:id,snapshotId:id}),z.record(z.string(), z.unknown())),
-  studioReceipt: contract(z.object({sessionId:id}),z.record(z.string(), z.unknown())),
+  studioState: contract(
+    z.object({ sessionId: id }),
+    z.object({
+      topology: z
+        .object({
+          version: z.literal(1),
+          blocks: z.array(
+            z.object({
+              service: z.string(),
+              label: z.string(),
+              canScale: z.boolean(),
+              initiallyStopped: z.boolean(),
+            }),
+          ),
+          connections: z.array(
+            z.object({
+              from: z.string(),
+              to: z.string(),
+              controllerService: z.string(),
+              protocol: z.string(),
+              initiallyStopped: z.boolean(),
+            }),
+          ),
+        })
+        .optional(),
+      projectId: z.string().optional(),
+      modelVersionId: z.string().optional(),
+      sourceSnapshotId: z.string().optional(),
+      serviceMappings: z.record(z.string(), z.string()).optional(),
+      limits: z
+        .object({
+          memoryMiB: z.number().optional(),
+          cpus: z.number().optional(),
+          timeoutSeconds: z.number().optional(),
+          services: z
+            .record(
+              z.string(),
+              z.object({
+                runtime: z.string(),
+                containerPort: z.number(),
+                readinessPath: z.string(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      receiptDigest: z.string().nullable().optional(),
+      telemetryReceivedAt: z.string().nullable().optional(),
+      receiptSignature: z.string().nullable().optional(),
+      telemetry: z
+        .object({
+          observedAt: z.string(),
+          services: z.array(
+            z.object({
+              service: z.string(),
+              replicas: z.number(),
+              runningReplicas: z.number(),
+              stats: z.array(
+                z.object({
+                  containerId: z.string().nullable(),
+                  cpu: z.string().nullable(),
+                  memory: z.string().nullable(),
+                  network: z.string().nullable(),
+                }),
+              ),
+              logs: z.string(),
+            }),
+          ),
+          spans: z.array(
+            z
+              .object({
+                traceId: z.string(),
+                spanId: z.string(),
+                runtimeService: z.string(),
+                operationName: z.string().nullable().optional(),
+                circuitOpen: z.boolean().optional(),
+                spanStatus: z.string().nullable().optional(),
+                httpStatusCode: z.number().nullable().optional(),
+                durationNanoseconds: z.string().nullable().optional(),
+                parentSpanId: z.string().nullish(),
+                startTimeUnixNano: z.string().nullish(),
+                kind: z.union([z.string(), z.number()]).nullish(),
+                scenarioStepId: z.string().nullish(),
+                httpMethod: z.string().nullish(),
+                route: z.string().nullish(),
+              })
+              .transform((span) => ({
+                ...span,
+                // Real Runner spans carry route/method labels instead of operationName; the simulation sets operationName.
+                operationName:
+                  span.operationName ??
+                  (span.route
+                    ? `${span.httpMethod ? `${span.httpMethod} ` : ""}${span.route}`
+                    : null),
+              })),
+          ),
+          interactions: z.array(
+            z.object({
+              traceId: z.string(),
+              fromService: z.string(),
+              toService: z.string(),
+              parentSpanId: z.string(),
+              childSpanId: z.string(),
+            }),
+          ),
+          warnings: z.array(z.string()).optional(),
+          probe: z
+            .object({
+              targetRps: z.number().optional(),
+              rps: z.number(),
+              requests: z.number(),
+              errors: z.number(),
+              errorRatePercent: z.number(),
+              p50Ms: z.number().nullable().optional(),
+              p95Ms: z.number().nullable().optional(),
+              p99Ms: z.number().nullable().optional(),
+              routes: z
+                .array(
+                  z.object({
+                    stepId: z.string(),
+                    service: z.string(),
+                    method: z.string(),
+                    path: z.string(),
+                    rps: z.number(),
+                    requests: z.number(),
+                    errors: z.number(),
+                    errorRatePercent: z.number(),
+                    p50Ms: z.number().nullable().optional(),
+                    p95Ms: z.number().nullable().optional(),
+                    p99Ms: z.number().nullable().optional(),
+                  }),
+                )
+                .optional(),
+            })
+            .nullable()
+            .optional(),
+          serviceGraph: z
+            .array(
+              z.object({
+                client: z.string(),
+                server: z.string(),
+                rps: z.number(),
+                errorsPerSec: z.number(),
+                errorRatePercent: z.number(),
+                p95Ms: z.number().nullable().optional(),
+              }),
+            )
+            .nullish(),
+        })
+        .optional(),
+      telemetryHistory: z
+        .array(
+          z.object({
+            observedAt: z.string(),
+            services: z
+              .array(
+                z.object({
+                  service: z.string(),
+                  replicas: z.number(),
+                  runningReplicas: z.number(),
+                  stats: z
+                    .array(
+                      z.object({
+                        containerId: z.string().nullable(),
+                        cpu: z.string().nullable(),
+                        memory: z.string().nullable(),
+                        network: z.string().nullable(),
+                      }),
+                    )
+                    .optional(),
+                }),
+              )
+              .optional(),
+            spanCount: z.number().optional(),
+            errorSpanCount: z.number().optional(),
+            probe: z.record(z.string(), z.unknown()).nullable().optional(),
+            serviceGraph: z.array(z.record(z.string(), z.unknown())).optional(),
+          }),
+        )
+        .optional(),
+      snapshots: z
+        .array(
+          z.object({
+            id: z.string(),
+            sessionId: z.string(),
+            sourceSnapshotId: z.string(),
+            modelVersionId: z.string(),
+            capturedAt: z.string(),
+            explanation: z.string(),
+            digest: z.string(),
+          }),
+        )
+        .optional(),
+      sessionId: id,
+      interactive: z.boolean(),
+      simulatedSandbox: z.boolean().optional(),
+      services: z.array(z.string()),
+      finishRequested: z.boolean().default(false),
+      executionStatus: z.string(),
+      queuePosition: z.number().int().positive().nullable().optional(),
+      activeSlots: z.number().int().nonnegative().nullable().optional(),
+      maxSlots: z.number().int().positive().nullable().optional(),
+      cleanupStatus: z.string(),
+      prediction: z
+        .object({
+          predictedServices: z.array(z.string()),
+          rationale: z.string().optional(),
+          lockedAt: z.string().optional(),
+        })
+        .nullish(),
+      exerciseCriteria: z.record(z.string(), z.unknown()).nullish(),
+      exerciseEvaluation: z
+        .object({
+          exerciseType: z.string(),
+          predictionRequired: z.boolean(),
+          predictionLocked: z.boolean(),
+          predictedServices: z.array(z.string()),
+          observedAffectedServices: z.array(z.string()),
+          impactDetails: z
+            .array(
+              z.object({
+                service: z.string(),
+                reasons: z.array(z.string()),
+                errorDeltaPct: z.number().nullish(),
+                p95DeltaMs: z.number().nullish(),
+                replicasBefore: z.number().nullish(),
+                replicasAfter: z.number().nullish(),
+              }),
+            )
+            .optional(),
+          impact: z
+            .object({
+              truePositives: z.array(z.string()),
+              falsePositives: z.array(z.string()),
+              falseNegatives: z.array(z.string()),
+              precision: z.number(),
+              recall: z.number(),
+              f1Score: z.number(),
+            })
+            .nullish(),
+          rules: z.array(
+            z.object({
+              id: z.string(),
+              label: z.string(),
+              metric: z.string(),
+              target: z.string(),
+              operator: z.string(),
+              threshold: z.number(),
+              observedValue: z.number().nullish(),
+              passed: z.boolean(),
+              reason: z.string(),
+            }),
+          ),
+          passedRules: z.number(),
+          totalRules: z.number(),
+          evaluated: z.boolean(),
+          autoScorePercent: z.number(),
+          passed: z.boolean(),
+        })
+        .nullish(),
+      actions: z.array(
+        z.object({
+          actionId: z.string().uuid(),
+          action: z.enum([
+            "START",
+            "STOP",
+            "SCALE",
+            "PAUSE",
+            "RESUME",
+            "THROTTLE_CPU",
+            "SET_LOAD",
+            "SET_ENV",
+            "SWAP_VERSION",
+          ]),
+          service: z.string(),
+          replicas: z.number().nullable().optional(),
+          cpuPercent: z.number().int().min(10).max(100).nullable().optional(),
+          targetRps: z.number().int().min(1).max(50).nullable().optional(),
+          envKey: z.string().max(64).nullish(),
+          envValue: z.string().max(256).nullish(),
+          targetImage: z.string().max(256).nullish(),
+          status: z.enum(["PENDING", "RUNNING", "CONFIRMED", "FAILED", "INTERRUPTED"]),
+          requestedAt: z.string(),
+          completedAt: z.string().nullable().optional(),
+          result: z
+            .object({
+              action: z.string(),
+              service: z.string(),
+              replicasBefore: z.number(),
+              replicasAfter: z.number(),
+              confirmed: z.boolean(),
+              metricsBefore: z.record(z.string(), z.unknown()),
+              metricsAfter: z.record(z.string(), z.unknown()),
+            })
+            .nullable()
+            .optional(),
+        }),
+      ),
+    }),
+  ),
+  studioAction: contract(
+    z.object({
+      sessionId: id,
+      actionId: z.string().uuid(),
+      action: z.enum([
+        "START",
+        "STOP",
+        "SCALE",
+        "PAUSE",
+        "RESUME",
+        "THROTTLE_CPU",
+        "SET_LOAD",
+        "SET_ENV",
+        "SWAP_VERSION",
+      ]),
+      service: z.string().min(1),
+      replicas: z.number().int().min(1).max(8).optional(),
+      cpuPercent: z.number().int().min(10).max(100).optional(),
+      targetRps: z.number().int().min(1).max(50).optional(),
+      envKey: z
+        .string()
+        .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
+        .optional(),
+      envValue: z.string().max(256).optional(),
+      targetImage: z.string().min(10).max(256).optional(),
+    }),
+    z.unknown(),
+    true,
+  ),
+  studioPrediction: contract(
+    z.object({
+      sessionId: id,
+      predictedServices: z.array(z.string().min(1).max(128)).min(1).max(20),
+      rationale: z.string().max(2000).optional(),
+    }),
+    z.unknown(),
+    true,
+  ),
+  studioFinish: contract(z.object({ sessionId: id }), z.unknown(), true),
+  studioCapture: contract(
+    z.object({
+      sessionId: id,
+      explanation: z.string().trim().min(1).max(4000),
+      imageData: z.string().max(1500000).optional(),
+      observedAt: z.string().max(100).optional(),
+    }),
+    z.record(z.string(), z.unknown()),
+    true,
+  ),
+  studioSnapshot: contract(
+    z.object({ sessionId: id, snapshotId: id }),
+    z.record(z.string(), z.unknown()),
+  ),
+  studioReceipt: contract(z.object({ sessionId: id }), z.record(z.string(), z.unknown())),
   runtimeSession: contract(z.object({ sessionId: id }), d.runtimeSessionSchema),
   startRuntime: contract(
     project.extend({
-      interactiveStudio:z.boolean().optional(),
+      interactiveStudio: z.boolean().optional(),
       snapshotId: id,
       scenarioId: id,
       modelId: id.optional(),
@@ -901,7 +1156,7 @@ export const contracts = {
       workspaceId: id,
       name: z.string().trim().min(1).max(255),
       description: z.string().max(5000).optional(),
-      status: z.enum(["ACTIVE", "ARCHIVED"]).optional(),
+      status: z.enum(["ACTIVE", "INACTIVE", "ARCHIVED"]).optional(),
     }),
     d.workspaceSchema,
     true,
@@ -952,7 +1207,10 @@ export const contracts = {
       requiredDiagramTypes: z.array(z.string()).max(10),
       ruleSetVersion: z.string().trim().min(1).max(50).optional(),
       requireRuntimeTrace: z.boolean(),
-      aiPolicy: z.union([z.record(z.string(), z.unknown()), z.string().max(4000)]).nullable().optional(),
+      aiPolicy: z
+        .union([z.record(z.string(), z.unknown()), z.string().max(4000)])
+        .nullable()
+        .optional(),
       labOrder: z.number().int().positive().optional(),
       referenceModelId: id.optional(),
       clearReferenceSource: z.boolean().optional(),
@@ -972,7 +1230,10 @@ export const contracts = {
       requiredDiagramTypes: z.array(z.string()).max(10),
       ruleSetVersion: z.string().trim().min(1).max(50).optional(),
       requireRuntimeTrace: z.boolean(),
-      aiPolicy: z.union([z.record(z.string(), z.unknown()), z.string().max(4000)]).nullable().optional(),
+      aiPolicy: z
+        .union([z.record(z.string(), z.unknown()), z.string().max(4000)])
+        .nullable()
+        .optional(),
       labOrder: z.number().int().positive().optional(),
       referenceModelId: id.optional(),
       clearReferenceSource: z.boolean().optional(),
@@ -1066,7 +1327,11 @@ export const contracts = {
     d.accountSchema,
     true,
   ),
-  forceStopRuntimeSession: contract(z.object({ sessionId: id }), z.record(z.string(), z.unknown()), true),
+  forceStopRuntimeSession: contract(
+    z.object({ sessionId: id }),
+    z.record(z.string(), z.unknown()),
+    true,
+  ),
   integrations: contract(nothing, z.array(d.integrationSchema)),
   configureIntegration: contract(
     z.object({

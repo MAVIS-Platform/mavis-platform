@@ -41,10 +41,7 @@ import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
-import {
-  useCourseAuthoring,
-  useStudentLabContext,
-} from "@/features/workspaces/course-access";
+import { useCourseAuthoring, useStudentLabContext } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails } from "./source-picker";
 import { type Assignment } from "./requirements";
 
@@ -156,7 +153,10 @@ export function smartFormatMarkdown(raw: string): string {
     paragraph.push(trimmed);
   }
   flushParagraph();
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return out
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function MarkdownEditor({
@@ -244,7 +244,11 @@ function MarkdownEditor({
         </div>
       </div>
 
-      <div className={mode === "split" ? "grid grid-cols-1 items-stretch gap-4 md:grid-cols-2" : "block"}>
+      <div
+        className={
+          mode === "split" ? "grid grid-cols-1 items-stretch gap-4 md:grid-cols-2" : "block"
+        }
+      >
         {(mode === "write" || mode === "split") && (
           <Textarea
             aria-label={label}
@@ -297,7 +301,8 @@ export function LabTheorySection({
   const course = useCourseAuthoring(workspaceId);
   const libraryQuery = useQuery({
     queryKey: ["api", "theory-assets", workspaceId],
-    queryFn: ({ signal }) => api<TheoryAsset[]>(`workspaces/${workspaceId}/theory-assets`, { signal }),
+    queryFn: ({ signal }) =>
+      api<TheoryAsset[]>(`workspaces/${workspaceId}/theory-assets`, { signal }),
     retry: false,
   });
   const attachedQuery = useQuery({
@@ -312,7 +317,9 @@ export function LabTheorySection({
 
   function invalidateTheory() {
     void cache.invalidateQueries({ queryKey: ["api", "theory-assets", workspaceId] });
-    void cache.invalidateQueries({ queryKey: ["api", "lab-theory-assets", workspaceId, assignment.id] });
+    void cache.invalidateQueries({
+      queryKey: ["api", "lab-theory-assets", workspaceId, assignment.id],
+    });
     void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
     void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
     void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
@@ -352,7 +359,6 @@ export function LabTheorySection({
           body: JSON.stringify({ assetId }),
         },
       );
-      await course.publish.mutateAsync().catch(() => undefined);
       return attached;
     },
     onSuccess: () => {
@@ -366,7 +372,6 @@ export function LabTheorySection({
         `workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets/${assetId}`,
         { method: "DELETE" },
       );
-      await course.publish.mutateAsync().catch(() => undefined);
     },
     onSuccess: () => invalidateTheory(),
   });
@@ -383,11 +388,13 @@ export function LabTheorySection({
           sourceUrl: newSourceUrl || null,
         }),
       });
-      await api<AttachedTheory>(`workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets`, {
-        method: "POST",
-        body: JSON.stringify({ assetId: asset.id }),
-      });
-      await course.publish.mutateAsync().catch(() => undefined);
+      await api<AttachedTheory>(
+        `workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets`,
+        {
+          method: "POST",
+          body: JSON.stringify({ assetId: asset.id }),
+        },
+      );
       return asset;
     },
     onSuccess: () => {
@@ -418,13 +425,23 @@ export function LabTheorySection({
         if (pageFrom.trim() || pageTo.trim()) {
           const fromNum = pageFrom.trim() ? Number(pageFrom) : 1;
           const toNum = pageTo.trim() ? Number(pageTo) : fromNum + 49;
-          if (!Number.isFinite(fromNum) || !Number.isFinite(toNum) || fromNum < 1 || toNum < fromNum) {
+          if (
+            !Number.isFinite(fromNum) ||
+            !Number.isFinite(toNum) ||
+            fromNum < 1 ||
+            toNum < fromNum
+          ) {
             throw new Error(
-              t("Page range must have start >= 1 and end >= start.", "Khoảng trang phải có trang đầu >= 1 và trang cuối >= trang đầu."),
+              t(
+                "Page range must have start >= 1 and end >= start.",
+                "Khoảng trang phải có trang đầu >= 1 và trang cuối >= trang đầu.",
+              ),
             );
           }
           if (toNum - fromNum + 1 > 50) {
-            throw new Error(t("Import at most 50 PDF pages at once.", "Mỗi lần chỉ nhập tối đa 50 trang PDF."));
+            throw new Error(
+              t("Import at most 50 PDF pages at once.", "Mỗi lần chỉ nhập tối đa 50 trang PDF."),
+            );
           }
         }
         const form = new FormData();
@@ -506,7 +523,10 @@ export function LabTheorySection({
       if (file.size === 0 || file.size > 20 * 1024 * 1024) {
         setImportFile(null);
         setImportValidation(
-          t("File must be non-empty and up to 20 MB.", "File phải có dung lượng từ 1 B đến tối đa 20 MB."),
+          t(
+            "File must be non-empty and up to 20 MB.",
+            "File phải có dung lượng từ 1 B đến tối đa 20 MB.",
+          ),
         );
         if (fileInputRef.current) fileInputRef.current.value = "";
         return;
@@ -548,13 +568,8 @@ export function LabTheorySection({
     },
   });
 
-  const isPublished = course.data?.status === "PUBLISHED";
   const savingBusy =
-    syncStatus === "saving" ||
-    course.startDraft.isPending ||
-    course.updateItem.isPending ||
-    course.deleteItem.isPending ||
-    course.publish.isPending;
+    syncStatus === "saving" || course.updateItem.isPending || course.deleteItem.isPending;
 
   const modules = (course.data?.modules as TheoryModule[] | undefined) ?? [];
   const linkedModule = modules.find((module) =>
@@ -562,7 +577,7 @@ export function LabTheorySection({
   );
   const selectedModule = linkedModule ?? modules[0];
 
-  async function saveWithAutoPublish(
+  async function saveDraftItem(
     itemId: string,
     task: (
       activeCourse: NonNullable<typeof course.data>,
@@ -573,21 +588,7 @@ export function LabTheorySection({
     setSavingItemId(itemId);
     setSyncStatus("saving");
     try {
-      if (isPublished) {
-        const draft = await course.startDraft.mutateAsync();
-        const draftModules = (draft.modules as TheoryModule[] | undefined) ?? [];
-        const matchedModule =
-          draftModules.find(
-            (m) =>
-              m.id === selectedModule.id ||
-              (m.position === selectedModule.position && m.title === selectedModule.title),
-          ) ?? draftModules[0];
-        if (!matchedModule) throw new Error("Module not found in draft");
-        await task(draft, matchedModule);
-        await course.publish.mutateAsync();
-      } else {
-        await task(course.data, selectedModule);
-      }
+      await task(course.data, selectedModule);
       invalidateTheory();
       setSyncStatus("saved");
     } catch {
@@ -625,8 +626,7 @@ export function LabTheorySection({
   const activeDiagramMermaid =
     refArch?.diagrams?.find((d) => d.level?.toUpperCase() === c4Tab)?.mermaidDsl ?? null;
 
-  const moduleTheoryItems =
-    selectedModule?.items.filter((item) => item.type === "THEORY") ?? [];
+  const moduleTheoryItems = selectedModule?.items.filter((item) => item.type === "THEORY") ?? [];
   const directTheoryItems = moduleTheoryItems.filter(
     (item) =>
       item.assignmentId === assignment.id ||
@@ -693,33 +693,14 @@ export function LabTheorySection({
   return (
     <div className="space-y-5">
       {course.data?.status === "DRAFT" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200">
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200">
           <span>
             {t(
-              "Theory changes live in the Course draft. Publish the course version when ready so students see the latest lesson.",
-              "Thay đổi lý thuyết đang ở bản nháp Course. Bấm công bố phiên bản để sinh viên đọc bài mới nhất.",
+              "Theory changes stay in the draft and publish automatically when the course is activated.",
+              "Thay đổi lý thuyết được lưu trong bản nháp và tự động xuất bản khi kích hoạt khóa học.",
             )}
           </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={course.publish.isPending}
-            onClick={() => course.publish.mutate()}
-          >
-            {course.publish.isPending
-              ? t("Publishing…", "Đang công bố…")
-              : t("Publish course version", "Công bố phiên bản Course")}
-          </Button>
         </div>
-      )}
-      {course.publish.isSuccess && (
-        <p role="status" className="text-xs text-success">
-          {t(
-            `Published course version ${course.publish.data.version}.`,
-            `Đã công bố Course phiên bản ${course.publish.data.version}.`,
-          )}
-        </p>
       )}
 
       <section className="space-y-5 rounded-xl border bg-card p-5">
@@ -764,7 +745,8 @@ export function LabTheorySection({
         {theoryItems.length > 0 && (
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Attached lessons in this Lab", "Bài giảng đã gắn vào Lab này")} ({theoryItems.length})
+              {t("Attached lessons in this Lab", "Bài giảng đã gắn vào Lab này")} (
+              {theoryItems.length})
             </p>
             <ul className="space-y-3">
               {theoryItems.map((item) => {
@@ -796,7 +778,7 @@ export function LabTheorySection({
                             if (linkedAsset) {
                               detachAsset.mutate(linkedAsset.assetId);
                             } else {
-                              void saveWithAutoPublish(item.id, async (_draft, mod) => {
+                              void saveDraftItem(item.id, async (_draft, mod) => {
                                 await course.deleteItem.mutateAsync({
                                   moduleId: mod.id,
                                   itemId: item.id,
@@ -813,7 +795,7 @@ export function LabTheorySection({
                           size="sm"
                           disabled={cardBusy}
                           onClick={() =>
-                            void saveWithAutoPublish(item.id, async (_draft, mod) => {
+                            void saveDraftItem(item.id, async (_draft, mod) => {
                               const fallback = extractMarkdownTheme(bodyOf(item));
                               const cleanBody = bodies[item.id] ?? fallback.body;
                               const activeItemTheme = themes[item.id] ?? fallback.theme;
@@ -824,7 +806,8 @@ export function LabTheorySection({
                                     (it) =>
                                       it.id === item.id ||
                                       (it.type === "THEORY" &&
-                                        (it.assignmentId === item.assignmentId || it.title === item.title)),
+                                        (it.assignmentId === item.assignmentId ||
+                                          it.title === item.title)),
                                   ) ?? item;
                                 await course.updateItem.mutateAsync({
                                   moduleId: mod.id,
@@ -859,9 +842,7 @@ export function LabTheorySection({
                           }
                         >
                           <Save className="mr-1 size-3.5" aria-hidden="true" />
-                          {cardBusy
-                            ? t("Saving…", "Đang lưu…")
-                            : t("Save lesson", "Lưu bài học")}
+                          {cardBusy ? t("Saving…", "Đang lưu…") : t("Save lesson", "Lưu bài học")}
                         </Button>
                       </div>
                     </div>
@@ -892,9 +873,9 @@ export function LabTheorySection({
             {t("Lesson saved.", "Đã lưu bài học.")}
           </p>
         )}
-        {(course.updateItem.error || course.startDraft.error || course.publish.error) && (
+        {course.updateItem.error && (
           <p role="alert" className="text-sm text-destructive">
-            {(course.updateItem.error ?? course.startDraft.error ?? course.publish.error)?.message}
+            {course.updateItem.error.message}
           </p>
         )}
 
@@ -902,7 +883,10 @@ export function LabTheorySection({
           <div className="space-y-3 rounded-xl border p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-foreground">
-                {t("Create or import a lesson for this Lab", "Soạn mới hoặc nhập file bài giảng cho Lab")}
+                {t(
+                  "Create or import a lesson for this Lab",
+                  "Soạn mới hoặc nhập file bài giảng cho Lab",
+                )}
               </span>
               <div className="flex flex-wrap items-center gap-1.5">
                 <Button
@@ -924,7 +908,10 @@ export function LabTheorySection({
                   disabled={generateDraft.isPending || !reference?.modelId}
                   title={
                     !reference?.modelId
-                      ? t("Attach a Reference Repo in Step 2 first", "Gắn Repo ở Bước 2 trước để AI đọc bằng chứng")
+                      ? t(
+                          "Attach a Reference Repo in Step 2 first",
+                          "Gắn Repo ở Bước 2 trước để AI đọc bằng chứng",
+                        )
                       : undefined
                   }
                   onClick={() => generateDraft.mutate()}
@@ -947,7 +934,9 @@ export function LabTheorySection({
             >
               <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>{t("Import theory document", "Nhập tài liệu lý thuyết")}</DialogTitle>
+                  <DialogTitle>
+                    {t("Import theory document", "Nhập tài liệu lý thuyết")}
+                  </DialogTitle>
                   <DialogDescription>
                     {t(
                       "Extract content from a file or public webpage directly into the lesson editor.",
@@ -1032,10 +1021,16 @@ export function LabTheorySection({
                           <Upload className="size-4 text-primary" aria-hidden="true" />
                         </span>
                         <span className="text-sm font-medium text-foreground">
-                          {t("Click to choose a file or drag and drop", "Bấm để chọn file hoặc kéo thả vào đây")}
+                          {t(
+                            "Click to choose a file or drag and drop",
+                            "Bấm để chọn file hoặc kéo thả vào đây",
+                          )}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {t("PDF, DOCX, PPTX, MD, TXT · Max 20 MB", "PDF, DOCX, PPTX, MD, TXT · Tối đa 20 MB")}
+                          {t(
+                            "PDF, DOCX, PPTX, MD, TXT · Max 20 MB",
+                            "PDF, DOCX, PPTX, MD, TXT · Tối đa 20 MB",
+                          )}
                         </span>
                       </button>
                     ) : (
@@ -1044,8 +1039,12 @@ export function LabTheorySection({
                           <FileText className="size-4" aria-hidden="true" />
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-foreground">{importFile.name}</p>
-                          <p className="text-xs text-muted-foreground">{formatFileSize(importFile.size)}</p>
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {importFile.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatFileSize(importFile.size)}
+                          </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                           <Button
@@ -1072,7 +1071,9 @@ export function LabTheorySection({
                     {importFile && /\.pdf$/i.test(importFile.name) && (
                       <div className="space-y-2 rounded-md border bg-muted/20 p-3">
                         <div className="flex items-center justify-between gap-2 text-xs font-medium">
-                          <span>{t("PDF page range (optional)", "Khoảng trang PDF (tùy chọn)")}</span>
+                          <span>
+                            {t("PDF page range (optional)", "Khoảng trang PDF (tùy chọn)")}
+                          </span>
                           <span className="text-[11px] font-normal text-muted-foreground">
                             {t("Blank = first 50 pages", "Để trống = 50 trang đầu")}
                           </span>
@@ -1106,8 +1107,14 @@ export function LabTheorySection({
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    <label htmlFor="theory-import-url" className="block text-xs font-medium text-foreground">
-                      {t("Public webpage or roadmap URL", "Địa chỉ trang Web hoặc Roadmap công khai")}
+                    <label
+                      htmlFor="theory-import-url"
+                      className="block text-xs font-medium text-foreground"
+                    >
+                      {t(
+                        "Public webpage or roadmap URL",
+                        "Địa chỉ trang Web hoặc Roadmap công khai",
+                      )}
                     </label>
                     <Input
                       id="theory-import-url"
@@ -1119,7 +1126,11 @@ export function LabTheorySection({
                         if (importDocument.error) importDocument.reset();
                       }}
                       onKeyDown={(event) => {
-                        if (event.key === "Enter" && importUrl.trim() && !importDocument.isPending) {
+                        if (
+                          event.key === "Enter" &&
+                          importUrl.trim() &&
+                          !importDocument.isPending
+                        ) {
                           event.preventDefault();
                           importDocument.mutate();
                         }
@@ -1242,7 +1253,9 @@ export function LabTheorySection({
           <div className="space-y-3 rounded-xl border p-4">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <h4 className="text-sm font-semibold">{t("Theory library", "Thư viện lý thuyết")}</h4>
+                <h4 className="text-sm font-semibold">
+                  {t("Theory library", "Thư viện lý thuyết")}
+                </h4>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
                   {t(
                     "Pick an existing lesson from the class Theory Library to attach to this Lab.",
@@ -1277,7 +1290,9 @@ export function LabTheorySection({
                   aria-label={t("Theory library lesson", "Bài học trong thư viện")}
                   onChange={(event) => setLibraryItemId(event.target.value)}
                 >
-                  <option value="">{t("Choose a library lesson…", "Chọn bài trong thư viện…")}</option>
+                  <option value="">
+                    {t("Choose a library lesson…", "Chọn bài trong thư viện…")}
+                  </option>
                   {libraryAssets.map((asset) => {
                     const already = attachedAssetIds.has(asset.id);
                     return (
@@ -1425,7 +1440,10 @@ export function LabTheorySection({
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {t("Analyze the reference source to view C1–C3.", "Phân tích nguồn tham chiếu để xem C1–C3.")}
+                  {t(
+                    "Analyze the reference source to view C1–C3.",
+                    "Phân tích nguồn tham chiếu để xem C1–C3.",
+                  )}
                 </p>
               )}
             </div>
@@ -1437,7 +1455,12 @@ export function LabTheorySection({
                   "Gắn và phân tích repo mẫu ở Bước 2 để sinh viên xem sơ đồ C1–C3.",
                 )}
               </p>
-              <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onNavigate("source")}
+              >
                 {t("← Step 2: Reference source", "← Bước 2: Nguồn tham chiếu")}
               </Button>
             </div>

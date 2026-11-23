@@ -159,6 +159,14 @@ public class CourseAuthoringService {
     }
 
     public PublishedView publish(UUID workspaceId) {
+        return publish(workspaceId, false);
+    }
+
+    public PublishedView publishForActivation(UUID workspaceId) {
+        return publish(workspaceId, true);
+    }
+
+    private PublishedView publish(UUID workspaceId, boolean allowUnchanged) {
         access.requireWorkspaceLecturer(workspaceId);
         CourseDefinition course = courses.findLockedByWorkspaceId(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course draft not found"));
@@ -183,6 +191,14 @@ public class CourseAuthoringService {
         String digest = digest(snapshot);
         int versionNumber = course.getPublishedVersion() + 1;
         if (versions.existsByCourseIdAndSnapshotDigest(course.getId(), digest)) {
+            if (allowUnchanged && course.getPublishedVersion() > 0) {
+                CourseVersion current = versions.findByCourseIdAndVersion(course.getId(), course.getPublishedVersion())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Published Course version not found"));
+                course.setStatus("PUBLISHED");
+                courses.save(course);
+                return new PublishedView(course.getId(), current.getVersion(), current.getDraftRevision(),
+                        current.getSnapshotDigest(), current.getPublishedAt(), current.getSnapshot());
+            }
             throw new BusinessException(ErrorCode.CONFLICT, "This exact Course content has already been published");
         }
         User publisher = users.findById(SecurityUtils.getCurrentUserId())

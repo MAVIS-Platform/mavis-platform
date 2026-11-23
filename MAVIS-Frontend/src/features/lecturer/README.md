@@ -16,12 +16,9 @@ The Lecturer frontend is split into two application scopes:
 
 Course write access is decided only by `application/course-access-policy.ts`:
 
-- `ACTIVE` -> read-only
-- `INACTIVE` -> editable
-
-The current backend contract uses `ARCHIVED` instead of `INACTIVE`. The frontend
-temporarily treats `ARCHIVED` as the inactive/editable state. When the API adds
-`INACTIVE`, only the contract adapter and this policy should change.
+- `ACTIVE` -> published and read-only for curriculum/Lab content
+- `INACTIVE` -> editable; students temporarily cannot access the Course
+- `ARCHIVED` -> terminal legacy/archive state
 
 Existing feature implementations remain in their current domain folders while
 the migration is incremental. New Lecturer orchestration belongs in this

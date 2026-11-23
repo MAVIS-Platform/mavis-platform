@@ -13,6 +13,7 @@ import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.utils.SecurityUtils;
 import com.mavis.platform.workspace.dto.*;
 import com.mavis.platform.workspace.service.CourseAccessService;
+import com.mavis.platform.workspace.service.CourseLifecycleService;
 import com.mavis.platform.workspace.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private final UserRepository userRepository;
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
     private final CourseAccessService courseAccessService;
+    private final CourseLifecycleService courseLifecycleService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -57,7 +59,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .name(request.getName().trim())
                 .description(request.getDescription())
                 .createdBy(currentUser)
-                .status("ACTIVE")
+                .status("INACTIVE")
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
@@ -211,11 +213,27 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
         validateLecturerOrCreatorPermission(workspace, currentUserId);
 
+        String previousStatus = workspace.getStatus();
+        String requestedStatus = request.getStatus() == null || request.getStatus().isBlank()
+                ? previousStatus
+                : request.getStatus().trim();
+
+        if (!Objects.equals(previousStatus, requestedStatus)) {
+            if ("ACTIVE".equals(requestedStatus)) {
+                // Legacy ARCHIVED rows must first become authorable so Lab publication can run.
+                if ("ARCHIVED".equals(previousStatus)) {
+                    workspace.setStatus("INACTIVE");
+                    workspaceRepository.saveAndFlush(workspace);
+                }
+                courseLifecycleService.activate(workspaceId);
+            } else if ("INACTIVE".equals(requestedStatus)) {
+                courseLifecycleService.prepareAuthoring(workspaceId);
+            }
+        }
+
         workspace.setName(request.getName().trim());
         workspace.setDescription(request.getDescription());
-        if (request.getStatus() != null && !request.getStatus().isBlank()) {
-            workspace.setStatus(request.getStatus().trim());
-        }
+        workspace.setStatus(requestedStatus);
         workspace.setUpdatedAt(OffsetDateTime.now());
 
         workspace = workspaceRepository.save(workspace);

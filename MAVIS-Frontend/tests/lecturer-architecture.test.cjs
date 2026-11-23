@@ -6,12 +6,12 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("Lecturer lifecycle keeps Active courses operational but freezes structural creation", () => {
+test("Lecturer lifecycle makes Active content read-only and Inactive content editable", () => {
   const policy = read("src/features/lecturer/application/course-access-policy.ts");
-  assert.match(policy, /status !== "ARCHIVED"/);
-  assert.match(policy, /isEditable: true/);
-  assert.match(policy, /canCreateModules: !isActive/);
-  assert.match(policy, /canCreateLabs: !isActive/);
+  assert.match(policy, /status === "ACTIVE"/);
+  assert.match(policy, /isEditable: isAuthoring/);
+  assert.match(policy, /canCreateModules: isAuthoring/);
+  assert.match(policy, /canCreateLabs: isAuthoring/);
   assert.match(policy, /hasManageRole && lecturerCourseAccess\(status\)\.isEditable/);
 });
 
@@ -23,7 +23,7 @@ test("Course Lecturer workspace consumes the shared lifecycle policy", () => {
   assert.match(courseShell, /actions && <div/);
 });
 
-test("Active Lecturer courses only block new Modules and Labs", () => {
+test("Active Lecturer courses lock authoring while Inactive courses expose module and Lab creation", () => {
   const workspace = read("src/features/workspaces/screens.tsx");
   const labs = read("src/features/assignments/screens.tsx");
   const authoring = read("src/features/assignments/lab-authoring.tsx");
@@ -51,7 +51,6 @@ test("Lecturer course cards open directly and own an Active-Inactive lifecycle t
   assert.match(workspace, /role="link"/);
   assert.match(workspace, /onClick=\{\(\) => window\.location\.assign\(workspaceUrl\)\}/);
   assert.match(workspace, /<Switch/);
-  assert.match(workspace, /archiveWorkspace\.mutateAsync/);
   assert.match(workspace, /updateWorkspace\.mutateAsync/);
   assert.doesNotMatch(workspace, /t\("Open class", "Mở lớp"\)/);
   assert.doesNotMatch(workspace, /Active · read only/);

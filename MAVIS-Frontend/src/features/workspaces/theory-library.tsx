@@ -130,7 +130,11 @@ export function TheoryLibrary() {
   });
 
   if (!workspaceId) {
-    return <p className="text-sm text-muted-foreground">{t("Select a class first.", "Hãy chọn lớp trước.")}</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {t("Select a class first.", "Hãy chọn lớp trước.")}
+      </p>
+    );
   }
 
   const startNew = () => {
@@ -184,38 +188,14 @@ export function TheoryLibrary() {
       </div>
 
       {course.data?.status === "DRAFT" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
           <span>
             {t(
-              "The course draft has unpublished changes. Students still read the last published version.",
-              "Bản nháp Course có thay đổi chưa công bố. Sinh viên vẫn đọc phiên bản đã publish gần nhất.",
+              "Draft changes will be published automatically when the course is activated.",
+              "Các thay đổi bản nháp sẽ tự động được xuất bản khi kích hoạt khóa học.",
             )}
           </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={course.publish.isPending}
-            onClick={() => course.publish.mutate()}
-          >
-            {course.publish.isPending
-              ? t("Publishing…", "Đang công bố…")
-              : t("Publish course version", "Công bố phiên bản Course")}
-          </Button>
         </div>
-      )}
-      {course.publish.isSuccess && (
-        <p role="status" className="text-xs text-success">
-          {t(
-            `Published course version ${course.publish.data.version}. Students now read the updated theory.`,
-            `Đã công bố Course phiên bản ${course.publish.data.version}. Sinh viên đã đọc lý thuyết cập nhật.`,
-          )}
-        </p>
-      )}
-      {course.publish.error && (
-        <p role="alert" className="text-xs text-destructive">
-          {course.publish.error.message}
-        </p>
       )}
 
       {editing && (
@@ -270,7 +250,10 @@ export function TheoryLibrary() {
             <span>{t("Lesson title", "Tiêu đề bài học")}</span>
             <Input
               maxLength={255}
-              placeholder={t("e.g. Service Discovery & API Gateway", "VD: Service Discovery & API Gateway")}
+              placeholder={t(
+                "e.g. Service Discovery & API Gateway",
+                "VD: Service Discovery & API Gateway",
+              )}
               value={draft.title}
               onChange={(event) => setDraft({ ...draft, title: event.target.value })}
             />
@@ -282,7 +265,10 @@ export function TheoryLibrary() {
               <Textarea
                 rows={14}
                 maxLength={50000}
-                placeholder={t("Write or paste Markdown content…", "Nhập hoặc dán nội dung Markdown…")}
+                placeholder={t(
+                  "Write or paste Markdown content…",
+                  "Nhập hoặc dán nội dung Markdown…",
+                )}
                 className="h-96 w-full resize-none rounded-xl border bg-background p-4 font-mono text-sm leading-6 shadow-2xs"
                 value={draft.body}
                 onChange={(event) => setDraft({ ...draft, body: event.target.value })}
@@ -330,7 +316,9 @@ export function TheoryLibrary() {
           <span className="text-right">{t("Actions", "Thao tác")}</span>
         </div>
         {assets.isPending ? (
-          <p className="p-4 text-sm text-muted-foreground">{t("Loading lessons…", "Đang tải bài học…")}</p>
+          <p className="p-4 text-sm text-muted-foreground">
+            {t("Loading lessons…", "Đang tải bài học…")}
+          </p>
         ) : assets.isError ? (
           <p role="alert" className="p-4 text-sm text-destructive">
             {assets.error instanceof Error

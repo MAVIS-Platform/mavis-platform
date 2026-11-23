@@ -362,9 +362,7 @@ test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
 
 test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views and hides clutter banners", () => {
   const course = read("src/features/courses/screens.tsx");
-  assert.ok(
-    !course.includes("Explore the curated C1–C3 views and Dependency Graph."),
-  );
+  assert.ok(!course.includes("Explore the curated C1–C3 views and Dependency Graph."));
   assert.ok(course.includes("C1 System Context"));
   assert.ok(course.includes("C2 Container"));
   assert.ok(course.includes("C3 Component"));
@@ -551,7 +549,10 @@ test("Evidence & Submit receives the verified Runtime Studio session", () => {
   const lab = read("src/features/courses/screens.tsx");
   assert.match(lab, /runtimeSessionId=\{verifiedSessionForSubmit\}/);
   assert.match(lab, /Boolean\(studentContext\?\.latestSubmission\)/);
-  assert.match(lab, /const runtimeEvidenceSatisfied = Boolean\(verifiedStudioSession\) \|\| hasSubmitted/);
+  assert.match(
+    lab,
+    /const runtimeEvidenceSatisfied = Boolean\(verifiedStudioSession\) \|\| hasSubmitted/,
+  );
   assert.match(lab, /Finish the MAVIS Runtime Studio exercise to seal a verified receipt/);
   assert.ok(lab.includes("Runtime Evidence Review"));
   assert.ok(lab.includes("Signed runtime receipt"));
@@ -700,7 +701,9 @@ test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints a
   assert.ok(course.includes("Complete the Module Quiz first"));
   assert.ok(course.includes("Pass the Module Quiz to unlock Runtime Studio."));
   assert.ok(course.includes("Go to Module Quiz"));
-  assert.ok(read("src/features/courses/student-course-syllabus.tsx").includes('searchParams.get("item")'));
+  assert.ok(
+    read("src/features/courses/student-course-syllabus.tsx").includes('searchParams.get("item")'),
+  );
   assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/student-context`), true);
   assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/studio-sessions`), true);
   assert.equal(
@@ -734,11 +737,13 @@ test("Curated library UI stays removed while the seeding API remains available",
   );
 });
 
-test("Course builder exposes immutable publishing and BFF routes for structured roadmap content", () => {
+test("Course builder delegates publishing to lifecycle activation and keeps structured roadmap routes", () => {
   const builder = read("src/features/courses/course-builder.tsx");
   const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
   const workspace = "11111111-1111-1111-1111-111111111111";
-  assert.ok(builder.includes("Publish changes"));
+  assert.ok(!builder.includes("Publish changes"));
+  assert.ok(builder.includes('t("Add Module", "Thêm chương")'));
+  assert.ok(builder.includes("border-dashed"));
   assert.ok(builder.includes("STATIC_LAB"));
   assert.ok(builder.includes("RUNTIME_LAB"));
   assert.ok(builder.includes("prerequisiteModuleId"));
@@ -830,7 +835,10 @@ test("Lab phases surface concise issue dialogs with a recovery action", () => {
   assert.match(lab, /Runtime evidence is incomplete/);
   assert.match(lab, /onRequestHelp=\{\(reason\) => openPhaseIssue\(reason\)\}/);
   assert.match(subV2, /onRequestHelp\?\.\("submission-failed"\)/);
-  assert.match(subV2, /studio && !runtimeSessionId \? "submission-runtime" : "submission-explanation"/);
+  assert.match(
+    subV2,
+    /studio && !runtimeSessionId \? "submission-runtime" : "submission-explanation"/,
+  );
 });
 
 test("lecturer grading uses frozen Snapshot rows and preserves matching draft grades", () => {
@@ -1109,7 +1117,7 @@ test("Lab Library is available inside Lab Creation and Quiz can be generated fro
   assert.ok(studioExercise.includes("no code editing"));
 });
 
-test("Theory Library is available inside Lab Creation with editing and course publishing", () => {
+test("Theory Library edits the inactive draft and delegates publishing to Course activation", () => {
   const screen = read("src/features/workspaces/theory-library.tsx");
   const page = read("app/[screen]/page.tsx");
   const navigation = read("src/lib/navigation.ts");
@@ -1122,7 +1130,8 @@ test("Theory Library is available inside Lab Creation with editing and course pu
   assert.ok(screen.includes("New lesson"));
   assert.ok(screen.includes("Edit theory lesson"));
   assert.ok(screen.includes("Delete lesson"));
-  assert.ok(screen.includes("Publish course version"));
+  assert.ok(!screen.includes("Publish course version"));
+  assert.ok(screen.includes("published automatically when the course is activated"));
   assert.ok(screen.includes("MarkdownPreview"));
 });
 
@@ -1376,9 +1385,15 @@ test("ADM-V2 Enterprise Control Center wires Admin Studio Setup Hub and 1-click 
   const runtimeBackend = read("src/features/runtime/backend.tsx");
   const nav = read("src/lib/navigation.ts");
 
-  assert.match(nav, /id:\s*"studio-setup",\s*label:\s*"Studio".*href:\s*"\/administration\/studio-setup"/);
+  assert.match(
+    nav,
+    /id:\s*"studio-setup",\s*label:\s*"Studio".*href:\s*"\/administration\/studio-setup"/,
+  );
   assert.match(adminOps, /href:\s*"\/administration\/studio-setup"/);
-  assert.match(adminPage, /"studio-setup":\s*\{\s*title:\s*"Studio Setup",\s*component:\s*AdminStudioSetup\s*\}/);
+  assert.match(
+    adminPage,
+    /"studio-setup":\s*\{\s*title:\s*"Studio Setup",\s*component:\s*AdminStudioSetup\s*\}/,
+  );
   assert.match(adminScreens, /export function AdminStudioSetup\(\)/);
   assert.match(adminScreens, /href="\/workspaces"/);
   assert.doesNotMatch(adminScreens, /href="\/administration\/studio"/);
@@ -1716,7 +1731,6 @@ test("Studio Live terminal surfaces backend failureReason and Runner diagnostics
   assert.match(terminal, /diagnosticLines\.length > 0/);
 });
 
-
 test("Studio Live workbench and terminal display live FIFO queue position for QUEUED sessions", () => {
   const workbench = read("src/features/runtime/live-studio-workbench.tsx");
   const terminal = read("src/features/runtime/live-terminal-console.tsx");
@@ -1738,7 +1752,13 @@ test("normalizeWorkspaceGradebook maps Java userId/completedLabsCount/sequenceOr
     workspaceId: "ws-java",
     workspaceName: "JAVA-MS-2026",
     labs: [
-      { assignmentId: "lab-1", title: "Service Boundaries", sequenceOrder: 1, published: true, quizPassScore: 70 },
+      {
+        assignmentId: "lab-1",
+        title: "Service Boundaries",
+        sequenceOrder: 1,
+        published: true,
+        quizPassScore: 70,
+      },
     ],
     students: [
       {
@@ -1764,11 +1784,19 @@ test("normalizeWorkspaceGradebook maps Java userId/completedLabsCount/sequenceOr
 test("Wave 2: MarkdownPreview formats inline LaTeX math safely without touching prices or code spans", () => {
   const { formatInlineMath } = require("../src/components/shared/markdown-preview.tsx");
   assert.equal(
-    formatInlineMath("Scale from $1 \\to 4$ ($8$ instances) with $\\ge 70\\%$ coverage and $\\rightarrow$ arrow"),
+    formatInlineMath(
+      "Scale from $1 \\to 4$ ($8$ instances) with $\\ge 70\\%$ coverage and $\\rightarrow$ arrow",
+    ),
     "Scale from 1 → 4 (8 instances) with ≥ 70% coverage and → arrow",
   );
-  assert.equal(formatInlineMath("Budget is $100 and limit is $200"), "Budget is $100 and limit is $200");
-  assert.equal(formatInlineMath("Code `$1 \\to 4$` stays literal"), "Code `$1 \\to 4$` stays literal");
+  assert.equal(
+    formatInlineMath("Budget is $100 and limit is $200"),
+    "Budget is $100 and limit is $200",
+  );
+  assert.equal(
+    formatInlineMath("Code `$1 \\to 4$` stays literal"),
+    "Code `$1 \\to 4$` stays literal",
+  );
 });
 
 test("Wave 2: Course access removes JAVA2026 leak, FrozenArtifacts handles V2 null/undefined diagramVersionId, and AI Tutor uses threeEChat", () => {
@@ -1776,7 +1804,10 @@ test("Wave 2: Course access removes JAVA2026 leak, FrozenArtifacts handles V2 nu
   const frozen = read("src/features/submissions/frozen-artifacts.tsx");
   const screens = read("src/features/courses/screens.tsx");
 
-  assert.doesNotMatch(courseAccess, /JAVA2026|EXPIRED_KEY_999|Quick test helpers|useBootstrapJavaCoursera/);
+  assert.doesNotMatch(
+    courseAccess,
+    /JAVA2026|EXPIRED_KEY_999|Quick test helpers|useBootstrapJavaCoursera/,
+  );
   assert.match(frozen, /!submission\.diagramVersionId/);
   assert.match(screens, /threeEChat/);
   assert.doesNotMatch(screens, /PaymentClient\.java/);
@@ -1786,7 +1817,10 @@ test("Bug #01: useCourseAuthoring and CourseOutline gate course/published fetche
   const courseAccess = read("src/features/workspaces/course-access.tsx");
   const outline = read("src/features/courses/course-outline.tsx");
 
-  assert.match(courseAccess, /export function usePublishedCourse\(workspaceId: string, enabled = true\)/);
+  assert.match(
+    courseAccess,
+    /export function usePublishedCourse\(workspaceId: string, enabled = true\)/,
+  );
   assert.match(courseAccess, /publishedVersion \?\? 0\) > 0/);
   assert.match(outline, /function LecturerCourseOutline/);
   assert.match(outline, /published=\{authoring\.published\.data\}/);
@@ -1806,7 +1840,10 @@ test("Bug #02: CourseBuilder resolves linked Lab assignment tiers and keeps modu
 
 test("Bug #03: decodePlainTextEntities decodes escaped entities and StudentCourseSyllabus shows empty roadmap notice", () => {
   const { decodePlainTextEntities } = require("../src/lib/format/course-display.ts");
-  assert.equal(decodePlainTextEntities("IOptions&lt;T&gt; &amp; ValidateOnStart"), "IOptions<T> & ValidateOnStart");
+  assert.equal(
+    decodePlainTextEntities("IOptions&lt;T&gt; &amp; ValidateOnStart"),
+    "IOptions<T> & ValidateOnStart",
+  );
   assert.equal(decodePlainTextEntities("&amp;lt;script&amp;gt;"), "&lt;script&gt;");
 
   const pages = read("src/features/courses/mavis-pages.tsx");
@@ -1829,10 +1866,22 @@ test("Bug #05: Reverse BFS analysis stays contextual and does not show stale Qui
 
 test("Bug #07: formatLabModeLabel humanizes labMode enums and SubmissionReview back link avoids trailing ampersand", () => {
   const { formatLabModeLabel } = require("../src/lib/format/course-display.ts");
-  assert.equal(formatLabModeLabel("THEORY_QUIZ_STUDIO", (en) => en), "Theory + Quiz + Studio");
-  assert.equal(formatLabModeLabel("THEORY_QUIZ_STUDIO", (_en, vi) => vi), "Lý thuyết + Quiz + Studio");
-  assert.equal(formatLabModeLabel("THEORY_QUIZ", (en) => en), "Theory + Quiz");
-  assert.equal(formatLabModeLabel("THEORY_ONLY", (en) => en), "Theory Only");
+  assert.equal(
+    formatLabModeLabel("THEORY_QUIZ_STUDIO", (en) => en),
+    "Theory + Quiz + Studio",
+  );
+  assert.equal(
+    formatLabModeLabel("THEORY_QUIZ_STUDIO", (_en, vi) => vi),
+    "Lý thuyết + Quiz + Studio",
+  );
+  assert.equal(
+    formatLabModeLabel("THEORY_QUIZ", (en) => en),
+    "Theory + Quiz",
+  );
+  assert.equal(
+    formatLabModeLabel("THEORY_ONLY", (en) => en),
+    "Theory Only",
+  );
 
   const screens = read("src/features/submissions/screens.tsx");
   const components = read("src/features/submissions/components.tsx");
@@ -1848,16 +1897,24 @@ test("Bug #11: ChapterQuizRunner enforces full answers, shows questionResults fe
   assert.match(runner, /type=\{multi \? "checkbox" : "radio"\}/);
   assert.match(runner, /const passPercent =/);
   assert.match(runner, /requireAllAnswered/);
-  assert.match(runner, /disabled=\{\(requireAllAnswered \? !allAnswered : answeredCount === 0\) \|\| submitting\}/);
+  assert.match(
+    runner,
+    /disabled=\{\(requireAllAnswered \? !allAnswered : answeredCount === 0\) \|\| submitting\}/,
+  );
   assert.match(runner, /queryKey: \["api", "course-roadmap", workspaceId\]/);
   assert.match(runner, /queryKey: \["api", "workspace-gradebook", workspaceId\]/);
   assert.match(runner, /queryKey: \["api", "workspaces"\]/);
-  assert.match(runner, /canViewFeedback = !backendQuizEnabled \|\| Boolean\(currentAttempt\.questionResults\?\.length\)/);
+  assert.match(
+    runner,
+    /canViewFeedback = !backendQuizEnabled \|\| Boolean\(currentAttempt\.questionResults\?\.length\)/,
+  );
   assert.match(runner, /<QuizPreview[\s\S]*?questions=\{displayedQuestions\}/);
 });
 
 test("Bug #12 + Coursera Clean Theory: THEORY lessons omit InteractiveConceptStage, render clean Markdown + Mark as completed, and avoid Java quiz fallback leakage", () => {
-  const { getScenarioForLessonOrLab } = require("../src/features/courses/designed-to-scale-scenarios.ts");
+  const {
+    getScenarioForLessonOrLab,
+  } = require("../src/features/courses/designed-to-scale-scenarios.ts");
   for (let ch = 1; ch <= 12; ch++) {
     const code = `csharp-v2-ch${String(ch).padStart(2, "0")}`;
     const mod = ch <= 3 ? 1 : ch <= 6 ? 2 : ch <= 9 ? 3 : ch <= 11 ? 4 : 5;
@@ -1866,7 +1923,11 @@ test("Bug #12 + Coursera Clean Theory: THEORY lessons omit InteractiveConceptSta
     const dump = JSON.stringify(scenario);
     assert.doesNotMatch(dump, /Java 21|Resilience4j|Tomcat|OpenFeign|Eureka/);
   }
-  const ch10 = getScenarioForLessonOrLab(4, "Chương 10: Polly v8 & Microsoft.Extensions.Http.Resilience", "CSHARP-MS-2026");
+  const ch10 = getScenarioForLessonOrLab(
+    4,
+    "Chương 10: Polly v8 & Microsoft.Extensions.Http.Resilience",
+    "CSHARP-MS-2026",
+  );
   assert.equal(ch10.code, "csharp-v2-ch10");
 
   const {
@@ -1900,9 +1961,14 @@ test("Bug #13: MarkdownPreview handles nested inline code in bold, blockquote bu
   const { formatCoursePlainText } = require("../src/lib/format/course-display.ts");
   const md = read("src/components/shared/markdown-preview.tsx");
 
-  assert.equal(formatInlineMath("Scale $$1 \\to 4$$ or $ 1 \\to 4 $ and $1 \\\\to 4$"), "Scale 1 → 4 or 1 → 4 and 1 → 4");
   assert.equal(
-    formatInlineMath("Server=${DB_HOST};Database=app;User=${DB_USER:-postgres};Password=${DB_PASS}"),
+    formatInlineMath("Scale $$1 \\to 4$$ or $ 1 \\to 4 $ and $1 \\\\to 4$"),
+    "Scale 1 → 4 or 1 → 4 and 1 → 4",
+  );
+  assert.equal(
+    formatInlineMath(
+      "Server=${DB_HOST};Database=app;User=${DB_USER:-postgres};Password=${DB_PASS}",
+    ),
     "Server=${DB_HOST};Database=app;User=${DB_USER:-postgres};Password=${DB_PASS}",
   );
   assert.equal(
@@ -1916,8 +1982,14 @@ test("Bug #13: MarkdownPreview handles nested inline code in bold, blockquote bu
 test("Bug #14: StudentCourseSyllabus fixes Module badge label, disables locked Lab cards & adds bottom lesson nav", () => {
   const syllabus = read("src/features/courses/student-course-syllabus.tsx");
 
-  assert.doesNotMatch(syllabus, /t\(`Chapter \$\{activeModule\.position\}`, `Chương \$\{activeModule\.position\}`\)/);
-  assert.match(syllabus, /t\(`Module \$\{activeModule\.position\}`, `Module \$\{activeModule\.position\}`\)/);
+  assert.doesNotMatch(
+    syllabus,
+    /t\(`Chapter \$\{activeModule\.position\}`, `Chương \$\{activeModule\.position\}`\)/,
+  );
+  assert.match(
+    syllabus,
+    /t\(`Module \$\{activeModule\.position\}`, `Module \$\{activeModule\.position\}`\)/,
+  );
   assert.match(syllabus, /disabled=\{isLocked\}/);
   assert.match(syllabus, /Pass previous Lab to unlock/);
   assert.match(syllabus, /isItemLockedLab/);
@@ -1967,8 +2039,14 @@ test("Full-Course E2E hardening: user-scoped Quiz storage, WF-04 422 codes, Snap
   const { publicErrors, backendErrorCode } = require("../src/lib/errors/api-error.ts");
   assert.ok(publicErrors.STUDIO_SNAPSHOT_REQUIRED);
   assert.ok(publicErrors.STUDIO_EVIDENCE_REQUIRED);
-  assert.equal(backendErrorCode("submissions", 422, "STUDIO_SNAPSHOT_REQUIRED"), "STUDIO_SNAPSHOT_REQUIRED");
-  assert.equal(backendErrorCode("submissions", 422, "STUDIO_EVIDENCE_REQUIRED"), "STUDIO_EVIDENCE_REQUIRED");
+  assert.equal(
+    backendErrorCode("submissions", 422, "STUDIO_SNAPSHOT_REQUIRED"),
+    "STUDIO_SNAPSHOT_REQUIRED",
+  );
+  assert.equal(
+    backendErrorCode("submissions", 422, "STUDIO_EVIDENCE_REQUIRED"),
+    "STUDIO_EVIDENCE_REQUIRED",
+  );
 
   const useStudio = read("src/features/runtime/use-studio-session.ts");
   const workbench = read("src/features/runtime/live-studio-workbench.tsx");
@@ -1978,7 +2056,10 @@ test("Full-Course E2E hardening: user-scoped Quiz storage, WF-04 422 codes, Snap
   const subComponents = read("src/features/submissions/components.tsx");
   const frozen = read("src/features/submissions/frozen-artifacts.tsx");
   assert.match(subComponents, /submission\.studioEvidence/);
-  assert.match(frozen, /quizScorePercent = quizTotal > 0 \? Math\.round\(\(quizCorrect \/ quizTotal\) \* 100\) : 0/);
+  assert.match(
+    frozen,
+    /quizScorePercent = quizTotal > 0 \? Math\.round\(\(quizCorrect \/ quizTotal\) \* 100\) : 0/,
+  );
 
   const css = read("src/styles.css");
   const darkBlock = css.slice(css.indexOf('.dark, [data-theme="dark"]'));
@@ -2056,13 +2137,22 @@ test("Task #08 Coursera UX Polish: CourseBuilder/CourseOutline keep Quiz distinc
   const submissions = read("src/features/submissions/screens.tsx");
   const workspaces = read("src/features/workspaces/screens.tsx");
 
-  assert.match(builder, /if \(item\.type === "THEORY" \|\| item\.type === "QUIZ" \|\| item\.type === "ESSAY"\)/);
+  assert.match(
+    builder,
+    /if \(item\.type === "THEORY" \|\| item\.type === "QUIZ" \|\| item\.type === "ESSAY"\)/,
+  );
   assert.match(builder, /shortVi: "Trắc nghiệm"/);
   assert.match(outline, /QUIZ:\s*\{\s*en: "Quiz", vi: "Bài trắc nghiệm \(Quiz\)"/);
   assert.match(shell, /className="min-w-0 max-w-full space-y-6"/);
   assert.match(submissions, /className="min-w-0 max-w-full space-y-4"/);
-  assert.match(submissions, /className="min-w-0 max-w-full overflow-x-auto rounded-xl border bg-card"/);
-  assert.match(workspaces, /submissions\.isLoading \? "…" : submissions\.isSuccess \? pendingReviews : 0/);
+  assert.match(
+    submissions,
+    /className="min-w-0 max-w-full overflow-x-auto rounded-xl border bg-card"/,
+  );
+  assert.match(
+    workspaces,
+    /submissions\.isLoading \? "…" : submissions\.isSuccess \? pendingReviews : 0/,
+  );
 });
 
 test("Task #10 Perf & Gradebook UX: Gradebook compacts Lab columns for 1280px and /lab renders loading status while models hydrate", () => {
@@ -2078,7 +2168,9 @@ test("Task #10 Perf & Gradebook UX: Gradebook compacts Lab columns for 1280px an
 
 test("Studio Live Telemetry & Stats preserve failed/timed-out service status and Logs & Traces badge count instead of falling back to Preview Prepared", () => {
   const workbench = read("src/features/runtime/live-studio-workbench.tsx");
-  const { resolveTelemetryServiceStatus } = require("../src/features/runtime/live-studio-workbench.tsx");
+  const {
+    resolveTelemetryServiceStatus,
+  } = require("../src/features/runtime/live-studio-workbench.tsx");
 
   assert.equal(
     resolveTelemetryServiceStatus({
@@ -2178,7 +2270,10 @@ test("Studio Live Telemetry & Stats preserve failed/timed-out service status and
 
 test("CourseOutline header renders course description and step-by-step learning outcomes", () => {
   const { stripModulePrefix } = require("../src/features/courses/course-outline.tsx");
-  assert.equal(stripModulePrefix("Module 1: .NET 8 Microservices Foundations"), ".NET 8 Microservices Foundations");
+  assert.equal(
+    stripModulePrefix("Module 1: .NET 8 Microservices Foundations"),
+    ".NET 8 Microservices Foundations",
+  );
   assert.equal(stripModulePrefix("Chương 2 - Phân tích phụ thuộc"), "Phân tích phụ thuộc");
   assert.equal(stripModulePrefix("Observability Basics"), "Observability Basics");
 
