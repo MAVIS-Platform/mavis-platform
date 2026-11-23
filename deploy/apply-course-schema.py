@@ -109,6 +109,31 @@ WITH expected(present) AS (VALUES
 SELECT CASE WHEN bool_and(present) THEN 'ready'
             ELSE 'missing' END FROM expected;
 """),
+    "V47__Course_Quiz_Assets.sql": (47, """
+WITH expected(present) AS (VALUES
+    (to_regclass('course_quiz_assets') IS NOT NULL),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'course_quiz_assets' AND column_name = 'questions'
+             AND data_type = 'jsonb')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'course_quiz_assets' AND column_name = 'pass_percent'
+             AND data_type = 'integer'))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
+    "V48__Allow_Inactive_Workspace_Status.sql": (48, """
+SELECT CASE
+    WHEN to_regclass('workspaces') IS NULL THEN 'partial'
+    WHEN EXISTS (
+        SELECT FROM pg_constraint
+        WHERE conrelid = to_regclass('workspaces')
+          AND conname = 'workspaces_status_check'
+          AND pg_get_constraintdef(oid) LIKE '%INACTIVE%'
+    ) THEN 'ready'
+    ELSE 'missing' END;
+"""),
     "V44__Mavis_Announcements.sql": (44, """
 WITH expected(present) AS (VALUES
     (to_regclass('announcements') IS NOT NULL),

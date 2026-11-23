@@ -232,6 +232,18 @@ if [ -e "$nullable_submission_ref_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$nullable_submission_ref_migration" /opt/mavis/db-backups/submission-nullable-ref-before-v46.dump
 fi
+course_quiz_assets_migration="$incoming/V47__Course_Quiz_Assets.sql"
+if [ -e "$course_quiz_assets_migration" ]; then
+  test -f "$nullable_submission_ref_migration" && test -f "$schema_tool" || { echo "Incomplete Course Quiz Assets schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$course_quiz_assets_migration" /opt/mavis/db-backups/course-quiz-assets-before-v47.dump
+fi
+inactive_workspace_status_migration="$incoming/V48__Allow_Inactive_Workspace_Status.sql"
+if [ -e "$inactive_workspace_status_migration" ]; then
+  test -f "$course_quiz_assets_migration" && test -f "$schema_tool" || { echo "Incomplete Workspace Status schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$inactive_workspace_status_migration" /opt/mavis/db-backups/workspace-status-before-v48.dump
+fi
 # Ensure persistent data volume upload and worker directories are writable by app user 1654:1654
 docker run --rm --mount source=mavis_data,target=/data alpine:3.20 sh -c "mkdir -p /data/uploads /data/worker-artifacts && chown -R 1654:1654 /data/uploads /data/worker-artifacts" >/dev/null 2>&1 || true
 drain_deadline=$((SECONDS + 360))

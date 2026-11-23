@@ -87,6 +87,8 @@ class MigrationTest(unittest.TestCase):
             ("V44__Mavis_Announcements.sql", 44, "announcement_workspaces"),
             ("V45__Nullable_Quiz_Reference_Model.sql", 45, "reference_model_id"),
             ("V46__Nullable_Submission_Reference_Columns.sql", 46, "submission_snapshots"),
+            ("V47__Course_Quiz_Assets.sql", 47, "course_quiz_assets"),
+            ("V48__Allow_Inactive_Workspace_Status.sql", 48, "workspaces_status_check"),
         ):
             registered, probe = module.MIGRATIONS[filename]
             self.assertEqual(registered, version)
