@@ -410,23 +410,46 @@ Sau đó mở trang **Admin › Studio** kiểm tra trạng thái `surveyReadine
 - Ở chế độ `REMOTE_WORKER`, nếu hiện **`DEGRADED`** với cảnh báo *"No remote worker poll"* hoặc *"Remote worker heartbeat is stale"* (> 30s), kiểm tra ngay container worker trên Runner VM theo §6.3.
 
 ### 6.3 Vận hành Runner VM (`REMOTE_WORKER`)
-1. **Trên Control VPS** (`/opt/mavis/.env.production`):
-   ```env
-   MAVIS_RUNNER_MODE=REMOTE_WORKER
-   MAVIS_RUNNER_SANDBOX_REGISTRY=ghcr.io/<org>/mavis-sandbox
-   ```
-   Khởi động lại backend để nhận cấu hình:
-   ```bash
-   cd /opt/mavis && docker compose --env-file .env.production -f deploy/compose.production.yml up -d --no-build backend
-   ```
+1. **Trên Control VPS — Nginx + cấu hình backend:**
+   - `deploy/compose.production.yml` chỉ mở cổng backend trên loopback (`127.0.0.1:${MAVIS_BE_PORT:-8081}:8080`). Thêm khối sau vào server block HTTPS của `maviss.site` trong Nginx (**trước** `location /`) để chỉ cho IP tĩnh của Runner VM gọi Runtime API:
+     ```nginx
+     location /api/v1/analyzer/runtime/ {
+         allow RUNNER_VM_IP;
+         deny all;
+         proxy_pass http://127.0.0.1:8081;
+         proxy_set_header Host $host;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         proxy_set_header X-Forwarded-Proto https;
+         proxy_read_timeout 120s;
+         client_max_body_size 40m;
+     }
+     ```
+     Chạy `sudo nginx -t && sudo systemctl reload nginx`.
+   - Trong `/opt/mavis/.env.production`:
+     ```env
+     MAVIS_RUNNER_MODE=REMOTE_WORKER
+     MAVIS_RUNNER_SANDBOX_REGISTRY=ghcr.io/<org>/mavis-sandbox
+     MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS=2
+     MAVIS_RUNTIME_MAX_QUEUED_STUDIO_SESSIONS=40
+     ```
+     Khởi động lại backend để nhận cấu hình:
+     ```bash
+     cd /opt/mavis && docker compose --env-file .env.production -f deploy/compose.production.yml up -d --no-build backend
+     ```
 2. **Trên Runner VM** (Ubuntu 24.04, 8 vCPU / 16 GB RAM / ≥ 100 GB SSD, chỉ mở inbound SSH; **tuyệt đối không chạy worker này trên Control VPS**):
-   ```bash
-   MAVIS_JAVA_URL=https://maviss.site \
-   MAVIS_RUNNER_SERVICE_KEY=<khớp-control-plane> \
-   MAVIS_WORKER_CONCURRENCY=10 \
-   docker compose -f deploy/compose.runner-worker.yml up -d --build
-   ```
-   Worker tự seed volume OTel (`mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3`), tự build `mavis-poc-runner:4`, tự gửi lại receipt tồn đọng lúc khởi động, và mỗi 5 phút tự dọn `mavisrun-*` mồ côi (chỉ bật khi `MAVIS_WORKER_DEDICATED_HOST=1` và bỏ qua project đang giữ lock `runner-<project>.lock`) + ảnh/cache cũ + ghi log `hostStateFreeMiB` (đo trên ổ chứa `/tmp/mavis-runner-state`). Receipt chưa có `.ack.json` và các manifest `.allocation-*` / `.recovery-*` không bao giờ bị xóa.
+   - CI hiện không build image cho Runner worker, nên Runner VM phải **clone repo đúng commit đã deploy** rồi build tại chỗ:
+     ```bash
+     git clone https://github.com/<org>/<repo>.git /opt/mavis-runner && cd /opt/mavis-runner
+     git checkout <sha-đã-deploy>
+     ```
+   - Khởi động ban đầu với **`MAVIS_WORKER_CONCURRENCY=2`** (chỉ nâng lên `10` khi chạy cổng Go/No-Go ở §6.4):
+     ```bash
+     MAVIS_JAVA_URL=https://maviss.site \
+     MAVIS_RUNNER_SERVICE_KEY=<khớp-control-plane> \
+     MAVIS_WORKER_CONCURRENCY=2 \
+     docker compose -f deploy/compose.runner-worker.yml up -d --build
+     ```
+   Worker tự seed volume OTel (`mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3`), tự build `mavis-poc-runner:4`, tự gửi lại receipt tồn đọng lúc khởi động, và mỗi 5 phút tự dọn `mavisrun-*` mồ côi (bỏ qua mọi project đang giữ lock `runner-<project>.lock`, có cờ `MAVIS_WORKER_DEDICATED_HOST=1`) + ảnh/cache cũ + ghi log `hostStateFreeMiB` (đo trên ổ chứa `/tmp/mavis-runner-state`). Receipt chưa có `.ack.json` và các manifest `.allocation-*` / `.recovery-*` không bao giờ bị xóa.
 3. **Xem trạng thái, log và restart worker:**
    ```bash
    docker compose -f deploy/compose.runner-worker.yml ps
@@ -435,10 +458,11 @@ Sau đó mở trang **Admin › Studio** kiểm tra trạng thái `surveyReadine
    ```
 
 ### 6.4 Nâng/hạ số slot Studio & Cổng Go/No-Go Load Test
-- Sửa trong `/opt/mavis/.env.production` trên Control VPS:
+- **Lưu ý quan trọng về giới hạn slot ở `REMOTE_WORKER`:** Giới hạn số phiên chạy đồng thời **thực sự** nằm ở `MAVIS_WORKER_CONCURRENCY` trên Runner VM (`claimNextQueuedForRemoteWorker` không chặn theo `MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS`). Luôn đặt `MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS` trên Control VPS **bằng** `MAVIS_WORKER_CONCURRENCY` để UI và kiểm tra hàng đợi hiển thị khớp.
+- Sửa trong `/opt/mavis/.env.production` trên Control VPS (ban đầu giữ `2`; tạm nâng cả 2 phía lên `10` khi chạy load test ngoài giờ học, và chỉ giữ `10` nếu đạt đủ cổng Go):
   ```env
   MAVIS_RUNTIME_MAX_QUEUED_STUDIO_SESSIONS=40
-  MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS=2   # chỉ nâng lên 10 sau khi đạt cổng load test bên dưới
+  MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS=2
   ```
   Áp dụng:
   ```bash

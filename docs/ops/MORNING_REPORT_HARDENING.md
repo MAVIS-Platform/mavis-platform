@@ -44,9 +44,12 @@
 | **Batch 5** | 5.4 | Khôi phục `refreshDockerAndRuntimeProbe()` trong `RuntimeQueueCoordinator.getRuntimeHealth` ở chế độ `REMOTE_WORKER` (trả `DEGRADED` khi Docker control-plane lỗi ở 4A) | `DONE` | `7778a6ba` |
 | **Batch 5** | 5.5 | Cookie jar + chặn thoát mã `2` nếu thiếu tài khoản (`< CONCURRENCY`) trong `studio-concurrency.mjs`. *Bản này chưa làm mới token được trên production — sửa ở 5.7* | `DONE` | `7778a6ba` |
 | **Batch 5** | 5.6 | Sửa mô tả Batch 1 / phạm vi test trong báo cáo sáng cho khớp code và thêm câu SQL chỉ đọc kiểm Scale > 3 (Batch 6) vào Runbook §6.6 | `DONE` | `7778a6ba` |
-| **Batch 5.1** | 5.7 | Load test: khi `/api/mavis/*` trả 401, xóa `mavis_session`, gọi `GET /api/mavis/session` để BFF làm mới bằng `mavis_refresh`, rồi gửi lại 1 lần (BFF không tự làm mới ở các route `/api/mavis/*` khác). Test stub giờ mô phỏng đúng hành vi BFF | `DONE` | *(commit Batch 5.1)* |
-| **Batch 5.1** | 5.8 | `DeliverPendingReceiptsAsync` lọc bỏ receipt đã ack **trước** giới hạn 256, tránh receipt chưa gửi bị đẩy ra ngoài cửa sổ | `DONE` | *(commit Batch 5.1)* |
-| **Batch 5.1** | 5.9 | `IsProjectLeaseHeld` coi `UnauthorizedAccessException` là lock đang giữ (không reap, không làm hỏng vòng dọn) | `DONE` | *(commit Batch 5.1)* |
+| **Batch 5.1** | 5.7 | Load test: khi `/api/mavis/*` trả 401, xóa `mavis_session`, gọi `GET /api/mavis/session` để BFF làm mới bằng `mavis_refresh`, rồi gửi lại 1 lần (BFF không tự làm mới ở các route `/api/mavis/*` khác). Test stub giờ mô phỏng đúng hành vi BFF | `DONE` | `81f3d744` |
+| **Batch 5.1** | 5.8 | `DeliverPendingReceiptsAsync` lọc bỏ receipt đã ack **trước** giới hạn 256, tránh receipt chưa gửi bị đẩy ra ngoài cửa sổ | `DONE` | `81f3d744` |
+| **Batch 5.1** | 5.9 | `IsProjectLeaseHeld` coi `UnauthorizedAccessException` là lock đang giữ (không reap, không làm hỏng vòng dọn) | `DONE` | `81f3d744` |
+| **Batch 7.0** | 7.0a | Mở cổng backend loopback-only (`127.0.0.1:${MAVIS_BE_PORT:-8081}:8080`) trong `deploy/compose.production.yml` để Nginx trên Control VPS proxy `/api/v1/analyzer/runtime/` cho Runner VM mà không lộ ra internet | `DONE` | *(commit Batch 7.0)* |
+| **Batch 7.0** | 7.0b | Sửa Runbook §6.3–6.4: khởi động worker ở `MAVIS_WORKER_CONCURRENCY=2` (là giới hạn thật ở `REMOTE_WORKER`, đặt `MAX_ACTIVE` khớp với nó), bổ sung khối Nginx allowlist IP Runner VM và yêu cầu clone repo đúng commit | `DONE` | *(commit Batch 7.0)* |
+| **Batch 7.0** | 7.0c | Cập nhật hash `81f3d744` cho Batch 5.1 và thêm dòng Batch 7.0 vào báo cáo sáng | `DONE` | *(commit Batch 7.0)* |
 
 **Không có task nào `BLOCKED`.**
 
