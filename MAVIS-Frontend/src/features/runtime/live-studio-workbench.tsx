@@ -2037,6 +2037,7 @@ export function LiveStudioWorkbench({
                 sections={["library"]}
                 compact
                 label="Live block library"
+                studioStyle={studioStyle}
                 authoring={authoring}
                 activeSetupPanel={setupPanel}
                 onSelectSetupPanel={(panel) => {

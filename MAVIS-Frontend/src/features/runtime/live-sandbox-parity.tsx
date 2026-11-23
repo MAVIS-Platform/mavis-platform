@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Response } from "@/lib/api/contracts";
 import type { StudioQuickAction } from "./studio-observability";
+import { resolveStudioSidebarIconClass, type StudioStyleId } from "./studio-styles";
 import {
   capabilitySummary,
   liveCapabilities,
@@ -114,33 +115,35 @@ const LIVE_SCALE_TOOLS = [
   },
 ] as const;
 
-function renderLiveBlockIcon(name: string) {
+function renderLiveBlockIcon(name: string, studioStyle: StudioStyleId = "daylight") {
   const n = name.toLowerCase();
+  const colorClass = resolveStudioSidebarIconClass(studioStyle, name);
+  const cls = `size-3.5 shrink-0 ${colorClass}`;
   if (n.includes("gateway") || n.includes("edge") || n.includes("proxy") || n.includes("ingress")) {
-    return <Network aria-hidden="true" className="size-3.5 shrink-0 text-sky-400" />;
+    return <Network aria-hidden="true" className={cls} />;
   }
   if (n.includes("redis") || n.includes("cache")) {
-    return <Flame aria-hidden="true" className="size-3.5 shrink-0 text-amber-400" />;
+    return <Flame aria-hidden="true" className={cls} />;
   }
   if (n.includes("postgres") || n.includes("mysql") || n.includes("mongo") || n.includes("db")) {
-    return <Database aria-hidden="true" className="size-3.5 shrink-0 text-emerald-400" />;
+    return <Database aria-hidden="true" className={cls} />;
   }
   if (n.includes("kafka") || n.includes("rabbit") || n.includes("broker") || n.includes("queue")) {
-    return <Activity aria-hidden="true" className="size-3.5 shrink-0 text-purple-400" />;
+    return <Activity aria-hidden="true" className={cls} />;
   }
   if (n.includes("worker") || n.includes("consumer") || n.includes("async")) {
-    return <Cpu aria-hidden="true" className="size-3.5 shrink-0 text-indigo-300" />;
+    return <Cpu aria-hidden="true" className={cls} />;
   }
   if (n.includes("order")) {
-    return <ShoppingCart aria-hidden="true" className="size-3.5 shrink-0 text-sky-300" />;
+    return <ShoppingCart aria-hidden="true" className={cls} />;
   }
   if (n.includes("payment") || n.includes("billing")) {
-    return <CreditCard aria-hidden="true" className="size-3.5 shrink-0 text-teal-300" />;
+    return <CreditCard aria-hidden="true" className={cls} />;
   }
   if (n.includes("catalog") || n.includes("inventory") || n.includes("product")) {
-    return <Package aria-hidden="true" className="size-3.5 shrink-0 text-slate-300" />;
+    return <Package aria-hidden="true" className={cls} />;
   }
-  return <Server aria-hidden="true" className="size-3.5 shrink-0 text-slate-300" />;
+  return <Server aria-hidden="true" className={cls} />;
 }
 
 export type StudioSetupPanel = "service" | "mission" | "presets" | "drills";
@@ -161,6 +164,7 @@ type LiveSandboxParityProps = {
   authoring?: LiveBlockAuthoringControls | undefined;
   activeSetupPanel?: StudioSetupPanel | undefined;
   onSelectSetupPanel?: ((panel: StudioSetupPanel) => void) | undefined;
+  studioStyle?: StudioStyleId | undefined;
 };
 
 const LIVE_SCENARIOS = [
@@ -276,6 +280,7 @@ export function LiveSandboxParity({
   authoring,
   activeSetupPanel = "service",
   onSelectSetupPanel,
+  studioStyle = "daylight",
 }: LiveSandboxParityProps) {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<string | null>(null);
@@ -535,7 +540,7 @@ export function LiveSandboxParity({
                           className={`size-1.5 shrink-0 rounded-full ${statusDot}`}
                           aria-hidden="true"
                         />
-                        {renderLiveBlockIcon(block.service)}
+                        {renderLiveBlockIcon(block.service, studioStyle)}
                         <span className="truncate font-mono text-[11px] font-medium">
                           {block.label}
                         </span>
@@ -614,7 +619,7 @@ export function LiveSandboxParity({
                           className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-700/90 bg-slate-900/50 px-2 py-1 font-mono text-[10.5px] text-slate-300 transition-colors hover:border-sky-500/60 hover:bg-sky-500/10 hover:text-sky-200 disabled:opacity-40"
                         >
                           <Plus aria-hidden="true" className="size-3 text-slate-400" />
-                          {renderLiveBlockIcon(svc)}
+                          {renderLiveBlockIcon(svc, studioStyle)}
                           <span>{svc}</span>
                         </button>
                       ))}

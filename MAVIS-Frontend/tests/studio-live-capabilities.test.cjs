@@ -699,3 +699,49 @@ test("Studio Live mounts comprehensive bilingual Guided Tour (?) trigger next to
   assert.ok(obsSrc.includes('data-tour="studio-3d-controls-group"'));
   assert.ok(obsSrc.includes('data-tour="studio-services-graph"'));
 });
+
+test("Studio 3D/2D service icons and sculptures adapt distinctly to all 4 Studio themes", () => {
+  const {
+    resolveStudioNodePalette,
+    resolveStudioSidebarIconClass,
+  } = require("../src/features/runtime/studio-styles.ts");
+  const healthy = { isCritical: false, isWarning: false, isSelected: false, isDropTarget: false };
+
+  const daylight = resolveStudioNodePalette("daylight", "order-service", "SERVICE", healthy);
+  const blueprint = resolveStudioNodePalette("blueprint", "order-service", "SERVICE", healthy);
+  const pop = resolveStudioNodePalette("pop", "order-service", "SERVICE", healthy);
+  const control = resolveStudioNodePalette("control", "order-service", "SERVICE", healthy);
+
+  // All 4 themes produce distinct visual signatures for the exact same microservice
+  assert.equal(new Set([daylight.cardFill, blueprint.cardFill, pop.cardFill, control.cardFill]).size, 4);
+  assert.equal(new Set([daylight.stroke, blueprint.stroke, pop.stroke, control.stroke]).size, 4);
+  assert.equal(new Set([daylight.pillChipBg, blueprint.pillChipBg, pop.pillChipBg, control.pillChipBg]).size, 4);
+
+  // Tactile Pop gives each service role a vibrant pastel fill with bold ink outline
+  const popOrder = resolveStudioNodePalette("pop", "order-service", "SERVICE", healthy);
+  const popPayment = resolveStudioNodePalette("pop", "payment-service", "SERVICE", healthy);
+  const popCatalog = resolveStudioNodePalette("pop", "catalog-service", "SERVICE", healthy);
+  const popGateway = resolveStudioNodePalette("pop", "api-gateway", "GATEWAY", healthy);
+  assert.equal(popOrder.stroke, "#0f172a");
+  assert.equal(
+    new Set([popOrder.iconBg, popPayment.iconBg, popCatalog.iconBg, popGateway.iconBg]).size,
+    4,
+  );
+
+  // Critical outage always overrides to unmistakable red across every theme
+  for (const styleId of ["daylight", "blueprint", "pop", "control"]) {
+    const crit = resolveStudioNodePalette(styleId, "payment-service", "SERVICE", {
+      ...healthy,
+      isCritical: true,
+    });
+    assert.match(crit.stroke, /^#(e11d48|dc2626|f43f5e)$/i);
+  }
+
+  // Sidebar icon colors also change per theme
+  assert.equal(resolveStudioSidebarIconClass("pop", "order-service"), "text-slate-900");
+  assert.equal(resolveStudioSidebarIconClass("blueprint", "order-service"), "text-blue-700");
+  assert.notEqual(
+    resolveStudioSidebarIconClass("daylight", "order-service"),
+    resolveStudioSidebarIconClass("control", "order-service"),
+  );
+});

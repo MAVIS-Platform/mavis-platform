@@ -19,7 +19,12 @@ import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { computeArchitectureImpact } from "@/lib/architecture/reverse-bfs";
 import type { Response } from "@/lib/api/contracts";
-import { STUDIO_STYLES, resolveStudioStyle, type StudioStyleId } from "./studio-styles";
+import {
+  STUDIO_STYLES,
+  resolveStudioNodePalette,
+  resolveStudioStyle,
+  type StudioStyleId,
+} from "./studio-styles";
 
 type Studio = Response<"studioState">;
 
@@ -683,7 +688,7 @@ function render3DSeNodeSculpture(
         {/* Lightning Bolt on Roof */}
         <polygon
           points={`${cx + 3},${ty - 8} ${cx - 7},${ty} ${cx},${ty} ${cx - 3},${ty + 8} ${cx + 7},${ty} ${cx},${ty}`}
-          fill="#ffffff"
+          fill={a}
         />
       </g>
     );
@@ -781,7 +786,7 @@ function render3DSeNodeSculpture(
         <polyline
           points={`${cx - 22},${by - 16} ${cx - 6},${by - 22} ${cx + 2},${by - 18} ${cx + 18},${by - 32}`}
           fill="none"
-          stroke="#ffffff"
+          stroke={a}
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -848,8 +853,8 @@ function render3DSeNodeSculpture(
         {/* 3D Padlock Vault Body */}
         {renderIsoBox(cx, ly, 26, 13, 18, s, fill, 1.5, top)}
         {/* Keyhole Emblem on Front */}
-        <circle cx={cx - 11} cy={ly - 7} r="2.4" fill="#ffffff" />
-        <line x1={cx - 11} y1={ly - 5} x2={cx - 11} y2={ly - 1} stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
+        <circle cx={cx - 11} cy={ly - 7} r="2.4" fill={a} />
+        <line x1={cx - 11} y1={ly - 5} x2={cx - 11} y2={ly - 1} stroke={a} strokeWidth="2" strokeLinecap="round" />
       </g>
     );
   }
@@ -861,7 +866,7 @@ function render3DSeNodeSculpture(
       <g>
         {renderIsoBox(cx, fy, 32, 16, 12, s, fill, 1.5, top)}
         {/* Bold Lambda λ Symbol on Roof */}
-        <g stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none">
+        <g stroke={a} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none">
           <path d={`M ${cx - 6},${fy - 18} L ${cx - 1},${fy - 18} L ${cx + 6},${fy - 7}`} />
           <path d={`M ${cx + 1},${fy - 14} L ${cx - 6},${fy - 7}`} />
         </g>
@@ -883,7 +888,7 @@ function render3DSeNodeSculpture(
         ))}
         {renderIsoBox(cx, wy, 32, 16, 12, s, fill, 1.5, top)}
         {/* Processor Core & Gear Ring on Roof */}
-        <ellipse cx={cx} cy={wy - 12} rx="11" ry="5.5" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeDasharray="3 2" />
+        <ellipse cx={cx} cy={wy - 12} rx="11" ry="5.5" fill="none" stroke={a} strokeWidth="1.8" strokeDasharray="3 2" />
         <circle cx={cx} cy={wy - 12} r="2.5" fill={a} />
       </g>
     );
@@ -2890,85 +2895,36 @@ export function StudioObservability({
                     {/* Pure 3D Software Engineering Sculpture (glows ONLY when selected/clicked or crashed) */}
                     <title>{nodeName}</title>
                     {(() => {
-                      const light3DAccent = isCritical
-                        ? "#e11d48"
-                        : isWarning
-                          ? "#d97706"
-                          : archetype === "DATABASE"
-                            ? "#059669"
-                            : archetype === "GATEWAY"
-                              ? "#0284c7"
-                              : archetype === "QUEUE"
-                                ? "#7c3aed"
-                                : "#2563eb";
-                      const light3DTop = isCritical
-                        ? "#ffe4e6"
-                        : isWarning
-                          ? "#fef3c7"
-                          : archetype === "DATABASE"
-                            ? "#dcfce7"
-                            : archetype === "GATEWAY"
-                              ? "#e0f2fe"
-                              : archetype === "QUEUE"
-                                ? "#f3e8ff"
-                                : "#dbeafe";
-                      const sculptureTheme = isLight
-                        ? {
-                            stroke: isSelected ? "#0056D2" : light3DAccent,
-                            cardFill: isCritical ? "#fff1f2" : isWarning ? "#fffbeb" : "#ffffff",
-                            iconBg: light3DTop,
-                            accent: light3DAccent,
-                          }
-                        : theme;
-                      const pillBg = isLight
-                        ? isCritical
-                          ? "#fff1f2"
-                          : isWarning
-                            ? "#fffbeb"
-                            : "#ffffff"
-                        : "#0b111e";
-                      const pillStroke = isLight
-                        ? isCritical
-                          ? "#e11d48"
-                          : isWarning
-                            ? "#d97706"
-                            : isSelected
-                              ? "#0056D2"
-                              : activeStyleId === "pop"
-                                ? "#0f172a"
-                                : "#cbd5e1"
-                        : (healthColor ?? (isSelected ? "#38bdf8" : "#263348"));
-                      const pillChipBg = isLight
-                        ? light3DTop
-                        : (healthFill ?? (isSelected ? "#0c4a6e" : "#162033"));
-                      const pillIconColor = isLight
-                        ? light3DAccent
-                        : isStopped
-                          ? "#fda4af"
-                          : isSelected
-                            ? "#38bdf8"
-                            : "#94a3b8";
-                      const pillTextFill = isLight
-                        ? "#0f172a"
-                        : isSelected
-                          ? "#ffffff"
-                          : "#cbd5e1";
-                      const pillCountFill = isLight
-                        ? light3DAccent
-                        : (healthTint ?? (isSelected ? "#7dd3fc" : "#94a3b8"));
+                      const palette = resolveStudioNodePalette(activeStyleId, name, archetype, {
+                        isCritical,
+                        isWarning,
+                        isSelected,
+                        isDropTarget,
+                      });
+                      const sculptureTheme = {
+                        stroke: palette.stroke,
+                        cardFill: palette.cardFill,
+                        iconBg: palette.iconBg,
+                        accent: palette.accent,
+                      };
+                      const {
+                        pillBg,
+                        pillStroke,
+                        pillChipBg,
+                        pillIconColor,
+                        pillTextFill,
+                        pillCountFill,
+                      } = palette;
                       return (
                         <>
                           <g
                             data-studio-sculpture
+                            data-studio-icon-style={activeStyleId}
                             transform={`translate(${point.x} ${point.y + 8}) scale(${scale}) translate(${-point.x} ${-point.y - 8})`}
                             style={
-                              isSelected || isDropTarget
-                                ? { filter: "drop-shadow(0 0 8px rgba(0, 86, 210, 0.4))" }
-                                : isStopped
-                                  ? { filter: "drop-shadow(0 0 6px rgba(225, 29, 72, 0.4))" }
-                                  : isLight
-                                    ? { filter: "drop-shadow(0 6px 10px rgba(15, 23, 42, 0.12))" }
-                                    : undefined
+                              palette.sculptureFilter
+                                ? { filter: palette.sculptureFilter }
+                                : undefined
                             }
                           >
                             {render3DSeNodeSculpture(name, archetype, point.x, point.y, isStopped, sculptureTheme)}
@@ -2987,13 +2943,7 @@ export function StudioObservability({
                             stroke={pillStroke}
                             strokeOpacity={isSelected || isStopped || isLight ? "1" : "0.85"}
                             strokeWidth={isSelected || isStopped || activeStyleId === "pop" ? 1.8 : 1.1}
-                            style={
-                              isLight
-                                ? { filter: "drop-shadow(0 4px 10px rgba(15, 23, 42, 0.10))" }
-                                : isSelected && !healthColor
-                                  ? { filter: "drop-shadow(0 0 6px rgba(56, 189, 248, 0.35))" }
-                                  : undefined
-                            }
+                            style={palette.pillFilter ? { filter: palette.pillFilter } : undefined}
                           />
                           {/* Left Functional Component Icon Badge inside the Pill */}
                           <rect
@@ -3142,57 +3092,21 @@ export function StudioObservability({
                           : archetype === "QUEUE"
                             ? "Message Broker"
                             : "Microservice";
-                    const roleAccent =
-                      archetype === "DATABASE"
-                        ? "#10b981"
-                        : archetype === "GATEWAY"
-                          ? "#0ea5e9"
-                          : archetype === "QUEUE"
-                            ? "#8b5cf6"
-                            : "#2563eb";
-                    const stateAccent = isStopped
-                      ? "#e11d48"
-                      : isPaused || isThrottled || isImpactedByOutage
-                        ? "#d97706"
-                        : roleAccent;
+                    const palette2D = resolveStudioNodePalette(activeStyleId, name, archetype, {
+                      isCritical: isStopped,
+                      isWarning: isPaused || isThrottled || isImpactedByOutage,
+                      isSelected,
+                      isDropTarget,
+                    });
+                    const stateAccent = palette2D.accent;
                     const pillW = Math.max(54, statePillText.length * 6.2 + 12);
                     const cardW = Math.max(204, displayName.length * 7.8 + pillW + 58);
                     const cardH = 68;
                     const halfW = cardW / 2;
-                    const popRoleFill = isStopped
-                      ? "#ffe4e6"
-                      : isPaused || isThrottled || isImpactedByOutage
-                        ? "#fef3c7"
-                        : archetype === "DATABASE"
-                          ? "#dcfce7"
-                          : archetype === "GATEWAY"
-                            ? "#e0f2fe"
-                            : archetype === "QUEUE"
-                              ? "#f3e8ff"
-                              : "#eff6ff";
-                    const cardFill =
-                      activeStyleId === "pop"
-                        ? popRoleFill
-                        : isLight
-                          ? isStopped
-                            ? "#fff5f6"
-                            : isPaused || isThrottled || isImpactedByOutage
-                              ? "#fffcf0"
-                              : activeStyleId === "blueprint"
-                                ? "#fafdff"
-                                : "#ffffff"
-                          : isStopped
-                            ? "#240a14"
-                            : isPaused || isThrottled || isImpactedByOutage
-                              ? "#241908"
-                              : "#0f172a";
+                    const cardFill = palette2D.cardFill;
                     const cardStroke =
                       activeStyleId === "pop"
-                        ? isStopped
-                          ? "#e11d48"
-                          : isSelected || isDropTarget
-                            ? "#0056D2"
-                            : "#0f172a"
+                        ? palette2D.stroke
                         : isStopped
                           ? "#e11d48"
                           : isPaused || isThrottled || isImpactedByOutage
@@ -3206,17 +3120,8 @@ export function StudioObservability({
                                   : "#334155";
                     const titleFill = isLight ? "#0f172a" : "#f8fafc";
                     const subFill = isLight ? "#475569" : "#94a3b8";
-                    const iconBg = isStopped
-                      ? isLight ? "#ffe4e6" : "#4c0519"
-                      : isPaused || isThrottled || isImpactedByOutage
-                        ? isLight ? "#fef3c7" : "#451a03"
-                        : archetype === "DATABASE"
-                          ? isLight ? "#d1fae5" : "#064e3b"
-                          : archetype === "GATEWAY"
-                            ? isLight ? "#e0f2fe" : "#0c4a6e"
-                            : archetype === "QUEUE"
-                              ? isLight ? "#ede9fe" : "#3b0764"
-                              : isLight ? "#dbeafe" : "#1e3a8a";
+                    const iconBg = palette2D.pillChipBg;
+                    const iconGlyphColor = palette2D.pillIconColor;
                     const pillBg = isStopped
                       ? isLight ? "#ffe4e6" : "#4c0519"
                       : isPaused || isThrottled || isImpactedByOutage
@@ -3314,7 +3219,7 @@ export function StudioObservability({
                           archetype,
                           -halfW + 27,
                           archetype === "DATABASE" ? 9 : 1,
-                          stateAccent,
+                          iconGlyphColor,
                         )}
 
                         {/* Service Title + Role Subtitle */}
