@@ -97,6 +97,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         List<ModelRelationship> c2Edges = addC2Relationships();
         addC3GatewayAndDiscovery();
         addC3IdentityComponents();
+        addC3CatalogComponents();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -327,6 +328,47 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC3Edge("c3-id-svc-jwt", "id-service", "id-jwt-issuer", "CODE_DEPENDENCY", props("call", "jwtTokenIssuer.issueToken(account)"));
         addC3Edge("c3-id-svc-repo", "id-service", "id-user-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
         addC3Edge("c3-id-repo-db", "id-user-repo", "identity-db", "DATABASE_ACCESS", props("schema", "identity_db"));
+    }
+
+    private void addC3CatalogComponents() {
+        addComponent("cat-prod-ctrl", "catalog-service", "Spring MVC @RestController",
+                "ProductController", "CONTROLLER",
+                "com.mochuong.catalog.controller.ProductController",
+                "Exposes GET/POST /api/v1/products & POST /{id}/reserve, /{id}/release");
+        addComponent("cat-cat-ctrl", "catalog-service", "Spring MVC @RestController",
+                "CategoryController", "CONTROLLER",
+                "com.mochuong.catalog.controller.CategoryController",
+                "Exposes GET/POST /api/v1/categories");
+        addComponent("cat-prod-svc", "catalog-service", "Spring @Service",
+                "ProductService", "SERVICE",
+                "com.mochuong.catalog.service.ProductService",
+                "Manages product queries & atomic stock reservation/release with @Cacheable/@CacheEvict");
+        addComponent("cat-cat-svc", "catalog-service", "Spring @Service",
+                "CategoryService", "SERVICE",
+                "com.mochuong.catalog.service.CategoryService",
+                "Creates and lists product categories");
+        addComponent("cat-redis-cfg", "catalog-service", "Spring Data Redis",
+                "RedisCacheConfig", "CONFIG",
+                "com.mochuong.catalog.config.RedisCacheConfig",
+                "Configures Redis Cache-Aside region \"products\"");
+        addComponent("cat-prod-repo", "catalog-service", "Spring Data JPA",
+                "ProductRepository", "REPOSITORY",
+                "com.mochuong.catalog.repository.ProductRepository",
+                "Persists Product entities inside isolated catalog_db");
+        addComponent("cat-cat-repo", "catalog-service", "Spring Data JPA",
+                "CategoryRepository", "REPOSITORY",
+                "com.mochuong.catalog.repository.CategoryRepository",
+                "Persists Category entities inside isolated catalog_db");
+
+        addC3Edge("c3-cat-pctrl-psvc", "cat-prod-ctrl", "cat-prod-svc", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
+        addC3Edge("c3-cat-cctrl-csvc", "cat-cat-ctrl", "cat-cat-svc", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
+        addC3Edge("c3-cat-psvc-redis", "cat-prod-svc", "cat-redis-cfg", "CODE_DEPENDENCY", props("cache", "@Cacheable(\"products\")"));
+        addC3Edge("c3-cat-cfg-redis", "cat-redis-cfg", "redis", "DATABASE_ACCESS", props("protocol", "Redis Cache-Aside"));
+        addC3Edge("c3-cat-psvc-prepo", "cat-prod-svc", "cat-prod-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
+        addC3Edge("c3-cat-psvc-crepo", "cat-prod-svc", "cat-cat-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
+        addC3Edge("c3-cat-csvc-crepo", "cat-cat-svc", "cat-cat-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
+        addC3Edge("c3-cat-prepo-db", "cat-prod-repo", "catalog-db", "DATABASE_ACCESS", props("schema", "catalog_db"));
+        addC3Edge("c3-cat-crepo-db", "cat-cat-repo", "catalog-db", "DATABASE_ACCESS", props("schema", "catalog_db"));
     }
 
     private DiagramVersion buildC1ContextDiagram() {
