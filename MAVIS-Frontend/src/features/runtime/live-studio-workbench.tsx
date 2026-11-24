@@ -1594,7 +1594,7 @@ export function LiveStudioWorkbench({
     >
       {/* Original MAVIS Slim Single-Row Header */}
       <div
-        className={`relative z-30 flex h-12 shrink-0 flex-nowrap items-center gap-2 border-b px-3 ${styleCfg.topBarClass}`}
+        className={`relative z-40 flex h-12 shrink-0 flex-nowrap items-center gap-2 border-b px-3 ${styleCfg.topBarClass}`}
       >
         {standaloneHeader?.left && (
           <>

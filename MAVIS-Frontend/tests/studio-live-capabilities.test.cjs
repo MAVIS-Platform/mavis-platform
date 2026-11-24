@@ -1339,6 +1339,7 @@ test("Studio 3D WYSIWYG authoring: Reverse BFS blast radius (incl. cycles), repo
   assert.match(workbenchSrc, /Use live actions as exercise/);
   assert.match(workbenchSrc, /Advanced settings/);
   assert.match(workbenchSrc, /Baseline Endpoint \(auto-detected\)/);
+  assert.match(workbenchSrc, /relative z-40 flex h-12 shrink-0/);
   assert.match(threeSrc, /raycastEdgeAt/);
   assert.match(threeSrc, /onSelectEdge/);
   const helpersSrc = fs.readFileSync(
