@@ -802,28 +802,6 @@ export function StudentCourseSyllabus({
                         <p className="text-sm text-muted-foreground">{activeItem.description}</p>
                       )}
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={!prevEntry}
-                        onClick={() => prevEntry && selectCurriculumItem(prevEntry.item)}
-                      >
-                        <ChevronLeft className="mr-1 h-4 w-4" aria-hidden="true" />
-                        {t("Prev", "Bài trước")}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={!nextEntry || isItemLocked(nextEntry.item)}
-                        onClick={() => nextEntry && selectCurriculumItem(nextEntry.item)}
-                      >
-                        {t("Next", "Bài tiếp theo")}
-                        <ChevronRight className="ml-1 h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div>
                   </div>
 
                   {/* Main Content Body per Activity Type */}
@@ -870,55 +848,6 @@ export function StudentCourseSyllabus({
                               ? t("Completed", "Đã hoàn thành")
                               : t("Mark as completed", "Đánh dấu đã hoàn thành")}
                           </Button>
-                        </div>
-
-                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={!prevEntry}
-                            onClick={() => prevEntry && selectCurriculumItem(prevEntry.item)}
-                          >
-                            <ChevronLeft className="mr-1 h-4 w-4 shrink-0" aria-hidden="true" />
-                            <span className="max-w-[240px] truncate">
-                              {prevEntry
-                                ? t(`Prev: ${prevEntry.item.title}`, `Trước: ${prevEntry.item.title}`)
-                                : t("Prev", "Bài trước")}
-                            </span>
-                          </Button>
-                          {nextEntry ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={isItemLocked(nextEntry.item)}
-                              onClick={() => selectCurriculumItem(nextEntry.item)}
-                            >
-                              <span className="max-w-[260px] truncate">
-                                {isItemLocked(nextEntry.item)
-                                  ? t(
-                                      "Locked · Pass previous Lab to unlock Quiz",
-                                      "Đang khóa · Hoàn thành Lab trước để mở Quiz",
-                                    )
-                                  : nextEntry.item.type === "QUIZ"
-                                    ? t(
-                                        `Continue to Quiz · ${nextEntry.item.title}`,
-                                        `Làm Quiz · ${nextEntry.item.title}`,
-                                      )
-                                    : t(
-                                        `Next: ${nextEntry.item.title}`,
-                                        `Tiếp theo: ${nextEntry.item.title}`,
-                                      )}
-                              </span>
-                              {!isItemLocked(nextEntry.item) && (
-                                <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
-                              )}
-                            </Button>
-                          ) : (
-                            <span className="text-xs font-medium text-muted-foreground">
-                              {t("End of Module theory", "Đã hết bài lý thuyết trong Module")}
-                            </span>
-                          )}
                         </div>
 
                         {/* OLP-inspired Chapter Practice Box directly under Lesson */}
@@ -1084,6 +1013,55 @@ export function StudentCourseSyllabus({
                         active={workspace.status !== "ARCHIVED"}
                       />
                     )}
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!prevEntry}
+                      onClick={() => prevEntry && selectCurriculumItem(prevEntry.item)}
+                    >
+                      <ChevronLeft className="mr-1 h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span className="max-w-[240px] truncate">
+                        {prevEntry
+                          ? t(`Prev: ${prevEntry.item.title}`, `Trước: ${prevEntry.item.title}`)
+                          : t("Prev", "Trước")}
+                      </span>
+                    </Button>
+                    {nextEntry ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!nextEntry || isItemLocked(nextEntry.item)}
+                        onClick={() => selectCurriculumItem(nextEntry.item)}
+                      >
+                        <span className="max-w-[260px] truncate">
+                          {isItemLocked(nextEntry.item)
+                            ? t(
+                                "Locked · Pass previous Lab to unlock Quiz",
+                                "Đang khóa · Hoàn thành Lab trước để mở Quiz",
+                              )
+                            : nextEntry.item.type === "QUIZ"
+                              ? t(
+                                  `Continue to Quiz · ${nextEntry.item.title}`,
+                                  `Tiếp theo · ${nextEntry.item.title}`,
+                                )
+                              : t(
+                                  `Next: ${nextEntry.item.title}`,
+                                  `Tiếp theo: ${nextEntry.item.title}`,
+                                )}
+                        </span>
+                        {!isItemLocked(nextEntry.item) && (
+                          <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
+                        )}
+                      </Button>
+                    ) : (
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {t("End of Module", "Đã hết nội dung Module")}
+                      </span>
+                    )}
+                  </div>
                 </section>
 
                 {/* Left Sidebar Menu Column: OLP 6-Chapter Accordion */}

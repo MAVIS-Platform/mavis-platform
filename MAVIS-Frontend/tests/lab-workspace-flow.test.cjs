@@ -33,13 +33,15 @@ if (!require.extensions[".ts"]) {
   require.extensions[".tsx"] = compileTypeScript;
 }
 
-test("LabWorkspace unifies navigation into a single sticky horizontal stepper without duplicate left sidebar", () => {
+test("LabWorkspace replaces the 3-step top bar with a focused module sidebar and bottom prev/next navigation", () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
   const { LabToc } = require("../src/features/courses/lab-toc.tsx");
   const screens = read("src/features/courses/screens.tsx");
 
-  assert.match(screens, /<LabToc[\s\S]*layout="stepper"/);
+  assert.doesNotMatch(screens, /<LabToc/);
+  assert.match(screens, /lg:grid-cols-\[276px_minmax\(0,1fr\)\]/);
+  assert.match(screens, /expandModuleFlowItems/);
   assert.doesNotMatch(
     screens,
     /lg:grid-cols-\[260px_minmax\(0,1fr\)\]/,
@@ -97,9 +99,12 @@ test("LabWorkspace uses zero-overlap ELK/MxGraph ArchitectureDiagrams for C1-C3 
   assert.match(renderer, /UpdateLayoutConfig\(\$c4ShapeInRow="3", \$c4BoundaryInRow="1"\)/);
 });
 
-test("Bug #06: Step footer clarifies locked Runtime Studio, lab switcher truncates cleanly, and AI tutor floats outside main content", () => {
+test("Bug #06: Step footer unifies prev/next links, lab switcher truncates cleanly, and AI tutor floats outside main content", () => {
   const screens = read("src/features/courses/screens.tsx");
-  assert.match(screens, /t\("Check Runtime Studio Requirement", "Xem yêu cầu Runtime Studio"\)/);
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  assert.match(screens, /t\(`Prev: \$\{modulePrevNav\.label\}`, `Trước: \$\{modulePrevNav\.label\}`\)/);
+  assert.match(screens, /Finish Studio to continue/);
+  assert.match(syllabus, /t\(`Prev: \$\{prevEntry\.item\.title\}`, `Trước: \$\{prevEntry\.item\.title\}`\)/);
   assert.match(screens, /id="lab-ai-tutor"[\s\S]*className="fixed inset-x-4 bottom-4 z-50/);
   assert.match(screens, /sm:right-6 sm:bottom-6 sm:w-\[380px\]/);
   assert.match(screens, /tutorMinimized[\s\S]*<MavisLogo compact className="size-full"/);

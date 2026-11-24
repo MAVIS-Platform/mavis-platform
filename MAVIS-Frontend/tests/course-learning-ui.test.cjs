@@ -286,7 +286,8 @@ test("Coursera-style Lab table of contents shows progress, module items and lock
 test("LabWorkspace uses a class-module-Lab breadcrumb, a focused entry summary and a read-only preview", () => {
   const course = read("src/features/courses/screens.tsx");
 
-  assert.match(course, /LabToc/);
+  assert.doesNotMatch(course, /<LabToc/);
+  assert.match(course, /expandModuleFlowItems/);
   assert.match(course, /preview/i);
   assert.doesNotMatch(course, /Learning objective/);
   assert.doesNotMatch(course, /Reference snapshot/);

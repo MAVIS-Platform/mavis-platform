@@ -9,6 +9,9 @@ import {
   Bot,
   BookOpen,
   Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Code2,
   Minus,
@@ -66,8 +69,9 @@ import { useCourseQuiz } from "./course-quiz";
 import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
 import { Step2StaticImpact } from "./step2-static-impact";
-import { LabToc, type LabTocItem, type LabTocStep } from "./lab-toc";
 import { LabSubmissionV2 } from "./lab-submission-v2";
+import { expandModuleFlowItems, resolveLabStepForItem } from "./module-steps";
+import type { OutlineItemData } from "./java-coursera-curriculum-data";
 import { TeacherDashboard } from "@/features/workspaces/teacher-dashboard";
 import {
   PasskeyEnrollmentModal,
@@ -595,7 +599,7 @@ export function CourseRoadmap() {
 }
 
 export function LabWorkspace() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const params = useSearchParams();
   const router = useRouter();
   const selection = useSelection();
@@ -774,16 +778,9 @@ export function LabWorkspace() {
   // validation on the server. Session history may be pruned afterwards, so do not
   // re-lock a learner who can already view their submitted dossier.
   const runtimeEvidenceSatisfied = Boolean(verifiedStudioSession) || hasSubmitted;
-  const stepComplete: Record<1 | 2 | 3, boolean> = {
-    1: hasReferenceArch ? Boolean(activeModelId) : Boolean(lab || hasSubmitted || runtimeReady),
-    2: requiresRuntime ? runtimeEvidenceSatisfied : runtimeReady,
-    3: hasSubmitted,
-  };
   const visibleSteps = requiresRuntime
     ? learningSteps
     : learningSteps.filter((step) => step.id !== 2);
-  const completedSteps = visibleSteps.filter((step) => stepComplete[step.id]).length;
-  const progress = Math.round((completedSteps / visibleSteps.length) * 100);
   const stepAvailable = (id: 1 | 2 | 3) => {
     if (preview || id === 1) return true;
     if (id === 2) return runtimeReady && requiresRuntime;
@@ -801,37 +798,65 @@ export function LabWorkspace() {
   };
   const labHref = (step: 1 | 2 | 3, extraView?: InlineC4View) =>
     `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${step}${extraView ? `&view=${extraView}` : ""}${preview ? "&preview=1" : ""}`;
-  const tocSteps: LabTocStep[] = visibleSteps.map((step) => {
-    const meta = resolveStepMeta(step.id, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
-    const available = stepAvailable(step.id);
-    const state = stepComplete[step.id]
-      ? "complete"
-      : step.id === displayedStep
-        ? "current"
-        : available
-          ? "available"
-          : "locked";
-    return {
-      id: step.id,
-      label: t(meta.shortTitle, meta.shortTitleVi),
-      state,
-      ...(state === "locked" ? { reason: stepReason(step.id) } : {}),
-      ...(available ? { href: labHref(step.id) } : {}),
-    };
-  });
-  const tocItems: LabTocItem[] = moduleItems
-    .filter((item) => item.type !== "QUIZ")
-    .map((item) => {
-      const rawStep = stepForItemType(item.type);
-      const step: 1 | 2 | 3 = !requiresRuntime && rawStep === 2 ? 1 : rawStep;
-      return {
-        id: item.id,
-        title: item.title,
-        type: item.type,
-        current: item.assignmentId === assignmentId,
-        ...(stepAvailable(step) ? { href: labHref(step) } : {}),
+  const rawSidebarItems: OutlineItemData[] =
+    moduleItems.length > 0
+      ? moduleItems.map((item) => ({
+          id: item.id,
+          type: item.type as OutlineItemData["type"],
+          title: item.title,
+          description: item.description,
+          position: item.position,
+          assignmentId: item.assignmentId,
+          required: item.required,
+          content: item.content,
+        }))
+      : lab
+        ? [
+            {
+              id: `fallback-${lab.id}`,
+              type: requiresRuntime ? "RUNTIME_LAB" : "STATIC_LAB",
+              title: lab.title,
+              position: 1,
+              assignmentId: lab.id,
+              required: true,
+            },
+          ]
+        : [];
+  const expandedModuleItems = expandModuleFlowItems(
+    rawSidebarItems,
+    assignments.data ?? [],
+    locale,
+  );
+  const flowItemHref = (item: OutlineItemData): string => {
+    if (item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
+      return labHref(resolveLabStepForItem(item, requiresRuntime));
+    }
+    return `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(item.id)}`;
+  };
+  const activeFlowIndex = expandedModuleItems.findIndex(
+    (item) =>
+      ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type) &&
+      resolveLabStepForItem(item, requiresRuntime) === displayedStep,
+  );
+  const prevFlowItem = activeFlowIndex > 0 ? expandedModuleItems[activeFlowIndex - 1] : undefined;
+  const nextFlowItem =
+    activeFlowIndex >= 0 && activeFlowIndex < expandedModuleItems.length - 1
+      ? expandedModuleItems[activeFlowIndex + 1]
+      : undefined;
+  const modulePrevNav = prevFlowItem
+    ? { label: prevFlowItem.title, href: flowItemHref(prevFlowItem) }
+    : {
+        label: t("Course Syllabus", "Lộ trình khóa học"),
+        href: `/roadmap?workspace=${encodeURIComponent(workspaceId)}`,
       };
-    });
+  const moduleNextNav = nextFlowItem
+    ? { label: nextFlowItem.title, href: flowItemHref(nextFlowItem) }
+    : null;
+  const activeStepMeta = resolveStepMeta(displayedStep, {
+    hasReferenceArch,
+    isTheoryOnlyLab,
+    requiresRuntime,
+  });
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -1088,77 +1113,143 @@ export function LabWorkspace() {
             )}
           </header>
 
-          <LabToc
-            layout="stepper"
-            sticky={false}
-            steps={tocSteps}
-            activeStep={displayedStep}
-            moduleTitle={currentModule?.title}
-            items={tocItems}
-            progress={progress}
-            preview={preview}
-          />
+          <div className="grid gap-6 lg:grid-cols-[276px_minmax(0,1fr)] lg:items-start">
+            <aside className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6">
+              <div className="border-b pb-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                  {t("Learning workspace", "Không gian học tập")}
+                </p>
+                {currentModule && (
+                  <>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t(`Module ${currentModule.position}`, `Module ${currentModule.position}`)}
+                    </p>
+                    <h2 className="mt-1 line-clamp-2 text-sm font-semibold text-foreground">
+                      {currentModule.title}
+                    </h2>
+                  </>
+                )}
+              </div>
+              <nav
+                aria-label={t("Module steps", "Nội dung Module")}
+                className="space-y-1"
+              >
+                {expandedModuleItems.map((item) => {
+                  const isLabFlowItem = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(
+                    item.type,
+                  );
+                  const itemStep = isLabFlowItem
+                    ? resolveLabStepForItem(item, requiresRuntime)
+                    : null;
+                  const isCurrent = itemStep !== null && itemStep === displayedStep;
+                  const lockHint = itemStep !== null && !stepAvailable(itemStep) ? stepReason(itemStep) : undefined;
+                  const itemComplete =
+                    (itemStep === 1 && hasReferenceArch && Boolean(activeModelId)) ||
+                    (itemStep === 2 && runtimeEvidenceSatisfied) ||
+                    (itemStep === 3 && hasSubmitted);
+                  return (
+                    <Link
+                      key={item.id}
+                      href={flowItemHref(item)}
+                      title={lockHint}
+                      aria-current={isCurrent ? "step" : undefined}
+                      className={`block rounded-lg px-2.5 py-2 text-xs transition-colors ${
+                        isCurrent
+                          ? "bg-emerald-100 font-semibold text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <span className="flex items-start justify-between gap-1.5">
+                        <span className="line-clamp-2 min-w-0 flex-1">{item.title}</span>
+                        {itemComplete && (
+                          <CheckCircle2
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </nav>
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+                  {t("Back to Course Content", "Quay lại nội dung khóa học")}
+                </Link>
+              </Button>
+            </aside>
 
-          <div className="min-w-0 space-y-5">
-            <StepContent
-              requiresRuntime={requiresRuntime}
-              hasReferenceArch={hasReferenceArch}
-              isTheoryOnlyLab={isTheoryOnlyLab}
-              runtimeReady={runtimeReady}
-              runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
-              studioHref={
-                verifiedStudioSession ? runtimeLink(verifiedStudioSession.id) + "&studio=1" : null
-              }
-              studioVerified={Boolean(verifiedStudioSession)}
-              studioSessionId={verifiedStudioSession?.id}
-              studioSessions={studioSessionsList}
-              labMode={lab.labMode ?? (requiresRuntime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")}
-              isStudent={!isLecturer}
-              preview={preview}
-              hasActiveAnalysisJob={Boolean(
-                jobs.data?.some((job) =>
-                  ["queued", "processing", "running"].includes(String(job.status)),
-                ),
-              )}
-              step={displayedStep}
-              workspaceId={workspaceId}
-              labId={lab.id}
-              labOrder={lab.labOrder}
-              labTitle={lab.title}
-              labInstructions={
-                lab.instructions || studentContext.data?.assignment?.description || ""
-              }
-              moduleTheoryItems={moduleItems
-                .filter((item) => item.type === "THEORY")
-                .map((item) => ({
-                  id: item.id,
-                  title: item.title,
-                  body: typeof item.content?.["body"] === "string" ? item.content["body"] : "",
-                }))
-                .filter((item) => item.body.trim().length > 0)}
-              moduleQuizHref={
-                moduleQuizItem
-                  ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(moduleQuizItem.id)}`
-                  : `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(`lab-quiz:${lab.id}`)}`
-              }
-              projectId={projectId}
-              referenceProjectId={referenceProjectId}
-              modelQuery={modelQuery}
-              referenceModelQuery={referenceModelQuery}
-              snapshotId={referenceSnapshotId}
-              modelId={activeModelId}
-              modelRevision={activeModelRevision}
-              referenceArchitecture={refArch}
-              inlineReferenceModel={inlineReferenceModel}
-              inlineC4View={inlineC4View}
-              onSelectInlineC4View={setInlineC4View}
-              onOpenC1C3View={(view) => {
-                setInlineC4View(view);
-                router.push(labHref(1, view));
-              }}
-              studentContext={studentContext.data}
-              studentContextLoading={studentContext.isLoading || studentStudioSessions.isLoading}
-            />
+            <div className="min-w-0 space-y-5">
+              <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
+                <h2 className="text-base font-semibold text-foreground">
+                  {t(activeStepMeta.title, activeStepMeta.titleVi)}
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t(activeStepMeta.description, activeStepMeta.descriptionVi)}
+                </p>
+              </div>
+              <StepContent
+                requiresRuntime={requiresRuntime}
+                hasReferenceArch={hasReferenceArch}
+                isTheoryOnlyLab={isTheoryOnlyLab}
+                runtimeReady={runtimeReady}
+                runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
+                studioHref={
+                  verifiedStudioSession ? runtimeLink(verifiedStudioSession.id) + "&studio=1" : null
+                }
+                studioVerified={Boolean(verifiedStudioSession)}
+                studioSessionId={verifiedStudioSession?.id}
+                studioSessions={studioSessionsList}
+                labMode={lab.labMode ?? (requiresRuntime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")}
+                isStudent={!isLecturer}
+                preview={preview}
+                hasActiveAnalysisJob={Boolean(
+                  jobs.data?.some((job) =>
+                    ["queued", "processing", "running"].includes(String(job.status)),
+                  ),
+                )}
+                step={displayedStep}
+                workspaceId={workspaceId}
+                labId={lab.id}
+                labOrder={lab.labOrder}
+                labTitle={lab.title}
+                labInstructions={
+                  lab.instructions || studentContext.data?.assignment?.description || ""
+                }
+                moduleTheoryItems={moduleItems
+                  .filter((item) => item.type === "THEORY")
+                  .map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    body: typeof item.content?.["body"] === "string" ? item.content["body"] : "",
+                  }))
+                  .filter((item) => item.body.trim().length > 0)}
+                moduleQuizHref={
+                  moduleQuizItem
+                    ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(moduleQuizItem.id)}`
+                    : `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(`lab-quiz:${lab.id}`)}`
+                }
+                modulePrevNav={modulePrevNav}
+                moduleNextNav={moduleNextNav}
+                projectId={projectId}
+                referenceProjectId={referenceProjectId}
+                modelQuery={modelQuery}
+                referenceModelQuery={referenceModelQuery}
+                snapshotId={referenceSnapshotId}
+                modelId={activeModelId}
+                modelRevision={activeModelRevision}
+                referenceArchitecture={refArch}
+                inlineReferenceModel={inlineReferenceModel}
+                inlineC4View={inlineC4View}
+                onSelectInlineC4View={setInlineC4View}
+                onOpenC1C3View={(view) => {
+                  setInlineC4View(view);
+                  router.push(labHref(1, view));
+                }}
+                studentContext={studentContext.data}
+                studentContextLoading={studentContext.isLoading || studentStudioSessions.isLoading}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -1204,6 +1295,8 @@ function StepContent({
   labInstructions,
   moduleTheoryItems,
   moduleQuizHref,
+  modulePrevNav,
+  moduleNextNav,
   projectId,
   referenceProjectId,
   modelQuery,
@@ -1237,6 +1330,8 @@ function StepContent({
   labInstructions?: string | undefined;
   moduleTheoryItems?: Array<{ id: string; title: string; body: string }> | undefined;
   moduleQuizHref: string;
+  modulePrevNav: { label: string; href: string };
+  moduleNextNav: { label: string; href: string } | null;
   projectId: string;
   referenceProjectId?: string | undefined;
   modelQuery: string | null;
@@ -2565,15 +2660,14 @@ function StepContent({
       )}
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 shadow-xs sm:p-4">
-        {step > 1 && (
-          <Button asChild variant="outline">
-            <Link
-              href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${prevStep}${previewParam}`}
-            >
-              {t("Previous step", "Bước trước")}
-            </Link>
-          </Button>
-        )}
+        <Button asChild size="sm" variant="outline">
+          <Link href={modulePrevNav.href}>
+            <ChevronLeft className="mr-1 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="max-w-[240px] truncate">
+              {t(`Prev: ${modulePrevNav.label}`, `Trước: ${modulePrevNav.label}`)}
+            </span>
+          </Link>
+        </Button>
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <Clock3 className="size-3.5" />{" "}
           {t(
@@ -2586,19 +2680,30 @@ function StepContent({
             <Button size="sm" variant="outline" onClick={jumpToSubmissionBox}>
               {t("Jump to Submission Box", "Đi tới Khung Nộp bài")} <ArrowRight />
             </Button>
-          ) : null
+          ) : (
+            <Button asChild size="sm">
+              <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+                {t("Next: Course Syllabus", "Tiếp theo: Lộ trình khóa học")}{" "}
+                <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
+              </Link>
+            </Button>
+          )
         ) : (
-          <Button asChild={nextAvailable} disabled={!nextAvailable}>
+          <Button asChild={nextAvailable} size="sm" disabled={!nextAvailable}>
             {nextAvailable ? (
               <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`}
+                href={
+                  moduleNextNav?.href ??
+                  `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`
+                }
               >
-                {step === 1 && requiresRuntime
-                  ? !runtimeReady && !preview
-                    ? t("Check Runtime Studio Requirement", "Xem yêu cầu Runtime Studio")
-                    : t("Continue to Runtime Studio", "Tiếp tục đến Runtime Studio")
-                  : t("Continue to Evidence Review", "Tiếp tục đến Kiểm tra Evidence")}{" "}
-                <ArrowRight />
+                <span className="max-w-[260px] truncate">
+                  {t(
+                    `Next: ${moduleNextNav?.label ?? (step === 1 && requiresRuntime ? "MAVIS Studio" : "Summary & Submit")}`,
+                    `Tiếp theo: ${moduleNextNav?.label ?? (step === 1 && requiresRuntime ? "MAVIS Studio" : "Tổng hợp & Nộp bài")}`,
+                  )}
+                </span>
+                <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
               </Link>
             ) : (
               <span>{t("Finish Studio to continue", "Hoàn tất Studio để tiếp tục")}</span>
