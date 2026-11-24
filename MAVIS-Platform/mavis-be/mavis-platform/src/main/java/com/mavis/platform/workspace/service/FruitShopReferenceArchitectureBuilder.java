@@ -168,19 +168,92 @@ public final class FruitShopReferenceArchitectureBuilder {
     }
 
     private void addC2Microservices() {
-        // Added in Commit 2
+        addNode("ApiGateway", null, "SERVICE_CONTAINER", ".NET 8 · YARP Reverse Proxy (:8080)",
+                "ApiGateway",
+                "Edge reverse proxy · Demo JWT /api/v1/auth/token, RateLimiter (gateway-fixed), CorrelationId & YARP routing",
+                props("port", "8080", "role", "Edge API Gateway", "framework", ".NET 8 / YARP 2.2.0",
+                        "layerHint", "edge",
+                        "systemDescription", SYSTEM_DESCRIPTION));
+        addNode("FruitCatalog.API", null, "SERVICE_CONTAINER", ".NET 8 · ASP.NET Core 8 (:8080)",
+                "FruitCatalog.API",
+                "Fruit catalog CRUD, AdminOnly policy enforcement & optimistic stock reserve/release endpoints",
+                props("port", "8080", "role", "Catalog & Inventory Bounded Context", "framework", ".NET 8 / ASP.NET Core + EF Core 8",
+                        "database", "catalog_db", "layerHint", "domain"));
+        addNode("FruitBasket.API", null, "SERVICE_CONTAINER", ".NET 8 · ASP.NET Core 8 (:8080)",
+                "FruitBasket.API",
+                "Redis-backed shopping basket APIs & idempotent MassTransit consumer (OrderCreatedIntegrationEvent)",
+                props("port", "8080", "role", "Shopping Basket Bounded Context", "framework", ".NET 8 / StackExchangeRedis + MassTransit",
+                        "database", "redis", "layerHint", "domain"));
+        addNode("FruitOrdering.API", null, "SERVICE_CONTAINER", ".NET 8 · ASP.NET Core 8 (:8080)",
+                "FruitOrdering.API",
+                "Order Saga Orchestrator, Polly HttpClient clients, Transactional Outbox & OutboxRelayBackgroundService",
+                props("port", "8080", "role", "Order & Saga Orchestrator Context", "framework", ".NET 8 / EF Core 8 + Polly v8 + MassTransit",
+                        "database", "ordering_db", "layerHint", "domain"));
     }
 
     private void addC2Infrastructure() {
-        // Added in Commit 2
+        addNode("catalog-db", null, "DATABASE", "PostgreSQL 16 · catalog_db",
+                "catalog-db", "Isolated PostgreSQL 16 datastore (schema catalog: fruit_products) owned exclusively by FruitCatalog.API",
+                props("resourceRole", "LOGICAL_DATASTORE", "protocol", "PostgreSQL 16 · catalog_db",
+                        "datastoreKind", "POSTGRES", "ownerService", "FruitCatalog.API"));
+        addNode("ordering-db", null, "DATABASE", "PostgreSQL 16 · ordering_db",
+                "ordering-db", "Isolated PostgreSQL 16 datastore (schema ordering: orders, order_items, integration_event_outbox) owned by FruitOrdering.API",
+                props("resourceRole", "LOGICAL_DATASTORE", "protocol", "PostgreSQL 16 · ordering_db",
+                        "datastoreKind", "POSTGRES", "ownerService", "FruitOrdering.API"));
+        addNode("redis", null, "DATABASE", "Redis 7 · IDistributedCache",
+                "redis", "Shopping basket cache (basket:*) & consumer deduplication keys (processed-event:*) owned by FruitBasket.API",
+                props("resourceRole", "LOGICAL_DATASTORE", "protocol", "Redis 7 · IDistributedCache",
+                        "datastoreKind", "CACHE", "ownerService", "FruitBasket.API"));
+        addNode("rabbitmq", null, "MESSAGE_CHANNEL", "RabbitMQ 3.13 · MassTransit",
+                "rabbitmq", "Message broker carrying OrderCreatedIntegrationEvent & OrderCancelledIntegrationEvent via MassTransit",
+                props("protocol", "RabbitMQ 3.13 + MassTransit · OrderCreatedIntegrationEvent",
+                        "events", "OrderCreatedIntegrationEvent,OrderCancelledIntegrationEvent"));
     }
 
     private List<ModelElement> c2ContainerNodes() {
-        return List.of();
+        return List.of(
+                node("ApiGateway"),
+                node("FruitCatalog.API"),
+                node("FruitBasket.API"),
+                node("FruitOrdering.API"),
+                node("catalog-db"),
+                node("ordering-db"),
+                node("redis"),
+                node("rabbitmq")
+        );
     }
 
     private List<ModelRelationship> addC2Relationships() {
-        return List.of();
+        List<ModelRelationship> list = new ArrayList<>();
+        list.add(addEdge("admin-gw", "admin", "ApiGateway", "GATEWAY_ROUTE", "RUNTIME",
+                props("label", "Quản trị danh mục trái cây, tồn kho & đơn hàng [HTTPS]", "transport", "HTTPS")));
+        list.add(addEdge("staff-gw", "staff", "ApiGateway", "GATEWAY_ROUTE", "RUNTIME",
+                props("label", "Xử lý đơn hàng, kiểm tra giỏ hàng & tồn kho [HTTPS]", "transport", "HTTPS")));
+        list.add(addEdge("cust-gw", "customer", "ApiGateway", "GATEWAY_ROUTE", "RUNTIME",
+                props("label", "Duyệt trái cây, quản lý giỏ hàng & đặt hàng [HTTPS]", "transport", "HTTPS")));
+        list.add(addEdge("gw-catalog", "ApiGateway", "FruitCatalog.API", "GATEWAY_ROUTE", "CONFIG",
+                props("route", "/api/v1/catalog/{**catch-all}", "cluster", "catalog-cluster")));
+        list.add(addEdge("gw-basket", "ApiGateway", "FruitBasket.API", "GATEWAY_ROUTE", "CONFIG",
+                props("route", "/api/v1/basket/{**catch-all}", "cluster", "basket-cluster")));
+        list.add(addEdge("gw-ordering", "ApiGateway", "FruitOrdering.API", "GATEWAY_ROUTE", "CONFIG",
+                props("route", "/api/v1/orders/{**catch-all}", "cluster", "ordering-cluster")));
+        list.add(addEdge("ordering-catalog-http", "FruitOrdering.API", "FruitCatalog.API", "SERVICE_HTTP_CALL", "STATIC",
+                props("client", "CatalogApiClient", "resilience", "Polly StandardResilience")));
+        list.add(addEdge("ordering-basket-http", "FruitOrdering.API", "FruitBasket.API", "SERVICE_HTTP_CALL", "STATIC",
+                props("client", "BasketApiClient", "resilience", "Polly StandardResilience")));
+        list.add(addEdge("cat-db", "FruitCatalog.API", "catalog-db", "DATABASE_ACCESS", "CONFIG",
+                props("protocol", "Npgsql EF Core · schema catalog")));
+        list.add(addEdge("ord-db", "FruitOrdering.API", "ordering-db", "DATABASE_ACCESS", "CONFIG",
+                props("protocol", "Npgsql EF Core · schema ordering")));
+        list.add(addEdge("basket-redis", "FruitBasket.API", "redis", "DATABASE_ACCESS", "CONFIG",
+                props("protocol", "StackExchangeRedis · basket:*")));
+        list.add(addEdge("ord-rabbitmq", "FruitOrdering.API", "rabbitmq", "MESSAGE_PUBLISH", "STATIC",
+                props("events", "OrderCreatedIntegrationEvent, OrderCancelledIntegrationEvent")));
+        list.add(addEdge("rabbitmq-basket", "rabbitmq", "FruitBasket.API", "MESSAGE_SUBSCRIBE", "STATIC",
+                props("events", "OrderCreatedIntegrationEvent")));
+        list.add(addEdge("gw-otel", "ApiGateway", "otel-observability", "TRACING_EXPORT", "CONFIG",
+                props("protocol", "OTLP / .NET OpenTelemetry 1.9")));
+        return list;
     }
 
     private void addC3GatewayComponents() {
