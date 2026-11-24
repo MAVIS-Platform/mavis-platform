@@ -41,24 +41,17 @@ export function resolveLabStepForItem(
   return 1;
 }
 
-export function expandModuleFlowItems(
-  items: ReadonlyArray<OutlineItemData>,
-  assignments: ReadonlyArray<AssignmentMetaLike> = [],
-  locale: "en" | "vi" = "vi",
+function buildLabModuleSequence(
+  labItem: OutlineItemData,
+  matchedQuizzes: ReadonlyArray<OutlineItemData>,
+  assignments: ReadonlyArray<AssignmentMetaLike>,
+  isVi: boolean,
+  positionStart: number,
 ): OutlineItemData[] {
-  const filtered = items.filter((item) => item.type !== "ESSAY");
-  const theoryItems = filtered.filter((item) => item.type === "THEORY");
-  const quizItems = [...filtered.filter((item) => item.type === "QUIZ")];
-  const labItem =
-    filtered.find(
-      (item) =>
-        item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type),
-    ) ??
-    filtered.find((item) => ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type));
+  const assignmentId = labItem.assignmentId;
+  if (!assignmentId) return [labItem];
 
-  const linkedAssignment = labItem?.assignmentId
-    ? assignments.find((candidate) => candidate.id === labItem.assignmentId)
-    : undefined;
+  const linkedAssignment = assignments.find((candidate) => candidate.id === assignmentId);
   const aiPolicy =
     linkedAssignment?.aiPolicy &&
     typeof linkedAssignment.aiPolicy === "object" &&
@@ -73,33 +66,36 @@ export function expandModuleFlowItems(
   const requiresRuntime = linkedAssignment
     ? linkedAssignment.requireRuntimeTrace === true ||
       linkedAssignment.labMode === "THEORY_QUIZ_STUDIO"
-    : labItem?.type === "RUNTIME_LAB";
+    : labItem.type === "RUNTIME_LAB";
   const hasReferenceArch = linkedAssignment
     ? Boolean(
         linkedAssignment.referenceSource?.modelId ||
           linkedAssignment.referenceSource?.snapshotId,
       ) || linkedAssignment.labMode !== "THEORY_ONLY"
-    : Boolean(labItem);
+    : true;
 
-  if (quizItems.length === 0 && labItem?.assignmentId && !skipsQuiz) {
-    quizItems.push({
-      id: `lab-quiz:${labItem.assignmentId}`,
-      type: "QUIZ",
-      title: `Quiz · ${linkedAssignment?.title ?? labItem.title}`,
-      description: null,
-      position: labItem.position,
-      assignmentId: labItem.assignmentId,
-      required: true,
-      quizQuestions: [],
-    });
-  }
+  const quizzes =
+    matchedQuizzes.length > 0
+      ? [...matchedQuizzes]
+      : !skipsQuiz
+        ? [
+            {
+              id: `lab-quiz:${assignmentId}`,
+              type: "QUIZ" as const,
+              title: `Quiz · ${linkedAssignment?.title ?? labItem.title}`,
+              description: null,
+              position: labItem.position,
+              assignmentId,
+              required: true,
+              quizQuestions: [],
+            },
+          ]
+        : [];
 
-  const isVi = locale === "vi";
-  const ordered: OutlineItemData[] = [...theoryItems];
-
-  if (labItem?.assignmentId && hasReferenceArch) {
-    ordered.push({
-      id: `static-view:${labItem.assignmentId}`,
+  const sequence: OutlineItemData[] = [];
+  if (hasReferenceArch) {
+    sequence.push({
+      id: `static-view:${assignmentId}`,
       type: "STATIC_LAB",
       title: isVi
         ? "Khám phá Sơ đồ Tĩnh (C1–C3 & Dependency Graph)"
@@ -107,19 +103,17 @@ export function expandModuleFlowItems(
       description: isVi
         ? "Xem sơ đồ C1–C3, đồ thị phụ thuộc và hỏi trợ lý AI trước khi làm Quiz."
         : "Inspect C1–C3 diagrams, service dependencies, and ask MAVIS AI before the Quiz.",
-      position: ordered.length + 1,
-      assignmentId: labItem.assignmentId,
+      position: positionStart + sequence.length + 1,
+      assignmentId,
       required: true,
     });
   }
-
-  for (const quiz of quizItems) {
-    ordered.push(quiz);
+  for (const quiz of quizzes) {
+    sequence.push(quiz);
   }
-
-  if (labItem?.assignmentId && requiresRuntime) {
-    ordered.push({
-      id: `runtime-studio:${labItem.assignmentId}`,
+  if (requiresRuntime) {
+    sequence.push({
+      id: `runtime-studio:${assignmentId}`,
       type: "RUNTIME_LAB",
       title: isVi
         ? "Thực hành MAVIS Studio (Sơ đồ Động & Bài tập)"
@@ -129,27 +123,76 @@ export function expandModuleFlowItems(
         (isVi
           ? "Chạy hệ thống Docker thực tế, thao tác hạ tầng, chụp Snapshot và ghi nhận RuntimeReceipt."
           : "Run live Docker containers, inject operations, capture snapshots, and record a RuntimeReceipt."),
-      position: ordered.length + 1,
-      assignmentId: labItem.assignmentId,
+      position: positionStart + sequence.length + 1,
+      assignmentId,
       required: true,
     });
   }
+  sequence.push({
+    id: `module-submit:${assignmentId}`,
+    type: "IMPACT_LAB",
+    title: isVi ? "Tổng hợp & Nộp bài Module" : "Module Summary & Submit",
+    description: isVi
+      ? "Kiểm tra lại kết quả cả 4 bước và viết giải trình để nộp bài cho Giảng viên chấm."
+      : "Review all 4 steps and submit your explanation and evidence to your lecturer.",
+    position: positionStart + sequence.length + 1,
+    assignmentId,
+    required: true,
+  });
+  return sequence;
+}
 
-  if (labItem?.assignmentId) {
-    ordered.push({
-      id: `module-submit:${labItem.assignmentId}`,
-      type: "IMPACT_LAB",
-      title: isVi ? "Tổng hợp & Nộp bài Module" : "Module Summary & Submit",
-      description: isVi
-        ? "Kiểm tra lại kết quả cả 4 bước và viết giải trình để nộp bài cho Giảng viên chấm."
-        : "Review all 4 steps and submit your explanation and evidence to your lecturer.",
-      position: ordered.length + 1,
-      assignmentId: labItem.assignmentId,
-      required: true,
-    });
-  } else if (labItem) {
-    ordered.push(labItem);
+export function expandModuleFlowItems(
+  items: ReadonlyArray<OutlineItemData>,
+  assignments: ReadonlyArray<AssignmentMetaLike> = [],
+  locale: "en" | "vi" = "vi",
+): OutlineItemData[] {
+  const filtered = items.filter((item) => item.type !== "ESSAY");
+  const theoryItems = filtered.filter((item) => item.type === "THEORY");
+  const quizItems = [...filtered.filter((item) => item.type === "QUIZ")];
+  const rawLabItems = filtered.filter((item) =>
+    ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type),
+  );
+  const labItems: OutlineItemData[] = [];
+  const seenLabAssignments = new Set<string>();
+  for (const candidate of rawLabItems) {
+    if (candidate.assignmentId) {
+      if (seenLabAssignments.has(candidate.assignmentId)) continue;
+      seenLabAssignments.add(candidate.assignmentId);
+    }
+    labItems.push(candidate);
   }
 
+  const isVi = locale === "vi";
+  const ordered: OutlineItemData[] = [...theoryItems];
+
+  if (labItems.length <= 1) {
+    const labItem = labItems[0];
+    if (labItem?.assignmentId) {
+      ordered.push(
+        ...buildLabModuleSequence(labItem, quizItems, assignments, isVi, ordered.length),
+      );
+    } else {
+      for (const quiz of quizItems) ordered.push(quiz);
+      if (labItem) ordered.push(labItem);
+    }
+    return ordered;
+  }
+
+  const matchedQuizIds = new Set<string>();
+  for (const labItem of labItems) {
+    const labQuizzes = labItem.assignmentId
+      ? quizItems.filter((q) => q.assignmentId === labItem.assignmentId)
+      : [];
+    for (const q of labQuizzes) matchedQuizIds.add(q.id);
+    ordered.push(
+      ...buildLabModuleSequence(labItem, labQuizzes, assignments, isVi, ordered.length),
+    );
+  }
+  for (const quiz of quizItems) {
+    if (!matchedQuizIds.has(quiz.id)) {
+      ordered.push(quiz);
+    }
+  }
   return ordered;
 }

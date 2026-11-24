@@ -186,7 +186,7 @@ class CourseLabStudentServiceTest {
         when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId())).thenReturn(List.of());
         when(runtimeSessions.findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(workspaceId, student.getId())).thenReturn(List.of());
         UUID subId = UUID.randomUUID();
-        when(submissionService.getMySubmissions()).thenReturn(List.of(SubmissionResponseDTO.builder().id(subId).assignmentId(labId).build()));
+        when(submissionService.getMySubmissions(workspaceId)).thenReturn(List.of(SubmissionResponseDTO.builder().id(subId).assignmentId(labId).build()));
         when(submissionReviewService.get(subId)).thenReturn(new SubmissionReviewService.View(subId, 1, "GRADED", null, "Good", null, "Lecturer", null, List.of(), "PASSED"));
 
         var ctx = service.studentContext(workspaceId, labId);

@@ -113,6 +113,15 @@ function courseHref(workspaceId: string) {
   return `/roadmap?workspace=${encodeURIComponent(workspaceId)}`;
 }
 
+export function isArchivedOrQaCourse(
+  workspace: Pick<Workspace, "status" | "name" | "code">,
+): boolean {
+  if (workspace.status === "ARCHIVED") return true;
+  const name = workspace.name.trim();
+  const code = (workspace.code ?? "").trim();
+  return /^\[QA(?:-AUTO)?\]/i.test(name) || /^QA-/i.test(code);
+}
+
 function CourseCard({ workspace, compact = false }: { workspace: Workspace; compact?: boolean }) {
   const { t } = useLocale();
   return (
@@ -180,13 +189,24 @@ export function MavisHomePage() {
   const courses = useApiQuery("workspaces", {});
   const session = useSession();
   const [search, setSearch] = useState("");
+  const [courseFilter, setCourseFilter] = useState<"active" | "archived">("active");
   const [coursePage, setCoursePage] = useState(0);
   const [showAllAnnouncements, setShowAllAnnouncements] = useState(false);
-  const courseItems = courses.data ?? [];
+  const allCourses = courses.data ?? [];
+  const activeCourses = useMemo(
+    () => allCourses.filter((c) => !isArchivedOrQaCourse(c)),
+    [allCourses],
+  );
+  const archivedCourses = useMemo(
+    () => allCourses.filter((c) => isArchivedOrQaCourse(c)),
+    [allCourses],
+  );
+  const courseItems = courseFilter === "archived" ? archivedCourses : activeCourses;
   const shown = courseItems.slice(
     coursePage * COURSES_PER_PAGE,
     (coursePage + 1) * COURSES_PER_PAGE,
   );
+  useEffect(() => setCoursePage(0), [courseFilter]);
   return (
     <MavisShell>
       <div className="space-y-8">
@@ -294,6 +314,30 @@ export function MavisHomePage() {
               </Link>
             </Button>
           </div>
+          {archivedCourses.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={t("Course status filter", "Lọc trạng thái khóa học")}>
+              <Button
+                type="button"
+                size="sm"
+                role="tab"
+                aria-selected={courseFilter === "active"}
+                variant={courseFilter === "active" ? "default" : "outline"}
+                onClick={() => setCourseFilter("active")}
+              >
+                {t("Active", "Đang học")} ({activeCourses.length})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                role="tab"
+                aria-selected={courseFilter === "archived"}
+                variant={courseFilter === "archived" ? "default" : "outline"}
+                onClick={() => setCourseFilter("archived")}
+              >
+                {t("Archived", "Đã lưu trữ")} ({archivedCourses.length})
+              </Button>
+            </div>
+          )}
           <RequestState query={courses} empty={false}>
             {shown.length ? (
               <div className="space-y-4">
@@ -307,7 +351,9 @@ export function MavisHomePage() {
               </div>
             ) : (
               <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
-                {t("You have not enrolled in a course yet.", "Bạn chưa ghi danh khóa học nào.")}
+                {courseFilter === "archived"
+                  ? t("No archived courses found.", "Chưa có khóa học đã lưu trữ.")
+                  : t("No active enrolled courses right now.", "Hiện chưa có khóa học đang học nào.")}
               </p>
             )}
           </RequestState>
@@ -321,23 +367,38 @@ export function MavisCoursesPage() {
   const { t } = useLocale();
   const courses = useApiQuery("workspaces", {});
   const [passkeyOpen, setPasskeyOpen] = useState(false);
+  const [courseFilter, setCourseFilter] = useState<"active" | "archived">("active");
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"card" | "list">("card");
   const [sort, setSort] = useState<"ASC" | "DESC">("ASC");
   const [page, setPage] = useState(0);
+  const allCourses = courses.data ?? [];
+  const activeCount = useMemo(
+    () => allCourses.filter((c) => !isArchivedOrQaCourse(c)).length,
+    [allCourses],
+  );
+  const archivedCount = useMemo(
+    () => allCourses.filter((c) => isArchivedOrQaCourse(c)).length,
+    [allCourses],
+  );
   const sorted = useMemo(
     () =>
-      (courses.data ?? [])
+      allCourses
+        .filter((course) =>
+          courseFilter === "archived"
+            ? isArchivedOrQaCourse(course)
+            : !isArchivedOrQaCourse(course),
+        )
         .filter((course) =>
           `${course.name} ${course.code ?? ""}`.toLowerCase().includes(query.trim().toLowerCase()),
         )
         .sort((a, b) =>
           sort === "ASC" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name),
         ),
-    [courses.data, query, sort],
+    [allCourses, courseFilter, query, sort],
   );
   const pagedCourses = sorted.slice(page * COURSES_PER_PAGE, (page + 1) * COURSES_PER_PAGE);
-  useEffect(() => setPage(0), [query, sort]);
+  useEffect(() => setPage(0), [courseFilter, query, sort]);
   return (
     <MavisShell>
       <div className="space-y-6">
@@ -411,13 +472,39 @@ export function MavisCoursesPage() {
           </div>
         </section>
         <section aria-labelledby="enrolled-courses" className="space-y-4">
-          <div>
-            <h2 id="enrolled-courses" className="text-xl font-semibold">
-              {t("Enrolled Courses", "Khóa học đã ghi danh")}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {t("Course information and course status.", "Thông tin và trạng thái khóa học.")}
-            </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 id="enrolled-courses" className="text-xl font-semibold">
+                {t("Enrolled Courses", "Khóa học đã ghi danh")}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {t("Course information and course status.", "Thông tin và trạng thái khóa học.")}
+              </p>
+            </div>
+            {archivedCount > 0 && (
+              <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={t("Course status filter", "Lọc trạng thái khóa học")}>
+                <Button
+                  type="button"
+                  size="sm"
+                  role="tab"
+                  aria-selected={courseFilter === "active"}
+                  variant={courseFilter === "active" ? "default" : "outline"}
+                  onClick={() => setCourseFilter("active")}
+                >
+                  {t("Active", "Đang học")} ({activeCount})
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  role="tab"
+                  aria-selected={courseFilter === "archived"}
+                  variant={courseFilter === "archived" ? "default" : "outline"}
+                  onClick={() => setCourseFilter("archived")}
+                >
+                  {t("Archived", "Đã lưu trữ")} ({archivedCount})
+                </Button>
+              </div>
+            )}
           </div>
           <RequestState query={courses} empty={false}>
             {sorted.length ? (

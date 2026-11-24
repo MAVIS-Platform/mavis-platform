@@ -128,10 +128,16 @@ public class CourseLabPolicy {
                     WHERE m.workspace_id = ? AND m.user_id = ? AND m.member_role = 'STUDENT'
                 ) AND (
                     CASE
-                        WHEN EXISTS (SELECT 1 FROM lab_prerequisites lp WHERE lp.assignment_id = ?) THEN
+                        WHEN EXISTS (
+                            SELECT 1 FROM lab_prerequisites lp
+                            JOIN assignments prereq ON prereq.id = lp.prerequisite_assignment_id
+                            WHERE lp.assignment_id = ? AND prereq.workspace_id = ?
+                        ) THEN
                             NOT EXISTS (
                                 SELECT 1 FROM lab_prerequisites lp
+                                JOIN assignments prereq ON prereq.id = lp.prerequisite_assignment_id
                                 WHERE lp.assignment_id = ?
+                                  AND prereq.workspace_id = ?
                                   AND NOT EXISTS (
                                       SELECT 1 FROM course_lab_results r
                                       WHERE r.assignment_id = lp.prerequisite_assignment_id
@@ -151,7 +157,8 @@ public class CourseLabPolicy {
                     END
                 )
                 """, Boolean.class, lab.getWorkspace().getId(), student.getId(),
-                lab.getId(), lab.getId(), student.getId(),
+                lab.getId(), lab.getWorkspace().getId(),
+                lab.getId(), lab.getWorkspace().getId(), student.getId(),
                 lab.getWorkspace().getId(), lab.getLabOrder(), student.getId()));
     }
 

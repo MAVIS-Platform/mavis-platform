@@ -99,5 +99,6 @@ class LabPrerequisiteServiceTest {
 
         assertEquals(List.of(labA), byId.get(labB));
         assertEquals(List.of(), byId.get(labA));
+        verify(jdbc).query(contains("prereq.workspace_id = a.workspace_id"), any(RowMapper.class), eq(workspaceId));
     }
 }

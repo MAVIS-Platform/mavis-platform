@@ -661,17 +661,28 @@ public class CourseAccessService {
                 assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
             }
         }
+        Set<UUID> workspaceAssignmentIds = assignmentsInOrder.stream()
+                .map(Assignment::getId)
+                .collect(java.util.stream.Collectors.toSet());
         Map<UUID, List<UUID>> explicitPrerequisites = new HashMap<>();
         jdbc.query("""
                 SELECT lp.assignment_id, lp.prerequisite_assignment_id
                 FROM lab_prerequisites lp
                 JOIN assignments a ON a.id = lp.assignment_id
-                WHERE a.workspace_id = ?
+                JOIN assignments prereq ON prereq.id = lp.prerequisite_assignment_id
+                WHERE a.workspace_id = ? AND prereq.workspace_id = a.workspace_id
                 """, (rs, row) -> new Object[]{rs.getObject(1, UUID.class), rs.getObject(2, UUID.class)},
                 workspaceId)
-                .forEach(row -> explicitPrerequisites
-                        .computeIfAbsent((UUID) row[0], key -> new ArrayList<>())
-                        .add((UUID) row[1]));
+                .forEach(row -> {
+                    UUID assignmentId = (UUID) row[0];
+                    UUID prerequisiteId = (UUID) row[1];
+                    if (workspaceAssignmentIds.contains(assignmentId)
+                            && workspaceAssignmentIds.contains(prerequisiteId)) {
+                        explicitPrerequisites
+                                .computeIfAbsent(assignmentId, key -> new ArrayList<>())
+                                .add(prerequisiteId);
+                    }
+                });
         List<Lab> result = new ArrayList<>();
         for (int index = 0; index < assignmentsInOrder.size(); index++) {
             var assignment = assignmentsInOrder.get(index);
@@ -679,7 +690,9 @@ public class CourseAccessService {
             List<UUID> required = explicitPrerequisites.get(assignment.getId());
             boolean unlocked = required != null && !required.isEmpty()
                     ? required.stream().allMatch(passed::contains)
-                    : index == 0 || passed.contains(assignmentsInOrder.get(index - 1).getId());
+                    : assignmentsInOrder.subList(0, index).stream()
+                            .map(Assignment::getId)
+                            .allMatch(passed::contains);
             String state = !student ? "UNLOCKED" : completed ? "PASSED"
                     : ("ACTIVE".equals(workspace.getStatus()) && unlocked) ? "UNLOCKED" : "LOCKED";
             String reason = "LOCKED".equals(state)

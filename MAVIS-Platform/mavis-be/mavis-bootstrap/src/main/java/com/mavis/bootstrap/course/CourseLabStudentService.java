@@ -244,7 +244,7 @@ public class CourseLabStudentService {
         }
 
         List<RuntimeSessionResponseDTO> studioSessions = listStudioSessions(workspaceId, assignmentId);
-        SubmissionResponseDTO latestSubmission = submissionService.getMySubmissions().stream()
+        SubmissionResponseDTO latestSubmission = submissionService.getMySubmissions(workspaceId).stream()
                 .filter(s -> assignmentId.equals(s.getAssignmentId()))
                 .findFirst()
                 .orElse(null);

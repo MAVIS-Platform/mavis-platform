@@ -224,6 +224,14 @@ export function StudentCourseSyllabus({
   const learningContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setSelectedItemId("");
+    setSelectedModuleId("");
+    setSelectedLabId("");
+    setActiveTab("player");
+    setPracticePanel("none");
+  }, [workspaceId]);
+
+  useEffect(() => {
     const requestedItemId = searchParams.get("item");
     if (!requestedItemId) return;
     const entry = flattenedItems.find((candidate) => candidate.item.id === requestedItemId);
@@ -274,6 +282,26 @@ export function StudentCourseSyllabus({
   const activeLabRecord =
     (chapterAssignmentId ? labs.find((l) => l.assignmentId === chapterAssignmentId) : undefined) ??
     selectedLab;
+  const lockedLabForItem = (item: OutlineItemData) => {
+    if (item.type === "THEORY") return undefined;
+    if (item.assignmentId) {
+      const matched = labs.find((l) => l.assignmentId === item.assignmentId);
+      if (matched) return matched.state === "LOCKED" ? matched : undefined;
+    }
+    const owner = syllabusModules.find((mod) => mod.items.some((candidate) => candidate.id === item.id));
+    if (owner) {
+      const ownerLabItem = owner.items.find(
+        (candidate) =>
+          candidate.assignmentId &&
+          ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(candidate.type),
+      );
+      if (ownerLabItem?.assignmentId) {
+        const ownerLab = labs.find((l) => l.assignmentId === ownerLabItem.assignmentId);
+        if (ownerLab?.state === "LOCKED") return ownerLab;
+      }
+    }
+    return undefined;
+  };
   const isItemLockedLab = (item: OutlineItemData) =>
     Boolean(
       item.assignmentId &&
@@ -283,24 +311,7 @@ export function StudentCourseSyllabus({
   const isItemLocked = (item: OutlineItemData) => {
     if (item.type === "THEORY") return false;
     if (isItemLockedLab(item)) return true;
-    if (item.assignmentId && labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED") {
-      return true;
-    }
-    const owner = syllabusModules.find((mod) => mod.items.some((candidate) => candidate.id === item.id));
-    if (owner) {
-      const ownerLabItem = owner.items.find(
-        (candidate) =>
-          candidate.assignmentId &&
-          ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(candidate.type),
-      );
-      if (
-        ownerLabItem?.assignmentId &&
-        labs.find((l) => l.assignmentId === ownerLabItem.assignmentId)?.state === "LOCKED"
-      ) {
-        return true;
-      }
-    }
-    return false;
+    return Boolean(lockedLabForItem(item));
   };
   const selectCurriculumItem = (item: OutlineItemData) => {
     if (isItemLocked(item)) {
@@ -695,6 +706,7 @@ export function StudentCourseSyllabus({
                         : undefined;
                     const isPassed = linkedLab?.state === "PASSED";
                     const isTheoryDone = item.type === "THEORY" && isTheoryCompleted(item.id);
+                    const lockedLabRecord = lockedLabForItem(item);
                     const isLocked = isItemLocked(item);
                     return (
                       <button
@@ -729,7 +741,9 @@ export function StudentCourseSyllabus({
                           </span>
                           {isLocked && (
                             <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
-                              {t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
+                              {lockedLabRecord?.reason === "COURSE_ARCHIVED"
+                                ? t("This archived course is read-only", "Khóa học đã lưu trữ · chỉ xem")
+                                : t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
                             </span>
                           )}
                         </div>

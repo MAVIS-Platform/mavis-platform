@@ -101,7 +101,8 @@ public class LabPrerequisiteService {
                 SELECT lp.assignment_id, lp.prerequisite_assignment_id
                 FROM lab_prerequisites lp
                 JOIN assignments a ON a.id = lp.assignment_id
-                WHERE a.workspace_id = ?
+                JOIN assignments prereq ON prereq.id = lp.prerequisite_assignment_id
+                WHERE a.workspace_id = ? AND prereq.workspace_id = a.workspace_id
                 """, (rs, row) -> new Object[]{rs.getObject(1, UUID.class), rs.getObject(2, UUID.class)},
                 workspaceId)
                 .forEach(row -> graph.computeIfAbsent((UUID) row[0], key -> new ArrayList<>())

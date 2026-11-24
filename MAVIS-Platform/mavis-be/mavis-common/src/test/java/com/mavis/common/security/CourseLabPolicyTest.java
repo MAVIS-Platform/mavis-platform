@@ -51,12 +51,14 @@ class CourseLabPolicyTest {
                 sqlCaptor.capture(),
                 eq(Boolean.class),
                 eq(workspaceId), eq(studentId),
-                eq(assignmentId), eq(assignmentId), eq(studentId),
+                eq(assignmentId), eq(workspaceId),
+                eq(assignmentId), eq(workspaceId), eq(studentId),
                 eq(workspaceId), eq(3), eq(studentId)))
                 .thenReturn(true);
 
         assertTrue(policy.canOpen(lab, student));
         assertTrue(sqlCaptor.getValue().contains("lab_prerequisites"));
+        assertTrue(sqlCaptor.getValue().contains("prereq.workspace_id = ?"));
         assertTrue(sqlCaptor.getValue().contains("preceding.lab_order < ?"));
     }
 

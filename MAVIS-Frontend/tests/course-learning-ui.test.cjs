@@ -2318,6 +2318,47 @@ test("Workflow V2 Item #01: expandModuleFlowItems enforces 4-Step Module order (
     nonRuntimeExpanded.map((i) => resolveModuleFlowKind(i)),
     ["THEORY", "STATIC_DIAGRAM", "QUIZ", "MODULE_SUBMIT"],
   );
+
+  // Multi-lab modules preserve every Lab's sequence rather than dropping downstream Labs.
+  const multiLabExpanded = expandModuleFlowItems(
+    [
+      { id: "th-1", type: "THEORY", title: "Theory Lab 01", position: 1 },
+      { id: "q-1", type: "QUIZ", title: "Quiz Lab 01", position: 2, assignmentId: "lab-1" },
+      { id: "l-1", type: "STATIC_LAB", title: "Lab 01", position: 3, assignmentId: "lab-1" },
+      { id: "q-2", type: "QUIZ", title: "Quiz Lab 02", position: 4, assignmentId: "lab-2" },
+      { id: "l-2", type: "RUNTIME_LAB", title: "Lab 02", position: 5, assignmentId: "lab-2" },
+    ],
+    [
+      { id: "lab-1", title: "Lab 01", labMode: "THEORY_QUIZ", requireRuntimeTrace: false },
+      { id: "lab-2", title: "Lab 02", labMode: "THEORY_QUIZ_STUDIO", requireRuntimeTrace: true },
+    ],
+    "vi",
+  );
+  assert.deepEqual(
+    multiLabExpanded.map((i) => `${i.assignmentId ?? "none"}:${resolveModuleFlowKind(i)}`),
+    [
+      "none:THEORY",
+      "lab-1:STATIC_DIAGRAM",
+      "lab-1:QUIZ",
+      "lab-1:MODULE_SUBMIT",
+      "lab-2:STATIC_DIAGRAM",
+      "lab-2:QUIZ",
+      "lab-2:STUDIO_RUNTIME",
+      "lab-2:MODULE_SUBMIT",
+    ],
+  );
+});
+
+test("Commit #01: /home and /courses filter ARCHIVED/[QA] workspaces into Archived tab and syllabus resets state per workspaceId", () => {
+  const { isArchivedOrQaCourse } = require("../src/features/courses/mavis-pages.tsx");
+  assert.equal(isArchivedOrQaCourse({ status: "ACTIVE", name: "Java Microservices", code: "JAVA-MS-2026" }), false);
+  assert.equal(isArchivedOrQaCourse({ status: "ARCHIVED", name: "Java Old", code: "JAVA-OLD" }), true);
+  assert.equal(isArchivedOrQaCourse({ status: "ACTIVE", name: "[QA-AUTO] Smoke", code: "SMOKE" }), true);
+  assert.equal(isArchivedOrQaCourse({ status: "ACTIVE", name: "[QA] MAVIS backend BM04", code: "QA-BM04-123" }), true);
+
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  assert.match(syllabus, /useEffect\(\(\) => \{\s*setSelectedItemId\(""\);[\s\S]*\}, \[workspaceId\]\);/);
+  assert.match(syllabus, /COURSE_ARCHIVED/);
 });
 
 test("Quiz Module owns the full Quiz Builder and Lab Creation no longer owns Quiz", () => {
