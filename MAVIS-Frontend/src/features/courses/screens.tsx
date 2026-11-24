@@ -1157,7 +1157,7 @@ export function LabWorkspace() {
                 router.push(labHref(1, view));
               }}
               studentContext={studentContext.data}
-              studentContextLoading={studentContext.isLoading}
+              studentContextLoading={studentContext.isLoading || studentStudioSessions.isLoading}
             />
           </div>
         </div>
@@ -1813,7 +1813,12 @@ function StepContent({
         ? "static-data"
         : step === 2 && needsSandboxBootstrap
           ? "runtime-failed"
-          : step === 3 && requiresRuntime && !liveStudioVerified && !preview
+          : step === 3 &&
+              requiresRuntime &&
+              !liveStudioVerified &&
+              !preview &&
+              !studentContextLoading &&
+              !studioStateQuery.isLoading
             ? "evidence-missing"
             : null;
     if (!automaticIssue || shownAutomaticIssueKeys.current.has(`${step}:${automaticIssue}`)) return;
@@ -1826,6 +1831,8 @@ function StepContent({
     preview,
     requiresRuntime,
     step,
+    studentContextLoading,
+    studioStateQuery.isLoading,
   ]);
 
   return (

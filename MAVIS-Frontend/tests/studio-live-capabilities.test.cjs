@@ -1159,6 +1159,13 @@ test("Inline module quiz normalizes questions/IDs, Active class Settings shows P
   );
   assert.match(courseScreensSrc, /quizNotPublished\s*\|\|\s*\(studentContext\.isSuccess && studentContext\.data\?\.quiz == null\)/);
   assert.match(courseScreensSrc, /runtimePrerequisiteMissing\s*=\s*\n?\s*step === 2 && requiresRuntime && !runtimeReady && !preview && !studentContextLoading/);
+  assert.match(courseScreensSrc, /!liveStudioVerified &&\s*!preview &&\s*!studentContextLoading &&\s*!studioStateQuery\.isLoading/);
+
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  assert.match(workbenchSrc, /border-slate-300 bg-white text-slate-900[\s\S]*Stay on Canvas/);
 
   const accessSrc = fs.readFileSync(
     path.join(__dirname, "../src/features/workspaces/course-access.tsx"),

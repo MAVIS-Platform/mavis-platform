@@ -5475,7 +5475,7 @@ export function LiveStudioWorkbench({
               <Button
                 type="button"
                 variant="outline"
-                className="flex-1 rounded-xl border-slate-300"
+                className="flex-1 rounded-xl border-slate-300 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900"
                 onClick={() => setVerifiedModalOpen(false)}
               >
                 {t("Stay on Canvas", "Ở lại sơ đồ")}

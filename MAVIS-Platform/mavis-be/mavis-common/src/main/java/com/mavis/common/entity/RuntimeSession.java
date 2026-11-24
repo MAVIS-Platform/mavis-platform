@@ -168,8 +168,12 @@ public class RuntimeSession {
     public boolean hasVerifiedStudioEvidence() {
         if ((studioControl != null && studioControl.path("simulatedSandbox").asBoolean(false))
                 || (traceQuality != null && traceQuality.toUpperCase(java.util.Locale.ROOT).startsWith("SIMULATED"))) return false;
+        boolean interactive = scenarioConfig != null && scenarioConfig.path("interactiveStudio").asBoolean(false);
+        // Interactive Studio fault-injection labs (PAUSE/STOP/THROTTLE_CPU) legitimately end with HTTP 5xx (FAILED scenario).
+        boolean scenarioAcceptable = "PASSED".equalsIgnoreCase(scenarioStatus)
+                || (interactive && "FAILED".equalsIgnoreCase(scenarioStatus));
         if (scenarioConfig == null || runnerReceiptJson == null || receiptDigest == null || receiptDigest.isBlank()
-                || !"COMPLETED".equalsIgnoreCase(executionStatus) || !"PASSED".equalsIgnoreCase(scenarioStatus)
+                || !"COMPLETED".equalsIgnoreCase(executionStatus) || !scenarioAcceptable
                 || !"AVAILABLE".equalsIgnoreCase(evidenceStatus) || !"CONFIRMED".equalsIgnoreCase(cleanupStatus)
                 || !Boolean.TRUE.equals(sandboxEnforcementConfirmed)
                 || !("COMPLETE".equalsIgnoreCase(traceStatus) || "PARTIAL".equalsIgnoreCase(traceStatus))) return false;
