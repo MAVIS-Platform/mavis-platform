@@ -698,6 +698,14 @@ export function LiveStudioWorkbench({
 
     setResizingAxis(axis);
     document.body.style.userSelect = "none";
+    if (graphRef.current) graphRef.current.style.pointerEvents = "none";
+    const resizedCard =
+      axis === "right" || axis === "right-height" || axis === "right-corner"
+        ? rightCardRef.current
+        : axis === "mission-width" || axis === "mission-height" || axis === "mission-corner"
+          ? missionCardRef.current
+          : null;
+    if (resizedCard) resizedCard.style.backdropFilter = "none";
     document.body.style.cursor =
       axis === "bottom" || axis === "right-height" || axis === "mission-height"
         ? "row-resize"
@@ -792,6 +800,8 @@ export function LiveStudioWorkbench({
       window.removeEventListener("pointercancel", cleanup);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      if (graphRef.current) graphRef.current.style.pointerEvents = "";
+      if (resizedCard) resizedCard.style.backdropFilter = "";
       if (didMove) {
         if (axis === "left") {
           setShowLeft(nextShowLeft);
@@ -848,7 +858,12 @@ export function LiveStudioWorkbench({
 
     document.body.style.userSelect = "none";
     document.body.style.cursor = "grabbing";
-    if (card) card.style.willChange = "transform";
+    // Pause WebGL pointer raycasts & backdrop-blur readbacks while dragging over 3D canvas.
+    if (graphRef.current) graphRef.current.style.pointerEvents = "none";
+    if (card) {
+      card.style.willChange = "transform";
+      card.style.backdropFilter = "none";
+    }
 
     let rafId = 0;
     let pendingMove: PointerEvent | null = null;
@@ -893,9 +908,11 @@ export function LiveStudioWorkbench({
       window.removeEventListener("pointercancel", cleanup);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      if (graphRef.current) graphRef.current.style.pointerEvents = "";
       if (card) {
         card.style.transform = "";
         card.style.willChange = "";
+        card.style.backdropFilter = "";
       }
       if (didMove) {
         if (panel === "right") setRightOffset(latestOffset);

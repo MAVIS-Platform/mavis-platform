@@ -1475,8 +1475,10 @@ test("Studio Live Author UX & Performance: goal-specific rules, scalable service
   // 3. Clicking an already-selected service toggles deselection
   assert.match(workbenchSrc, /const nextSvc = svc && svc === canvasSelected \? "" : svc;/);
 
-  // 4. Panel drag/resize use RAF + direct DOM style/transform without per-pixel React setState; WebGL skips unchanged rebuilds
+  // 4. Panel drag/resize use RAF + direct DOM style/transform without per-pixel React setState; WebGL skips unchanged rebuilds & pauses raycast/blur during drag
   assert.match(workbenchSrc, /card\.style\.transform = `translate3d\(/);
+  assert.match(workbenchSrc, /card\.style\.backdropFilter = "none"/);
+  assert.match(workbenchSrc, /graphRef\.current\.style\.pointerEvents = "none"/);
   assert.match(workbenchSrc, /const nodeNames = useMemo\(/);
   assert.match(threeSrc, /if \(sceneSignature === lastSceneSigRef\.current\) return;/);
   assert.match(threeSrc, /hoveredServiceRef/);
