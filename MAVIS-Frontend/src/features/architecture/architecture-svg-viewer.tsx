@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Maximize2, Minimize2, RotateCcw, ScanSearch, ZoomIn, ZoomOut } from "lucide-react";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { DiagramViewportToolbar } from "./diagram-viewport-toolbar";
 
 function formatLocalizedScopeMeta(
   raw: string,
@@ -797,8 +797,12 @@ export function ArchitectureSvgViewer({
   const shadowId = `mavis-shadow-${uid}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [view, setView] = useState<{ zoom: number; pan: { x: number; y: number } }>({
+    zoom: 1,
+    pan: { x: 0, y: 0 },
+  });
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [isOverlayFullscreen, setIsOverlayFullscreen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -828,28 +832,77 @@ export function ArchitectureSvgViewer({
 
   const parsed = useMemo(() => parseDiagramXml(xml), [xml]);
 
+  const fitToView = useCallback(() => {
+    if (!parsed) return;
+    const viewport = viewportRef.current;
+    if (!viewport || viewport.clientWidth <= 0 || viewport.clientHeight <= 0) {
+      setView({ zoom: 1, pan: { x: 0, y: 0 } });
+      return;
+    }
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    const availW = Math.max(120, vw - 48);
+    const availH = Math.max(120, vh - 48);
+    const fitScale = Math.max(
+      0.15,
+      Math.min(2.2, Math.min(availW / Math.max(1, parsed.vbW), availH / Math.max(1, parsed.vbH))),
+    );
+    const roundedZoom = Math.round(fitScale * 1000) / 1000;
+    const panX = Math.round((vw - parsed.vbW * roundedZoom) / 2);
+    const panY = Math.round((vh - parsed.vbH * roundedZoom) / 2);
+    setView({ zoom: roundedZoom, pan: { x: panX, y: panY } });
+  }, [parsed]);
+
+  const zoomAtPoint = useCallback(
+    (factor: number, clientX?: number, clientY?: number) => {
+      const viewport = viewportRef.current;
+      const cur = viewRef.current;
+      const nextZoom = Math.max(
+        0.15,
+        Math.min(4, Math.round(cur.zoom * factor * 1000) / 1000),
+      );
+      if (nextZoom === cur.zoom) return;
+      if (!viewport) {
+        setView({ zoom: nextZoom, pan: cur.pan });
+        return;
+      }
+      const rect = viewport.getBoundingClientRect();
+      const anchorX = clientX != null ? clientX - rect.left : viewport.clientWidth / 2;
+      const anchorY = clientY != null ? clientY - rect.top : viewport.clientHeight / 2;
+      const scaleRatio = nextZoom / Math.max(0.001, cur.zoom);
+      const nextX = Math.round(anchorX - (anchorX - cur.pan.x) * scaleRatio);
+      const nextY = Math.round(anchorY - (anchorY - cur.pan.y) * scaleRatio);
+      setView({ zoom: nextZoom, pan: { x: nextX, y: nextY } });
+    },
+    [],
+  );
+
   useEffect(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  }, [xml]);
+    const id = requestAnimationFrame(() => fitToView());
+    return () => cancelAnimationFrame(id);
+  }, [fitToView, isNativeFullscreen, isOverlayFullscreen]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
     const onFullscreenChange = () => {
       setIsNativeFullscreen(document.fullscreenElement === containerRef.current);
     };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isOverlayFullscreen || typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         setIsOverlayFullscreen(false);
       }
     };
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, []);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isOverlayFullscreen]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -857,27 +910,11 @@ export function ArchitectureSvgViewer({
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      const delta = event.deltaY > 0 ? -0.1 : 0.1;
-      setZoom((z) => Math.max(0.4, Math.min(2.5, Math.round((z + delta) * 100) / 100)));
+      zoomAtPoint(event.deltaY > 0 ? 1 / 1.15 : 1.15, event.clientX, event.clientY);
     };
     viewport.addEventListener("wheel", onWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", onWheel);
-  }, [parsed]);
-
-  const fitToView = useCallback(() => {
-    if (!parsed) return;
-    const viewport = viewportRef.current;
-    if (viewport) {
-      const vw = Math.max(240, viewport.clientWidth - 24);
-      const vh = Math.max(200, viewport.clientHeight - 24);
-      const fitScale = Math.min(vw / Math.max(1, parsed.vbW), vh / Math.max(1, parsed.vbH));
-      const clamped = Math.max(0.4, Math.min(1.6, Math.round(fitScale * 100) / 100));
-      setZoom(clamped);
-    } else {
-      setZoom(1);
-    }
-    setPan({ x: 0, y: 0 });
-  }, [parsed]);
+  }, [parsed, zoomAtPoint]);
 
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
@@ -914,25 +951,22 @@ export function ArchitectureSvgViewer({
   }
 
   const isFullscreen = isNativeFullscreen || isOverlayFullscreen;
-  const canvasHeight = isFullscreen
-    ? "calc(100vh - 110px)"
-    : Math.max(320, Math.min(640, Math.round(parsed.vbH + 56)));
+  const inlineHeight = Math.max(360, Math.min(640, Math.round(parsed.vbH + 56)));
   const edgeStrokeDefault = isDark ? "#7c8fa8" : "#475569";
   const edgeStrokeSelected = isDark ? "#38bdf8" : "#2563eb";
   const dotColor = isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(100, 116, 139, 0.28)";
   const cleanScopeMeta = parsed.scopeMeta ? formatLocalizedScopeMeta(parsed.scopeMeta, t) : "";
-  const isModifiedView = zoom !== 1 || pan.x !== 0 || pan.y !== 0;
 
   return (
     <div
       ref={containerRef}
       className={
-        isOverlayFullscreen
-          ? "fixed inset-0 z-50 flex flex-col overflow-hidden bg-background"
-          : "flex flex-col overflow-hidden bg-background/40"
+        isFullscreen
+          ? "fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden bg-background"
+          : "flex flex-col overflow-hidden bg-background"
       }
     >
-      {/* Compact Blueprint Header & Interactive Controls */}
+      {/* Compact Blueprint Header & Unified Circular Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300/90 bg-white/95 px-4 py-2 text-xs dark:border-border/60 dark:bg-muted/15">
         <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
           {parsed.title && (
@@ -944,90 +978,32 @@ export function ArchitectureSvgViewer({
             </span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] shadow-2xs dark:border-border/70 dark:bg-background/80">
-          <button
-            type="button"
-            onClick={() => setZoom((z) => Math.max(0.4, Math.round((z - 0.15) * 100) / 100))}
-            className="inline-flex items-center rounded px-1.5 py-1 font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
-            aria-label={t("Zoom out", "Thu nhỏ")}
-            title={t("Zoom out", "Thu nhỏ")}
-          >
-            <ZoomOut className="size-3.5" aria-hidden="true" />
-          </button>
-          <span className="min-w-[42px] text-center font-mono font-semibold tabular-nums text-slate-800 dark:text-foreground/85">
-            {Math.round(zoom * 100)}%
-          </span>
-          <button
-            type="button"
-            onClick={() => setZoom((z) => Math.min(2.5, Math.round((z + 0.15) * 100) / 100))}
-            className="inline-flex items-center rounded px-1.5 py-1 font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
-            aria-label={t("Zoom in", "Phóng to")}
-            title={t("Zoom in", "Phóng to")}
-          >
-            <ZoomIn className="size-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={fitToView}
-            className="inline-flex items-center gap-1 rounded border-l border-slate-200 px-2 py-0.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-border/60 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
-            aria-label={t("Zoom to fit", "Vừa khung hình")}
-            title={t("Fit diagram to viewport", "Căn vừa khung hình")}
-          >
-            <ScanSearch className="size-3" aria-hidden="true" />
-            <span>{t("Fit", "Vừa khung")}</span>
-          </button>
-          {isModifiedView && (
-            <button
-              type="button"
-              onClick={() => {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-              }}
-              className="inline-flex items-center gap-1 rounded border-l border-slate-200 px-2 py-0.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-border/60 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
-              aria-label={t("Reset zoom", "Đặt lại 100%")}
-              title={t("Reset view to 100%", "Đặt lại 100%")}
-            >
-              <RotateCcw className="size-3" aria-hidden="true" />
-              <span>{t("Reset", "Đặt lại")}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void toggleFullscreen()}
-            className="inline-flex items-center gap-1 rounded border-l border-slate-200 px-2 py-0.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-border/60 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
-            aria-label={
-              isFullscreen
-                ? t("Exit fullscreen", "Thoát toàn màn hình")
-                : t("Fullscreen", "Toàn màn hình")
-            }
-            title={
-              isFullscreen
-                ? t("Exit fullscreen (Esc)", "Thoát toàn màn hình (Esc)")
-                : t("Fullscreen", "Mở toàn màn hình")
-            }
-          >
-            {isFullscreen ? (
-              <Minimize2 className="size-3.5" aria-hidden="true" />
-            ) : (
-              <Maximize2 className="size-3.5" aria-hidden="true" />
-            )}
-          </button>
-        </div>
+        <DiagramViewportToolbar
+          onZoomIn={() => zoomAtPoint(1.2)}
+          onZoomOut={() => zoomAtPoint(1 / 1.2)}
+          onFit={fitToView}
+          onToggleFullscreen={() => void toggleFullscreen()}
+          fullscreen={isFullscreen}
+        />
       </div>
 
-      {/* Drafting Canvas with Pan & Drag */}
+      {/* Drafting Canvas with Pan & Center/Cursor Zoom */}
       <div
         ref={viewportRef}
-        onDoubleClick={fitToView}
+        onDoubleClick={(event) => {
+          if (event.target instanceof Element && event.target.closest("[data-svg-node]")) return;
+          fitToView();
+        }}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture?.(event.pointerId);
           dragRef.current = {
             active: true,
             pointerId: event.pointerId,
             startX: event.clientX,
             startY: event.clientY,
-            originX: pan.x,
-            originY: pan.y,
+            originX: view.pan.x,
+            originY: view.pan.y,
             moved: false,
           };
         }}
@@ -1042,14 +1018,23 @@ export function ArchitectureSvgViewer({
             suppressClickRef.current = true;
           }
           if (d.moved) {
-            setPan({ x: Math.round(d.originX + dx), y: Math.round(d.originY + dy) });
+            setView((prev) => ({
+              ...prev,
+              pan: { x: Math.round(d.originX + dx), y: Math.round(d.originY + dy) },
+            }));
           }
         }}
-        onPointerUp={() => {
+        onPointerUp={(event) => {
+          if (dragRef.current.pointerId === event.pointerId) {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          }
           dragRef.current.active = false;
           setIsDragging(false);
         }}
-        onPointerCancel={() => {
+        onPointerCancel={(event) => {
+          if (dragRef.current.pointerId === event.pointerId) {
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          }
           dragRef.current.active = false;
           setIsDragging(false);
           suppressClickRef.current = false;
@@ -1060,31 +1045,25 @@ export function ArchitectureSvgViewer({
             event.stopPropagation();
           }
         }}
-        className={`flex w-full overflow-auto p-3 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`relative w-full overflow-hidden ${isFullscreen ? "min-h-0 flex-1" : ""} ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
         style={{
-          height: canvasHeight,
+          height: isFullscreen ? undefined : inlineHeight,
           backgroundColor: isDark ? "#080d17" : "#e8eef5",
           backgroundImage: `radial-gradient(${dotColor} 1px, transparent 1px)`,
           backgroundSize: "18px 18px",
         }}
       >
         <svg
+          width={parsed.vbW}
+          height={parsed.vbH}
           viewBox={parsed.viewBox}
           preserveAspectRatio="xMidYMid meet"
-          className="m-auto block shrink-0 select-none transition-transform duration-75 ease-out"
+          className={`block shrink-0 select-none ${isDragging ? "transition-none" : ""}`}
           style={{
-            ...(zoom <= 1
-              ? {
-                  width: `${Math.round(zoom * 100)}%`,
-                  height: `${Math.round(zoom * 100)}%`,
-                  maxWidth: `${Math.round(parsed.vbW * zoom)}px`,
-                  maxHeight: `${Math.round(parsed.vbH * zoom)}px`,
-                }
-              : {
-                  width: `${Math.round(parsed.vbW * zoom)}px`,
-                  height: `${Math.round(parsed.vbH * zoom)}px`,
-                }),
-            transform: pan.x !== 0 || pan.y !== 0 ? `translate(${pan.x}px, ${pan.y}px)` : undefined,
+            width: `${parsed.vbW}px`,
+            height: `${parsed.vbH}px`,
+            transform: `translate3d(${view.pan.x}px, ${view.pan.y}px, 0) scale(${view.zoom})`,
+            transformOrigin: "0 0",
           }}
           role="img"
           aria-label="Architecture diagram SVG preview"
@@ -1265,6 +1244,7 @@ export function ArchitectureSvgViewer({
                 return (
                   <g
                     key={node.id}
+                    data-svg-node={selectTarget || node.id}
                     transform={`translate(${node.x}, ${node.y})`}
                     filter={`url(#${shadowId})`}
                     onClick={

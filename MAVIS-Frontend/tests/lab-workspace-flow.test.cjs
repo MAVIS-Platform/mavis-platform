@@ -106,10 +106,9 @@ test("Bug #06: Step footer unifies prev/next links, lab switcher truncates clean
   assert.match(screens, /t\(`Prev: \$\{modulePrevNav\.label\}`, `Trước: \$\{modulePrevNav\.label\}`\)/);
   assert.match(screens, /Finish Studio to continue/);
   assert.match(syllabus, /t\(`Prev: \$\{prevEntry\.item\.title\}`, `Trước: \$\{prevEntry\.item\.title\}`\)/);
-  assert.match(screens, /id="lab-ai-tutor"[\s\S]*className="fixed inset-x-4 bottom-4 z-50/);
-  assert.match(screens, /sm:right-6 sm:bottom-6 sm:w-\[380px\]/);
-  assert.match(screens, /tutorMinimized[\s\S]*<MavisLogo compact className="size-full"/);
-  assert.match(screens, /setTutorMinimized\(true\)/);
+  assert.doesNotMatch(screens, /fixed inset-x-4 bottom-4 z-50/);
+  assert.match(screens, /id="lab-ai-tutor"/);
+  assert.match(screens, /aiPanel=\{tutorAssistantPanel\}/);
   assert.match(screens, /id="lab-switcher"[\s\S]*truncate[\s\S]*leading-tight/);
 });
 

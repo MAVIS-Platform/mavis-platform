@@ -603,7 +603,7 @@ export function ElementDetailsPanel({
               role="tab"
               aria-selected={visibleTab === tab.id}
               onClick={() => selectTab(tab.id)}
-              className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${
+              className={`rounded-md px-1.5 py-1.5 text-center text-[11px] font-medium leading-tight transition-colors ${
                 visibleTab === tab.id
                   ? "bg-background text-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground"

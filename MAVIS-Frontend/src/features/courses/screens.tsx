@@ -15,13 +15,11 @@ import {
   Clock3,
   Code2,
   List,
-  Minus,
   Network,
   SendHorizontal,
   ShieldCheck,
 } from "lucide-react";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
-import { MavisLogo } from "@/components/mavis-logo";
 import { SearchInput } from "@/components/shared/forms";
 import { useApi, useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import {
@@ -67,7 +65,7 @@ import {
   collectConcreteThreeEEvidences,
 } from "@/features/architecture/three-e-content";
 import { Input } from "@/components/ui/input";
-import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
+import { ArchitectureGraph, ElementDetailsPanel, type InspectorTab } from "@/features/architecture/components";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
@@ -1388,7 +1386,7 @@ function StepContent({
   const [impactHighlightIds, setImpactHighlightIds] = useState<string[]>([]);
   const [tutorInput, setTutorInput] = useState("");
   const [tutorLoading, setTutorLoading] = useState(false);
-  const [tutorMinimized, setTutorMinimized] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("overview");
   const [tutorHistory, setTutorHistory] = useState<
     Array<{ role: "user" | "assistant"; content: string }>
   >([]);
@@ -1646,48 +1644,9 @@ function StepContent({
     }
   };
 
-  const tutorAssistantPanel = tutorMinimized ? (
-    <Button
-      type="button"
-      variant="outline"
-      className="fixed right-4 bottom-4 z-50 size-14 rounded-full bg-card p-1 shadow-2xl sm:right-6 sm:bottom-6"
-      aria-label={t("Open MAVIS AI Assistant", "Mở Trợ lý MAVIS AI")}
-      aria-expanded="false"
-      onClick={() => setTutorMinimized(false)}
-    >
-      <MavisLogo compact className="size-full" />
-    </Button>
-  ) : (
-    <section
-      id="lab-ai-tutor"
-      aria-label={t("MAVIS AI Assistant", "Trợ lý MAVIS AI")}
-      className="fixed inset-x-4 bottom-4 z-50 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border bg-card p-4 shadow-2xl sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-[380px] sm:p-5"
-    >
-      <header className="flex items-center justify-between gap-3 border-b pb-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <MavisLogo compact className="size-9" />
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold">
-              {t("MAVIS AI Assistant", "Trợ lý MAVIS AI")}
-            </h3>
-            <p className="truncate text-xs text-muted-foreground">
-              {t("Architecture Tutor", "Trợ lý kiến trúc")}
-            </p>
-          </div>
-        </div>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="size-8 shrink-0 rounded-full"
-          aria-label={t("Minimize MAVIS AI Assistant", "Thu nhỏ Trợ lý MAVIS AI")}
-          aria-expanded="true"
-          onClick={() => setTutorMinimized(true)}
-        >
-          <Minus className="size-4" aria-hidden="true" />
-        </Button>
-      </header>
-      <div className="mt-4 rounded-xl bg-primary/5 px-3 py-3">
+  const tutorAssistantPanel = (
+    <div id="lab-ai-tutor" aria-label={t("MAVIS AI Assistant", "Trợ lý MAVIS AI")} className="space-y-3">
+      <div className="rounded-xl bg-primary/5 px-3 py-2.5">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">
           {t("Current context", "Ngữ cảnh hiện tại")}
         </p>
@@ -1697,7 +1656,7 @@ function StepContent({
             t("Architecture overview", "Tổng quan kiến trúc")}
         </p>
       </div>
-      <div className="mt-4 space-y-3">
+      <div className="space-y-3">
         <form
           className="flex items-center gap-2"
           onSubmit={(event) => {
@@ -1794,7 +1753,7 @@ function StepContent({
             </div>
           ))}
       </div>
-    </section>
+    </div>
   );
 
   const openPhaseIssue = (issue: LabPhaseIssueKind) => {
@@ -2103,6 +2062,10 @@ function StepContent({
                             model={activeModel}
                             selectedId={selectedGraphId}
                             onSelect={setSelectedGraphId}
+                            aiPanel={tutorAssistantPanel}
+                            activeTab={inspectorTab}
+                            onTabChange={setInspectorTab}
+                            onExplainWithAi={() => setInspectorTab("ai")}
                             onInspectServiceC3={
                               inlineC4View === "CONTAINER"
                                 ? (svcId) => {
@@ -2167,6 +2130,10 @@ function StepContent({
                           model={activeModel}
                           selectedId={selectedGraphId}
                           onSelect={setSelectedGraphId}
+                          aiPanel={tutorAssistantPanel}
+                          activeTab={inspectorTab}
+                          onTabChange={setInspectorTab}
+                          onExplainWithAi={() => setInspectorTab("ai")}
                         />
                         <p className="text-xs leading-5 text-muted-foreground">
                           {t(
@@ -2182,7 +2149,6 @@ function StepContent({
                     {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
                   </p>
                 )}
-                {tutorAssistantPanel}
               </section>
 
               {impactAnalysisOpen && selectedElement && (

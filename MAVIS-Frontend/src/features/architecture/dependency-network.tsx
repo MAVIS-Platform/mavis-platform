@@ -1,10 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Expand, Shrink, Minimize } from "lucide-react";
 import type { ArchitecturalModel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
-import * as Popover from "@radix-ui/react-popover";
-import * as Tooltip from "@radix-ui/react-tooltip";
+import { DiagramViewportToolbar } from "./diagram-viewport-toolbar";
 import { Pagination, SelectField } from "@/components/shared/forms";
 import {
   projectGraphModel,
@@ -120,12 +118,41 @@ export function DependencyNetwork({
   currentMode.current = mode;
   const cameraSnapshots = useRef(new Map<NetworkMode, NetworkSnapshot>());
   const [fullscreen, setFullscreen] = useState(false);
+  const [overlayFullscreen, setOverlayFullscreen] = useState(false);
+  const isFullscreenView = fullscreen || overlayFullscreen;
   useEffect(() => {
-    const update = () => setFullscreen(Boolean(document.fullscreenElement));
+    const update = () => {
+      const target =
+        section.current?.closest("[data-architecture-workspace]") ?? section.current;
+      setFullscreen(Boolean(document.fullscreenElement && target && document.fullscreenElement === target));
+      requestAnimationFrame(() => {
+        graph.current?.resize();
+        graph.current?.fit(undefined, 28);
+      });
+    };
     update();
     document.addEventListener("fullscreenchange", update);
     return () => document.removeEventListener("fullscreenchange", update);
   }, []);
+  useEffect(() => {
+    if (!overlayFullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setOverlayFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [overlayFullscreen]);
+  useEffect(() => {
+    if (!overlayFullscreen) return;
+    requestAnimationFrame(() => {
+      graph.current?.resize();
+      graph.current?.fit(undefined, 28);
+    });
+  }, [overlayFullscreen]);
   const [elementPage, setElementPage] = useState(1);
   const [hovered, setHovered] = useState<string | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -561,13 +588,14 @@ export function DependencyNetwork({
     <section
       ref={section}
       className={
-        fillHeight
-          ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card [&>details]:shrink-0 [&>details]:max-h-40 [&>details]:overflow-y-auto"
-          : "min-w-0 overflow-hidden rounded-xl border bg-card"
+        overlayFullscreen
+          ? "fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden bg-background"
+          : fillHeight || fullscreen
+            ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card [&>details]:shrink-0 [&>details]:max-h-40 [&>details]:overflow-y-auto"
+            : "min-w-0 overflow-hidden rounded-xl border bg-card"
       }
       aria-label="Dependency graph"
     >
-      <Tooltip.Provider delayDuration={250}>
         <div data-tour="graph-controls" className="flex flex-wrap items-center gap-2 border-b p-3">
           {showPresentationOptions && (
             <div
@@ -611,152 +639,34 @@ export function DependencyNetwork({
               Return to selection
             </Button>
           )}
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label="Zoom graph in"
-                onClick={() => zoom(1.2)}
-              >
-                +
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content
-              side="bottom"
-              sideOffset={6}
-              className="z-50 rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md"
-            >
-              Zoom in
-            </Tooltip.Content>
-          </Tooltip.Root>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label="Zoom graph out"
-                onClick={() => zoom(1 / 1.2)}
-              >
-                −
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content
-              side="bottom"
-              sideOffset={6}
-              className="z-50 rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md"
-            >
-              Zoom out
-            </Tooltip.Content>
-          </Tooltip.Root>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="size-9 shrink-0 rounded-xl p-0"
-                aria-label="Fit graph"
-                onClick={fitGraph}
-              >
-                <Shrink className="size-4" aria-hidden="true" />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content
-              side="bottom"
-              sideOffset={6}
-              className="z-50 rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md"
-            >
-              Fit graph — show the entire graph
-            </Tooltip.Content>
-          </Tooltip.Root>
-          <Tooltip.Root>
-            <Tooltip.Trigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="size-9 shrink-0 rounded-xl p-0"
-                aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                onClick={() => {
-                  void (
-                    document.fullscreenElement
-                      ? document.exitFullscreen()
-                      : (
-                          section.current?.closest("[data-architecture-workspace]") ??
-                          section.current
-                        )?.requestFullscreen()
-                  )?.catch(() => {});
-                }}
-              >
-                {fullscreen ? (
-                  <Minimize className="size-4" aria-hidden="true" />
-                ) : (
-                  <Expand className="size-4" aria-hidden="true" />
-                )}
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content
-              side="bottom"
-              sideOffset={6}
-              className="z-50 rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md"
-            >
-              {fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen — expand the workspace"}
-            </Tooltip.Content>
-          </Tooltip.Root>
-          <Popover.Root>
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <Popover.Trigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="size-9 shrink-0 rounded-xl p-0 text-base font-semibold"
-                    aria-label="Graph help"
-                    data-tour-trigger="graph-help"
-                  >
-                    ?
-                  </Button>
-                </Popover.Trigger>
-              </Tooltip.Trigger>
-              <Tooltip.Content
-                side="bottom"
-                align="end"
-                sideOffset={6}
-                className="z-50 rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md"
-              >
-                Graph guide
-              </Tooltip.Content>
-            </Tooltip.Root>
-            <Popover.Content
-              align="end"
-              sideOffset={8}
-              aria-label="Graph help"
-              className="z-50 w-[min(360px,calc(100vw-32px))] rounded-xl border bg-popover p-4 text-sm text-popover-foreground shadow-xl outline-none"
-            >
-              <p className="font-semibold">Graph guide</p>
-              <dl className="mt-3 space-y-2 text-xs leading-relaxed">
-                <div>
-                  <dt className="font-medium">Move &amp; zoom</dt>
-                  <dd className="text-muted-foreground">
-                    Drag a node to move it, or drag the background (or right-click drag) to pan.
-                    Scroll, right-click (Shift+right-click to zoom out), or use + / − to zoom. Fit
-                    graph restores the overview.
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-medium">Inspect a connection</dt>
-                  <dd className="text-muted-foreground">
-                    Hover for details. Select a node or relationship to open the 3E inspector.
-                    Select it again or click the background to clear focus.
-                  </dd>
-                </div>
-                <div>
-                  <dt className="font-medium">Keyboard</dt>
-                  <dd className="text-muted-foreground">
-                    Focus the canvas: arrow keys pan, + / − zoom, Home or 0 fits, and Escape clears
-                    selection. Use Graph elements above for keyboard selection.
-                  </dd>
-                </div>
-              </dl>
+          <DiagramViewportToolbar
+            onZoomIn={() => zoom(1.2)}
+            onZoomOut={() => zoom(1 / 1.2)}
+            onFit={fitGraph}
+            fullscreen={isFullscreenView}
+            zoomInAriaLabel="Zoom graph in"
+            zoomOutAriaLabel="Zoom graph out"
+            fitAriaLabel="Fit graph"
+            helpAriaLabel="Graph help"
+            helpTourTrigger="graph-help"
+            onToggleFullscreen={() => {
+              const target =
+                section.current?.closest("[data-architecture-workspace]") ?? section.current;
+              if (document.fullscreenElement) {
+                void document.exitFullscreen().catch(() => setOverlayFullscreen(false));
+                return;
+              }
+              if (overlayFullscreen) {
+                setOverlayFullscreen(false);
+                return;
+              }
+              if (target && typeof target.requestFullscreen === "function") {
+                void target.requestFullscreen().catch(() => setOverlayFullscreen(true));
+              } else {
+                setOverlayFullscreen(true);
+              }
+            }}
+            guideFooter={
               <div className="mt-3 border-t pt-3 text-xs leading-relaxed">
                 <p className="font-semibold">
                   {mode === "explore" ? "Explore mode" : "Analysis mode"}
@@ -788,9 +698,8 @@ export function DependencyNetwork({
                   </p>
                 )}
               </div>
-              <Popover.Arrow className="fill-popover" />
-            </Popover.Content>
-          </Popover.Root>
+            }
+          />
           {fillHeight && (
             <Button
               size="sm"
@@ -802,7 +711,6 @@ export function DependencyNetwork({
             </Button>
           )}
         </div>
-      </Tooltip.Provider>
       {runtimeEdgeCount > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-600/30 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-200">
           <div className="flex items-center gap-2 text-xs font-medium">
@@ -951,14 +859,14 @@ export function DependencyNetwork({
           </details>
         </>
       )}
-      <div className={fillHeight ? "relative min-h-24 flex-1" : "relative"}>
+      <div className={fillHeight || isFullscreenView ? "relative min-h-24 flex-1" : "relative"}>
         <div
           ref={viewport}
           role="region"
           aria-label="Service dependency network"
           aria-description="Drag nodes or background (or right-click drag to pan). Scroll or right-click to zoom. Use Graph elements above to inspect nodes and relationships with the keyboard."
           tabIndex={0}
-          className={`relative ${fillHeight ? "h-full min-h-24" : "h-[620px]"} touch-none select-none overflow-hidden ${mode === "explore" ? "bg-[#080b16] text-slate-200" : "bg-background text-foreground"}`}
+          className={`relative ${fillHeight || isFullscreenView ? "h-full min-h-24" : "h-[620px]"} touch-none select-none overflow-hidden ${mode === "explore" ? "bg-[#080b16] text-slate-200" : "bg-background text-foreground"}`}
           data-tour="graph-canvas"
           data-renderer="cytoscape"
           data-mode={mode}
