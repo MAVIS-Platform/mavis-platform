@@ -238,6 +238,24 @@ class CourseSetupServiceTest {
         verify(assignments).saveAndFlush(lab);
     }
 
+    @Test void autoConfigureStudioUsesCourseRepositoryWhenLabHasNoLegacyReference() {
+        lab.setReferenceModel(null);
+        when(projects.findByWorkspaceId(workspaceId)).thenReturn(List.of(project));
+        when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId))
+                .thenReturn(Optional.of(model));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(lab));
+        when(configurations.findById(projectId)).thenReturn(Optional.empty());
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("runtime_scenarios"), eq(Integer.class), eq(projectId)))
+                .thenReturn(0);
+
+        setup.autoConfigureStudio(workspaceId, assignmentId);
+
+        assertEquals(model, lab.getReferenceModel());
+        verify(models).findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId);
+        verify(assignments).saveAndFlush(lab);
+    }
+
     @Test void autoConfigureStudioAllowsInactiveDraftWorkspaceButRejectsArchived() {
         workspace.setStatus("INACTIVE");
         when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(lab));

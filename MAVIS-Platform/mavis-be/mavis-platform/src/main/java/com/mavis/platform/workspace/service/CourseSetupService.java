@@ -286,6 +286,15 @@ public class CourseSetupService {
         return model == null ? emptyReference(null) : reference(model);
     }
 
+    private ModelVersion resolveCourseReferenceModel(UUID workspaceId) {
+        return projects.findByWorkspaceId(workspaceId).stream()
+                .filter(project -> "TEACHER_REFERENCE".equals(project.getProjectType())
+                        || Boolean.TRUE.equals(project.getIsReferenceTemplate()))
+                .findFirst()
+                .flatMap(project -> models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(project.getId()))
+                .orElse(null);
+    }
+
     private ReferenceSetup reference(ModelVersion model) {
         Project project = model.getProject();
         SourceSnapshot snapshot = model.getSourceSnapshot();
@@ -473,15 +482,19 @@ public class CourseSetupService {
                 .filter(a -> a.getWorkspace() != null && workspaceId.equals(a.getWorkspace().getId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
 
-        ModelVersion refModel = lab.getReferenceModel();
+        ModelVersion refModel = resolveCourseReferenceModel(workspaceId);
+        if (refModel == null) {
+            refModel = lab.getReferenceModel();
+        }
         com.mavis.common.entity.LabStudioExercise exercise = null;
         if (labStudioExercises != null) {
             exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
-            if (exercise != null && exercise.getRuntimeModelId() != null) {
+            if (refModel == null && exercise != null && exercise.getRuntimeModelId() != null) {
                 refModel = models.findById(exercise.getRuntimeModelId()).orElse(refModel);
             }
         }
-        if (lab.getReferenceModel() == null && refModel != null) {
+        if (refModel != null && (lab.getReferenceModel() == null
+                || !refModel.getId().equals(lab.getReferenceModel().getId()))) {
             lab.setReferenceModel(refModel);
         }
         Set<String> initialStoppedServices = new LinkedHashSet<>();

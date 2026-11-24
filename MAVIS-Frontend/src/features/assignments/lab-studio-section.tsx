@@ -58,11 +58,38 @@ export function LabStudioSection({
       ),
     retry: false,
   });
-  const projectId = assignment.referenceSource?.projectId ?? exercise.data?.runtimeProjectId ?? null;
-  const snapshotId =
-    assignment.referenceSource?.snapshotId ?? exercise.data?.runtimeSnapshotId ?? undefined;
-  const readiness = useRuntimeSetupReadiness(projectId);
   const setup = useCourseSetup(workspaceId);
+  const courseReference = setup.data?.reference;
+  const projectId =
+    courseReference?.projectId ??
+    assignment.referenceSource?.projectId ??
+    exercise.data?.runtimeProjectId ??
+    null;
+  const snapshotId =
+    courseReference?.snapshotId ??
+    assignment.referenceSource?.snapshotId ??
+    exercise.data?.runtimeSnapshotId ??
+    undefined;
+  const modelId =
+    courseReference?.modelId ??
+    assignment.referenceSource?.modelId ??
+    exercise.data?.runtimeModelId ??
+    undefined;
+  const resolvedReferenceSource: Assignment["referenceSource"] =
+    projectId && snapshotId && modelId
+      ? {
+          projectId,
+          projectName:
+            courseReference?.projectName ?? assignment.referenceSource?.projectName ?? "Course Repository",
+          snapshotId,
+          modelId,
+          revision: courseReference?.modelRevision ?? assignment.referenceSource?.revision ?? 1,
+          sourceType: assignment.referenceSource?.sourceType ?? "COURSE_REPOSITORY",
+          repositoryUrl: assignment.referenceSource?.repositoryUrl ?? null,
+          branch: assignment.referenceSource?.branch ?? null,
+        }
+      : null;
+  const readiness = useRuntimeSetupReadiness(projectId);
   const buildImages = useApiMutation("buildRuntimeSandboxImages");
   const autoStudio = useAutoConfigureStudio(workspaceId, assignment.id);
   const runtimeConfig = useApiQuery(
@@ -272,7 +299,12 @@ export function LabStudioSection({
           <ErrorState error={autoStudio.error} />
         )}
 
-        {!projectId ? (
+        {setup.isPending && !projectId ? (
+          <div className="flex min-h-32 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
+            <RefreshCw className="mr-2 size-4 animate-spin" aria-hidden="true" />
+            {t("Loading Course Repository…", "Đang tải Repository của Course…")}
+          </div>
+        ) : !projectId ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <Lock className="size-4 shrink-0" aria-hidden="true" />
@@ -522,8 +554,8 @@ export function LabStudioSection({
                   assignmentId={assignment.id}
                   labTitle={assignment.title}
                   applications={availableApplications}
-                  defaultModelId={assignment.referenceSource?.modelId}
-                  referenceSource={assignment.referenceSource}
+                  defaultModelId={modelId}
+                  referenceSource={resolvedReferenceSource}
                   onSaved={() => {
                     void exercise.refetch();
                     void readiness.refetch();
