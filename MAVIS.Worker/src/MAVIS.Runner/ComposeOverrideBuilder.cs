@@ -107,6 +107,8 @@ public static class ComposeOverrideBuilder
                     environment["CORECLR_ENABLE_PROFILING"] = musl ? "0" : "1";
                     if (!musl)
                     {
+                        // Override image-level DOTNET_EnableDiagnostics=0 so the CLR attaches the native OTel profiler (/tmp tmpfs is writable).
+                        environment["DOTNET_EnableDiagnostics"] = "1";
                         environment["CORECLR_PROFILER"] = "{918728DD-259F-4A6A-AC2B-B85E1B658318}";
                         environment["CORECLR_PROFILER_PATH"] = $"{agentHome}/{nativeDirectory}/OpenTelemetry.AutoInstrumentation.Native.so";
                     }

@@ -238,6 +238,12 @@ public sealed class RunnerComponentTests
         Assert.Equal("300s", muslOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("healthcheck").GetProperty("start_period").GetString());
         Assert.False(nodeEnv.TryGetProperty("OTEL_DOTNET_AUTO_LOGGER", out _));
         Assert.Equal("/mavis-otel/dotnet-musl/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll", muslEnvironment.GetProperty("DOTNET_STARTUP_HOOKS").GetString());
+        using var glibcOverride = JsonDocument.Parse(ComposeOverrideBuilder.Build(preflight,
+            profile with { Applications = new Dictionary<string, RuntimeServiceProfile> { ["node-api"] = new("dotnet8-linux-x64-glibc", 8080) } },
+            Path.Combine(Path.GetTempPath(), "collector.yaml"), values));
+        var glibcEnvironment = glibcOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment");
+        Assert.Equal("1", glibcEnvironment.GetProperty("DOTNET_EnableDiagnostics").GetString());
+        Assert.Equal("1", glibcEnvironment.GetProperty("CORECLR_ENABLE_PROFILING").GetString());
         Assert.Equal("node_secret_1", nodeEnv.GetProperty("DB_PASSWORD").GetString());
         Assert.Equal("order_secret_2", overrideDoc.RootElement.GetProperty("services").GetProperty("order-svc").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());
         Assert.False(overrideDoc.RootElement.GetProperty("volumes").TryGetProperty("mavis-instrumentation", out _));
