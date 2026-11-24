@@ -1083,12 +1083,12 @@ test("Lab Library is available inside Lab Creation and Quiz can be generated fro
   assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
   assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
   assert.ok(authoring.includes("<Assignments embedded />"));
-  assert.ok(authoring.includes("<TheoryLibrary />"));
+  assert.ok(authoring.includes("<TheoryLibrary embedded />"));
   assert.doesNotMatch(navigation, /id: "lab-authoring"[\s\S]*?label: "Labs"/);
   assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
   assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
   assert.ok(authoring.includes("<Assignments embedded />"));
-  assert.ok(authoring.includes("<TheoryLibrary />"));
+  assert.ok(authoring.includes("<TheoryLibrary embedded />"));
   assert.doesNotMatch(navigation, /label: "Lab Authoring"/);
   assert.ok(assignments.includes("Library draft"));
   assert.ok(assignments.includes("In class"));
@@ -1126,7 +1126,7 @@ test("Theory Library edits the inactive draft and delegates publishing to Course
 
   assert.match(page, /"theory-library"/);
   assert.doesNotMatch(navigation, /id: "theory-library"/);
-  assert.ok(authoring.includes("<TheoryLibrary />"));
+  assert.ok(authoring.includes("<TheoryLibrary embedded />"));
   assert.ok(screen.includes("theory-assets"));
   assert.ok(screen.includes("New lesson"));
   assert.ok(screen.includes("Edit theory lesson"));
