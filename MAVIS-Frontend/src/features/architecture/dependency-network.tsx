@@ -589,7 +589,7 @@ export function DependencyNetwork({
       ref={section}
       className={
         overlayFullscreen
-          ? "fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden bg-background"
+          ? "fixed inset-0 z-[120] flex h-screen w-screen flex-col overflow-hidden bg-background"
           : fillHeight || fullscreen
             ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card [&>details]:shrink-0 [&>details]:max-h-40 [&>details]:overflow-y-auto"
             : "min-w-0 overflow-hidden rounded-xl border bg-card"
@@ -649,35 +649,7 @@ export function DependencyNetwork({
             fitAriaLabel="Fit graph"
             helpAriaLabel="Graph help"
             helpTourTrigger="graph-help"
-            onToggleFullscreen={async () => {
-              const target =
-                section.current?.closest("[data-architecture-workspace]") ?? section.current;
-              if (document.fullscreenElement) {
-                try {
-                  await document.exitFullscreen();
-                } catch {
-                  setOverlayFullscreen(false);
-                }
-                return;
-              }
-              if (overlayFullscreen) {
-                setOverlayFullscreen(false);
-                return;
-              }
-              try {
-                if (
-                  document.fullscreenEnabled &&
-                  target &&
-                  typeof target.requestFullscreen === "function"
-                ) {
-                  await target.requestFullscreen();
-                  if (document.fullscreenElement === target) return;
-                }
-              } catch {
-                // Fallback to CSS fixed overlay
-              }
-              setOverlayFullscreen(true);
-            }}
+            onToggleFullscreen={() => setOverlayFullscreen((prev) => !prev)}
             guideFooter={
               <div className="mt-3 border-t pt-3 text-xs leading-relaxed">
                 <p className="font-semibold">

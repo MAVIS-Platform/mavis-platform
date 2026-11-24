@@ -803,7 +803,6 @@ export function ArchitectureSvgViewer({
   });
   const viewRef = useRef(view);
   viewRef.current = view;
-  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [isOverlayFullscreen, setIsOverlayFullscreen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{
@@ -880,16 +879,7 @@ export function ArchitectureSvgViewer({
   useEffect(() => {
     const id = requestAnimationFrame(() => fitToView());
     return () => cancelAnimationFrame(id);
-  }, [fitToView, isNativeFullscreen, isOverlayFullscreen]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const onFullscreenChange = () => {
-      setIsNativeFullscreen(document.fullscreenElement === containerRef.current);
-    };
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
-  }, []);
+  }, [fitToView, isOverlayFullscreen]);
 
   useEffect(() => {
     if (!isOverlayFullscreen || typeof window === "undefined") return;
@@ -916,31 +906,9 @@ export function ArchitectureSvgViewer({
     return () => viewport.removeEventListener("wheel", onWheel);
   }, [parsed, zoomAtPoint]);
 
-  const toggleFullscreen = useCallback(async () => {
-    const el = containerRef.current;
-    if (!el || typeof document === "undefined") return;
-    if (document.fullscreenElement === el) {
-      try {
-        await document.exitFullscreen();
-      } catch {
-        setIsOverlayFullscreen(false);
-      }
-      return;
-    }
-    if (isOverlayFullscreen) {
-      setIsOverlayFullscreen(false);
-      return;
-    }
-    try {
-      if (document.fullscreenEnabled && typeof el.requestFullscreen === "function") {
-        await el.requestFullscreen();
-        if (document.fullscreenElement === el) return;
-      }
-    } catch {
-      // Fallback to CSS fixed overlay
-    }
-    setIsOverlayFullscreen(true);
-  }, [isOverlayFullscreen]);
+  const toggleFullscreen = useCallback(() => {
+    setIsOverlayFullscreen((prev) => !prev);
+  }, []);
 
   if (!parsed) {
     return (
@@ -950,7 +918,7 @@ export function ArchitectureSvgViewer({
     );
   }
 
-  const isFullscreen = isNativeFullscreen || isOverlayFullscreen;
+  const isFullscreen = isOverlayFullscreen;
   const inlineHeight = Math.max(360, Math.min(640, Math.round(parsed.vbH + 56)));
   const edgeStrokeDefault = isDark ? "#7c8fa8" : "#475569";
   const edgeStrokeSelected = isDark ? "#38bdf8" : "#2563eb";
@@ -962,7 +930,7 @@ export function ArchitectureSvgViewer({
       ref={containerRef}
       className={
         isFullscreen
-          ? "fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden bg-background"
+          ? "fixed inset-0 z-[120] flex h-screen w-screen flex-col overflow-hidden bg-background"
           : "flex flex-col overflow-hidden bg-background"
       }
     >

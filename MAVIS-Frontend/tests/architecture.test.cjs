@@ -6728,6 +6728,8 @@ test("Task #03 architecture viewer: C1-C3 viewer provides Zoom, Fit, Pan/Drag, F
 
   assert.match(viewer, /fitToView/);
   assert.match(viewer, /toggleFullscreen/);
+  assert.match(viewer, /setIsOverlayFullscreen/);
+  assert.match(viewer, /z-\[120\]/);
   assert.match(viewer, /Math\.hypot\(dx, dy\) > 5/);
   assert.match(viewer, /e\.ctrlKey && !e\.metaKey|!event\.ctrlKey && !event\.metaKey/);
   assert.match(viewer, /formatLocalizedScopeMeta/);
