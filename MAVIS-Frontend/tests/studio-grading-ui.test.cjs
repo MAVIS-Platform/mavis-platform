@@ -81,3 +81,14 @@ test("Commit #06 cleans student submission evidence, enables dark-mode Mermaid p
   assert.match(grading, /t\("Complete & publish grade", "Hoàn tất & Công bố điểm"\)/);
   assert.doesNotMatch(grading, /Return for changes|Refresh review/);
 });
+
+test("Phase 2: Studio Lab dossiers without a per-Lab quiz never render contradictory Theory Only badges", () => {
+  const components = read("src/features/submissions/components.tsx");
+  const screens = read("src/features/submissions/screens.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+
+  assert.match(components, /const isStudioLab =[\s\S]*THEORY_QUIZ_STUDIO[\s\S]*studioEvidence[\s\S]*studioVerified/);
+  assert.match(components, /const isTheoryOnly =\s*!isStudioLab/);
+  assert.match(screens, /courseQuizEvidence\?\.status === "NOT_REQUIRED" &&[\s\S]*labMode !== "THEORY_QUIZ_STUDIO"/);
+  assert.match(frozen, /NOT_REQUIRED · Studio Lab \(no quiz gate\)/);
+});

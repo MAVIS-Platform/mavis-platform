@@ -1905,4 +1905,17 @@ class RuntimePlanningServiceTest {
         bindings.path("notification-worker").forEach(n -> boundNames.add(n.path("name").asText()));
         assertThat(boundNames).contains("JWT_SECRET").doesNotContain("RABBITMQ_PASSWORD");
     }
+
+    @Test
+    @DisplayName("mapStackToRuntime preserves exact mavis-runtime.yaml .NET 8 runtimes instead of falling back to passthrough")
+    void mapStackToRuntimePreservesExactDotnet8Runtimes() {
+        assertThat(RuntimePlanningService.mapStackToRuntime("dotnet8-linux-x64-glibc")).isEqualTo("dotnet8-linux-x64-glibc");
+        assertThat(RuntimePlanningService.mapStackToRuntime("dotnet8-linux-x64-musl")).isEqualTo("dotnet8-linux-x64-musl");
+        assertThat(RuntimePlanningService.mapStackToRuntime("dotnet")).isEqualTo("dotnet8-linux-x64-glibc");
+        assertThat(RuntimePlanningService.mapStackToRuntime("dotnet-musl")).isEqualTo("dotnet8-linux-x64-musl");
+        assertThat(RuntimePlanningService.mapStackToRuntime("csharp")).isEqualTo("dotnet8-linux-x64-glibc");
+        assertThat(RuntimePlanningService.mapStackToRuntime("java")).isEqualTo("java");
+        assertThat(RuntimePlanningService.mapStackToRuntime("node")).isEqualTo("passthrough");
+        assertThat(RuntimePlanningService.mapStackToRuntime("passthrough")).isEqualTo("passthrough");
+    }
 }

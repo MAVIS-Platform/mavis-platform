@@ -423,7 +423,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
             Stage = "INFRASTRUCTURE_" + action;
             var before = await ReadServiceState(service, ct);
-            var actionWaitTimeout = ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime) ? "60" : "30";
+            // Spring Boot + OTel javaagent replicas need >30s under load to pass healthchecks cleanly.
+            var actionWaitTimeout = ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime) ? "90" : "60";
             double? appliedCpus = null;
             int? rpsBefore = null;
             int? rpsAfter = null;
@@ -1040,7 +1041,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         cmd.AddRange(arguments);
         return docker.RunAsync(
             cmd,
-            _directory!, arguments[0] == "up" ? Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300) + 30
+            _directory!, arguments[0] == "up" ? Math.Max(Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300), 90) + 30
                 : (arguments[0] is "down" or "stop" ? 45 : 15), ct);
     }
 

@@ -370,8 +370,14 @@ public class RuntimePlanningService {
    for(String k:existingKeys){
     if(ComposePreflightValidator.isInfrastructureService(k,"")||"INFRA".equalsIgnoreCase(roleOverrides.get(k))){
      existingApps.remove(k);
-    }else if(existingApps.get(k) instanceof ObjectNode an&&!an.has("allowClientErrorReadiness")){
-     an.put("allowClientErrorReadiness",true);
+    }else if(existingApps.get(k) instanceof ObjectNode an){
+     if(!an.has("allowClientErrorReadiness"))an.put("allowClientErrorReadiness",true);
+     // Auto-upgrade legacy passthrough entries when preflight explicitly detects a .NET runtime.
+     if("passthrough".equalsIgnoreCase(an.path("runtime").asText(""))
+       &&pre!=null&&pre.getServiceStacks()!=null&&pre.getServiceStacks().containsKey(k)){
+      String mapped=mapStackToRuntime(pre.getServiceStacks().get(k));
+      if(mapped.startsWith("dotnet8-"))an.put("runtime",mapped);
+     }
     }
    }
   }
@@ -446,10 +452,14 @@ public class RuntimePlanningService {
   return p;
  }
 
- private static String mapStackToRuntime(String stack){
-  if(stack==null||stack.isBlank()||"java".equalsIgnoreCase(stack))return "java";
-  if("dotnet".equalsIgnoreCase(stack))return "dotnet8-linux-x64-glibc";
-  if("dotnet-musl".equalsIgnoreCase(stack))return "dotnet8-linux-x64-musl";
+ static String mapStackToRuntime(String stack){
+  if(stack==null||stack.isBlank())return "java";
+  String lower=stack.trim().toLowerCase(Locale.ROOT);
+  if("java".equals(lower)||lower.contains("spring")||lower.contains("kotlin"))return "java";
+  if("dotnet8-linux-x64-musl".equals(lower)||"dotnet-musl".equals(lower)
+    ||(lower.contains("dotnet")&&lower.contains("musl")))return "dotnet8-linux-x64-musl";
+  if("dotnet8-linux-x64-glibc".equals(lower)||"dotnet".equals(lower)
+    ||lower.contains("dotnet")||lower.contains("csharp")||lower.contains("aspnet")||lower.contains("net8"))return "dotnet8-linux-x64-glibc";
   return "passthrough";
  }
 

@@ -355,8 +355,11 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
             quizEvidence = node;
         } else if (skipQuiz) {
+            String labTier = studioMode
+                    ? "THEORY_QUIZ_STUDIO"
+                    : (com.mavis.common.security.CourseLabPolicy.canSkipQuiz(assignment) ? "THEORY_ONLY" : "THEORY_QUIZ");
             var node = json.createObjectNode().put("status", "NOT_REQUIRED")
-                    .put("labTier", "THEORY_ONLY");
+                    .put("labTier", labTier);
             if (referenceModel != null) {
                 node.put("referenceModelId", referenceModel.getId().toString());
             }

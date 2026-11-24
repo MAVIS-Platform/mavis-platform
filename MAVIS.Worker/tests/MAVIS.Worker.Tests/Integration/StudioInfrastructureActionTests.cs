@@ -233,6 +233,10 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         Assert.Equal(3, results[2].ReplicasAfter);
         Assert.True(results[2].Confirmed);
         Assert.NotNull(results[2].MetricsAfter["p95LatencyMs"]);
+        var scaleCall = Assert.Single(docker.Calls, args => args.Contains("--scale"));
+        var waitIdx = scaleCall.ToList().IndexOf("--wait-timeout");
+        Assert.True(waitIdx >= 0 && waitIdx + 1 < scaleCall.Count);
+        Assert.Equal("60", scaleCall[waitIdx + 1]);
     }
 
     [Theory]

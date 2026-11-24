@@ -16,8 +16,14 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
   const { t } = useLocale();
   const canReview = usePermission("submission:review");
   const quiz = submission.courseQuizEvidence;
+  const isStudioLab =
+    submission.labMode === "THEORY_QUIZ_STUDIO" ||
+    Boolean(submission.studioEvidence || submission.runtime?.studioVerified);
+  // Studio Labs without a per-Lab quiz have quiz.status === "NOT_REQUIRED" but must never show "Theory Only".
   const isTheoryOnly =
-    submission.labMode === "THEORY_ONLY" || quiz?.status === "NOT_REQUIRED";
+    !isStudioLab &&
+    (submission.labMode === "THEORY_ONLY" ||
+      (quiz?.status === "NOT_REQUIRED" && submission.labMode !== "THEORY_QUIZ"));
   const requiresRuntime =
     !isTheoryOnly &&
     submission.labMode !== "THEORY_QUIZ";

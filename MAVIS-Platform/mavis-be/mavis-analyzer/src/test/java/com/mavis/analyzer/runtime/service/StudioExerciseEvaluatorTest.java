@@ -188,6 +188,51 @@ class StudioExerciseEvaluatorTest {
         assertTrue(eval.path("passed").asBoolean());
     }
 
+    @Test
+    void changeImpactIgnoresExternalUserAndClientActorsInServiceGraph() {
+        ObjectNode criteria = mapper.createObjectNode()
+                .put("exerciseType", "CHANGE_IMPACT")
+                .put("predictionRequired", true)
+                .put("minImpactF1", 0.70);
+        criteria.putObject("targetChangeAction").put("action", "PAUSE").put("service", "payment-service");
+
+        ObjectNode control = mapper.createObjectNode();
+        control.putObject("prediction").putArray("predictedServices")
+                .add("api-gateway").add("order-service").add("payment-service");
+        ArrayNode actions = control.putArray("actions");
+        ObjectNode pause = actions.addObject()
+                .put("action", "PAUSE").put("service", "payment-service").put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-21T10:00:10Z").put("completedAt", "2026-11-21T10:00:12Z");
+        pause.putObject("result").put("replicasBefore", 1).put("replicasAfter", 0);
+
+        ObjectNode beforeFrame = mapper.createObjectNode().put("observedAt", "2026-11-21T10:00:05Z");
+        ArrayNode beforeSvcs = beforeFrame.putArray("services");
+        beforeSvcs.addObject().put("service", "api-gateway").put("replicas", 1).put("runningReplicas", 1);
+        beforeSvcs.addObject().put("service", "order-service").put("replicas", 1).put("runningReplicas", 1);
+        beforeSvcs.addObject().put("service", "payment-service").put("replicas", 1).put("runningReplicas", 1);
+        beforeFrame.putArray("serviceGraph")
+                .addObject().put("client", "user").put("server", "api-gateway").put("rps", 5.0).put("errorRatePercent", 0.0).put("p95Ms", 15.0);
+        ((ArrayNode) beforeFrame.get("serviceGraph"))
+                .addObject().put("client", "api-gateway").put("server", "order-service").put("rps", 5.0).put("errorRatePercent", 0.0).put("p95Ms", 10.0);
+
+        ObjectNode afterFrame = mapper.createObjectNode().put("observedAt", "2026-11-21T10:00:18Z");
+        ArrayNode afterSvcs = afterFrame.putArray("services");
+        afterSvcs.addObject().put("service", "api-gateway").put("replicas", 1).put("runningReplicas", 1);
+        afterSvcs.addObject().put("service", "order-service").put("replicas", 1).put("runningReplicas", 1);
+        afterSvcs.addObject().put("service", "payment-service").put("replicas", 1).put("runningReplicas", 0);
+        ArrayNode afterGraph = afterFrame.putArray("serviceGraph");
+        afterGraph.addObject().put("client", "user").put("server", "api-gateway").put("rps", 5.0).put("errorRatePercent", 100.0).put("p95Ms", 3000.0);
+        afterGraph.addObject().put("client", "api-gateway").put("server", "order-service").put("rps", 5.0).put("errorRatePercent", 100.0).put("p95Ms", 3000.0);
+
+        ObjectNode eval = StudioExerciseEvaluator.evaluate(
+                mapper, criteria, control, afterFrame, List.of(beforeFrame, afterFrame));
+
+        assertEquals(1.0, eval.path("impact").path("f1Score").asDouble(), 0.001);
+        assertEquals(0, eval.path("impact").path("falseNegatives").size());
+        assertEquals(0, eval.path("impact").path("falsePositives").size());
+        assertTrue(eval.path("passed").asBoolean());
+    }
+
     private ObjectNode frame(String observedAt, int ordersRep, int paymentRep,
                              double probeErr, double probeP95, double edgeErr, double edgeP95) {
         ObjectNode f = mapper.createObjectNode().put("observedAt", observedAt);

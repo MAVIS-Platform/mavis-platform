@@ -1188,6 +1188,12 @@ class SubmissionServiceImplTest {
         assertThat(response.getStudioEvidence().path("snapshots").size()).isEqualTo(1);
         assertThat(response.getStudentSnapshots().path(1).path("snapshotId").asText())
                 .isEqualTo("STUDIO_capture-1");
+
+        // Studio Lab without a per-Lab quiz must record labTier=THEORY_QUIZ_STUDIO (never THEORY_ONLY).
+        when(courseLabs.isQuizNotRequired(assignment)).thenReturn(true);
+        SubmissionResponseDTO noQuizStudio = submissionService.submitAssignment(request);
+        assertThat(noQuizStudio.getCourseQuizEvidence().path("status").asText()).isEqualTo("NOT_REQUIRED");
+        assertThat(noQuizStudio.getCourseQuizEvidence().path("labTier").asText()).isEqualTo("THEORY_QUIZ_STUDIO");
     }
 
     @Test

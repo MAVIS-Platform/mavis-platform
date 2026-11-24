@@ -837,6 +837,35 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 ? (ObjectNode) profile.get("applications")
                 : profile.putObject("applications");
 
+        if (!apps.isEmpty() && snapshot != null && snapshot.getId() != null) {
+            boolean hasPassthrough = false;
+            for (var it = apps.fields(); it.hasNext(); ) {
+                if ("passthrough".equalsIgnoreCase(it.next().getValue().path("runtime").asText(""))) {
+                    hasPassthrough = true;
+                    break;
+                }
+            }
+            if (hasPassthrough) {
+                try {
+                    PreflightCheckResponseDTO preflight = runComposePreflight(snapshot.getId());
+                    Map<String, String> stacks = preflight != null ? preflight.getServiceStacks() : null;
+                    if (stacks != null && !stacks.isEmpty()) {
+                        for (var it = apps.fields(); it.hasNext(); ) {
+                            var entry = it.next();
+                            if (entry.getValue() instanceof ObjectNode appNode
+                                    && "passthrough".equalsIgnoreCase(appNode.path("runtime").asText(""))) {
+                                String detected = stacks.get(entry.getKey());
+                                String lower = detected != null ? detected.trim().toLowerCase(Locale.ROOT) : "";
+                                if (lower.contains("dotnet") || lower.contains("csharp") || lower.contains("aspnet") || lower.contains("net8")) {
+                                    appNode.put("runtime", lower.contains("musl") ? "dotnet8-linux-x64-musl" : "dotnet8-linux-x64-glibc");
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
         if (apps.isEmpty()) {
             PreflightCheckResponseDTO preflight = null;
             try {

@@ -1258,7 +1258,16 @@ public class ComposePreflightValidator {
                 else if (lowerContent.contains("from python")) dto.getServiceStacks().put(inferredService, "python");
                 else if (lowerContent.contains("from golang")) dto.getServiceStacks().put(inferredService, "go");
                 else if (lowerContent.contains("microsoft.com/dotnet")) {
-                    dto.getServiceStacks().put(inferredService, lowerContent.contains("alpine") ? "dotnet-musl" : "dotnet");
+                    // Check the final FROM stage so multi-stage alpine builders on glibc runtime images stay glibc.
+                    String finalFrom = "";
+                    for (String line : lowerContent.split("\\r?\\n")) {
+                        String trimmed = line.trim();
+                        if (trimmed.startsWith("from ")) {
+                            finalFrom = trimmed;
+                        }
+                    }
+                    boolean isAlpine = !finalFrom.isEmpty() ? finalFrom.contains("alpine") : lowerContent.contains("alpine");
+                    dto.getServiceStacks().put(inferredService, isAlpine ? "dotnet-musl" : "dotnet");
                 }
             }
         }

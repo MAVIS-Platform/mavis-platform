@@ -102,7 +102,10 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
           <p className="font-medium">{t("Course Quiz Gate Proof", "Kết quả Quiz của Lab")}</p>
           <p className="text-muted-foreground">
             {quizEv.status === "NOT_REQUIRED"
-              ? t("NOT_REQUIRED · Theory Only", "KHÔNG BẮT BUỘC · Chỉ lý thuyết")
+              ? submission.labMode === "THEORY_QUIZ_STUDIO" ||
+                Boolean(submission.studioEvidence || submission.runtime?.studioVerified)
+                ? t("NOT_REQUIRED · Studio Lab (no quiz gate)", "KHÔNG BẮT BUỘC · Lab Studio (không yêu cầu quiz)")
+                : t("NOT_REQUIRED · Theory Only", "KHÔNG BẮT BUỘC · Chỉ lý thuyết")
               : `${quizEv.status} · ${quizCorrect}/${quizTotal} (${quizScorePercent}%${quizEv.passPercent != null ? ` · pass ≥ ${quizEv.passPercent}%` : ""}) · Quiz v${quizEv.quizVersion ?? 1}`}
           </p>
         </div>

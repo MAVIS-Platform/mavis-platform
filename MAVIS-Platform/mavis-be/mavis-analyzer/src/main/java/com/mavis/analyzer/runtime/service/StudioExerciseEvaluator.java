@@ -342,6 +342,7 @@ public final class StudioExerciseEvaluator {
         Map<String, RouteAgg> afterRoutes = aggregateProbeRoutes(afterFrames);
         for (var entry : afterRoutes.entrySet()) {
             String svc = entry.getKey();
+            if (isIgnoredServiceEndpoint(svc)) continue;
             RouteAgg after = entry.getValue();
             RouteAgg before = beforeRoutes.get(svc);
             double prevErr = before != null ? before.avgErrorPct() : 0.0;
@@ -780,10 +781,21 @@ public final class StudioExerciseEvaluator {
     private static boolean isIgnoredServiceEndpoint(String endpoint) {
         if (endpoint == null || endpoint.isBlank()) return true;
         String lower = endpoint.trim().toLowerCase(Locale.ROOT);
+        // Exclude telemetry collector, unknown spans, and external synthetic actors not selectable in the service picker.
         return "mavis-collector".equals(lower)
                 || "unknown".equals(lower)
                 || "unknown_service".equals(lower)
-                || lower.startsWith("unknown_service:");
+                || lower.startsWith("unknown_service:")
+                || "user".equals(lower)
+                || "client".equals(lower)
+                || "browser".equals(lower)
+                || "internet".equals(lower)
+                || "external".equals(lower)
+                || "loadgen".equals(lower)
+                || "load-generator".equals(lower)
+                || "probe".equals(lower)
+                || "mavis-probe".equals(lower)
+                || "mavis-scenario".equals(lower);
     }
 
     private static String alnumLower(String value) {

@@ -179,9 +179,12 @@ function MySubmissions() {
                         {s.courseQuizEvidence.questionCount}
                       </Badge>
                     )}
-                  {s.courseQuizEvidence?.status === "NOT_REQUIRED" && (
-                    <Badge variant="outline">{t("Theory Only", "Chỉ lý thuyết")}</Badge>
-                  )}
+                  {s.courseQuizEvidence?.status === "NOT_REQUIRED" &&
+                    s.labMode !== "THEORY_QUIZ_STUDIO" &&
+                    !s.runtime?.studioVerified &&
+                    !s.studioEvidence && (
+                      <Badge variant="outline">{t("Theory Only", "Chỉ lý thuyết")}</Badge>
+                    )}
                   {s.runtime?.studioVerified && (
                     <Badge variant="success">{t("Studio Verified", "Đã xác minh Studio")}</Badge>
                   )}
