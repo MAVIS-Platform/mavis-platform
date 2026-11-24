@@ -353,7 +353,59 @@ public final class FruitShopReferenceArchitectureBuilder {
     }
 
     private void addC3OrderingComponents() {
-        // Added in Commit 5
+        addComponent("c3-ord-ctrl", "FruitOrdering.API", "C# 12 · ASP.NET Core Controller",
+                "OrdersController", "Controller",
+                "FruitOrdering.API.Controllers.OrdersController",
+                "Exposes order creation, cancellation and query APIs (/api/v1/orders) with idempotency key support");
+        addComponent("c3-ord-saga", "FruitOrdering.API", "C# 12 · Saga Orchestrator Service",
+                "OrderSagaService", "Service",
+                "FruitOrdering.API.Services.OrderSagaService",
+                "Orchestrates basket fetch, catalog stock reserve/compensate release, Order persistence & Outbox logging");
+        addComponent("c3-ord-qry", "FruitOrdering.API", "C# 12 · Read Query Service",
+                "OrderQueryService", "Service",
+                "FruitOrdering.API.Services.OrderQueryService",
+                "Queries orders and items via AsNoTracking() EF Core projections");
+        addComponent("c3-ord-catcli", "FruitOrdering.API", "C# 12 · Typed HttpClient + Polly v8",
+                "CatalogApiClient", "HttpClient",
+                "FruitOrdering.API.Clients.CatalogApiClient",
+                "Calls FruitCatalog.API with AddStandardResilienceHandler (retry, circuit breaker & timeout)");
+        addComponent("c3-ord-bskcli", "FruitOrdering.API", "C# 12 · Typed HttpClient + Polly v8",
+                "BasketApiClient", "HttpClient",
+                "FruitOrdering.API.Clients.BasketApiClient",
+                "Calls FruitBasket.API with AddStandardResilienceHandler and forwards bearer token");
+        addComponent("c3-ord-relay", "FruitOrdering.API", "C# 12 · BackgroundService + MassTransit",
+                "OutboxRelayBackgroundService", "BackgroundWorker",
+                "FruitOrdering.API.BackgroundServices.OutboxRelayBackgroundService",
+                "Polls integration_event_outbox and publishes OrderCreated / OrderCancelled events to RabbitMQ");
+        addComponent("c3-ord-dbctx", "FruitOrdering.API", "C# 12 · EF Core 8 Npgsql DbContext",
+                "OrderingDbContext", "Repository",
+                "FruitOrdering.API.Data.OrderingDbContext",
+                "Persists orders, order_items and integration_event_outbox in isolated PostgreSQL schema ordering");
+
+        addC3Edge("c3-gw-yarp-ord", "c3-gw-yarp", "c3-ord-ctrl", "GATEWAY_ROUTE",
+                props("route", "/api/v1/orders/{**catch-all}"));
+        addC3Edge("c3-ord-ctrl-saga", "c3-ord-ctrl", "c3-ord-saga", "CODE_DEPENDENCY",
+                props("label", "Delegates PlaceOrderAsync / CancelOrderAsync"));
+        addC3Edge("c3-ord-ctrl-qry", "c3-ord-ctrl", "c3-ord-qry", "CODE_DEPENDENCY",
+                props("label", "Delegates AsNoTracking order queries"));
+        addC3Edge("c3-ord-saga-catcli", "c3-ord-saga", "c3-ord-catcli", "CODE_DEPENDENCY",
+                props("label", "Reserves & releases fruit stock across saga"));
+        addC3Edge("c3-ord-saga-bskcli", "c3-ord-saga", "c3-ord-bskcli", "CODE_DEPENDENCY",
+                props("label", "Fetches customer basket snapshot"));
+        addC3Edge("c3-ord-saga-db", "c3-ord-saga", "c3-ord-dbctx", "CODE_DEPENDENCY",
+                props("label", "Commits Order + IntegrationEventLogEntry"));
+        addC3Edge("c3-ord-qry-db", "c3-ord-qry", "c3-ord-dbctx", "CODE_DEPENDENCY",
+                props("label", "AsNoTracking read projections"));
+        addC3Edge("c3-ord-relay-db", "c3-ord-relay", "c3-ord-dbctx", "CODE_DEPENDENCY",
+                props("label", "Reads pending integration_event_outbox rows"));
+        addC3Edge("c3-ord-db-pg", "c3-ord-dbctx", "ordering-db", "DATABASE_ACCESS",
+                props("protocol", "Npgsql EF Core · schema ordering"));
+        addC3Edge("c3-ord-catcli-cat", "c3-ord-catcli", "c3-cat-ctrl", "SERVICE_HTTP_CALL",
+                props("client", "CatalogApiClient", "resilience", "Polly StandardResilience"));
+        addC3Edge("c3-ord-bskcli-bsk", "c3-ord-bskcli", "c3-bsk-ctrl", "SERVICE_HTTP_CALL",
+                props("client", "BasketApiClient", "resilience", "Polly StandardResilience"));
+        addC3Edge("c3-ord-relay-rmq", "c3-ord-relay", "rabbitmq", "MESSAGE_PUBLISH",
+                props("events", "OrderCreatedIntegrationEvent, OrderCancelledIntegrationEvent"));
     }
 
     private void addRealEvidences() {
@@ -488,6 +540,85 @@ public final class FruitShopReferenceArchitectureBuilder {
                 "src/Services/FruitBasket/FruitBasket.API/Repositories/RedisProcessedEventStore.cs:5",
                 "STATIC_CODE",
                 "public sealed class RedisProcessedEventStore(IDistributedCache cache) : IProcessedEventStore");
+
+        // FruitOrdering.API Saga, Polly Typed HttpClients, OrderingDbContext & Outbox Relay
+        addRelEvidence("ordering-catalog-http",
+                "src/Services/FruitOrdering/FruitOrdering.API/Program.cs:67",
+                "STATIC_CODE",
+                ".AddHttpClient<ICatalogApiClient, CatalogApiClient>(...).AddStandardResilienceHandler(ConfigureStandardResilience);");
+        addRelEvidence("ordering-basket-http",
+                "src/Services/FruitOrdering/FruitOrdering.API/Program.cs:74",
+                "STATIC_CODE",
+                ".AddHttpClient<IBasketApiClient, BasketApiClient>(...).AddStandardResilienceHandler(ConfigureStandardResilience);");
+        addRelEvidence("ord-db",
+                "src/Services/FruitOrdering/FruitOrdering.API/Data/OrderingDbContext.cs:14",
+                "STATIC_CODE",
+                "modelBuilder.HasDefaultSchema(\"ordering\");");
+        addRelEvidence("ord-rabbitmq",
+                "src/Services/FruitOrdering/FruitOrdering.API/BackgroundServices/OutboxRelayBackgroundService.cs:84",
+                "STATIC_CODE",
+                "await publishEndpoint.Publish(createdEvent, stoppingToken);");
+        addRelEvidence("c3-ord-ctrl-saga",
+                "src/Services/FruitOrdering/FruitOrdering.API/Controllers/OrdersController.cs:33",
+                "STATIC_CODE",
+                "var order = await orderSagaService.PlaceOrderAsync(customerId, request, idempotencyKey, ...);");
+        addRelEvidence("c3-ord-saga-catcli",
+                "src/Services/FruitOrdering/FruitOrdering.API/Services/OrderSagaService.cs:72",
+                "STATIC_CODE",
+                "var reserved = await catalogApiClient.ReserveStockAsync(item.ProductId, ...);");
+        addRelEvidence("c3-ord-saga-bskcli",
+                "src/Services/FruitOrdering/FruitOrdering.API/Services/OrderSagaService.cs:144",
+                "STATIC_CODE",
+                "var basket = await basketApiClient.GetBasketAsync(customerId, bearerToken, cancellationToken);");
+        addRelEvidence("c3-ord-saga-db",
+                "src/Services/FruitOrdering/FruitOrdering.API/Services/OrderSagaService.cs:87",
+                "STATIC_CODE",
+                "dbContext.IntegrationEventLogEntries.Add(IntegrationEventLogEntry.Create(createdEvent));");
+        addRelEvidence("c3-ord-catcli-cat",
+                "src/Services/FruitOrdering/FruitOrdering.API/Clients/CatalogApiClient.cs:55",
+                "STATIC_CODE",
+                "await httpClient.PostAsJsonAsync($\"/api/v1/catalog/items/{productId}/reserve\", payload, cancellationToken);");
+        addRelEvidence("c3-ord-bskcli-bsk",
+                "src/Services/FruitOrdering/FruitOrdering.API/Clients/BasketApiClient.cs:50",
+                "STATIC_CODE",
+                "using var response = await httpClient.SendAsync(request, cancellationToken);");
+        addRelEvidence("c3-ord-relay-rmq",
+                "src/Services/FruitOrdering/FruitOrdering.API/BackgroundServices/OutboxRelayBackgroundService.cs:98",
+                "STATIC_CODE",
+                "await publishEndpoint.Publish(cancelledEvent, stoppingToken);");
+
+        addNodeEvidence("FruitOrdering.API",
+                "src/Services/FruitOrdering/FruitOrdering.API/Controllers/OrdersController.cs:13",
+                "STATIC_CODE",
+                "public sealed class OrdersController(IOrderSagaService orderSagaService, IOrderQueryService orderQueryService)");
+        addNodeEvidence("c3-ord-ctrl",
+                "src/Services/FruitOrdering/FruitOrdering.API/Controllers/OrdersController.cs:80",
+                "STATIC_CODE",
+                "var isPrivileged = User.IsInRole(\"Admin\") || User.IsInRole(\"Staff\");");
+        addNodeEvidence("c3-ord-saga",
+                "src/Services/FruitOrdering/FruitOrdering.API/Services/OrderSagaService.cs:14",
+                "STATIC_CODE",
+                "public sealed class OrderSagaService(OrderingDbContext dbContext, ICatalogApiClient catalogApiClient, IBasketApiClient basketApiClient, ...)");
+        addNodeEvidence("c3-ord-qry",
+                "src/Services/FruitOrdering/FruitOrdering.API/Services/OrderQueryService.cs:16",
+                "STATIC_CODE",
+                "var order = await dbContext.Orders.AsNoTracking().Include(o => o.Items)...;");
+        addNodeEvidence("c3-ord-catcli",
+                "src/Services/FruitOrdering/FruitOrdering.API/Clients/CatalogApiClient.cs:24",
+                "STATIC_CODE",
+                "public sealed class CatalogApiClient(HttpClient httpClient, ILogger<CatalogApiClient> logger) : ICatalogApiClient");
+        addNodeEvidence("c3-ord-bskcli",
+                "src/Services/FruitOrdering/FruitOrdering.API/Clients/BasketApiClient.cs:28",
+                "STATIC_CODE",
+                "public sealed class BasketApiClient(HttpClient httpClient, ILogger<BasketApiClient> logger) : IBasketApiClient");
+        addNodeEvidence("c3-ord-relay",
+                "src/Services/FruitOrdering/FruitOrdering.API/BackgroundServices/OutboxRelayBackgroundService.cs:14",
+                "STATIC_CODE",
+                "public sealed class OutboxRelayBackgroundService(IServiceScopeFactory scopeFactory, ILogger<OutboxRelayBackgroundService> logger) : BackgroundService");
+        addNodeEvidence("c3-ord-dbctx",
+                "src/Services/FruitOrdering/FruitOrdering.API/Data/OrderingDbContext.cs:14",
+                "STATIC_CODE",
+                "modelBuilder.HasDefaultSchema(\"ordering\");");
     }
 
     private DiagramVersion buildC1ContextDiagram() {
