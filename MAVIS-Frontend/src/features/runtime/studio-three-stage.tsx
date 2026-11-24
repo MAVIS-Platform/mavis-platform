@@ -2554,7 +2554,9 @@ export function StudioThreeStage({
           event.preventDefault();
           const hit = raycastServiceAt(event.clientX, event.clientY) ?? dropHoverService;
           setDropHoverService(null);
-          const toolId = event.dataTransfer.getData("application/x-mavis-studio-tool");
+          const toolId =
+            event.dataTransfer.getData("application/x-mavis-studio-tool") ||
+            event.dataTransfer.getData("text/plain");
           if (hit && toolId && callbacksRef.current.onDropTool) {
             callbacksRef.current.onDropTool(toolId, hit);
           }

@@ -1760,7 +1760,9 @@ export function LiveStudioWorkbench({
       >
         {standaloneHeader?.left && (
           <>
-            {standaloneHeader.left}
+            <div data-tour="studio-top-nav" className="flex min-w-0 items-center gap-2">
+              {standaloneHeader.left}
+            </div>
             <span
               className={`h-4 w-px shrink-0 ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
               aria-hidden="true"
@@ -1845,12 +1847,23 @@ export function LiveStudioWorkbench({
 
           {/* Studio Live Guided Tour (?) Trigger + Comprehensive SE EN/VI Switcher */}
           <ScreenHelpTrigger
-            screenId="studio-live"
+            screenId={authoring ? "studio-live-author" : "studio-live"}
             surfaceTheme={isLight ? "light" : "dark"}
             onTriggerClick={() => {
               setTelemetryPopoverOpen(false);
               setStylePopoverOpen(false);
               setSettingsPopoverOpen(false);
+            }}
+            onStepChange={(stepId) => {
+              if (stepId === "studio-author-builder" || stepId === "studio-inspector") {
+                setRightCardMode("service");
+                setShowRight(true);
+              } else if (stepId === "studio-mission") {
+                setMissionHidden(false);
+                setMissionCollapsed(false);
+              } else if (stepId === "studio-dock") {
+                setBottomCollapsed(true);
+              }
             }}
             triggerClassName={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition ${
               isLight
@@ -1862,6 +1875,7 @@ export function LiveStudioWorkbench({
           <div
             role="group"
             data-testid="studio-locale-toggle"
+            data-tour="studio-locale-toggle"
             aria-label={t("Studio language", "Ngôn ngữ Studio")}
             className={`inline-flex h-8 shrink-0 items-center rounded-lg border p-0.5 text-[11.5px] font-semibold ${
               isLight
@@ -2348,7 +2362,11 @@ export function LiveStudioWorkbench({
           </div>
           </div>
 
-          {standaloneHeader?.right}
+          {standaloneHeader?.right && (
+            <div data-tour="studio-author-actions" className="flex shrink-0 items-center gap-1.5">
+              {standaloneHeader.right}
+            </div>
+          )}
 
           {!standalone && (
             <Button

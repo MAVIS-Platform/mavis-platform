@@ -56,8 +56,8 @@ const milestones = [
     title: ["MAVIS Studio & 4-Stage Submission", "MAVIS Studio & Nộp bài 4 bước"],
     result: ["Signed RuntimeReceipt & > 5.0/10 grade", "Biên nhận HMAC & chấm > 5.0/10 mở Lab kế"],
     text: [
-      "Execute real Stop/Start and Scale (1–8) actions, compare Before vs. After impact, freeze your 4-stage SHA-256 package, and unlock the next Lab.",
-      "Thực thi Stop/Start và Scale (1–8) thật, so sánh Trước/Sau, đóng băng gói minh chứng 4 bước SHA-256 và mở khóa bài Lab kế tiếp.",
+      "Execute real Stop/Start and Scale (1–3) actions, compare Before vs. After impact, freeze your 4-stage SHA-256 package, and unlock the next Lab.",
+      "Thực thi Stop/Start và Scale (1–3) thật, so sánh Trước/Sau, đóng băng gói minh chứng 4 bước SHA-256 và mở khóa bài Lab kế tiếp.",
     ],
   },
 ] as const;
@@ -67,36 +67,36 @@ const screens = [
     image: "architecture",
     title: ["Architecture Explorer", "Khám phá kiến trúc"],
     description: [
-      "See how services relate and trace a dependency back to its source.",
-      "Xem các dịch vụ kết nối với nhau như thế nào và tìm đoạn mã thể hiện từng phụ thuộc.",
+      "Inspect C4 container diagrams, service dependencies, message brokers, and data stores.",
+      "Xem sơ đồ C4 Container, kết nối giữa các service, hàng đợi thông điệp và cơ sở dữ liệu.",
     ],
     alt: [
-      "Architecture Explorer with the dependency graph of the sample Payments Platform",
-      "Màn hình phân tích với đồ thị phụ thuộc của dự án Payments Platform mẫu",
+      "C4 Container diagram showing microservices, message brokers, and databases",
+      "Sơ đồ C4 Container thể hiện các microservice, message broker và cơ sở dữ liệu",
     ],
   },
   {
     image: "studio",
     title: ["MAVIS Studio", "MAVIS Studio"],
     description: [
-      "Follow a request and compare runtime evidence before and after a service change.",
-      "Theo dõi yêu cầu và so sánh minh chứng trước và sau khi thay đổi một dịch vụ.",
+      "Visualize live 3D microservices, trace Change Impact paths, and run real Docker drills.",
+      "Quan sát microservice trên sân khấu 3D, truy vết Change Impact và chạy bài thực hành Docker thật.",
     ],
     alt: [
-      "MAVIS Studio workbench with a sample topology and service controls",
-      "MAVIS Studio với sơ đồ dịch vụ mẫu và các nút điều khiển",
+      "MAVIS Studio 3D topology with Change Impact paths and Visual Studio Builder",
+      "Sân khấu 3D MAVIS Studio với đường lan truyền Change Impact và bảng soạn bài trực quan",
     ],
   },
   {
     image: "course",
     title: ["Course setup", "Chuẩn bị lớp học"],
     description: [
-      "Set up reference sources, check that Labs are ready, and issue a Passkey for the class.",
-      "Thiết lập nguồn tham chiếu, kiểm tra Lab đã sẵn sàng và cấp mã tham gia lớp.",
+      "Follow the 6-step course setup flow from repository import to Visual Studio Builder and publishing.",
+      "Theo dõi quy trình 6 bước từ nhập repo nguồn đến thiết lập Studio Lab và công bố cho lớp học.",
     ],
     alt: [
-      "Lecturer course setup checklist with a sample class",
-      "Danh sách các bước chuẩn bị lớp học mẫu dành cho giảng viên",
+      "Six-step course setup flow with Visual Studio Builder readiness card",
+      "Quy trình thiết lập khóa học 6 bước kèm thẻ cấu hình Visual Studio Builder",
     ],
   },
 ] as const;

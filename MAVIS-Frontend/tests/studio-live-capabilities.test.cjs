@@ -660,17 +660,37 @@ test("Studio Live defaults to 3D with dynamic camera pitch and interactive 3D ca
   }
 });
 
-test("Studio Live mounts comprehensive bilingual Guided Tour (?) trigger next to Telemetry HUD", () => {
+test("Studio Live mounts comprehensive bilingual Guided Tour (?) with confirmation dialog for Student (10 steps) and Author (11 steps)", () => {
   const { resolveScreenTour } = require("../src/lib/guided-tours/catalog.ts");
-  const tour = resolveScreenTour("studio-live");
-  assert.ok(tour, "Missing studio-live guided tour catalog entry");
-  assert.equal(tour.cards.length, 2);
-  assert.equal(tour.steps.length, 7);
-  for (const step of tour.steps) {
+  const studentTour = resolveScreenTour("studio-live");
+  assert.ok(studentTour, "Missing studio-live guided tour catalog entry");
+  assert.equal(studentTour.cards.length, 2);
+  assert.equal(studentTour.steps.length, 10);
+  for (const step of studentTour.steps) {
     assert.ok(step.title.en && step.title.vi, `Missing bilingual title on ${step.id}`);
     assert.ok(step.description.en && step.description.vi, `Missing bilingual description on ${step.id}`);
     assert.ok(step.selectors.length >= 1, `Missing selectors on ${step.id}`);
   }
+
+  const authorTour = resolveScreenTour("studio-live-author");
+  assert.ok(authorTour, "Missing studio-live-author guided tour catalog entry");
+  assert.equal(authorTour.cards.length, 2);
+  assert.equal(authorTour.steps.length, 11);
+  for (const step of authorTour.steps) {
+    assert.ok(step.title.en && step.title.vi, `Missing bilingual title on author step ${step.id}`);
+    assert.ok(step.description.en && step.description.vi, `Missing bilingual description on author step ${step.id}`);
+    assert.ok(step.selectors.length >= 1, `Missing selectors on author step ${step.id}`);
+  }
+
+  const tourSrc = fs.readFileSync(
+    path.join(__dirname, "../src/components/shared/screen-guided-tour.tsx"),
+    "utf8",
+  );
+  assert.ok(tourSrc.includes("data-tour-confirm-dialog={tour.id}"));
+  assert.ok(tourSrc.includes('data-testid="confirm-start-guided-tour"'));
+  assert.ok(tourSrc.includes('t("Later", "Để sau")'));
+  assert.ok(tourSrc.includes('t("Start guided tour", "Bắt đầu hướng dẫn")'));
+  assert.ok(tourSrc.includes("onStepChange?:"));
 
   const workbenchSrc = fs.readFileSync(
     path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
@@ -680,11 +700,14 @@ test("Studio Live mounts comprehensive bilingual Guided Tour (?) trigger next to
     path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
     "utf8",
   );
-  const triggerPos = workbenchSrc.indexOf('screenId="studio-live"');
+  const triggerPos = workbenchSrc.indexOf('screenId={authoring ? "studio-live-author" : "studio-live"}');
   const hudPos = workbenchSrc.indexOf('data-tour="studio-telemetry-hud"');
   assert.ok(triggerPos > 0 && hudPos > triggerPos, "Tour (?) trigger must sit directly before the Telemetry HUD pill");
   assert.ok(workbenchSrc.includes('surfaceTheme={isLight ? "light" : "dark"}'));
+  assert.ok(workbenchSrc.includes("onStepChange={(stepId) => {"));
   for (const anchor of [
+    'data-tour="studio-top-nav"',
+    'data-tour="studio-locale-toggle"',
     'data-tour="studio-mission"',
     'data-tour="studio-canvas"',
     'data-tour="studio-command-dock"',
@@ -693,10 +716,13 @@ test("Studio Live mounts comprehensive bilingual Guided Tour (?) trigger next to
     'data-tour="studio-top-right-tools"',
     'data-tour="studio-style-picker"',
     'data-tour="studio-settings-btn"',
+    'data-tour="studio-author-actions"',
+    'data-tour="studio-service-inspector"',
   ]) {
     assert.ok(workbenchSrc.includes(anchor), `Missing tour anchor in live-studio-workbench.tsx: ${anchor}`);
   }
   assert.ok(obsSrc.includes('data-tour="studio-3d-controls-group"'));
+  assert.ok(obsSrc.includes('data-tour="studio-viewport-pill"'));
   assert.ok(obsSrc.includes('"studio-services-graph"'));
   const stageSrc = fs.readFileSync(
     path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
@@ -1389,7 +1415,7 @@ test("Studio Settings toggles 3D node & edge tags, Stats shows rich Service Heal
   assert.match(workbenchSrc, /Throughput/);
 
   // Task 3: EN/VI toggle right beside ? (ScreenHelpTrigger) + natural SE Vietnamese without translating service identifiers
-  assert.match(workbenchSrc, /<ScreenHelpTrigger[\s\S]{0,1200}data-testid="studio-locale-toggle"/);
+  assert.match(workbenchSrc, /<ScreenHelpTrigger[\s\S]{0,2000}data-testid="studio-locale-toggle"/);
   assert.match(chartsSrc, /useLocale/);
   assert.match(exerciseSrc, /useLocale/);
 
@@ -1491,4 +1517,139 @@ test("Studio Live Author UX & Performance: goal-specific rules, scalable service
   assert.match(standaloneSrc, /lastSavedTopologyJsonRef/);
   assert.match(standaloneSrc, /const optimisticExercise = buildNextExercisePayload/);
   assert.match(standaloneSrc, /busy:\s*autoStudio\.isPending/);
+});
+
+
+test("Studio Live serializes visual saves (zero 409), supports text/plain 3D DnD, scales cleanly to 24+ services, and ships updated homepage previews", () => {
+  const standaloneSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  const threeSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const homepageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/homepage/public-homepage.tsx"),
+    "utf8",
+  );
+
+  // 1. Serialized save queue + fresh React Query cache revision lookup prevents rapid-toggle HTTP 409 Conflict
+  assert.match(standaloneSrc, /visualSaveChainRef = useRef<Promise<unknown>>\(Promise\.resolve\(\)\)/);
+  assert.match(standaloneSrc, /cache\.getQueryData<Response<"runtimeConfiguration">>\(\[\s*"api",\s*"runtimeConfiguration"/);
+  assert.match(standaloneSrc, /const run = visualSaveChainRef\.current\.then\(execute, execute\);/);
+
+  // 2. 3D Stage onDrop reads text/plain fallback for cross-browser / real-mouse HTML5 chip drag-and-drop
+  assert.match(threeSrc, /event\.dataTransfer\.getData\("text\/plain"\)/);
+
+  // 3. 24-service topology scalability: Reverse BFS (with cycle), 3D zone bounds, and 3D edge anchors
+  const { computeStaticBlastRadius } = require("../src/features/runtime/studio-authoring-helpers.ts");
+  const { computeLiveZoneRects, compute3DEdgeAnchors } = require("../src/features/runtime/studio-three-stage.tsx");
+
+  const edgeNodes = ["api-gateway", "web-bff", "mobile-bff"];
+  const coreNodes = Array.from({ length: 17 }, (_, i) => `svc-${String(i + 1).padStart(2, "0")}`);
+  const dataNodes = ["db-orders", "db-payments", "redis-cache", "kafka-broker"];
+  const all24 = [...edgeNodes, ...coreNodes, ...dataNodes];
+  assert.equal(all24.length, 24);
+
+  const edges24 = [
+    { from: "api-gateway", to: "svc-01" },
+    { from: "web-bff", to: "svc-01" },
+    { from: "mobile-bff", to: "svc-02" },
+    ...coreNodes.slice(0, -1).map((svc, idx) => ({ from: svc, to: coreNodes[idx + 1] })),
+    { from: "svc-06", to: "svc-05" }, // deliberate cycle
+    { from: "svc-17", to: "db-payments" },
+    { from: "svc-12", to: "db-orders" },
+    { from: "svc-08", to: "redis-cache" },
+    { from: "svc-15", to: "kafka-broker" },
+  ];
+
+  const t0 = Date.now();
+  const blast = computeStaticBlastRadius("db-payments", edges24);
+  assert.equal(blast.target, "db-payments");
+  assert.ok(blast.upstreamImpacted.includes("svc-17"));
+  assert.ok(blast.upstreamImpacted.includes("svc-01"));
+  assert.ok(blast.upstreamImpacted.includes("api-gateway"));
+  assert.ok(blast.upstreamImpacted.includes("web-bff"));
+  assert.ok(blast.upstreamImpacted.includes("mobile-bff"));
+  assert.equal(blast.upstreamImpacted.length, 20, "All 17 core + 3 edge callers upstream of db-payments");
+  assert.ok(blast.impactedEdgeKeys.has("svc-17->db-payments"));
+
+  const posById = new Map();
+  const positionedNodes = [];
+  edgeNodes.forEach((id, i) => {
+    const pos = { wx: -420, wz: (i - 1) * 140 };
+    posById.set(id, pos);
+    positionedNodes.push({ id, ...pos });
+  });
+  coreNodes.forEach((id, i) => {
+    const col = i % 5;
+    const row = Math.floor(i / 5);
+    const pos = { wx: -120 + col * 150, wz: (row - 1.5) * 140 };
+    posById.set(id, pos);
+    positionedNodes.push({ id, ...pos });
+  });
+  dataNodes.forEach((id, i) => {
+    const pos = { wx: 680, wz: (i - 1.5) * 140 };
+    posById.set(id, pos);
+    positionedNodes.push({ id, ...pos });
+  });
+
+  const zones = computeLiveZoneRects(
+    [
+      { key: "EDGE", memberIds: edgeNodes },
+      { key: "CORE", memberIds: coreNodes },
+      { key: "DATA", memberIds: dataNodes },
+    ],
+    posById,
+    -12,
+    14,
+    -8,
+    8,
+  );
+  assert.equal(zones.length, 3);
+  for (const z of zones) {
+    assert.ok(Number.isFinite(z.cx) && Number.isFinite(z.cz));
+    assert.ok(z.width >= 1.75 && z.depth >= 1.65);
+  }
+  const edgeZ = zones.find((z) => z.key === "EDGE");
+  const coreZ = zones.find((z) => z.key === "CORE");
+  assert.ok(edgeZ.cx + edgeZ.width / 2 <= coreZ.cx - coreZ.width / 2 + 0.01, "EDGE & CORE zones stay separated");
+
+  for (const e of edges24) {
+    const a = posById.get(e.from);
+    const b = posById.get(e.to);
+    const anchors = compute3DEdgeAnchors(
+      a.wx * 0.0115,
+      a.wz * 0.0115,
+      b.wx * 0.0115,
+      b.wz * 0.0115,
+      positionedNodes,
+      e.from,
+      e.to,
+      false,
+    );
+    for (const val of Object.values(anchors)) {
+      if (typeof val === "number") {
+        assert.ok(Number.isFinite(val), `Non-finite 3D anchor on ${e.from}->${e.to}`);
+      }
+    }
+  }
+  assert.ok(Date.now() - t0 < 500, "24-service Blast Radius + 3D layout calculation must stay sub-500ms");
+
+  // 4. Homepage preview assets & Scale (1–3) copy parity
+  assert.ok(homepageSrc.includes("Scale (1–3)"));
+  assert.ok(!homepageSrc.includes("Scale (1–8)"));
+  for (const file of [
+    "architecture.webp",
+    "architecture-dark.webp",
+    "studio.webp",
+    "studio-dark.webp",
+    "course.webp",
+    "course-dark.webp",
+    "share.jpg",
+  ]) {
+    const p = path.join(__dirname, "../public/homepage", file);
+    assert.ok(fs.existsSync(p) && fs.statSync(p).size > 5000, `Missing or empty homepage asset: ${file}`);
+  }
 });

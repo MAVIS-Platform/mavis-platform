@@ -447,6 +447,7 @@ function StandaloneStudioContent() {
   };
 
   const visualMutationSeqRef = useRef(0);
+  const visualSaveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const lastSavedTopologyJsonRef = useRef("");
   useEffect(() => {
     const serverTopo = parseStudioTopology(
@@ -609,80 +610,93 @@ function StandaloneStudioContent() {
       }
       return { seq, prevExercise, prevConfig };
     },
-    mutationFn: async (input: VisualExerciseInput) => {
-      const ref = assignment?.referenceSource;
-      const curEx = cache.getQueryData<StudioExerciseView>([
-        "api",
-        "studio-exercise",
-        workspaceId,
-        assignmentId,
-      ]);
-      const runtimeProjectId = ref?.projectId ?? curEx?.runtimeProjectId ?? projectId;
-      const runtimeModelId =
-        ref?.modelId ?? curEx?.runtimeModelId ?? runtimeConfig.data?.modelId;
-      const runtimeSnapshotId =
-        ref?.snapshotId ?? curEx?.runtimeSnapshotId ?? runtimeConfig.data?.snapshotId;
+    mutationFn: (input: VisualExerciseInput) => {
+      // Serialize backend saves so rapid toggles never collide on runtimeConfiguration expectedRevision (HTTP 409).
+      const execute = async () => {
+        const ref = assignment?.referenceSource;
+        const curEx = cache.getQueryData<StudioExerciseView>([
+          "api",
+          "studio-exercise",
+          workspaceId,
+          assignmentId,
+        ]);
+        const latestCachedCfg = projectId
+          ? cache.getQueryData<Response<"runtimeConfiguration">>([
+              "api",
+              "runtimeConfiguration",
+              { projectId },
+            ]) ?? runtimeConfig.data
+          : runtimeConfig.data;
+        const runtimeProjectId = ref?.projectId ?? curEx?.runtimeProjectId ?? projectId;
+        const runtimeModelId =
+          ref?.modelId ?? curEx?.runtimeModelId ?? latestCachedCfg?.modelId;
+        const runtimeSnapshotId =
+          ref?.snapshotId ?? curEx?.runtimeSnapshotId ?? latestCachedCfg?.snapshotId;
 
-      if (input.nextTopology && projectId) {
-        const nextTopoJson = JSON.stringify(input.nextTopology);
-        // Skip redundant runtime-configuration PUT when topology blocks/connections did not change.
-        if (nextTopoJson !== lastSavedTopologyJsonRef.current) {
-          const cfg =
-            runtimeConfig.data?.configured &&
-            runtimeConfig.data.modelId &&
-            runtimeConfig.data.snapshotId
-              ? runtimeConfig.data
-              : ((await runtimeConfig.refetch()).data ?? runtimeConfig.data);
-          const saveTopologyOnce = async (latestCfg: typeof cfg) => {
-            const targetSnapshotId = latestCfg?.snapshotId ?? runtimeSnapshotId ?? undefined;
-            const targetModelId = latestCfg?.modelId ?? runtimeModelId ?? undefined;
-            if (!latestCfg || !targetSnapshotId || !targetModelId) return;
-            const savedCfg = await client.execute("saveRuntimeConfiguration", {
-              projectId,
-              profileId: latestCfg.profileId,
-              snapshotId: targetSnapshotId,
-              modelId: targetModelId,
-              expectedRevision: latestCfg.revision,
-              profile: {
-                ...stripTransientRuntimeProfile(latestCfg.profile),
-                studioTopology: input.nextTopology,
-              },
-            });
-            lastSavedTopologyJsonRef.current = nextTopoJson;
-            cache.setQueryData(["api", "runtimeConfiguration", { projectId }], savedCfg);
-          };
-          try {
-            await saveTopologyOnce(cfg);
-          } catch (cause) {
-            const isConflict =
-              (cause instanceof ApiError && cause.status === 409) ||
-              (cause instanceof Error && /version has changed|conflict|409/i.test(cause.message));
-            if (isConflict) {
-              const fresh = (await runtimeConfig.refetch()).data;
-              await saveTopologyOnce(fresh);
-            } else {
-              throw cause;
+        if (input.nextTopology && projectId) {
+          const nextTopoJson = JSON.stringify(input.nextTopology);
+          // Skip redundant runtime-configuration PUT when topology blocks/connections did not change.
+          if (nextTopoJson !== lastSavedTopologyJsonRef.current) {
+            const cfg =
+              latestCachedCfg?.configured &&
+              latestCachedCfg.modelId &&
+              latestCachedCfg.snapshotId
+                ? latestCachedCfg
+                : ((await runtimeConfig.refetch()).data ?? latestCachedCfg);
+            const saveTopologyOnce = async (latestCfg: typeof cfg) => {
+              const targetSnapshotId = latestCfg?.snapshotId ?? runtimeSnapshotId ?? undefined;
+              const targetModelId = latestCfg?.modelId ?? runtimeModelId ?? undefined;
+              if (!latestCfg || !targetSnapshotId || !targetModelId) return;
+              const savedCfg = await client.execute("saveRuntimeConfiguration", {
+                projectId,
+                profileId: latestCfg.profileId,
+                snapshotId: targetSnapshotId,
+                modelId: targetModelId,
+                expectedRevision: latestCfg.revision,
+                profile: {
+                  ...stripTransientRuntimeProfile(latestCfg.profile),
+                  studioTopology: input.nextTopology,
+                },
+              });
+              lastSavedTopologyJsonRef.current = nextTopoJson;
+              cache.setQueryData(["api", "runtimeConfiguration", { projectId }], savedCfg);
+            };
+            try {
+              await saveTopologyOnce(cfg);
+            } catch (cause) {
+              const isConflict =
+                (cause instanceof ApiError && cause.status === 409) ||
+                (cause instanceof Error && /version has changed|conflict|409/i.test(cause.message));
+              if (isConflict) {
+                const fresh = (await runtimeConfig.refetch()).data;
+                await saveTopologyOnce(fresh);
+              } else {
+                throw cause;
+              }
             }
           }
         }
-      }
 
-      if (runtimeProjectId && runtimeModelId && runtimeSnapshotId) {
-        const payload = buildNextExercisePayload(curEx, input, {
-          runtimeProjectId,
-          runtimeModelId,
-          runtimeSnapshotId,
-        });
-        const savedExercise = await api<StudioExerciseView>(
-          `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-exercise`,
-          {
-            method: "PUT",
-            body: JSON.stringify(payload),
-          },
-        );
-        return { savedExercise };
-      }
-      return { savedExercise: undefined as StudioExerciseView | undefined };
+        if (runtimeProjectId && runtimeModelId && runtimeSnapshotId) {
+          const payload = buildNextExercisePayload(curEx, input, {
+            runtimeProjectId,
+            runtimeModelId,
+            runtimeSnapshotId,
+          });
+          const savedExercise = await api<StudioExerciseView>(
+            `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-exercise`,
+            {
+              method: "PUT",
+              body: JSON.stringify(payload),
+            },
+          );
+          return { savedExercise };
+        }
+        return { savedExercise: undefined as StudioExerciseView | undefined };
+      };
+      const run = visualSaveChainRef.current.then(execute, execute);
+      visualSaveChainRef.current = run.catch(() => undefined);
+      return run;
     },
     onSuccess: (result, _vars, ctx) => {
       if (ctx && ctx.seq !== visualMutationSeqRef.current) return;

@@ -2064,12 +2064,12 @@ export const SCREEN_TOUR_CATALOG = {
   "studio-live": {
     id: "studio-live",
     title: {
-      en: "MAVIS Studio — Quick Guide",
-      vi: "Hướng dẫn nhanh MAVIS Studio",
+      en: "MAVIS Studio — Interactive Guide",
+      vi: "Hướng dẫn tương tác MAVIS Studio",
     },
     subtitle: {
-      en: "Run real microservices in Docker, test faults or scaling, and watch live impact in 3D.",
-      vi: "Chạy hệ thống microservice thật bằng Docker, thử sự cố hoặc scale và xem tác động trực tiếp trên 3D.",
+      en: "Run real Docker microservices, test faults or scaling, and verify live impact in 3D.",
+      vi: "Chạy microservice thật bằng Docker, thử sự cố hoặc scale và kiểm chứng tác động trực tiếp trên 3D.",
     },
     cards: [
       {
@@ -2079,19 +2079,19 @@ export const SCREEN_TOUR_CATALOG = {
           vi: "5 bước làm bài Lab",
         },
         description: {
-          en: "1. Read mission & predict → 2. Click Run to start Docker → 3. Click a service to test actions → 4. Capture Snapshot → 5. Click Submit Lab.",
-          vi: "1. Đọc nhiệm vụ & dự đoán → 2. Bấm Run chạy Docker → 3. Bấm vào service để tác động → 4. Chụp Snapshot → 5. Bấm Submit Lab.",
+          en: "1. Read Mission & predict → 2. Click Run to start Docker → 3. Click a service to act → 4. Capture Snapshot → 5. Finish & Submit.",
+          vi: "1. Đọc nhiệm vụ & dự đoán → 2. Bấm Chạy Docker → 3. Bấm vào service để tác động → 4. Chụp Snapshot → 5. Kết thúc & Nộp bài.",
         },
       },
       {
         badge: "2",
         title: {
-          en: "Quick Mouse Controls",
-          vi: "Thao tác chuột nhanh",
+          en: "Mouse & 3D Controls",
+          vi: "Thao tác chuột & 3D",
         },
         description: {
-          en: "Left-drag: move map · Right-drag: rotate 3D · Scroll: zoom · Click any service: open Docker controls.",
-          vi: "Kéo chuột trái: di chuyển sơ đồ · Kéo chuột phải: xoay góc 3D · Cuộn chuột: phóng to/nhỏ · Bấm vào service: mở nút điều khiển.",
+          en: "Click block: select/deselect · Left-drag block: move · Right-drag: rotate 3D · Scroll: zoom.",
+          vi: "Bấm khối: chọn/bỏ chọn · Kéo chuột trái khối: di chuyển · Kéo chuột phải: xoay 3D · Cuộn: phóng to/nhỏ.",
         },
       },
     ],
@@ -2100,12 +2100,12 @@ export const SCREEN_TOUR_CATALOG = {
         id: "studio-mission",
         selectors: ['[data-tour="studio-mission"]', '[data-tour="studio-tool-mission"]'],
         title: {
-          en: "1. Lab Mission & Prediction",
-          vi: "1. Nhiệm vụ Lab & Dự đoán",
+          en: "1. Lab Mission & Pass Criteria",
+          vi: "1. Nhiệm vụ Lab & Tiêu chí đạt",
         },
         description: {
-          en: "Read your task, check pass items, and lock your prediction before making changes. You can drag or collapse this card.",
-          vi: "Đọc đề bài, xem tiêu chí cần đạt và chọn dự đoán service bị ảnh hưởng trước khi thao tác. Có thể kéo hoặc thu gọn thẻ này.",
+          en: "Read your task checklist, pass thresholds, and lock your Change Impact prediction before running Docker actions. Drag or collapse anytime.",
+          vi: "Đọc đề bài, theo dõi checklist tiêu chí đạt và khóa dự đoán Change Impact trước khi thao tác Docker. Có thể kéo di chuyển hoặc thu gọn thẻ này.",
         },
       },
       {
@@ -2113,71 +2113,277 @@ export const SCREEN_TOUR_CATALOG = {
         selectors: ['[data-tour="studio-services-graph"]', '[data-tour="studio-canvas"]'],
         title: {
           en: "2. Live 3D Service Map",
-          vi: "2. Sơ đồ 3D các Service",
+          vi: "2. Sân khấu 3D các Service",
         },
         description: {
-          en: "Each block is a real Docker service; colored arcs show live traffic. Click any service to Stop, Pause, Scale, or throttle CPU.",
-          vi: "Mỗi khối là 1 service chạy Docker thật; đường cong xanh/đỏ là lưu lượng chạy qua. Bấm vào bất kỳ service nào để Stop, Pause hoặc Scale.",
+          en: "Each block is a real Docker container; arcs show static dependencies and live traffic. Click a block to select it, or click again to deselect.",
+          vi: "Mỗi khối là 1 container Docker thật; đường nối thể hiện phụ thuộc tĩnh và lưu lượng trực tiếp. Bấm khối để chọn, bấm lần nữa để bỏ chọn.",
         },
       },
       {
         id: "studio-3d-camera",
         selectors: ['[data-tour="studio-3d-controls-group"]', '[data-tour="studio-viewport-pill"]'],
         title: {
-          en: "3. 3D Camera & 2D/3D Bar",
-          vi: "3. Xoay góc 3D & Thanh 2D/3D",
+          en: "3. 3D Camera Angles",
+          vi: "3. Điều khiển Góc nhìn 3D",
         },
         description: {
-          en: "Pick camera angles, rotate/tilt, or change layout here. Use the bar right below to switch 2D/3D, fit view, or zoom.",
-          vi: "Chọn góc nhìn, xoay/nghiêng hoặc đổi bố cục sơ đồ tại đây. Thanh bên dưới dùng để chuyển nhanh 2D/3D, căn giữa hoặc thu phóng.",
+          en: "Switch presets (Isometric, Top-down, Elevation), rotate/tilt camera angles, or collapse this compact card.",
+          vi: "Chọn nhanh 3 góc nhìn (Góc 3D, Từ trên, Mặt đứng), xoay/nghiêng góc quan sát hoặc thu gọn khung camera.",
+        },
+      },
+      {
+        id: "studio-viewport-bar",
+        selectors: ['[data-tour="studio-viewport-pill"]'],
+        title: {
+          en: "4. 2D/3D, Auto-Layout & Zoom Bar",
+          vi: "4. Thanh 2D/3D, Bố cục & Thu phóng",
+        },
+        description: {
+          en: "Toggle between 2D SVG and 3D WebGL, auto-arrange the graph, fit all services into view, or zoom in/out.",
+          vi: "Chuyển nhanh giữa 2D và 3D, tự sắp xếp lại sơ đồ, căn vừa khung hình hoặc phóng to/thu nhỏ.",
         },
       },
       {
         id: "studio-dock",
         selectors: ['[data-tour="studio-command-dock"]'],
         title: {
-          en: "4. Run, Snapshot & Submit Bar",
-          vi: "4. Thanh chạy Docker & Nộp bài",
+          en: "5. Run, Snapshot & Telemetry Dock",
+          vi: "5. Thanh Chạy Docker, Snapshot & Chẩn đoán",
         },
         description: {
-          en: "Click Run to start real Docker containers. While live, capture evidence snapshots, open Impact or Logs, then click Submit Lab.",
-          vi: "Bấm Run để khởi chạy Docker thật. Khi đang chạy, bấm chụp Snapshot làm bằng chứng, xem Impact/Logs rồi bấm Submit Lab nộp bài.",
+          en: "Click Run to boot real Docker containers. While live, capture evidence Snapshots, open Impact or Logs & Traces, then click Finish Studio.",
+          vi: "Bấm Chạy Docker để boot hệ thống thật. Khi đang chạy, chụp Snapshot bằng chứng, mở nhanh Tác động / Log & Trace, rồi bấm Kết thúc Studio.",
+        },
+      },
+      {
+        id: "studio-inspector",
+        selectors: ['[data-tour="studio-service-inspector"]', '[data-tour="studio-tool-services"]'],
+        title: {
+          en: "6. Service Controls & Fault Injection",
+          vi: "6. Điều khiển Service & Tiêm lỗi Docker",
+        },
+        description: {
+          en: "Inspect the selected service and run real Docker actions: Pause, Resume, Stop, Start, Scale replicas (1–3x), CPU Throttle, or Load RPS.",
+          vi: "Xem chi tiết service đang chọn và chạy lệnh Docker thật: Pause, Resume, Stop, Start, Scale (1–3x), bóp CPU hoặc chỉnh tải RPS.",
         },
       },
       {
         id: "studio-tool-rail",
         selectors: ['[data-tour="studio-tool-rail"]'],
         title: {
-          en: "5. Quick Panel Switcher",
-          vi: "5. Thanh chuyển nhanh bảng công cụ",
+          en: "7. Left Quick Panel Rail",
+          vi: "7. Thanh chuyển nhanh bảng công cụ",
         },
         description: {
-          en: "Open or hide panels from top to bottom: Mission, Service Controls, Impact Diagnostics, Snapshots (when Docker is running), and Logs & Traces.",
-          vi: "Bật/tắt nhanh các bảng từ trên xuống: Mục tiêu Lab, Điều khiển Service, Chẩn đoán Impact, Lịch sử Snapshot (khi Docker đang chạy) và Log & Trace.",
+          en: "Toggle panels from top to bottom: Lab Mission, Service Controls, Change Impact Diagnostics, Snapshots (when running), and Logs & Traces.",
+          vi: "Bật/tắt nhanh các bảng từ trên xuống: Mục tiêu Lab, Điều khiển Service, Chẩn đoán Change Impact, Lịch sử Snapshot (khi đang chạy) và Log & Trace.",
+        },
+      },
+      {
+        id: "studio-locale",
+        selectors: ['[data-tour="studio-locale-toggle"]'],
+        title: {
+          en: "8. EN | VI Language Switcher",
+          vi: "8. Chuyển ngôn ngữ EN | VI chuẩn SE",
+        },
+        description: {
+          en: "Switch instantly between English and natural Software Engineering Vietnamese (preserving service names and standard SE terms).",
+          vi: "Đổi tức thì giữa tiếng Anh và tiếng Việt chuẩn kỹ sư phần mềm (giữ nguyên tên service và thuật ngữ Docker/p95/RPS).",
         },
       },
       {
         id: "studio-telemetry-hud",
         selectors: ['[data-tour="studio-telemetry-hud"]'],
         title: {
-          en: "6. Live Health & Metrics",
-          vi: "6. Chỉ số sức khỏe trực tiếp",
+          en: "9. Live Health HUD & Session Switcher",
+          vi: "9. Chỉ số sức khỏe & Lịch sử phiên",
         },
         description: {
-          en: "Shows healthy services (4/4), requests/sec (rps), latency (ms), and error rate (% err). Click to view details or switch past runs.",
-          vi: "Hiển thị số service khỏe (4/4), request/giây (rps), độ trễ (ms) và tỉ lệ lỗi (% err). Bấm vào để xem chi tiết hoặc đổi phiên cũ.",
+          en: "Tracks healthy pods (5/5), RPS, p95 latency, and error rate. Click to inspect live totals or switch between recent Studio runs.",
+          vi: "Theo dõi số pod khỏe (5/5), lưu lượng RPS, độ trễ p95 và tỉ lệ lỗi. Bấm vào để xem tóm tắt hoặc đổi sang phiên chạy cũ.",
         },
       },
       {
         id: "studio-style-settings",
         selectors: ['[data-tour="studio-top-right-tools"]', '[data-tour="studio-style-picker"]'],
         title: {
-          en: "7. Theme, 3D Tags & EN/VI",
-          vi: "7. Giao diện, Nhãn 3D & Đổi EN/VI",
+          en: "10. Studio Themes & 3D Tag Settings",
+          vi: "10. 4 Phong cách & Cài đặt Nhãn 3D",
         },
         description: {
-          en: "Pick from 4 Light/Dark themes, toggle floating 3D service/path tags in Settings, or switch EN/VI right beside '?'.",
-          vi: "Chọn 4 giao diện Sáng/Tối, bật/tắt nhãn nổi 3D trong Cài đặt, hoặc chuyển nhanh EN/VI chuẩn SE ngay kế bên nút '?'.",
+          en: "Pick from 4 Light/Dark themes and open Settings to show/hide 3D service/path tags, open the Service List sidebar, or Stop & Cancel your Docker session.",
+          vi: "Chọn 4 giao diện Sáng/Tối và mở Cài đặt để bật/tắt nhãn nổi 3D, mở Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
+        },
+      },
+    ],
+  },
+
+  "studio-live-author": {
+    id: "studio-live-author",
+    title: {
+      en: "MAVIS Visual Studio Builder — Guide",
+      vi: "Hướng dẫn Soạn bài trên MAVIS Studio 3D",
+    },
+    subtitle: {
+      en: "Design Change Impact, Scale-Out, Outage Recovery, or CPU drills directly on the 3D topology.",
+      vi: "Thiết kế bài tập Change Impact, Scale-Out, Khôi phục sự cố hoặc bóp CPU trực tiếp ngay trên sân khấu 3D.",
+    },
+    cards: [
+      {
+        badge: "1",
+        title: {
+          en: "3-Step Visual Authoring",
+          vi: "3 bước soạn bài trực quan",
+        },
+        description: {
+          en: "1. Pick a service & Exercise Goal → 2. Configure goal rules (click or drag onto 3D) → 3. Verify Mission & Endpoint, preview as Student, then click Done · Step 6.",
+          vi: "1. Chọn service & dạng bài → 2. Cấu hình thông số mục tiêu (bấm hoặc kéo thả lên 3D) → 3. Kiểm tra Đề bài & Endpoint, Thử vai SV rồi bấm Xong · Bước 6.",
+        },
+      },
+      {
+        badge: "2",
+        title: {
+          en: "Mouse & Drag Controls",
+          vi: "Thao tác chuột & kéo-thả",
+        },
+        description: {
+          en: "Click block: select/deselect · Drag goal chip onto 3D block: assign target · Click wire: mark required path · Right-drag: orbit 3D.",
+          vi: "Bấm khối: chọn/bỏ chọn · Kéo chip mục tiêu thả vào khối 3D: gán mục tiêu · Bấm dây nối: đánh dấu đường gọi · Kéo chuột phải: xoay 3D.",
+        },
+      },
+    ],
+    steps: [
+      {
+        id: "studio-author-nav",
+        selectors: ['[data-tour="studio-top-nav"]'],
+        title: {
+          en: "1. Lab Header & Auto-Save",
+          vi: "1. Tiêu đề Lab & Tự động lưu",
+        },
+        description: {
+          en: "Return to the course flow anytime via Back. Every visual goal or block change saves automatically to your Lab draft.",
+          vi: "Bấm Quay lại để về trang thiết lập lớp bất kỳ lúc nào. Mọi thao tác chọn dạng bài và gán mục tiêu đều tự động lưu vào bài Lab.",
+        },
+      },
+      {
+        id: "studio-author-builder",
+        selectors: ['[data-tour="studio-service-inspector"]'],
+        title: {
+          en: "2. Visual Studio Builder Panel",
+          vi: "2. Bảng Soạn bài trên Studio 3D",
+        },
+        description: {
+          en: "Pick any service from the top dropdown (scales cleanly to 20+ services), choose 1 of 4 Exercise Goals, tune only that goal's details + Reverse BFS preview, or switch to Mission & Advanced.",
+          vi: "Chọn service bằng dropdown trên cùng (gọn đẹp cho cả 20+ service), chọn 1 trong 4 dạng bài, chỉnh đúng thông số riêng của dạng bài đó + Dự báo Reverse BFS, hoặc sang tab Đề bài & Nâng cao.",
+        },
+      },
+      {
+        id: "studio-canvas",
+        selectors: ['[data-tour="studio-services-graph"]', '[data-tour="studio-canvas"]'],
+        title: {
+          en: "3. Interactive 3D Stage",
+          vi: "3. Sân khấu 3D tương tác",
+        },
+        description: {
+          en: "Click any 3D block to select it (click again to deselect), drag a target chip from the right panel directly onto a block, or click a wire to mark a required trace edge.",
+          vi: "Bấm khối 3D để chọn (bấm lần 2 để bỏ chọn), kéo-thả chip mục tiêu từ bảng phải thả thẳng vào khối 3D, hoặc bấm dây nối để đánh dấu đường gọi bắt buộc.",
+        },
+      },
+      {
+        id: "studio-3d-camera",
+        selectors: ['[data-tour="studio-3d-controls-group"]', '[data-tour="studio-viewport-pill"]'],
+        title: {
+          en: "4. 3D Camera Controls",
+          vi: "4. Điều khiển Góc nhìn 3D",
+        },
+        description: {
+          en: "Jump to Isometric, Top-down, or Elevation presets, rotate/tilt the camera, or collapse the widget for more canvas room.",
+          vi: "Chuyển nhanh 3 góc nhìn (Góc 3D, Từ trên, Mặt đứng), xoay/nghiêng góc máy hoặc thu gọn để sân khấu thoáng hơn.",
+        },
+      },
+      {
+        id: "studio-viewport-bar",
+        selectors: ['[data-tour="studio-viewport-pill"]'],
+        title: {
+          en: "5. 2D/3D, Auto-Layout & Zoom",
+          vi: "5. Thanh 2D/3D, Tự sắp xếp & Thu phóng",
+        },
+        description: {
+          en: "Switch between 2D and 3D views, auto-layout nodes, fit the whole topology to screen, or adjust zoom.",
+          vi: "Chuyển đổi nhanh 2D ↔ 3D, tự sắp xếp bố cục, căn vừa màn hình hoặc phóng to/thu nhỏ.",
+        },
+      },
+      {
+        id: "studio-dock",
+        selectors: ['[data-tour="studio-command-dock"]'],
+        title: {
+          en: "6. Run Docker & Live Diagnostics Dock",
+          vi: "6. Thanh Chạy Docker & Chẩn đoán",
+        },
+        description: {
+          en: "Click Run to boot real Docker containers and test your exercise live (Author by Doing), or open Impact Diagnostics and the Logs/Stats/Telemetry drawer.",
+          vi: "Bấm Chạy Docker để khởi chạy thật và làm mẫu tự sinh đề, hoặc mở nhanh bảng Tác động và ngăn Log & Trace / Tổng quan / Thông số.",
+        },
+      },
+      {
+        id: "studio-tool-rail",
+        selectors: ['[data-tour="studio-tool-rail"]'],
+        title: {
+          en: "7. Left Quick Panel Rail",
+          vi: "7. Thanh công cụ trái (Left Rail)",
+        },
+        description: {
+          en: "Toggle Lab Mission preview (hidden by default in Author Mode), Visual Studio Builder, Change Impact Diagnostics, Snapshots (when running), and Logs & Traces.",
+          vi: "Bật/tắt nhanh thẻ Mục tiêu Lab (ẩn mặc định khi soạn bài), bảng Soạn bài 3D, Chẩn đoán Impact, Lịch sử Snapshot (khi đang chạy) và Log & Trace.",
+        },
+      },
+      {
+        id: "studio-locale",
+        selectors: ['[data-tour="studio-locale-toggle"]'],
+        title: {
+          en: "8. EN | VI SE Language Switcher",
+          vi: "8. Chuyển đổi EN | VI chuẩn SE",
+        },
+        description: {
+          en: "Switch Studio between English and natural SE Vietnamese; auto-drafted student instructions follow your selected language.",
+          vi: "Đổi giao diện giữa tiếng Anh và tiếng Việt chuẩn SE; bản nháp đề bài sinh viên tự sinh cũng theo đúng ngôn ngữ đang chọn.",
+        },
+      },
+      {
+        id: "studio-telemetry-hud",
+        selectors: ['[data-tour="studio-telemetry-hud"]'],
+        title: {
+          en: "9. Cluster Health HUD & Runs",
+          vi: "9. Chỉ số cụm & Lịch sử phiên",
+        },
+        description: {
+          en: "Monitors pod count (5/5), live RPS, p95 latency, and error rate. Click to inspect summary metrics or switch past Docker runs.",
+          vi: "Hiển thị số pod (5/5), RPS, độ trễ p95 và tỉ lệ lỗi trực tiếp. Bấm vào để xem chi tiết hoặc chuyển giữa các lần chạy thử trước.",
+        },
+      },
+      {
+        id: "studio-style-settings",
+        selectors: ['[data-tour="studio-top-right-tools"]', '[data-tour="studio-style-picker"]'],
+        title: {
+          en: "10. Themes & Studio Settings",
+          vi: "10. 4 Phong cách & Cài đặt 3D",
+        },
+        description: {
+          en: "Switch between 4 Light/Dark themes and open Settings to toggle floating 3D service/path tags, open the Service List sidebar, or Stop & Cancel Docker.",
+          vi: "Chọn 4 giao diện Sáng/Tối và mở Cài đặt để bật/tắt nhãn nổi 3D, bật Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
+        },
+      },
+      {
+        id: "studio-author-finish",
+        selectors: ['[data-tour="studio-author-actions"]', '[data-tour="studio-top-right-tools"]'],
+        title: {
+          en: "11. Student Preview & Finish Step 6",
+          vi: "11. Thử vai Sinh viên & Hoàn tất Bước 6",
+        },
+        description: {
+          en: "Click Student view to inspect the exact student experience, then click Done · Step 6 to arrange modules and publish your Lab to the class.",
+          vi: "Bấm Thử vai SV để xem đúng giao diện sinh viên nhận được, sau đó bấm Xong · Bước 6 để sắp xếp Module và Publish bài cho lớp.",
         },
       },
     ],
@@ -2188,6 +2394,7 @@ const CATALOG_MAP: Record<string, ScreenTourDefinition> = SCREEN_TOUR_CATALOG;
 
 const TITLE_TO_SCREEN_ID: Record<string, string> = {
   "studio-live": "studio-live",
+  "studio-live-author": "studio-live-author",
   "studio live": "studio-live",
   "mavis live": "studio-live",
   overview: "overview",

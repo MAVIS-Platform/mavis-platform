@@ -96,6 +96,7 @@ function scrollTargetIntoSpotlightView(targetEl: HTMLElement) {
 export function ScreenHelpTrigger({
   screenId,
   onCustomStart,
+  onStepChange,
   triggerClassName,
   iconClassName,
   onTriggerClick,
@@ -103,6 +104,7 @@ export function ScreenHelpTrigger({
 }: {
   screenId?: string | null | undefined;
   onCustomStart?: (() => void) | undefined;
+  onStepChange?: ((stepId: string | null) => void) | undefined;
   triggerClassName?: string | undefined;
   iconClassName?: string | undefined;
   onTriggerClick?: (() => void) | undefined;
@@ -119,11 +121,17 @@ export function ScreenHelpTrigger({
   const isLightSurface = surfaceTheme === "light";
   const isDarkSurface = surfaceTheme === "dark";
 
+  const handleStepChange = (next: number | null) => {
+    setStepIndex(next);
+    const nextStepId = next !== null ? (tour.steps[next]?.id ?? null) : null;
+    onStepChange?.(nextStepId);
+  };
+
   const startTour = () => {
     if (onCustomStart) {
       onCustomStart();
     } else {
-      setStepIndex(0);
+      handleStepChange(0);
     }
   };
 
@@ -149,7 +157,8 @@ export function ScreenHelpTrigger({
         </DialogTrigger>
         <DialogContent
           data-tour-surface={surfaceTheme ?? "auto"}
-          className={`sm:max-w-2xl ${
+          data-tour-confirm-dialog={tour.id}
+          className={`sm:max-w-xl ${
             isLightSurface
               ? "border-slate-200 bg-white text-slate-900 shadow-2xl"
               : isDarkSurface
@@ -165,13 +174,26 @@ export function ScreenHelpTrigger({
           }}
         >
           <DialogHeader>
-            <DialogTitle
-              className={
-                isLightSurface ? "text-slate-900" : isDarkSurface ? "text-slate-100" : undefined
-              }
-            >
-              {t(tour.title.en, tour.title.vi)}
-            </DialogTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <DialogTitle
+                className={
+                  isLightSurface ? "text-slate-900" : isDarkSurface ? "text-slate-100" : undefined
+                }
+              >
+                {t(tour.title.en, tour.title.vi)}
+              </DialogTitle>
+              <span
+                className={`rounded-full border px-2 py-0.5 font-mono text-xs font-semibold ${
+                  isLightSurface
+                    ? "border-slate-200 bg-slate-100 text-slate-700"
+                    : isDarkSurface
+                      ? "border-slate-700 bg-slate-800 text-slate-200"
+                      : "border-border bg-muted text-muted-foreground"
+                }`}
+              >
+                {tour.steps.length} {t("steps", "bước")}
+              </span>
+            </div>
             <DialogDescription
               className={
                 isLightSurface ? "text-slate-600" : isDarkSurface ? "text-slate-300" : undefined
@@ -180,11 +202,11 @@ export function ScreenHelpTrigger({
               {t(tour.subtitle.en, tour.subtitle.vi)}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 text-sm sm:grid-cols-2">
-            {tour.cards.map((card, idx) => (
+          <div className="grid gap-3 text-sm sm:grid-cols-2">
+            {tour.cards.map((card) => (
               <div
                 key={card.badge}
-                className={`flex flex-col justify-between space-y-3 rounded-lg border p-3.5 ${
+                className={`space-y-1.5 rounded-lg border p-3 ${
                   isLightSurface
                     ? "border-slate-200 bg-slate-50 text-slate-900"
                     : isDarkSurface
@@ -192,63 +214,101 @@ export function ScreenHelpTrigger({
                       : "bg-card"
                 }`}
               >
-                <div className="space-y-2">
-                  <p
-                    className={`flex items-center gap-1.5 font-semibold ${
+                <p
+                  className={`flex items-center gap-1.5 font-semibold ${
+                    isLightSurface
+                      ? "text-slate-900"
+                      : isDarkSurface
+                        ? "text-slate-100"
+                        : "text-foreground"
+                  }`}
+                >
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-mono text-xs font-bold ${
                       isLightSurface
-                        ? "text-slate-900"
+                        ? "bg-slate-900 text-white"
                         : isDarkSurface
-                          ? "text-slate-100"
-                          : "text-foreground"
+                          ? "bg-white text-slate-950"
+                          : "bg-primary/10 text-primary"
                     }`}
                   >
-                    <span
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-bold ${
-                        isLightSurface
-                          ? "bg-blue-100 text-blue-700"
-                          : isDarkSurface
-                            ? "bg-sky-500/20 text-sky-300"
-                            : "bg-primary/10 text-primary"
-                      }`}
-                    >
-                      {card.badge}
-                    </span>
-                    <span>{t(card.title.en, card.title.vi)}</span>
-                  </p>
-                  <p
-                    className={`leading-6 ${
-                      isLightSurface
-                        ? "text-slate-600"
-                        : isDarkSurface
-                          ? "text-slate-300"
-                          : "text-muted-foreground"
-                    }`}
-                  >
-                    {t(card.description.en, card.description.vi)}
-                  </p>
-                </div>
-                {idx === 0 && (
-                  <div>
-                    <Button
-                      type="button"
-                      className={
-                        isLightSurface
-                          ? "bg-slate-900 text-white hover:bg-slate-800"
-                          : isDarkSurface
-                            ? "bg-sky-500 text-slate-950 hover:bg-sky-400"
-                            : undefined
-                      }
-                      onClick={() => {
-                        startingTour.current = true;
-                        setOpen(false);
-                      }}
-                    >
-                      {t("Start guided tour", "Bắt đầu hướng dẫn")}
-                    </Button>
-                  </div>
-                )}
+                    {card.badge}
+                  </span>
+                  <span>{t(card.title.en, card.title.vi)}</span>
+                </p>
+                <p
+                  className={`text-xs leading-5 ${
+                    isLightSurface
+                      ? "text-slate-600"
+                      : isDarkSurface
+                        ? "text-slate-300"
+                        : "text-muted-foreground"
+                  }`}
+                >
+                  {t(card.description.en, card.description.vi)}
+                </p>
               </div>
             ))}
+          </div>
+          <div
+            className={`flex flex-wrap items-center justify-between gap-2 border-t pt-3 ${
+              isLightSurface
+                ? "border-slate-200"
+                : isDarkSurface
+                  ? "border-slate-800"
+                  : "border-border"
+            }`}
+          >
+            <p
+              className={`text-xs ${
+                isLightSurface
+                  ? "text-slate-500"
+                  : isDarkSurface
+                    ? "text-slate-400"
+                    : "text-muted-foreground"
+              }`}
+            >
+              {t(
+                "Ready to walk through every control on this screen?",
+                "Xác nhận bắt đầu hướng dẫn chi tiết từng vùng giao diện?",
+              )}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={
+                  isLightSurface
+                    ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+                    : isDarkSurface
+                      ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+                      : undefined
+                }
+                onClick={() => setOpen(false)}
+              >
+                {t("Later", "Để sau")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                autoFocus
+                data-testid="confirm-start-guided-tour"
+                className={
+                  isLightSurface
+                    ? "bg-slate-900 text-white hover:bg-slate-800"
+                    : isDarkSurface
+                      ? "bg-white text-slate-950 hover:bg-slate-200"
+                      : undefined
+                }
+                onClick={() => {
+                  startingTour.current = true;
+                  setOpen(false);
+                }}
+              >
+                {t("Start guided tour", "Bắt đầu hướng dẫn")}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -256,7 +316,7 @@ export function ScreenHelpTrigger({
         <ScreenSpotlightOverlay
           tour={tour}
           stepIndex={stepIndex}
-          onStepChange={setStepIndex}
+          onStepChange={handleStepChange}
           surfaceTheme={surfaceTheme}
         />
       )}
