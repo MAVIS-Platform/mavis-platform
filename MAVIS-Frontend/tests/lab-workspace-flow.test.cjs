@@ -40,12 +40,13 @@ test("LabWorkspace replaces the 3-step top bar with a focused module sidebar and
   const screens = read("src/features/courses/screens.tsx");
 
   assert.doesNotMatch(screens, /<LabToc/);
-  assert.match(screens, /lg:grid-cols-\[276px_minmax\(0,1fr\)\]/);
+  assert.doesNotMatch(screens, /lg:grid-cols-\[276px_minmax\(0,1fr\)\]/);
+  assert.match(screens, /<SheetContent/);
   assert.match(screens, /expandModuleFlowItems/);
   assert.doesNotMatch(
     screens,
     /lg:grid-cols-\[260px_minmax\(0,1fr\)\]/,
-    "Duplicate 260px left LabToc sidebar should be removed so diagrams use full width",
+    "Permanent left sidebar should be removed so diagrams use full width",
   );
   assert.doesNotMatch(screens, /Learning objective/);
   assert.match(screens, /Static impact (?:hypothesis|analysis)/);
@@ -151,6 +152,15 @@ test("Step 3 submission flow hides dead Jump to Submission Box after submit, foc
   assert.match(screens, /!hasSubmittedLab && !preview \?/);
   assert.match(screens, /querySelector<HTMLTextAreaElement>\("textarea"\)\?\.focus\(\{ preventScroll: true \}\)/);
   assert.match(subV2, /href=\{`\/submissions\/\$\{encodeURIComponent\(latest\.id\)\}`\}/);
+});
+
+test("Commit #02: learning pages hide permanent left sidebar in favor of collapsible TOC and roadmap separates Module Submit", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  assert.match(syllabus, /\{!isLearningWorkspace && \(\s*<aside/);
+  assert.match(syllabus, /<Sheet open=\{tocOpen\} onOpenChange=\{setTocOpen\}>/);
+  assert.match(syllabus, /resolveModuleFlowKind\(item\) === "MODULE_SUBMIT"/);
+  assert.doesNotMatch(syllabus, /Điều hướng khác/);
+  assert.doesNotMatch(syllabus, /Bước 1 · Lý thuyết/);
 });
 
 test("Coursera CDS contrast palette & simplified Lab header deduplicate prefixes and show real lab instructions", () => {

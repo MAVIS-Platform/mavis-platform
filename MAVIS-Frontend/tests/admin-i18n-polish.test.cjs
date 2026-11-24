@@ -312,7 +312,8 @@ test("Task #07 Navigation & Layout: SectionHeader supports backHref, /submission
   assert.match(appShell, /\/workspace-overview\?workspace=\$\{encodeURIComponent\(selectedWorkspaceId\)\}/);
   assert.match(wsShell, /Back to classes/);
   assert.doesNotMatch(courses, /<LabToc/);
-  assert.match(courses, /lg:grid-cols-\[276px_minmax\(0,1fr\)\]/);
+  assert.doesNotMatch(courses, /lg:grid-cols-\[276px_minmax\(0,1fr\)\]/);
+  assert.match(courses, /<Sheet open=\{tocOpen\}/);
   assert.doesNotMatch(courses, /sticky bottom-3/);
   assert.match(courses, /id="lab-switcher"[\s\S]*min-w-\[240px\] max-w-\[380px\]/);
 });
