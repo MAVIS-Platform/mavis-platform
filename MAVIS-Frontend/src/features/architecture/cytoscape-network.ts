@@ -44,12 +44,32 @@ export function networkColor(type?: string) {
   }
 }
 
-export function shortProtocolLabel(protocol: string): string {
+export function shortProtocolLabel(
+  protocol: string,
+  edge?: ArchitecturalModel["edges"][number],
+  nodes?: Map<string, ArchitecturalModel["elements"][number]>,
+): string {
   switch (protocol) {
     case "GATEWAY_ROUTE":
       return "Route";
-    case "SERVICE_HTTP_CALL":
-      return "HTTP / Feign";
+    case "SERVICE_HTTP_CALL": {
+      const props = edge?.properties as Record<string, unknown> | undefined;
+      const meta = [
+        props?.["clientFramework"],
+        props?.["client"],
+        props?.["resilience"],
+        props?.["label"],
+        edge ? nodes?.get(edge.from)?.technology : undefined,
+        edge ? nodes?.get(edge.to)?.technology : undefined,
+      ]
+        .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+        .join(" ");
+      if (/feign/i.test(meta)) return "HTTP / Feign";
+      if (/polly|httpclient|apiclient|\.net|c#|asp\.net/i.test(meta)) {
+        return "HTTP / HttpClient";
+      }
+      return "HTTP";
+    }
     case "DATABASE_ACCESS":
       return "DB / Cache";
     case "MESSAGE_PUBLISH":
@@ -150,7 +170,7 @@ export function networkElements(
                 source: `node:${edge.from}`,
                 target: `node:${edge.to}`,
                 label: edge.protocol,
-                shortLabel: shortProtocolLabel(edge.protocol),
+                shortLabel: shortProtocolLabel(edge.protocol, edge, nodes),
                 color: hasRuntime ? "#10b981" : networkColor(nodes.get(edge.from)?.elementType),
                 exploreColor: hasRuntime ? "#10b981" : appearance.get(edge.from)!.color,
                 lineStyle: edge.uncertain
