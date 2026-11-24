@@ -446,179 +446,266 @@ function StandaloneStudioContent() {
     });
   };
 
+  const visualMutationSeqRef = useRef(0);
+  const lastSavedTopologyJsonRef = useRef("");
+  useEffect(() => {
+    const serverTopo = parseStudioTopology(
+      (runtimeConfig.data?.profile as Record<string, unknown> | undefined)?.["studioTopology"],
+    );
+    if (serverTopo && visualMutationSeqRef.current === 0) {
+      lastSavedTopologyJsonRef.current = JSON.stringify(serverTopo);
+    }
+  }, [runtimeConfig.data]);
+
+  type VisualExerciseInput = {
+    stoppedServices?: string[];
+    stoppedControllers?: string[];
+    instructions?: string;
+    baselinePath?: string;
+    maxErrorRatePercent?: string;
+    maxP95Ms?: string;
+    minImpactF1?: string;
+    minReplicas?: Array<{ service: string; count: number }>;
+    exerciseType?: ExerciseTypeKey | null;
+    predictionRequired?: boolean;
+    targetChangeAction?: TargetChangeAction | null;
+    requiredTraceEdge?: { from: string; to: string } | null;
+    allowedActions?: string[];
+    nextTopology?: StudioTopology;
+  };
+
+  const buildNextExercisePayload = (
+    cur: StudioExerciseView | undefined,
+    input: VisualExerciseInput,
+    ids: {
+      runtimeProjectId: string | null;
+      runtimeModelId: string | null;
+      runtimeSnapshotId: string | null;
+    },
+  ): StudioExerciseView => {
+    const chosenPath = input.baselinePath?.trim();
+    const nextBaseline = chosenPath
+      ? [{ method: "GET" as const, path: chosenPath, expectedStatus: 200 }]
+      : cur?.baselineRequests?.length && cur.baselineRequests[0]?.path !== "/"
+        ? cur.baselineRequests
+        : [{ method: "GET" as const, path: defaultBaselinePath, expectedStatus: 200 }];
+    const nextMaxErr =
+      input.maxErrorRatePercent !== undefined
+        ? input.maxErrorRatePercent.trim()
+          ? Number(input.maxErrorRatePercent)
+          : null
+        : (cur?.successCriteria?.maxErrorRatePercent ?? 0);
+    const nextMaxP95 =
+      input.maxP95Ms !== undefined
+        ? input.maxP95Ms.trim()
+          ? Number(input.maxP95Ms)
+          : null
+        : (cur?.successCriteria?.maxP95Ms ?? null);
+    const nextMinImpactF1 =
+      input.minImpactF1 !== undefined
+        ? input.minImpactF1.trim()
+          ? Number(input.minImpactF1)
+          : null
+        : (cur?.successCriteria?.minImpactF1 ?? null);
+    const nextExerciseType =
+      "exerciseType" in input
+        ? input.exerciseType
+        : (cur?.successCriteria?.exerciseType ?? null);
+    const nextPredictionRequired =
+      "predictionRequired" in input
+        ? input.predictionRequired
+        : (cur?.successCriteria?.predictionRequired ?? false);
+    const nextTargetAction =
+      "targetChangeAction" in input
+        ? input.targetChangeAction
+        : (cur?.successCriteria?.targetChangeAction ?? null);
+    const nextRequiredTraceEdge =
+      "requiredTraceEdge" in input
+        ? input.requiredTraceEdge
+        : (cur?.successCriteria?.requiredTraceEdge ?? null);
+    const nextAllowedActions =
+      input.allowedActions && input.allowedActions.length > 0
+        ? input.allowedActions
+        : cur?.allowedActions?.length
+          ? cur.allowedActions
+          : [
+              "START",
+              "STOP",
+              "SCALE",
+              "PAUSE",
+              "RESUME",
+              "THROTTLE_CPU",
+              "SET_LOAD",
+              "CONNECT",
+              "DISCONNECT",
+            ];
+    return {
+      ...cur,
+      runtimeProjectId: ids.runtimeProjectId,
+      runtimeModelId: ids.runtimeModelId,
+      runtimeSnapshotId: ids.runtimeSnapshotId,
+      baselineRequests: nextBaseline,
+      initialState: {
+        ...cur?.initialState,
+        stoppedServices: input.stoppedServices ?? cur?.initialState?.stoppedServices ?? [],
+        stoppedControllers:
+          input.stoppedControllers ?? cur?.initialState?.stoppedControllers ?? [],
+      },
+      allowedActions: nextAllowedActions,
+      successCriteria: {
+        ...cur?.successCriteria,
+        maxErrorRatePercent: nextMaxErr,
+        maxP95Ms: nextMaxP95,
+        requiredTraceEdge: nextRequiredTraceEdge,
+        minReplicas: input.minReplicas ?? cur?.successCriteria?.minReplicas ?? [],
+        exerciseType: nextExerciseType,
+        predictionRequired: nextPredictionRequired,
+        minImpactF1: nextMinImpactF1,
+        targetChangeAction: nextTargetAction,
+      },
+      instructions: (input.instructions ?? cur?.instructions ?? "").trim(),
+      revision: cur?.revision ?? 0,
+    };
+  };
+
   const saveVisualExercise = useMutation({
-    mutationFn: async (input: {
-      stoppedServices?: string[];
-      stoppedControllers?: string[];
-      instructions?: string;
-      baselinePath?: string;
-      maxErrorRatePercent?: string;
-      maxP95Ms?: string;
-      minImpactF1?: string;
-      minReplicas?: Array<{ service: string; count: number }>;
-      exerciseType?: ExerciseTypeKey | null;
-      predictionRequired?: boolean;
-      targetChangeAction?: TargetChangeAction | null;
-      requiredTraceEdge?: { from: string; to: string } | null;
-      allowedActions?: string[];
-      nextTopology?: StudioTopology;
-    }) => {
+    onMutate: (input: VisualExerciseInput) => {
+      const seq = ++visualMutationSeqRef.current;
+      setVisualError("");
+      setVisualSaved(false);
+      const exKey = ["api", "studio-exercise", workspaceId, assignmentId] as const;
+      const cfgKey = projectId
+        ? (["api", "runtimeConfiguration", { projectId }] as const)
+        : null;
+      const prevExercise = cache.getQueryData<StudioExerciseView>(exKey);
+      const prevConfig = cfgKey
+        ? cache.getQueryData<Response<"runtimeConfiguration">>(cfgKey)
+        : undefined;
+
       const ref = assignment?.referenceSource;
-      const runtimeProjectId = ref?.projectId ?? exercise.data?.runtimeProjectId ?? projectId;
+      const runtimeProjectId =
+        ref?.projectId ?? prevExercise?.runtimeProjectId ?? projectId ?? null;
       const runtimeModelId =
-        ref?.modelId ?? exercise.data?.runtimeModelId ?? runtimeConfig.data?.modelId;
+        ref?.modelId ?? prevExercise?.runtimeModelId ?? prevConfig?.modelId ?? null;
       const runtimeSnapshotId =
-        ref?.snapshotId ?? exercise.data?.runtimeSnapshotId ?? runtimeConfig.data?.snapshotId;
+        ref?.snapshotId ?? prevExercise?.runtimeSnapshotId ?? prevConfig?.snapshotId ?? null;
+
+      // Apply optimistic cache update synchronously so goal/rule clicks feel instant (<16ms) with zero UI lock.
+      const optimisticExercise = buildNextExercisePayload(prevExercise, input, {
+        runtimeProjectId,
+        runtimeModelId,
+        runtimeSnapshotId,
+      });
+      cache.setQueryData(exKey, optimisticExercise);
+
+      if (input.nextTopology && cfgKey && prevConfig) {
+        cache.setQueryData(cfgKey, {
+          ...prevConfig,
+          profile: {
+            ...prevConfig.profile,
+            studioTopology: input.nextTopology,
+          },
+        });
+      }
+      return { seq, prevExercise, prevConfig };
+    },
+    mutationFn: async (input: VisualExerciseInput) => {
+      const ref = assignment?.referenceSource;
+      const curEx = cache.getQueryData<StudioExerciseView>([
+        "api",
+        "studio-exercise",
+        workspaceId,
+        assignmentId,
+      ]);
+      const runtimeProjectId = ref?.projectId ?? curEx?.runtimeProjectId ?? projectId;
+      const runtimeModelId =
+        ref?.modelId ?? curEx?.runtimeModelId ?? runtimeConfig.data?.modelId;
+      const runtimeSnapshotId =
+        ref?.snapshotId ?? curEx?.runtimeSnapshotId ?? runtimeConfig.data?.snapshotId;
 
       if (input.nextTopology && projectId) {
-        // Guard against stale React Query cache right after Prepare Runtime (modelId null / rev 0)
-        const cfg =
-          runtimeConfig.data?.configured &&
-          runtimeConfig.data.modelId &&
-          runtimeConfig.data.snapshotId
-            ? runtimeConfig.data
-            : ((await runtimeConfig.refetch()).data ?? runtimeConfig.data);
-        const saveTopologyOnce = async (latestCfg: typeof cfg) => {
-          const targetSnapshotId = latestCfg?.snapshotId ?? runtimeSnapshotId ?? undefined;
-          const targetModelId = latestCfg?.modelId ?? runtimeModelId ?? undefined;
-          if (!latestCfg || !targetSnapshotId || !targetModelId) return;
-          const savedCfg = await client.execute("saveRuntimeConfiguration", {
-            projectId,
-            profileId: latestCfg.profileId,
-            snapshotId: targetSnapshotId,
-            modelId: targetModelId,
-            expectedRevision: latestCfg.revision,
-            profile: {
-              ...stripTransientRuntimeProfile(latestCfg.profile),
-              studioTopology: input.nextTopology,
-            },
-          });
-          cache.setQueryData(["api", "runtimeConfiguration", { projectId }], savedCfg);
-        };
-        try {
-          await saveTopologyOnce(cfg);
-        } catch (cause) {
-          // Auto-recover 409 revision conflict once by fetching latest runtimeConfiguration
-          const isConflict =
-            (cause instanceof ApiError && cause.status === 409) ||
-            (cause instanceof Error && /version has changed|conflict|409/i.test(cause.message));
-          if (isConflict) {
-            const fresh = (await runtimeConfig.refetch()).data;
-            await saveTopologyOnce(fresh);
-          } else {
-            throw cause;
+        const nextTopoJson = JSON.stringify(input.nextTopology);
+        // Skip redundant runtime-configuration PUT when topology blocks/connections did not change.
+        if (nextTopoJson !== lastSavedTopologyJsonRef.current) {
+          const cfg =
+            runtimeConfig.data?.configured &&
+            runtimeConfig.data.modelId &&
+            runtimeConfig.data.snapshotId
+              ? runtimeConfig.data
+              : ((await runtimeConfig.refetch()).data ?? runtimeConfig.data);
+          const saveTopologyOnce = async (latestCfg: typeof cfg) => {
+            const targetSnapshotId = latestCfg?.snapshotId ?? runtimeSnapshotId ?? undefined;
+            const targetModelId = latestCfg?.modelId ?? runtimeModelId ?? undefined;
+            if (!latestCfg || !targetSnapshotId || !targetModelId) return;
+            const savedCfg = await client.execute("saveRuntimeConfiguration", {
+              projectId,
+              profileId: latestCfg.profileId,
+              snapshotId: targetSnapshotId,
+              modelId: targetModelId,
+              expectedRevision: latestCfg.revision,
+              profile: {
+                ...stripTransientRuntimeProfile(latestCfg.profile),
+                studioTopology: input.nextTopology,
+              },
+            });
+            lastSavedTopologyJsonRef.current = nextTopoJson;
+            cache.setQueryData(["api", "runtimeConfiguration", { projectId }], savedCfg);
+          };
+          try {
+            await saveTopologyOnce(cfg);
+          } catch (cause) {
+            const isConflict =
+              (cause instanceof ApiError && cause.status === 409) ||
+              (cause instanceof Error && /version has changed|conflict|409/i.test(cause.message));
+            if (isConflict) {
+              const fresh = (await runtimeConfig.refetch()).data;
+              await saveTopologyOnce(fresh);
+            } else {
+              throw cause;
+            }
           }
         }
       }
 
       if (runtimeProjectId && runtimeModelId && runtimeSnapshotId) {
-        const cur = exercise.data;
-        const chosenPath = input.baselinePath?.trim();
-        const nextBaseline = chosenPath
-          ? [{ method: "GET" as const, path: chosenPath, expectedStatus: 200 }]
-          : cur?.baselineRequests?.length && cur.baselineRequests[0]?.path !== "/"
-            ? cur.baselineRequests
-            : [{ method: "GET" as const, path: defaultBaselinePath, expectedStatus: 200 }];
-        const nextMaxErr =
-          input.maxErrorRatePercent !== undefined
-            ? input.maxErrorRatePercent.trim()
-              ? Number(input.maxErrorRatePercent)
-              : null
-            : (cur?.successCriteria?.maxErrorRatePercent ?? 0);
-        const nextMaxP95 =
-          input.maxP95Ms !== undefined
-            ? input.maxP95Ms.trim()
-              ? Number(input.maxP95Ms)
-              : null
-            : (cur?.successCriteria?.maxP95Ms ?? null);
-        const nextMinImpactF1 =
-          input.minImpactF1 !== undefined
-            ? input.minImpactF1.trim()
-              ? Number(input.minImpactF1)
-              : null
-            : (cur?.successCriteria?.minImpactF1 ?? null);
-        const nextExerciseType =
-          "exerciseType" in input
-            ? input.exerciseType
-            : (cur?.successCriteria?.exerciseType ?? null);
-        const nextPredictionRequired =
-          "predictionRequired" in input
-            ? input.predictionRequired
-            : (cur?.successCriteria?.predictionRequired ?? false);
-        const nextTargetAction =
-          "targetChangeAction" in input
-            ? input.targetChangeAction
-            : (cur?.successCriteria?.targetChangeAction ?? null);
-        const nextRequiredTraceEdge =
-          "requiredTraceEdge" in input
-            ? input.requiredTraceEdge
-            : (cur?.successCriteria?.requiredTraceEdge ?? null);
-        const nextAllowedActions =
-          input.allowedActions && input.allowedActions.length > 0
-            ? input.allowedActions
-            : cur?.allowedActions?.length
-              ? cur.allowedActions
-              : [
-                  "START",
-                  "STOP",
-                  "SCALE",
-                  "PAUSE",
-                  "RESUME",
-                  "THROTTLE_CPU",
-                  "SET_LOAD",
-                  "CONNECT",
-                  "DISCONNECT",
-                ];
-
-        await api<StudioExerciseView>(
+        const payload = buildNextExercisePayload(curEx, input, {
+          runtimeProjectId,
+          runtimeModelId,
+          runtimeSnapshotId,
+        });
+        const savedExercise = await api<StudioExerciseView>(
           `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-exercise`,
           {
             method: "PUT",
-            body: JSON.stringify({
-              ...cur,
-              runtimeProjectId,
-              runtimeModelId,
-              runtimeSnapshotId,
-              baselineRequests: nextBaseline,
-              initialState: {
-                ...cur?.initialState,
-                stoppedServices: input.stoppedServices ?? cur?.initialState?.stoppedServices ?? [],
-                stoppedControllers:
-                  input.stoppedControllers ?? cur?.initialState?.stoppedControllers ?? [],
-              },
-              allowedActions: nextAllowedActions,
-              successCriteria: {
-                ...cur?.successCriteria,
-                maxErrorRatePercent: nextMaxErr,
-                maxP95Ms: nextMaxP95,
-                requiredTraceEdge: nextRequiredTraceEdge,
-                minReplicas: input.minReplicas ?? cur?.successCriteria?.minReplicas ?? [],
-                exerciseType: nextExerciseType,
-                predictionRequired: nextPredictionRequired,
-                minImpactF1: nextMinImpactF1,
-                targetChangeAction: nextTargetAction,
-              },
-              instructions: (input.instructions ?? cur?.instructions ?? "").trim(),
-            }),
+            body: JSON.stringify(payload),
           },
+        );
+        return { savedExercise };
+      }
+      return { savedExercise: undefined as StudioExerciseView | undefined };
+    },
+    onSuccess: (result, _vars, ctx) => {
+      if (ctx && ctx.seq !== visualMutationSeqRef.current) return;
+      setVisualSaved(true);
+      if (result?.savedExercise) {
+        cache.setQueryData(
+          ["api", "studio-exercise", workspaceId, assignmentId],
+          result.savedExercise,
         );
       }
     },
-    onMutate: () => {
-      setVisualError("");
-      setVisualSaved(false);
-    },
-    onSuccess: () => {
-      setVisualSaved(true);
-      void cache.invalidateQueries({
-        queryKey: ["api", "studio-exercise", workspaceId, assignmentId],
-      });
-      void exercise.refetch();
-      void runtimeConfig.refetch();
-      void readiness.refetch();
-      void setup.refetch();
-    },
-    onError: (cause) => {
+    onError: (cause, _vars, ctx) => {
+      if (ctx && ctx.seq === visualMutationSeqRef.current) {
+        if (ctx.prevExercise !== undefined) {
+          cache.setQueryData(
+            ["api", "studio-exercise", workspaceId, assignmentId],
+            ctx.prevExercise,
+          );
+        }
+        if (projectId && ctx.prevConfig !== undefined) {
+          cache.setQueryData(["api", "runtimeConfiguration", { projectId }], ctx.prevConfig);
+        }
+      }
       setVisualError(cause instanceof Error ? cause.message : String(cause));
     },
   });
@@ -701,7 +788,7 @@ function StandaloneStudioContent() {
             exercise.data?.successCriteria?.minReplicas?.[0]?.count == null
               ? ""
               : String(exercise.data.successCriteria.minReplicas[0].count),
-          busy: saveVisualExercise.isPending,
+          busy: autoStudio.isPending,
           saving: saveVisualExercise.isPending,
           saved: visualSaved,
           error: visualError || undefined,
@@ -1046,6 +1133,9 @@ function StandaloneStudioContent() {
                     : `Throttle ${service} CPU to 25%, observe p95 latency jump across callers, and capture Before/After evidence.`,
               });
             }
+          },
+          onUpdateGoalRule: (patch) => {
+            saveVisualExercise.mutate(patch);
           },
           onToggleWire: (from: string, to: string) => {
             const isSame =

@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -249,6 +250,15 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   publishHref?: string | undefined;
   onSelectGoal?: ((goalId: StudioGoalId, preferredService?: string) => void) | undefined;
   onApplyBlockChip?: ((chipId: AuthorBlockChipId, service: string) => void) | undefined;
+  onUpdateGoalRule?:
+    | ((patch: {
+        targetChangeAction?: TargetChangeAction | null;
+        predictionRequired?: boolean;
+        maxErrorRatePercent?: string;
+        minReplicas?: Array<{ service: string; count: number }>;
+        instructions?: string;
+      }) => void)
+    | undefined;
   onToggleWire?: ((from: string, to: string) => void) | undefined;
   onApplyLiveDemoAsExercise?: ((derived: DerivedExerciseFromDemo) => void) | undefined;
   onSaveMission: (patch: {
@@ -467,22 +477,27 @@ export function LiveStudioWorkbench({
       BOOTING_STATUSES.has(liveData!.executionStatus.toUpperCase()));
   const isPreviewMode =
     !activeSessionId || !liveData || isTerminalAuthorSession || !hasLiveRuntimeState;
+  const authoringScalable = authoring?.scalableServices;
+  const authoringStoppedServices = authoring?.initialStoppedServices;
+  const authoringStoppedControllers = authoring?.initialStoppedControllers;
   const effectivePreviewTopology = useMemo<Studio["topology"] | undefined>(() => {
     if (!previewTopology) return undefined;
-    if (!authoring) return previewTopology;
+    if (!authoringScalable || !authoringStoppedServices || !authoringStoppedControllers) {
+      return previewTopology;
+    }
     return {
       ...previewTopology,
       blocks: previewTopology.blocks.map((block) => ({
         ...block,
-        canScale: authoring.scalableServices.includes(block.service),
-        initiallyStopped: authoring.initialStoppedServices.includes(block.service),
+        canScale: authoringScalable.includes(block.service),
+        initiallyStopped: authoringStoppedServices.includes(block.service),
       })),
       connections: previewTopology.connections.map((conn) => ({
         ...conn,
-        initiallyStopped: authoring.initialStoppedControllers.includes(conn.controllerService),
+        initiallyStopped: authoringStoppedControllers.includes(conn.controllerService),
       })),
     };
-  }, [previewTopology, authoring]);
+  }, [previewTopology, authoringScalable, authoringStoppedServices, authoringStoppedControllers]);
 
   const data: Studio = useMemo(() => {
     if (!isPreviewMode && liveData) {
@@ -625,6 +640,8 @@ export function LiveStudioWorkbench({
   const [frontPanel, setFrontPanel] = useState<"right" | "mission">("right");
   const [bottomHeight, setBottomHeight] = useState(256);
   const [bottomCollapsed, setBottomCollapsed] = useState(true);
+  const leftAsideRef = useRef<HTMLElement>(null);
+  const bottomDrawerRef = useRef<HTMLDivElement>(null);
   const rightCardRef = useRef<HTMLElement>(null);
   const missionCardRef = useRef<HTMLDivElement>(null);
   type ResizeAxis =
@@ -690,7 +707,24 @@ export function LiveStudioWorkbench({
             ? "nwse-resize"
             : "col-resize";
 
-    function onPointerMove(moveEvent: PointerEvent) {
+    let rafId = 0;
+    let pendingMove: PointerEvent | null = null;
+    let nextLeftWidth = leftWidth;
+    let nextShowLeft = showLeft;
+    let nextRightWidth = initialRight;
+    let nextRightHeight: number | null = rightHeight;
+    let nextMissionWidth = initialMissionWidth;
+    let nextMissionHeight: number | null = missionHeight;
+    let nextBottomHeight = bottomHeight;
+    let nextBottomCollapsed = bottomCollapsed;
+    let didMove = false;
+
+    const applyFrame = () => {
+      rafId = 0;
+      const moveEvent = pendingMove;
+      if (!moveEvent) return;
+      pendingMove = null;
+      didMove = true;
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
       const maxCardW = Math.max(360, Math.min(720, window.innerWidth - 96));
@@ -699,45 +733,88 @@ export function LiveStudioWorkbench({
       if (axis === "left") {
         const raw = initialLeft + dx;
         if (raw < 90) {
-          setShowLeft(false);
+          nextShowLeft = false;
         } else {
-          setShowLeft(true);
-          setLeftWidth(Math.max(180, Math.min(560, Math.round(raw))));
+          nextShowLeft = true;
+          nextLeftWidth = Math.max(180, Math.min(560, Math.round(raw)));
+          if (leftAsideRef.current) leftAsideRef.current.style.width = `${nextLeftWidth}px`;
         }
       } else if (axis === "right" || axis === "right-corner") {
-        setRightWidth(Math.max(260, Math.min(maxCardW, Math.round(initialRight - dx))));
+        nextRightWidth = Math.max(260, Math.min(maxCardW, Math.round(initialRight - dx)));
+        if (rightCardRef.current) rightCardRef.current.style.width = `${nextRightWidth}px`;
         if (axis === "right-corner") {
-          setRightHeight(Math.max(220, Math.min(maxCardH, Math.round(initialRightHeight + dy))));
+          nextRightHeight = Math.max(220, Math.min(maxCardH, Math.round(initialRightHeight + dy)));
+          if (rightCardRef.current) rightCardRef.current.style.height = `${nextRightHeight}px`;
         }
       } else if (axis === "right-height") {
-        setRightHeight(Math.max(220, Math.min(maxCardH, Math.round(initialRightHeight + dy))));
+        nextRightHeight = Math.max(220, Math.min(maxCardH, Math.round(initialRightHeight + dy)));
+        if (rightCardRef.current) rightCardRef.current.style.height = `${nextRightHeight}px`;
       } else if (axis === "mission-width" || axis === "mission-corner") {
-        setMissionWidth(Math.max(210, Math.min(Math.min(520, maxCardW), Math.round(initialMissionWidth + dx))));
+        nextMissionWidth = Math.max(210, Math.min(Math.min(520, maxCardW), Math.round(initialMissionWidth + dx)));
+        if (missionCardRef.current) missionCardRef.current.style.width = `${nextMissionWidth}px`;
         if (axis === "mission-corner") {
-          setMissionCollapsed(false);
-          setMissionHeight(Math.max(140, Math.min(maxCardH, Math.round(initialMissionHeight + dy))));
+          nextMissionHeight = Math.max(140, Math.min(maxCardH, Math.round(initialMissionHeight + dy)));
+          if (missionCardRef.current) missionCardRef.current.style.height = `${nextMissionHeight}px`;
         }
       } else if (axis === "mission-height") {
-        setMissionCollapsed(false);
-        setMissionHeight(Math.max(140, Math.min(maxCardH, Math.round(initialMissionHeight + dy))));
+        nextMissionHeight = Math.max(140, Math.min(maxCardH, Math.round(initialMissionHeight + dy)));
+        if (missionCardRef.current) missionCardRef.current.style.height = `${nextMissionHeight}px`;
       } else {
         const raw = initialBottom - dy;
         const maxBottom = Math.max(540, Math.round(window.innerHeight * 0.78));
         if (raw < 72) {
-          setBottomCollapsed(true);
+          nextBottomCollapsed = true;
         } else {
-          setBottomCollapsed(false);
-          setBottomHeight(Math.max(100, Math.min(maxBottom, Math.round(raw))));
+          nextBottomCollapsed = false;
+          nextBottomHeight = Math.max(100, Math.min(maxBottom, Math.round(raw)));
+          if (bottomDrawerRef.current) bottomDrawerRef.current.style.height = `${nextBottomHeight}px`;
+          if (rightCardRef.current) {
+            const topPx = Math.max(16, 16 + rightOffset.y);
+            rightCardRef.current.style.maxHeight = `calc(100% - ${topPx + nextBottomHeight + 24}px)`;
+          }
         }
       }
+    };
+
+    function onPointerMove(moveEvent: PointerEvent) {
+      pendingMove = moveEvent;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
     }
 
     function cleanup() {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      if (pendingMove) applyFrame();
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", cleanup);
       window.removeEventListener("pointercancel", cleanup);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      if (didMove) {
+        if (axis === "left") {
+          setShowLeft(nextShowLeft);
+          if (nextShowLeft) setLeftWidth(nextLeftWidth);
+        } else if (axis === "right" || axis === "right-corner") {
+          setRightWidth(nextRightWidth);
+          if (axis === "right-corner" && nextRightHeight != null) setRightHeight(nextRightHeight);
+        } else if (axis === "right-height" && nextRightHeight != null) {
+          setRightHeight(nextRightHeight);
+        } else if (axis === "mission-width" || axis === "mission-corner") {
+          setMissionWidth(nextMissionWidth);
+          if (axis === "mission-corner" && nextMissionHeight != null) {
+            setMissionCollapsed(false);
+            setMissionHeight(nextMissionHeight);
+          }
+        } else if (axis === "mission-height" && nextMissionHeight != null) {
+          setMissionCollapsed(false);
+          setMissionHeight(nextMissionHeight);
+        } else if (axis === "bottom") {
+          setBottomCollapsed(nextBottomCollapsed);
+          if (!nextBottomCollapsed) setBottomHeight(nextBottomHeight);
+        }
+      }
       setResizingAxis(null);
       resizeCleanupRef.current = null;
     }
@@ -771,37 +848,59 @@ export function LiveStudioWorkbench({
 
     document.body.style.userSelect = "none";
     document.body.style.cursor = "grabbing";
+    if (card) card.style.willChange = "transform";
 
-    function onPointerMove(moveEvent: PointerEvent) {
+    let rafId = 0;
+    let pendingMove: PointerEvent | null = null;
+    let latestOffset = initial;
+    let didMove = false;
+
+    const applyFrame = () => {
+      rafId = 0;
+      const moveEvent = pendingMove;
+      if (!moveEvent) return;
+      pendingMove = null;
+      didMove = true;
       const nextX = initial.x + (moveEvent.clientX - startX);
       const nextY = initial.y + (moveEvent.clientY - startY);
       const minY = -8;
       const maxY = Math.max(-8, ph - 72);
       const clampedY = Math.max(minY, Math.min(maxY, Math.round(nextY)));
-
-      if (panel === "right") {
-        const minX = 16 - Math.max(8, pw - cw - 8);
-        const maxX = 8;
-        setRightOffset({
-          x: Math.max(minX, Math.min(maxX, Math.round(nextX))),
-          y: clampedY,
-        });
-      } else {
-        const minX = -62;
-        const maxX = Math.max(-62, pw - cw - 78);
-        setMissionOffset({
-          x: Math.max(minX, Math.min(maxX, Math.round(nextX))),
-          y: clampedY,
-        });
+      const clampedX =
+        panel === "right"
+          ? Math.max(16 - Math.max(8, pw - cw - 8), Math.min(8, Math.round(nextX)))
+          : Math.max(-62, Math.min(Math.max(-62, pw - cw - 78), Math.round(nextX)));
+      latestOffset = { x: clampedX, y: clampedY };
+      if (card) {
+        // GPU-composited drag: 0 React re-renders per pixel while dragging floating panels.
+        card.style.transform = `translate3d(${clampedX - initial.x}px, ${clampedY - initial.y}px, 0)`;
       }
+    };
+
+    function onPointerMove(moveEvent: PointerEvent) {
+      pendingMove = moveEvent;
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
     }
 
     function cleanup() {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      if (pendingMove) applyFrame();
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", cleanup);
       window.removeEventListener("pointercancel", cleanup);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      if (card) {
+        card.style.transform = "";
+        card.style.willChange = "";
+      }
+      if (didMove) {
+        if (panel === "right") setRightOffset(latestOffset);
+        else setMissionOffset(latestOffset);
+      }
       resizeCleanupRef.current = null;
     }
 
@@ -937,29 +1036,39 @@ export function LiveStudioWorkbench({
     authoring?.error ??
     null;
 
-  const blocks =
-    data.topology?.blocks ??
-    data.services.map((service) => ({
-      service,
-      label: service,
-      canScale: false,
-      initiallyStopped: false,
-    }));
-  const nodeNames = Object.fromEntries(blocks.map((block) => [block.service, block.label]));
-  const configuredEdges = data.topology?.connections.flatMap((link) => {
-    const running = runningFor(data, link.controllerService) ?? 0;
-    return running > 0
-      ? [
-          {
-            from: link.from,
-            to: link.to,
-            id: link.controllerService,
-            protocol: link.protocol,
-            active: true,
-          },
-        ]
-      : [];
-  });
+  const blocks = useMemo(
+    () =>
+      data.topology?.blocks ??
+      data.services.map((service) => ({
+        service,
+        label: service,
+        canScale: false,
+        initiallyStopped: false,
+      })),
+    [data.topology?.blocks, data.services],
+  );
+  const nodeNames = useMemo(
+    () => Object.fromEntries(blocks.map((block) => [block.service, block.label])),
+    [blocks],
+  );
+  const configuredEdges = useMemo(
+    () =>
+      data.topology?.connections.flatMap((link) => {
+        const running = runningFor(data, link.controllerService) ?? 0;
+        return running > 0
+          ? [
+              {
+                from: link.from,
+                to: link.to,
+                id: link.controllerService,
+                protocol: link.protocol,
+                active: true,
+              },
+            ]
+          : [];
+      }),
+    [data],
+  );
   const canScaleFor = (service: string) =>
     data.topology
       ? data.topology.blocks.find((block) => block.service === service)?.canScale === true
@@ -1430,17 +1539,25 @@ export function LiveStudioWorkbench({
     [authoring?.targetChangeAction?.service, staticEdgesForBlast],
   );
 
+  const authoringTargetService = authoring?.targetChangeAction?.service ?? null;
+  const authoringRequiredEdge = authoring?.requiredTraceEdge ?? null;
   const authorHighlights = useMemo<StudioAuthorHighlights | undefined>(() => {
-    if (!authoring) return undefined;
+    if (!authoringStoppedServices || !authoringScalable) return undefined;
     return {
-      authorStoppedServices: new Set(authoring.initialStoppedServices),
-      impactTarget: authoring.targetChangeAction?.service ?? null,
+      authorStoppedServices: new Set(authoringStoppedServices),
+      impactTarget: authoringTargetService,
       predictedUpstream: new Set(staticBlastRadius.upstreamImpacted),
       impactEdgeKeys: staticBlastRadius.impactedEdgeKeys,
-      requiredTraceEdge: authoring.requiredTraceEdge ?? null,
-      scalableServices: new Set(authoring.scalableServices),
+      requiredTraceEdge: authoringRequiredEdge,
+      scalableServices: new Set(authoringScalable),
     };
-  }, [authoring, staticBlastRadius]);
+  }, [
+    authoringStoppedServices,
+    authoringTargetService,
+    authoringRequiredEdge,
+    authoringScalable,
+    staticBlastRadius,
+  ]);
 
   const authoringWithBlast = useMemo<LiveBlockAuthoringControls | undefined>(() => {
     if (!authoring) return undefined;
@@ -2241,6 +2358,7 @@ export function LiveStudioWorkbench({
         {showLeft && (
           <>
             <aside
+              ref={leftAsideRef}
               style={{
                 width: leftWidth,
                 scrollbarWidth: "thin",
@@ -2255,9 +2373,11 @@ export function LiveStudioWorkbench({
                 selected={canvasSelected}
                 busy={isPreviewMode ? false : busy}
                 onSelect={(svc) => {
-                  studio.setService(svc);
+                  // Clicking the already-selected service toggles deselection cleanly.
+                  const nextSvc = svc && svc === canvasSelected ? "" : svc;
+                  studio.setService(nextSvc);
                   setSelectedAuthorWire(null);
-                  if (svc) {
+                  if (nextSvc) {
                     if (!authoring) setSetupPanel("service");
                     else if (setupPanel === "mission") setSetupPanel("presets");
                     setRightCardMode("service");
@@ -2343,9 +2463,11 @@ export function LiveStudioWorkbench({
                 data={data}
                 selected={canvasSelected}
                 onSelect={(svc) => {
-                  studio.setService(svc);
+                  // Clicking the already-selected service toggles deselection cleanly.
+                  const nextSvc = svc && svc === canvasSelected ? "" : svc;
+                  studio.setService(nextSvc);
                   setSelectedAuthorWire(null);
-                  if (svc) {
+                  if (nextSvc) {
                     if (!authoring) setSetupPanel("service");
                     else if (setupPanel === "mission") setSetupPanel("presets");
                     setRightCardMode("service");
@@ -3057,6 +3179,7 @@ export function LiveStudioWorkbench({
           </div>
 
           <div
+            ref={bottomDrawerRef}
             style={{ height: bottomHeight }}
             className={`flex min-w-0 shrink-0 flex-col overflow-hidden border-t ${styleCfg.drawerClass} ${
               resizingAxis === "bottom" ? "" : "transition-[height] duration-150"
@@ -5459,20 +5582,36 @@ export function LiveStudioWorkbench({
               })()
             ) : authoring ? (
               (() => {
-                const svc = selected || blocks[0]?.service || "";
+                const goalTargetSvc =
+                  authoring.targetChangeAction?.service ||
+                  (activeGoalId === "scale" ? authoring.replicaService : "") ||
+                  (activeGoalId === "recovery" ? authoring.initialStoppedServices[0] ?? "" : "");
+                const svc = canvasSelected || goalTargetSvc;
                 const startsDown = Boolean(svc && authoring.initialStoppedServices.includes(svc));
-                const canScale = Boolean(svc && authoring.scalableServices.includes(svc));
                 const isImpactTarget =
                   Boolean(svc) &&
                   authoring.targetChangeAction?.service === svc &&
                   (authoring.targetChangeAction.action === "PAUSE" ||
                     authoring.targetChangeAction.action === "STOP");
+                const impactActionKind =
+                  authoring.targetChangeAction?.action === "STOP" ? "STOP" : "PAUSE";
                 const isCpuTarget =
                   Boolean(svc) &&
                   authoring.targetChangeAction?.service === svc &&
                   authoring.targetChangeAction.action === "THROTTLE_CPU";
+                const cpuTargetPct = authoring.targetChangeAction?.cpuPercent ?? 25;
                 const scaleTargetCount =
                   svc && authoring.replicaService === svc ? Number(authoring.replicaCount) || 0 : 0;
+                const chipFor = (id: AuthorBlockChipId) =>
+                  AUTHOR_DRAG_CHIPS.find((c) => c.id === id)!;
+                const startChipDrag = (
+                  event: ReactDragEvent<HTMLButtonElement>,
+                  chipId: AuthorBlockChipId,
+                ) => {
+                  event.dataTransfer.setData("application/x-mavis-studio-tool", chipId);
+                  event.dataTransfer.setData("text/plain", chipId);
+                  event.dataTransfer.effectAllowed = "copy";
+                };
                 const activeWireFocus = selectedAuthorWire ?? authoring.requiredTraceEdge ?? null;
                 const wireIsRequired = Boolean(
                   activeWireFocus &&
@@ -5490,14 +5629,31 @@ export function LiveStudioWorkbench({
                 );
                 const liveSvcPhase = svc ? servicePhase(data, svc) : "running";
                 const isLiveDemoMode = !isPreviewMode && data.executionStatus === "RUNNING";
+                const goalSectionTitle =
+                  activeGoalId === "change-impact"
+                    ? t("2. Change Impact Setup", "2. Cấu hình Change Impact")
+                    : activeGoalId === "scale"
+                      ? t("2. Scale-Out Setup", "2. Cấu hình Chịu tải & Scale")
+                      : activeGoalId === "recovery"
+                        ? t("2. Outage Recovery Setup", "2. Cấu hình Khôi phục sự cố")
+                        : activeGoalId === "cpu"
+                          ? t("2. CPU Degradation Setup", "2. Cấu hình Tắc nghẽn CPU")
+                          : t("2. Goal Setup", "2. Cấu hình theo dạng bài");
 
                 return (
                   <section aria-label="Visual Studio Builder" className="space-y-2.5 text-xs">
                     {/* 1. 4-Card Exercise Goal Picker (Zero Icons / Zero Jargon) */}
                     <div className="space-y-1.5">
-                      <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
-                        {t("1. Exercise Goal", "1. Chọn dạng bài")}
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                          {t("1. Exercise Goal", "1. Chọn dạng bài")}
+                        </p>
+                        {authoring.saving && (
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {t("Saving…", "Đang lưu…")}
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 gap-1.5">
                         {AUTHOR_GOALS.map((goal) => {
                           const isActive = activeGoalId === goal.id;
@@ -5506,7 +5662,9 @@ export function LiveStudioWorkbench({
                               key={goal.id}
                               type="button"
                               disabled={authoring.busy}
-                              onClick={() => authoring.onSelectGoal?.(goal.id, svc || undefined)}
+                              onClick={() =>
+                                authoring.onSelectGoal?.(goal.id, canvasSelected || undefined)
+                              }
                               className={`rounded-lg border p-2 text-left transition-colors disabled:opacity-45 ${
                                 isActive
                                   ? isLight
@@ -5538,129 +5696,409 @@ export function LiveStudioWorkbench({
                       </div>
                     </div>
 
-                    {/* 2. Unified Selected 3D Block Controls & Draggable Chips (Click for selected block OR drag onto any 3D block) */}
+                    {/* 2. Goal-Specific Setup + Scalable Service Dropdown */}
                     <div
-                      className={`space-y-2 rounded-xl border p-2.5 ${
+                      data-testid="goal-specific-setup"
+                      data-active-goal={activeGoalId ?? "none"}
+                      className={`space-y-2.5 rounded-xl border p-2.5 ${
                         isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/70"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            {t("2. Block Rules · Drag or click", "2. Cấu hình khối · Kéo thả hoặc bấm")}
-                          </p>
-                          <span
-                            className={`block truncate font-mono text-xs font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
+                        <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                          {goalSectionTitle}
+                        </p>
+                        {canvasSelected && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              studio.setService("");
+                              setSelectedAuthorWire(null);
+                            }}
+                            className={`text-[10.5px] font-medium underline opacity-75 transition hover:opacity-100 ${
+                              isLight ? "text-slate-600" : "text-slate-300"
+                            }`}
                           >
-                            {svc || t("Click a 3D block", "Bấm chọn 1 khối 3D")}
-                          </span>
-                        </div>
-                        <span
-                          className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
-                            startsDown
-                              ? isLight
-                                ? "border-rose-300 bg-rose-50 text-rose-700"
-                                : "border-rose-500/40 bg-rose-500/15 text-rose-300"
-                              : isImpactTarget
-                                ? isLight
-                                  ? "border-amber-300 bg-amber-50 text-amber-800"
-                                  : "border-amber-500/40 bg-amber-500/15 text-amber-300"
-                                : isLight
-                                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                                  : "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                          }`}
-                        >
-                          {startsDown
-                            ? t("Starts Down", "Tắt sẵn")
-                            : isImpactTarget
-                              ? t("Impact Target", "Mục tiêu Impact")
-                              : t("Starts Up", "Chạy sẵn")}
-                        </span>
+                            {t("Deselect", "Bỏ chọn")}
+                          </button>
+                        )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {AUTHOR_DRAG_CHIPS.map((chip) => {
-                          const isChipActive =
-                            chip.id === "author-starts-down"
-                              ? startsDown
-                              : chip.id === "author-impact-target"
-                                ? isImpactTarget
-                                : chip.id === "author-scale-2x"
-                                  ? canScale || scaleTargetCount >= 2
-                                  : isCpuTarget;
-                          const activeBadge =
-                            chip.id === "author-scale-2x" && scaleTargetCount >= 2
-                              ? `${scaleTargetCount}x`
-                              : isChipActive
-                                ? "ON"
-                                : null;
-                          const labelText =
-                            chip.id === "author-scale-2x" && scaleTargetCount === 2
-                              ? t("Scale 2x -> 3x", "Scale 2x -> 3x")
-                              : t(chip.labelEn, chip.labelVi);
-                          const toneClass = isChipActive
-                            ? chip.accent === "rose"
-                              ? isLight
-                                ? "border-rose-500 bg-rose-100/90 text-rose-900 ring-1 ring-rose-400/50"
-                                : "border-rose-400 bg-rose-500/25 text-rose-100 ring-1 ring-rose-400/50"
-                              : chip.accent === "amber"
-                                ? isLight
-                                  ? "border-amber-500 bg-amber-100/90 text-amber-950 ring-1 ring-amber-400/50"
-                                  : "border-amber-400 bg-amber-500/25 text-amber-100 ring-1 ring-amber-400/50"
-                                : chip.accent === "sky"
+                      {/* Scalable Service Selector Dropdown (handles 5 to 50+ services cleanly) */}
+                      <label className="block space-y-1">
+                        <span className="text-[10.5px] font-medium text-muted-foreground">
+                          {t("Service on 3D Stage", "Service trên sân khấu 3D")} ({blocks.length})
+                        </span>
+                        <select
+                          aria-label={t("Select service on 3D stage", "Chọn service trên sân khấu 3D")}
+                          data-testid="studio-stage-service-select"
+                          value={canvasSelected}
+                          onChange={(event) => {
+                            studio.setService(event.target.value);
+                            setSelectedAuthorWire(null);
+                          }}
+                          className={`h-8 w-full rounded-lg border px-2 font-mono text-[11.5px] font-medium ${
+                            isLight
+                              ? "border-slate-300 bg-white text-slate-900"
+                              : "border-slate-700 bg-slate-900 text-slate-100"
+                          }`}
+                        >
+                          <option value="">
+                            {t(
+                              "— None selected (click a 3D block) —",
+                              "— Chưa chọn (bấm khối 3D) —",
+                            )}
+                          </option>
+                          {blocks.map((block) => {
+                            const tags: string[] = [];
+                            if (authoring.initialStoppedServices.includes(block.service)) {
+                              tags.push(t("Starts Down", "Tắt sẵn"));
+                            }
+                            if (
+                              authoring.targetChangeAction?.service === block.service &&
+                              (authoring.targetChangeAction.action === "PAUSE" ||
+                                authoring.targetChangeAction.action === "STOP")
+                            ) {
+                              tags.push(t("Impact Target", "Mục tiêu Impact"));
+                            } else if (
+                              authoring.targetChangeAction?.service === block.service &&
+                              authoring.targetChangeAction.action === "THROTTLE_CPU"
+                            ) {
+                              tags.push(`CPU ${authoring.targetChangeAction.cpuPercent ?? 25}%`);
+                            }
+                            if (
+                              authoring.replicaService === block.service &&
+                              Number(authoring.replicaCount) >= 2
+                            ) {
+                              tags.push(`Scale >= ${authoring.replicaCount}x`);
+                            }
+                            return (
+                              <option key={block.service} value={block.service}>
+                                {tags.length > 0
+                                  ? `${block.service} · ${tags.join(", ")}`
+                                  : block.service}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </label>
+
+                      {/* Goal-specific controls only — no cross-goal clutter */}
+                      {activeGoalId === "change-impact" && (() => {
+                        const chip = chipFor("author-impact-target");
+                        const impactSvc = svc;
+                        return (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              draggable={!authoring.busy}
+                              disabled={authoring.busy || !impactSvc}
+                              title={t(chip.hintEn, chip.hintVi)}
+                              onDragStart={(e) => startChipDrag(e, "author-impact-target")}
+                              onClick={() =>
+                                impactSvc &&
+                                authoring.onApplyBlockChip?.("author-impact-target", impactSvc)
+                              }
+                              className={`flex w-full cursor-grab items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${
+                                isImpactTarget
+                                  ? isLight
+                                    ? "border-amber-500 bg-amber-100/90 text-amber-950 ring-1 ring-amber-400/50"
+                                    : "border-amber-400 bg-amber-500/25 text-amber-100 ring-1 ring-amber-400/50"
+                                  : isLight
+                                    ? "border-amber-200 bg-white text-amber-900 hover:border-amber-400 hover:bg-amber-50"
+                                    : "border-amber-500/35 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                              }`}
+                            >
+                              <span className="truncate">
+                                {impactSvc
+                                  ? `${t("Impact Target", "Mục tiêu Impact")}: ${impactSvc}`
+                                  : t("Drag onto a 3D block to set Impact Target", "Kéo thả lên khối 3D để đặt mục tiêu")}
+                              </span>
+                              <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
+                                {isImpactTarget ? "ON" : t("Drag / Click", "Kéo / Bấm")}
+                              </span>
+                            </button>
+
+                            {isImpactTarget && impactSvc && (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] text-muted-foreground">
+                                    {t("Fault action", "Hành động gây lỗi")}
+                                  </span>
+                                  <div className="inline-flex rounded-lg border border-border/80 p-0.5">
+                                    {(["PAUSE", "STOP"] as const).map((act) => {
+                                      const on = impactActionKind === act;
+                                      return (
+                                        <button
+                                          key={act}
+                                          type="button"
+                                          onClick={() =>
+                                            authoring.onUpdateGoalRule?.({
+                                              targetChangeAction: { action: act, service: impactSvc },
+                                            })
+                                          }
+                                          className={`rounded-md px-2 py-0.5 font-mono text-[10.5px] font-semibold transition ${
+                                            on
+                                              ? isLight
+                                                ? "bg-amber-600 text-white"
+                                                : "bg-amber-500 text-slate-950"
+                                              : "text-muted-foreground hover:text-foreground"
+                                          }`}
+                                        >
+                                          {act}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                <label className="flex cursor-pointer items-center justify-between gap-2 text-[11px]">
+                                  <span className="text-muted-foreground">
+                                    {t(
+                                      "Require student prediction first",
+                                      "Yêu cầu SV dự đoán trước khi chạy",
+                                    )}
+                                  </span>
+                                  <input
+                                    type="checkbox"
+                                    checked={authoring.predictionRequired === true}
+                                    onChange={(e) =>
+                                      authoring.onUpdateGoalRule?.({
+                                        predictionRequired: e.target.checked,
+                                      })
+                                    }
+                                    className="size-3.5 rounded border-slate-400 accent-amber-600"
+                                  />
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {activeGoalId === "scale" && (() => {
+                        const chip = chipFor("author-scale-2x");
+                        const scaleSvc = svc;
+                        const isScaleTarget = scaleTargetCount >= 2;
+                        return (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              draggable={!authoring.busy}
+                              disabled={authoring.busy || !scaleSvc}
+                              title={t(chip.hintEn, chip.hintVi)}
+                              onDragStart={(e) => startChipDrag(e, "author-scale-2x")}
+                              onClick={() =>
+                                scaleSvc &&
+                                authoring.onApplyBlockChip?.("author-scale-2x", scaleSvc)
+                              }
+                              className={`flex w-full cursor-grab items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${
+                                isScaleTarget
                                   ? isLight
                                     ? "border-sky-500 bg-sky-100/90 text-sky-950 ring-1 ring-sky-400/50"
                                     : "border-sky-400 bg-sky-500/25 text-sky-100 ring-1 ring-sky-400/50"
                                   : isLight
-                                    ? "border-violet-500 bg-violet-100/90 text-violet-950 ring-1 ring-violet-400/50"
-                                    : "border-violet-400 bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/50"
-                            : chip.accent === "rose"
-                              ? isLight
-                                ? "border-rose-200 bg-white text-rose-800 hover:border-rose-400 hover:bg-rose-50"
-                                : "border-rose-500/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
-                              : chip.accent === "amber"
-                                ? isLight
-                                  ? "border-amber-200 bg-white text-amber-900 hover:border-amber-400 hover:bg-amber-50"
-                                  : "border-amber-500/35 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
-                                : chip.accent === "sky"
-                                  ? isLight
                                     ? "border-sky-200 bg-white text-sky-900 hover:border-sky-400 hover:bg-sky-50"
                                     : "border-sky-500/35 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
-                                  : isLight
-                                    ? "border-violet-200 bg-white text-violet-900 hover:border-violet-400 hover:bg-violet-50"
-                                    : "border-violet-500/35 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20";
-                          return (
+                              }`}
+                            >
+                              <span className="truncate">
+                                {scaleSvc
+                                  ? `${t("Scale Target", "Service cần Scale")}: ${scaleSvc}`
+                                  : t("Drag onto a 3D block to set Scale Target", "Kéo thả lên khối 3D để chọn service Scale")}
+                              </span>
+                              <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
+                                {isScaleTarget ? `${scaleTargetCount}x` : t("Drag / Click", "Kéo / Bấm")}
+                              </span>
+                            </button>
+
+                            {scaleSvc && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] text-muted-foreground">
+                                  {t("Minimum replicas", "Số replica tối thiểu")}
+                                </span>
+                                <div className="inline-flex rounded-lg border border-border/80 p-0.5">
+                                  {([2, 3] as const).map((cnt) => {
+                                    const on = scaleTargetCount === cnt;
+                                    return (
+                                      <button
+                                        key={cnt}
+                                        type="button"
+                                        onClick={() => authoring.onSetReplicaTarget?.(scaleSvc, cnt)}
+                                        className={`rounded-md px-2.5 py-0.5 font-mono text-[10.5px] font-semibold transition ${
+                                          on
+                                            ? isLight
+                                              ? "bg-sky-600 text-white"
+                                              : "bg-sky-500 text-slate-950"
+                                            : "text-muted-foreground hover:text-foreground"
+                                        }`}
+                                      >
+                                        &gt;= {cnt}x
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {activeGoalId === "recovery" && (() => {
+                        const chip = chipFor("author-starts-down");
+                        const downSvc = svc;
+                        return (
+                          <div className="space-y-2">
                             <button
-                              key={chip.id}
                               type="button"
                               draggable={!authoring.busy}
-                              disabled={authoring.busy || !svc}
+                              disabled={authoring.busy || !downSvc}
                               title={t(chip.hintEn, chip.hintVi)}
-                              onDragStart={(event) => {
-                                event.dataTransfer.setData("application/x-mavis-studio-tool", chip.id);
-                                event.dataTransfer.setData("text/plain", chip.id);
-                                event.dataTransfer.effectAllowed = "copy";
-                              }}
-                              onClick={() => {
-                                if (!svc) return;
-                                if (chip.id === "author-scale-2x" && scaleTargetCount === 2) {
-                                  authoring.onSetReplicaTarget?.(svc, 3);
-                                } else {
-                                  authoring.onApplyBlockChip?.(chip.id, svc);
-                                }
-                              }}
-                              className={`flex cursor-grab items-center justify-between gap-1 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${toneClass}`}
+                              onDragStart={(e) => startChipDrag(e, "author-starts-down")}
+                              onClick={() =>
+                                downSvc &&
+                                authoring.onApplyBlockChip?.("author-starts-down", downSvc)
+                              }
+                              className={`flex w-full cursor-grab items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${
+                                startsDown
+                                  ? isLight
+                                    ? "border-rose-500 bg-rose-100/90 text-rose-900 ring-1 ring-rose-400/50"
+                                    : "border-rose-400 bg-rose-500/25 text-rose-100 ring-1 ring-rose-400/50"
+                                  : isLight
+                                    ? "border-rose-200 bg-white text-rose-800 hover:border-rose-400 hover:bg-rose-50"
+                                    : "border-rose-500/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                              }`}
                             >
-                              <span className="truncate">{labelText}</span>
-                              {activeBadge && (
-                                <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
-                                  {activeBadge}
+                              <span className="truncate">
+                                {downSvc
+                                  ? `${t("Starts Down (0x)", "Tắt sẵn ban đầu (0x)")}: ${downSvc}`
+                                  : t("Drag onto any 3D block to start stopped", "Kéo thả lên khối 3D để tắt sẵn")}
+                              </span>
+                              <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
+                                {startsDown ? "ON" : t("Drag / Click", "Kéo / Bấm")}
+                              </span>
+                            </button>
+
+                            <div className="flex flex-wrap items-center gap-1 text-[10.5px]">
+                              <span className="text-muted-foreground">
+                                {t("Stopped at start:", "Tắt sẵn lúc mở bài:")}
+                              </span>
+                              {authoring.initialStoppedServices.length > 0 ? (
+                                authoring.initialStoppedServices.map((stoppedName) => (
+                                  <span
+                                    key={stoppedName}
+                                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                                      isLight
+                                        ? "border-rose-200 bg-rose-50 text-rose-700"
+                                        : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                                    }`}
+                                  >
+                                    {stoppedName}
+                                    <button
+                                      type="button"
+                                      aria-label={`Remove ${stoppedName} from Starts Down`}
+                                      onClick={() =>
+                                        authoring.onApplyBlockChip?.("author-starts-down", stoppedName)
+                                      }
+                                      className="ml-0.5 opacity-70 hover:opacity-100"
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-muted-foreground">
+                                  {t("None (all start Up)", "Không (tất cả chạy sẵn)")}
                                 </span>
                               )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {activeGoalId === "cpu" && (() => {
+                        const chip = chipFor("author-cpu-target");
+                        const cpuSvc = svc;
+                        return (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              draggable={!authoring.busy}
+                              disabled={authoring.busy || !cpuSvc}
+                              title={t(chip.hintEn, chip.hintVi)}
+                              onDragStart={(e) => startChipDrag(e, "author-cpu-target")}
+                              onClick={() =>
+                                cpuSvc &&
+                                authoring.onApplyBlockChip?.("author-cpu-target", cpuSvc)
+                              }
+                              className={`flex w-full cursor-grab items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${
+                                isCpuTarget
+                                  ? isLight
+                                    ? "border-violet-500 bg-violet-100/90 text-violet-950 ring-1 ring-violet-400/50"
+                                    : "border-violet-400 bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/50"
+                                  : isLight
+                                    ? "border-violet-200 bg-white text-violet-900 hover:border-violet-400 hover:bg-violet-50"
+                                    : "border-violet-500/35 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20"
+                              }`}
+                            >
+                              <span className="truncate">
+                                {cpuSvc
+                                  ? `${t("CPU Throttle Target", "Mục tiêu bóp CPU")}: ${cpuSvc}`
+                                  : t("Drag onto a 3D block to set CPU target", "Kéo thả lên khối 3D để chọn service bóp CPU")}
+                              </span>
+                              <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
+                                {isCpuTarget ? `${cpuTargetPct}%` : t("Drag / Click", "Kéo / Bấm")}
+                              </span>
                             </button>
-                          );
-                        })}
-                      </div>
+
+                            {isCpuTarget && cpuSvc && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] text-muted-foreground">
+                                  {t("CPU quota limit", "Ngưỡng giới hạn CPU")}
+                                </span>
+                                <div className="inline-flex rounded-lg border border-border/80 p-0.5">
+                                  {([25, 50] as const).map((pct) => {
+                                    const on = cpuTargetPct === pct;
+                                    return (
+                                      <button
+                                        key={pct}
+                                        type="button"
+                                        onClick={() =>
+                                          authoring.onUpdateGoalRule?.({
+                                            targetChangeAction: {
+                                              action: "THROTTLE_CPU",
+                                              service: cpuSvc,
+                                              cpuPercent: pct,
+                                            },
+                                          })
+                                        }
+                                        className={`rounded-md px-2.5 py-0.5 font-mono text-[10.5px] font-semibold transition ${
+                                          on
+                                            ? isLight
+                                              ? "bg-violet-600 text-white"
+                                              : "bg-violet-500 text-white"
+                                            : "text-muted-foreground hover:text-foreground"
+                                        }`}
+                                      >
+                                        {pct}%
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {!activeGoalId && (
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          {t(
+                            "Pick an Exercise Goal above to show only the rules for that drill.",
+                            "Chọn 1 dạng bài phía trên để chỉ hiển thị phần cấu hình của đúng dạng bài đó.",
+                          )}
+                        </p>
+                      )}
 
                       {/* Live Docker Test Controls while Running so Lecturer can Author-by-Doing */}
                       {isLiveDemoMode && svc && (
@@ -5724,8 +6162,9 @@ export function LiveStudioWorkbench({
                       )}
                     </div>
 
-                    {/* Static Reverse BFS Blast Radius Preview (Visible before Docker runs!) */}
-                    {staticBlastRadius.target && (
+                    {/* Static Reverse BFS Blast Radius Preview (shown for Change Impact & Outage Recovery) */}
+                    {staticBlastRadius.target &&
+                      (activeGoalId === "change-impact" || activeGoalId === "recovery") && (
                       <div
                         className={`space-y-1 rounded-xl border p-2.5 text-[11px] ${
                           isLight
@@ -5807,47 +6246,6 @@ export function LiveStudioWorkbench({
                         </div>
                       </div>
                     )}
-
-                    {/* Compact Service Selector Chips */}
-                    <div className="space-y-1.5">
-                      <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
-                        {t("Services on 3D Stage", "Service trên sân khấu 3D")} ({blocks.length})
-                      </p>
-                      <div className="flex flex-wrap gap-1">
-                        {blocks.map((block) => {
-                          const down = authoring.initialStoppedServices.includes(block.service);
-                          const targeted = authoring.targetChangeAction?.service === block.service;
-                          const active = block.service === svc;
-                          return (
-                            <button
-                              key={block.service}
-                              type="button"
-                              onClick={() => {
-                                studio.setService(block.service);
-                                setSelectedAuthorWire(null);
-                              }}
-                              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium transition ${
-                                active
-                                  ? isLight
-                                    ? "border-primary bg-primary/10 text-primary font-semibold"
-                                    : "border-sky-400 bg-sky-500/20 text-sky-100 font-semibold"
-                                  : isLight
-                                    ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                                    : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-600"
-                              }`}
-                            >
-                              <span
-                                className={`size-1.5 rounded-full ${
-                                  down ? "bg-rose-500" : targeted ? "bg-amber-500" : "bg-emerald-500"
-                                }`}
-                                aria-hidden="true"
-                              />
-                              {block.service}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
 
                     <Button
                       type="button"

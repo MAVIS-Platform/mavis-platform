@@ -1429,7 +1429,8 @@ export function StudioThreeStage({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tourBoxRef = useRef<HTMLDivElement>(null);
-  const [hoveredService, setHoveredService] = useState<string | null>(null);
+  const hoveredServiceRef = useRef<string | null>(null);
+  const lastSceneSigRef = useRef("");
   const [isDragging, setIsDragging] = useState(false);
   const [dropHoverService, setDropHoverService] = useState<string | null>(null);
   const [engineReady, setEngineReady] = useState(false);
@@ -1490,6 +1491,7 @@ export function StudioThreeStage({
   useEffect(() => {
     let cancelled = false;
     let rafId = 0;
+    let resizeRafId = 0;
     let resizeObserver: ResizeObserver | null = null;
     const boundCanvas = canvasRef.current;
 
@@ -1587,12 +1589,18 @@ export function StudioThreeStage({
         lightsRef.current = { hemi, key, rim };
 
         resizeObserver = new ResizeObserver(() => {
-          const w = Math.max(1, container.clientWidth);
-          const h = Math.max(1, container.clientHeight);
-          viewportSizeRef.current = { w, h };
-          renderer.setSize(w, h, false);
-          perspCam.aspect = w / h;
-          perspCam.updateProjectionMatrix();
+          if (resizeRafId) return;
+          resizeRafId = requestAnimationFrame(() => {
+            resizeRafId = 0;
+            if (cancelled) return;
+            const w = Math.max(1, container.clientWidth);
+            const h = Math.max(1, container.clientHeight);
+            if (w === viewportSizeRef.current.w && h === viewportSizeRef.current.h) return;
+            viewportSizeRef.current = { w, h };
+            renderer.setSize(w, h, false);
+            perspCam.aspect = w / h;
+            perspCam.updateProjectionMatrix();
+          });
         });
         resizeObserver.observe(container);
 
@@ -1711,6 +1719,7 @@ export function StudioThreeStage({
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafId);
+      if (resizeRafId) cancelAnimationFrame(resizeRafId);
       boundCanvas?.removeEventListener("wheel", handleWheel);
       if (zoomSyncTimerRef.current) {
         clearTimeout(zoomSyncTimerRef.current);
@@ -1732,15 +1741,36 @@ export function StudioThreeStage({
       zoneRigsRef.current = [];
       deckRigRef.current = null;
       liveNodePosRef.current.clear();
+      lastSceneSigRef.current = "";
     };
   }, [onReadyChange]);
 
-  // Rebuild 3D meshes, deck, edges, and lights whenever topology/telemetry/theme changes
+  // Rebuild 3D meshes, deck, edges, and lights ONLY when visual scene signature actually changes
   useEffect(() => {
     const T = threeRef.current;
     const contentGroup = contentGroupRef.current;
     const lights = lightsRef.current;
     if (!engineReady || !T || !contentGroup || !lights) return;
+
+    const sceneSignature = [
+      styleId,
+      dropHoverService ?? "",
+      `${deckBounds.minX},${deckBounds.maxX},${deckBounds.minZ},${deckBounds.maxZ}`,
+      nodes
+        .map(
+          (n) =>
+            `${n.id}|${n.label}|${n.archetype}|${n.tier ?? ""}|${n.wx}|${n.wz}|${n.replicas}|${n.isStopped ? 1 : 0}${n.isPaused ? 1 : 0}${n.isCritical ? 1 : 0}${n.isWarning ? 1 : 0}${n.isSelected ? 1 : 0}${n.isDropTarget ? 1 : 0}|${n.cpuPct ?? ""}|${n.ramPct ?? ""}|${n.cpuThrottlePct ?? ""}|${n.ramLabel ?? ""}|${n.palette.accent}`,
+        )
+        .join(";"),
+      edges
+        .map(
+          (e) =>
+            `${e.id}|${e.from}>${e.to}|${e.kind}|${e.color}|${e.dashed ? 1 : 0}${e.isAsync ? 1 : 0}${e.isSevered ? 1 : 0}${e.isDegraded ? 1 : 0}|${e.label ?? ""}|${e.rps ?? ""}`,
+        )
+        .join(";"),
+    ].join("#");
+    if (sceneSignature === lastSceneSigRef.current) return;
+    lastSceneSigRef.current = sceneSignature;
 
     while (contentGroup.children.length > 0) {
       const child = contentGroup.children[0]!;
@@ -2353,12 +2383,13 @@ export function StudioThreeStage({
         data-camera-pitch={String(Math.round((Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, camera.pitch)) * 180) / Math.PI))}
         aria-label="Live 3D WebGL runtime topology"
         className={`block h-full w-full touch-none select-none ${
-          isDragging ? "cursor-grabbing" : hoveredService ? "cursor-grab" : "cursor-default"
+          isDragging ? "cursor-grabbing" : "cursor-default"
         }`}
         onContextMenu={(event) => event.preventDefault()}
         onPointerDown={(event) => {
           if (![0, 1, 2].includes(event.button)) return;
           event.preventDefault();
+          event.currentTarget.style.cursor = "grabbing";
 
           // Right mouse button = Orbit 3D camera 360°
           if (event.button === 2) {
@@ -2418,7 +2449,10 @@ export function StudioThreeStage({
           const drag = dragRef.current;
           if (!drag) {
             const hit = raycastServiceAt(event.clientX, event.clientY);
-            if (hit !== hoveredService) setHoveredService(hit);
+            if (hit !== hoveredServiceRef.current) {
+              hoveredServiceRef.current = hit;
+              event.currentTarget.style.cursor = hit ? "grab" : "default";
+            }
             return;
           }
           if (drag.pointerId !== event.pointerId) return;
@@ -2459,6 +2493,7 @@ export function StudioThreeStage({
           if (!drag || drag.pointerId !== event.pointerId) return;
           dragRef.current = null;
           setIsDragging(false);
+          event.currentTarget.style.cursor = hoveredServiceRef.current ? "grab" : "default";
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
@@ -2499,8 +2534,11 @@ export function StudioThreeStage({
           dragRef.current = null;
           setIsDragging(false);
         }}
-        onPointerLeave={() => {
-          if (!dragRef.current) setHoveredService(null);
+        onPointerLeave={(event) => {
+          if (!dragRef.current && hoveredServiceRef.current !== null) {
+            hoveredServiceRef.current = null;
+            event.currentTarget.style.cursor = "default";
+          }
         }}
         onDragOver={(event) => {
           if (busy) return;

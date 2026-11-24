@@ -515,7 +515,7 @@ test("Author Mode visual save preserves Change Impact successCriteria fields", (
   assert.match(src, /rules\?:/);
   assert.match(
     src,
-    /body:\s*JSON\.stringify\(\{\s*\.\.\.cur,[\s\S]*successCriteria:\s*\{\s*\.\.\.cur\?\.successCriteria,/,
+    /return \{\s*\.\.\.cur,[\s\S]*successCriteria:\s*\{\s*\.\.\.cur\?\.successCriteria,/,
   );
 });
 
@@ -1426,8 +1426,8 @@ test("Studio Live Task 4 UX polish: no bottom-drawer occlusion, author mission h
   // 2. Mission card defaults hidden in Author Mode so 3D canvas opens unobstructed (open by default for students)
   assert.match(workbenchSrc, /const \[missionHidden, setMissionHidden\] = useState\(\(\) => Boolean\(authoring\)\);/);
 
-  // 3. Duplicate 4+4 block buttons unified into single draggable+clickable chip grid; duplicate emerald banner removed
-  assert.match(workbenchSrc, /2\. Block Rules · Drag or click/);
+  // 3. Goal-specific Section 2 replaces duplicate 4+4 buttons; duplicate emerald banner removed
+  assert.match(workbenchSrc, /data-testid="goal-specific-setup"/);
   assert.doesNotMatch(workbenchSrc, /Set Starts Down/);
   assert.equal(
     (workbenchSrc.match(/Use live actions as exercise/g) || []).length,
@@ -1442,4 +1442,48 @@ test("Studio Live Task 4 UX polish: no bottom-drawer occlusion, author mission h
 
   // 5. Log level badge (INFO/WARN/ERR/ACT) is protected from auto-translation and wrapping
   assert.match(consoleSrc, /data-no-translate[\s\S]{0,120}whitespace-nowrap/);
+});
+
+
+test("Studio Live Author UX & Performance: goal-specific rules, scalable service dropdown, click-to-deselect, 60fps drag/resize & optimistic goal switching", () => {
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const standaloneSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  const threeSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+
+  // 1. Section 2 is strictly scoped to each Exercise Goal (no cross-goal clutter)
+  assert.match(workbenchSrc, /2\. Change Impact Setup/);
+  assert.match(workbenchSrc, /2\. Scale-Out Setup/);
+  assert.match(workbenchSrc, /2\. Outage Recovery Setup/);
+  assert.match(workbenchSrc, /2\. CPU Degradation Setup/);
+  assert.match(workbenchSrc, /activeGoalId === "change-impact"/);
+  assert.match(workbenchSrc, /activeGoalId === "scale"/);
+  assert.match(workbenchSrc, /activeGoalId === "recovery"/);
+  assert.match(workbenchSrc, /activeGoalId === "cpu"/);
+
+  // 2. Service selector uses a scalable <select> dropdown instead of an unbounded pill wrap
+  assert.match(workbenchSrc, /<select[\s\S]{0,180}data-testid="studio-stage-service-select"/);
+
+  // 3. Clicking an already-selected service toggles deselection
+  assert.match(workbenchSrc, /const nextSvc = svc && svc === canvasSelected \? "" : svc;/);
+
+  // 4. Panel drag/resize use RAF + direct DOM style/transform without per-pixel React setState; WebGL skips unchanged rebuilds
+  assert.match(workbenchSrc, /card\.style\.transform = `translate3d\(/);
+  assert.match(workbenchSrc, /const nodeNames = useMemo\(/);
+  assert.match(threeSrc, /if \(sceneSignature === lastSceneSigRef\.current\) return;/);
+  assert.match(threeSrc, /hoveredServiceRef/);
+
+  // 5. Optimistic Exercise Goal save prevents 1-2s UI lock & 5-query refetch storm
+  assert.match(standaloneSrc, /visualMutationSeqRef/);
+  assert.match(standaloneSrc, /lastSavedTopologyJsonRef/);
+  assert.match(standaloneSrc, /const optimisticExercise = buildNextExercisePayload/);
+  assert.match(standaloneSrc, /busy:\s*autoStudio\.isPending/);
 });
