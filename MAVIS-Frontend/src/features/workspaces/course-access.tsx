@@ -667,6 +667,9 @@ export type StudentLabContext = {
     passPercent: number;
     passed: boolean;
     latestStatus: "PASSED" | "NEEDS_RETRY" | "NOT_ATTEMPTED" | null;
+    latestCorrectCount?: number | null;
+    latestSubmittedAt?: string | null;
+    questions?: Array<{ id?: string; prompt?: string }> | null;
     runtimeUnlocked: boolean;
   } | null;
   studioSessions: StudentLabStudioSession[];

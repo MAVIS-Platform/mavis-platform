@@ -252,14 +252,25 @@ export function StudentCourseSyllabus({
 
   useEffect(() => {
     const requestedItemId = searchParams.get("item");
-    if (!requestedItemId) return;
-    const entry = flattenedItems.find((candidate) => candidate.item.id === requestedItemId);
-    if (!entry) return;
-    setSelectedItemId(entry.item.id);
-    setSelectedModuleId(entry.module.id);
-    setPracticePanel("none");
-    if (entry.item.assignmentId) setSelectedLabId(entry.item.assignmentId);
-  }, [flattenedItems, searchParams]);
+    if (requestedItemId) {
+      const entry = flattenedItems.find((candidate) => candidate.item.id === requestedItemId);
+      if (!entry) return;
+      setSelectedItemId(entry.item.id);
+      setSelectedModuleId(entry.module.id);
+      setPracticePanel("none");
+      if (entry.item.assignmentId) setSelectedLabId(entry.item.assignmentId);
+      return;
+    }
+    const requestedModuleId = searchParams.get("module");
+    if (requestedModuleId) {
+      const targetMod = syllabusModules.find((candidate) => candidate.id === requestedModuleId);
+      if (targetMod) {
+        setSelectedItemId("");
+        setSelectedModuleId(targetMod.id);
+        setPracticePanel("none");
+      }
+    }
+  }, [flattenedItems, searchParams, syllabusModules]);
 
   useEffect(() => {
     if (isLearningWorkspace) {

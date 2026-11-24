@@ -540,11 +540,11 @@ test("Evidence & Submit receives the verified Runtime Studio session", () => {
     lab,
     /const runtimeEvidenceSatisfied = Boolean\(verifiedStudioSession\) \|\| hasSubmitted/,
   );
-  assert.match(lab, /Finish the MAVIS Runtime Studio exercise to seal a verified receipt/);
-  assert.ok(lab.includes("Runtime Evidence Review"));
-  assert.ok(lab.includes("Signed runtime receipt"));
-  assert.ok(lab.includes("Observed telemetry & sequence"));
-  assert.ok(lab.includes("Before / After action evidence"));
+  assert.match(lab, /Complete the MAVIS Studio Live session and capture a snapshot/);
+  assert.ok(lab.includes("Studio Practice Summary"));
+  assert.ok(lab.includes("Verified Studio session"));
+  assert.ok(lab.includes("Telemetry & service interactions"));
+  assert.ok(lab.includes("Before / After studio actions"));
   assert.match(lab, /\(step === 2 \|\| step === 3\)/);
 });
 
@@ -2404,4 +2404,21 @@ test("Commit #05: Studio Live links route directly to standalone studio-live wit
   assert.doesNotMatch(screens, /2\.2 \{t\("Operate & Finish Studio"/);
   assert.doesNotMatch(screens, /2\.3 \{t\("Capture runtime evidence"/);
   assert.match(standalone, /step=3#lab-submit/);
+});
+
+test("Commit #06: Module Summary & Submit fixes stuck studioStateQuery.isPending bug and renders 4-part layout + Next Module CTA", () => {
+  const screens = read("src/features/courses/screens.tsx");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
+  const access = read("src/features/workspaces/course-access.tsx");
+
+  assert.match(
+    screens,
+    /const isStudioEvidenceLoading = Boolean\(activeStudioSessionId\) && studioStateQuery\.isLoading;/,
+  );
+  assert.doesNotMatch(screens, /studioStateQuery\.isPending/);
+  assert.match(screens, /quizSummary=\{quizSummary\}/);
+  assert.match(screens, /nextModuleHref=\{nextModuleHref\}/);
+  assert.match(access, /latestCorrectCount\?:\s*number \| null/);
+  assert.match(subV2, /Next Module:/);
+  assert.match(subV2, /Sang Module tiếp theo/);
 });
