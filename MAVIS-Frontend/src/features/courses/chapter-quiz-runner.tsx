@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock3, FileQuestion, RotateCcw, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useApi, useSession } from "@/hooks/use-api";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -133,6 +141,7 @@ export function ChapterQuizRunner({
   const [attempt, setAttempt] = useState<StoredQuizAttempt | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const autoSubmittedAttemptRef = useRef<string>("");
 
   useEffect(() => {
     setIsHydrated(false);
@@ -397,6 +406,7 @@ export function ChapterQuizRunner({
         onToggleFeedback={() => setShowFeedback((current) => !current)}
         onRetry={() => {
           setShowFeedback(false);
+          autoSubmittedAttemptRef.current = "";
           updateAttempt({
             attemptId: makeAttemptId(),
             status: "IN_PROGRESS",
@@ -410,24 +420,23 @@ export function ChapterQuizRunner({
     );
   }
 
-  const allAnsweredInRunner = displayedQuestions.every(
-    (question) => toSelectedIndexes(currentAttempt.answers[question.id]).length > 0,
-  );
-
   return (
     <QuizTaking
       title={title}
       questions={displayedQuestions}
       answers={currentAttempt.answers}
       passPercent={passPercent}
-      requireAllAnswered={backendQuizEnabled}
       startedAt={resolvedStartedAt}
       durationSeconds={resolvedDurationSeconds}
       onExpire={() => {
-        if (submitBackendAttempt.isPending) return;
-        if (!backendQuizEnabled || allAnsweredInRunner) {
-          submitAttempt();
+        if (
+          submitBackendAttempt.isPending ||
+          autoSubmittedAttemptRef.current === currentAttempt.attemptId
+        ) {
+          return;
         }
+        autoSubmittedAttemptRef.current = currentAttempt.attemptId;
+        submitAttempt();
       }}
       onAnswer={(questionId, optionIndex, multi) => {
         const currentSelected = toSelectedIndexes(currentAttempt.answers[questionId]);
@@ -520,7 +529,6 @@ function QuizTaking({
   questions,
   answers,
   passPercent,
-  requireAllAnswered,
   startedAt,
   durationSeconds,
   onExpire,
@@ -533,7 +541,6 @@ function QuizTaking({
   questions: RunnerQuestionData[];
   answers: Record<string, number | number[]>;
   passPercent: number;
-  requireAllAnswered: boolean;
   startedAt?: string | undefined;
   durationSeconds?: number | undefined;
   onExpire?: (() => void) | undefined;
@@ -543,6 +550,10 @@ function QuizTaking({
   submitError?: Error | null;
 }) {
   const { t } = useLocale();
+  const [confirmPartialOpen, setConfirmPartialOpen] = useState(false);
+  useEffect(() => {
+    if (submitting) setConfirmPartialOpen(false);
+  }, [submitting]);
   const answeredCount = questions.filter(
     (question) => toSelectedIndexes(answers[question.id]).length > 0,
   ).length;
@@ -631,24 +642,57 @@ function QuizTaking({
         <p className="text-sm text-muted-foreground">
           {allAnswered
             ? t("All questions are answered.", "Bạn đã trả lời tất cả câu hỏi.")
-            : requireAllAnswered
-              ? t(
-                  `Please answer all remaining ${remainingCount} question(s) before submitting.`,
-                  `Vui lòng trả lời nốt ${remainingCount} câu còn lại trước khi nộp bài.`,
-                )
-              : t(
-                  "You can submit now, or finish the remaining questions first.",
-                  "Bạn có thể nộp ngay hoặc hoàn thành các câu còn lại.",
-                )}
+            : t(
+                `You have ${remainingCount} unanswered question(s). Blank answers will be scored 0.`,
+                `Bạn còn ${remainingCount} câu chưa trả lời (câu bỏ trống tính 0 điểm).`,
+              )}
         </p>
         <Button
           type="button"
-          disabled={(requireAllAnswered ? !allAnswered : answeredCount === 0) || submitting}
-          onClick={onSubmit}
+          disabled={submitting}
+          onClick={() => {
+            if (remainingCount > 0) {
+              setConfirmPartialOpen(true);
+              return;
+            }
+            onSubmit();
+          }}
         >
           {submitting ? t("Submitting…", "Đang nộp…") : t("Submit Quiz", "Nộp Quiz")}
         </Button>
       </div>
+      <Dialog open={confirmPartialOpen} onOpenChange={setConfirmPartialOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("Confirm quiz submission", "Xác nhận nộp bài Quiz")}</DialogTitle>
+            <DialogDescription>
+              {t(
+                `You have ${remainingCount} unanswered question(s). Blank answers will be scored 0. Are you sure you want to submit?`,
+                `Bạn còn ${remainingCount} câu chưa trả lời. Các câu bỏ trống sẽ tính 0 điểm. Bạn có chắc muốn nộp bài?`,
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirmPartialOpen(false)}
+            >
+              {t("Keep working", "Quay lại làm tiếp")}
+            </Button>
+            <Button
+              type="button"
+              disabled={submitting}
+              onClick={() => {
+                setConfirmPartialOpen(false);
+                onSubmit();
+              }}
+            >
+              {t("Submit quiz", "Xác nhận nộp bài")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {submitError && (
         <p role="alert" className="text-sm text-destructive">
           {t(

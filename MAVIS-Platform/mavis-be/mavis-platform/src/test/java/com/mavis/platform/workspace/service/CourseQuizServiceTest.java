@@ -373,4 +373,25 @@ class CourseQuizServiceTest {
         assertEquals("QUIZ_DRAFT_NOT_FOUND", ex.getStableCode());
     }
 
+    @Test
+    void scoreSelectionsAwardsZeroForUnansweredQuestionsWithoutRejectingAttempt() {
+        var questions = List.of(
+                new CourseQuizService.Question("q1", "First?", "SINGLE_CHOICE",
+                        List.of("A", "B"), 1, null, "B is right", 1),
+                new CourseQuizService.Question("q2", "Second?", "MULTI_CHOICE",
+                        List.of("X", "Y", "Z"), null, List.of(0, 2), "X and Z", 1),
+                new CourseQuizService.Question("q3", "Third?", "TRUE_FALSE",
+                        List.of("True", "False"), 0, null, "True", 1)
+        );
+
+        assertEquals(1, CourseQuizService.scoreSelections(questions,
+                List.of(List.of(1), List.of(), List.of())));
+        assertEquals(0, CourseQuizService.scoreSelections(questions,
+                List.of(List.of(), List.of(), List.of())));
+        assertThrows(BusinessException.class, () -> CourseQuizService.scoreSelections(
+                questions, List.of(List.of(1))));
+        assertThrows(BusinessException.class, () -> CourseQuizService.scoreSelections(
+                questions, List.of(List.of(9), List.of(), List.of())));
+    }
+
 }

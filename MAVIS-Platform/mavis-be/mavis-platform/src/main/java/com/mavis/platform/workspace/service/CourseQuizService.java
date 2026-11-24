@@ -431,7 +431,10 @@ public class CourseQuizService {
         for (int index = 0; index < normalized.size(); index++) {
             Question question = normalized.get(index);
             List<Integer> selected = selections.get(index);
-            if (selected == null || selected.isEmpty()) throw invalid();
+            if (selected == null || selected.isEmpty()) {
+                results.add(new QuestionResult(question.id(), false, question.explanation()));
+                continue;
+            }
             Set<Integer> unique = new HashSet<>();
             for (Integer value : selected) {
                 if (value == null || value < 0 || value >= question.options().size() || !unique.add(value)) {
@@ -455,7 +458,11 @@ public class CourseQuizService {
     }
 
     private static List<List<Integer>> requestedSelections(Submit request) {
-        if (request.selections() != null) return request.selections();
+        if (request.selections() != null) {
+            return request.selections().stream()
+                    .map(values -> values == null ? List.<Integer>of() : values)
+                    .toList();
+        }
         if (request.answers() == null || request.answers().size() > 50) throw invalid();
         return request.answers().stream()
                 .map(value -> value == null ? List.<Integer>of() : List.of(value))

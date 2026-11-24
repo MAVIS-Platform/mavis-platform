@@ -70,42 +70,38 @@ export function QuizCountdownBanner({
     return () => window.clearInterval(timer);
   }, [startedAt, durationSeconds, stopped]);
 
-  const totalMinutes = Math.max(1, Math.round(durationSeconds / 60));
   const isExpired = remainingSeconds <= 0;
   const isCritical = !isExpired && remainingSeconds <= 60;
   const isWarning = !isExpired && !isCritical && remainingSeconds <= Math.max(120, Math.round(durationSeconds * 0.2));
 
   const toneClass = isExpired || isCritical
-    ? "border-destructive/50 bg-destructive/10 text-destructive"
+    ? "border-destructive/60 bg-destructive/12 text-destructive"
     : isWarning
-      ? "border-amber-400/60 bg-amber-50/90 text-amber-950 dark:border-amber-700 dark:bg-amber-950/35 dark:text-amber-200"
-      : "border-teal-300/70 bg-teal-50/70 text-teal-950 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-200";
+      ? "border-amber-500/70 bg-amber-50/90 text-amber-950 dark:border-amber-600 dark:bg-amber-950/35 dark:text-amber-200"
+      : "border-teal-300/80 bg-teal-50/80 text-teal-950 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-200";
 
   return (
     <div
       role="timer"
       aria-live="polite"
-      className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-xs ${toneClass}`}
+      className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 ${toneClass}`}
     >
-      <div className="flex items-center gap-2 font-medium">
+      <div className="flex items-center gap-2.5 text-sm font-semibold">
         {isExpired || isCritical ? (
-          <AlarmClock className="size-4 shrink-0" aria-hidden="true" />
+          <AlarmClock className="size-5 shrink-0" aria-hidden="true" />
         ) : (
-          <Clock3 className="size-4 shrink-0" aria-hidden="true" />
+          <Clock3 className="size-5 shrink-0" aria-hidden="true" />
         )}
         <span>
           {isExpired
             ? t(
-                "Time expired — submit your answers to record your score.",
-                "Đã hết thời gian làm bài — hãy nộp bài để ghi nhận kết quả.",
+                "Time's up — auto-submitting your quiz…",
+                "Đã hết giờ — đang tự động nộp bài…",
               )
-            : t(
-                `Quiz time remaining (${totalMinutes} min limit)`,
-                `Thời gian còn lại (Giới hạn ${totalMinutes} phút)`,
-              )}
+            : t("Time left:", "Còn lại:")}
         </span>
       </div>
-      <span className="rounded-md bg-background/80 px-2.5 py-0.5 font-mono text-sm font-bold tabular-nums shadow-2xs">
+      <span className="rounded-lg bg-background/90 px-3.5 py-1 font-mono text-2xl font-extrabold tracking-tight tabular-nums shadow-xs sm:text-3xl">
         {formatCountdown(remainingSeconds)}
       </span>
     </div>
