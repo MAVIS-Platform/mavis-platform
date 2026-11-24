@@ -26,6 +26,7 @@ import com.mavis.common.repository.SourceSnapshotRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
+import com.mavis.platform.workspace.curriculum.CsharpCourseraCatalog;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -893,9 +894,11 @@ class CourseLabSeederServiceTest {
         when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
         when(workspaces.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
         when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)).thenReturn(List.of());
+        List<Project> savedProjects = new ArrayList<>();
         when(projects.save(any())).thenAnswer(inv -> {
             Project p = inv.getArgument(0);
             if (p.getId() == null) p.setId(UUID.randomUUID());
+            savedProjects.add(p);
             return p;
         });
         when(projects.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -923,9 +926,11 @@ class CourseLabSeederServiceTest {
         DiagramVersionRepository diagrams = mock(DiagramVersionRepository.class);
         EvaluationRunRepository evaluations = mock(EvaluationRunRepository.class);
         EvidenceRepository evidences = mock(EvidenceRepository.class);
+        List<ModelElement> savedElements = new ArrayList<>();
         when(elements.save(any())).thenAnswer(inv -> {
             ModelElement e = inv.getArgument(0);
             if (e.getId() == null) e.setId(UUID.randomUUID());
+            savedElements.add(e);
             return e;
         });
         when(relationships.save(any())).thenAnswer(inv -> {
@@ -957,6 +962,149 @@ class CourseLabSeederServiceTest {
         assertThat(savedAssignments).allSatisfy(a -> assertThat(a.getTitle()).doesNotStartWith("Lab 0"));
         assertThat(savedAssignments.get(2).getStudioTopologySnapshot().path("blocks").toString())
                 .contains("FruitCatalog.API", "FruitOrdering.API");
+        assertThat(savedProjects).singleElement()
+                .extracting(Project::getName)
+                .isEqualTo(FruitShopReferenceArchitectureBuilder.SYSTEM_NAME);
+        assertThat(savedElements)
+                .extracting(ModelElement::getName)
+                .contains("ApiGateway", "FruitCatalog.API", "FruitBasket.API", "FruitOrdering.API",
+                        "Admin", "Staff", "Customer", "OrderSagaService", "OutboxRelayBackgroundService")
+                .doesNotContain("order-service", "payment-service", "inventory-service", "service-discovery");
         verify(quizzes, times(5)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
+    }
+
+    @Test
+    void upgradesOutdatedCsharpModelToImmutableR2ToProjectTraiCay() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        User lecturer = User.builder().id(UUID.randomUUID()).email("gv.csharp@mavis.edu.vn").build();
+        Workspace workspace = Workspace.builder()
+                .id(workspaceId).code("CSHARP-MS-2026").name("C# .NET 8").status("ACTIVE").courseMode(true).build();
+        Project refProject = Project.builder()
+                .id(UUID.randomUUID())
+                .workspace(workspace)
+                .owner(lecturer)
+                .name("Curated E-Commerce Reference")
+                .build();
+        SourceSnapshot r1Snapshot = SourceSnapshot.builder()
+                .id(UUID.randomUUID()).project(refProject).build();
+        ModelVersion r1Model = ModelVersion.builder()
+                .id(UUID.randomUUID())
+                .project(refProject)
+                .sourceSnapshot(r1Snapshot)
+                .revision(1)
+                .isLatestValid(true)
+                .createdBy(lecturer)
+                .build();
+
+        List<ModelElement> oldElements = List.of(
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("api-gateway").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("order-service").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("payment-service").elementType("SERVICE_CONTAINER").build());
+
+        var csModules = CsharpCourseraCatalog.modules();
+        List<Assignment> existingLabs = new ArrayList<>();
+        for (int i = 0; i < csModules.size(); i++) {
+            existingLabs.add(Assignment.builder()
+                    .id(UUID.randomUUID())
+                    .workspace(workspace)
+                    .createdBy(lecturer)
+                    .title(csModules.get(i).labTitle())
+                    .description(csModules.get(i).labDescription())
+                    .labOrder(i + 1)
+                    .requireRuntimeTrace(csModules.get(i).visualLab() != null && csModules.get(i).visualLab().requireRuntimeTrace())
+                    .referenceModel(r1Model)
+                    .build());
+        }
+
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+        SourceSnapshotRepository snapshots = mock(SourceSnapshotRepository.class);
+        ModelVersionRepository models = mock(ModelVersionRepository.class);
+        ModelElementRepository elements = mock(ModelElementRepository.class);
+        ModelRelationshipRepository relationships = mock(ModelRelationshipRepository.class);
+        DiagramVersionRepository diagrams = mock(DiagramVersionRepository.class);
+        EvaluationRunRepository evaluations = mock(EvaluationRunRepository.class);
+        EvidenceRepository evidences = mock(EvidenceRepository.class);
+        CourseQuizService quizzes = mock(CourseQuizService.class);
+        CourseAccessService courses = mock(CourseAccessService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ObjectMapper json = new ObjectMapper();
+        CourseCurriculum curriculum = new CourseCurriculum(json);
+
+        when(access.requireCurrentActiveUser()).thenReturn(lecturer);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)).thenReturn(existingLabs);
+        when(assignments.saveAndFlush(any(Assignment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(elements.findByModelVersionId(r1Model.getId())).thenReturn(oldElements);
+        when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(refProject.getId()))
+                .thenReturn(Optional.of(r1Model));
+        when(models.findMaxRevisionByProjectId(refProject.getId())).thenReturn(1);
+        when(projects.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        AtomicReference<SourceSnapshot> savedSnapshot = new AtomicReference<>();
+        when(snapshots.save(any())).thenAnswer(inv -> {
+            SourceSnapshot s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(UUID.randomUUID());
+            savedSnapshot.set(s);
+            return s;
+        });
+        AtomicReference<ModelVersion> savedNewModel = new AtomicReference<>();
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            if (m.getId() == null) m.setId(UUID.randomUUID());
+            savedNewModel.set(m);
+            return m;
+        });
+        List<ModelElement> newElements = new ArrayList<>();
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement e = inv.getArgument(0);
+            if (e.getId() == null) e.setId(UUID.randomUUID());
+            newElements.add(e);
+            return e;
+        });
+        when(relationships.save(any())).thenAnswer(inv -> {
+            ModelRelationship r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+        when(evidences.save(any())).thenAnswer(inv -> {
+            Evidence ev = inv.getArgument(0);
+            if (ev.getId() == null) ev.setId(UUID.randomUUID());
+            return ev;
+        });
+        when(diagrams.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(evaluations.save(any())).thenAnswer(inv -> {
+            EvaluationRun run = inv.getArgument(0);
+            if (run.getId() == null) run.setId(UUID.randomUUID());
+            return run;
+        });
+        when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "ENROLLED", List.of()));
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                access, workspaces, assignments, projects, snapshots, models,
+                elements, relationships, diagrams, evaluations, evidences,
+                curriculum, quizzes, courses, jdbc, json, tempDir.toString());
+
+        seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_CSHARP_COURSERA);
+
+        assertThat(savedNewModel.get()).isNotNull();
+        assertThat(savedNewModel.get().getRevision()).isEqualTo(2);
+        assertThat(r1Model.getIsLatestValid()).isFalse();
+        assertThat(savedSnapshot.get()).isNotNull();
+        assertThat(refProject.getName()).isEqualTo(FruitShopReferenceArchitectureBuilder.SYSTEM_NAME);
+        verify(models, never()).delete(any());
+        assertThat(existingLabs).allSatisfy(lab -> assertThat(lab.getReferenceModel()).isSameAs(savedNewModel.get()));
+        assertThat(existingLabs.stream()
+                .filter(lab -> Boolean.TRUE.equals(lab.getRequireRuntimeTrace()))
+                .toList())
+                .allSatisfy(lab -> assertThat(lab.getStudioTopologySnapshot().path("blocks").toString())
+                        .contains("ApiGateway", "FruitCatalog.API", "FruitBasket.API", "FruitOrdering.API")
+                        .doesNotContain("payment-service", "order-service"));
+        assertThat(newElements).extracting(ModelElement::getName).contains(
+                "ApiGateway", "FruitCatalog.API", "FruitBasket.API", "FruitOrdering.API",
+                "Admin", "Staff", "Customer",
+                "OrdersController", "OrderSagaService", "OutboxRelayBackgroundService",
+                "OrderCreatedConsumer", "YarpReverseProxyPipeline");
     }
 }

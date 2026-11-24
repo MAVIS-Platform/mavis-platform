@@ -229,15 +229,24 @@ public class CourseLabSeederService {
                 WHERE c.workspace_id = ? AND c.status = 'PUBLISHED'
                 """, Integer.class, workspaceId);
         int expectedModules = track.modules().size();
-        if (!track.csharpTrack() && !existingLabs.isEmpty() && needsMocHuongUpgrade(existingLabs)) {
-            SEEDING_IN_PROGRESS.get().add(workspaceId);
-            try {
-                upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
-            } catch (Exception ex) {
-                log.warn("Auto-upgrading workspace {} to Moc Huong reference architecture deferred: {}",
-                        workspaceId, ex.getMessage());
-            } finally {
-                SEEDING_IN_PROGRESS.get().remove(workspaceId);
+        if (!existingLabs.isEmpty()) {
+            boolean needsUpgrade = track.csharpTrack()
+                    ? needsFruitShopUpgrade(existingLabs)
+                    : needsMocHuongUpgrade(existingLabs);
+            if (needsUpgrade) {
+                SEEDING_IN_PROGRESS.get().add(workspaceId);
+                try {
+                    if (track.csharpTrack()) {
+                        upgradeCsharpWorkspaceToFruitShop(workspaceId, existingLabs);
+                    } else {
+                        upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+                    }
+                } catch (Exception ex) {
+                    log.warn("Auto-upgrading workspace {} reference architecture deferred: {}",
+                            workspaceId, ex.getMessage());
+                } finally {
+                    SEEDING_IN_PROGRESS.get().remove(workspaceId);
+                }
             }
         }
         if (isCourseraLabsAligned(existingLabs, track.modules())
@@ -284,8 +293,12 @@ public class CourseLabSeederService {
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
         upgradeExistingLabsIfSafe(existingLabs);
         boolean isCsharpWs = workspace.getCode() != null && workspace.getCode().toUpperCase().contains("CSHARP");
-        if (!isCsharpWs && !existingLabs.isEmpty() && needsMocHuongUpgrade(existingLabs)) {
-            upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+        if (!existingLabs.isEmpty()) {
+            if (isCsharpWs && needsFruitShopUpgrade(existingLabs)) {
+                upgradeCsharpWorkspaceToFruitShop(workspaceId, existingLabs);
+            } else if (!isCsharpWs && needsMocHuongUpgrade(existingLabs)) {
+                upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+            }
         }
 
         if (!fullCurriculum && !existingLabs.isEmpty()) {
@@ -294,7 +307,7 @@ public class CourseLabSeederService {
                     .map(Assignment::getReferenceModel)
                     .filter(java.util.Objects::nonNull)
                     .findFirst()
-                    .ifPresent(ref -> ensureReferenceRuntimeSetup(ref, java.util.Map.of()));
+                    .ifPresent(ref -> ensureReferenceRuntimeSetup(ref, java.util.Map.of(), isCsharpWs));
             syncCuratedCourseOutline(workspaceId, workspace);
             return courses.roadmap(workspaceId);
         }
@@ -304,7 +317,7 @@ public class CourseLabSeederService {
                     .map(Assignment::getReferenceModel)
                     .filter(java.util.Objects::nonNull)
                     .findFirst()
-                    .ifPresent(ref -> ensureReferenceRuntimeSetup(ref, java.util.Map.of()));
+                    .ifPresent(ref -> ensureReferenceRuntimeSetup(ref, java.util.Map.of(), isCsharpWs));
             syncCuratedCourseOutline(workspaceId, workspace);
             return courses.roadmap(workspaceId);
         }
@@ -313,8 +326,8 @@ public class CourseLabSeederService {
                 .map(Assignment::getReferenceModel)
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
-                .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
-        ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
+                .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer, isCsharpWs));
+        ensureReferenceRuntimeSetup(refModel, java.util.Map.of(), isCsharpWs);
 
         ensureCourseMode(workspace);
 
@@ -384,14 +397,21 @@ public class CourseLabSeederService {
                 .map(Assignment::getReferenceModel)
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
-                .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
-        if (!track.csharpTrack() && !existingLabs.isEmpty() && needsMocHuongUpgrade(existingLabs)) {
-            ModelVersion upgraded = upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
-            if (upgraded != null) {
-                refModel = upgraded;
+                .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer, track.csharpTrack()));
+        if (!existingLabs.isEmpty()) {
+            if (track.csharpTrack() && needsFruitShopUpgrade(existingLabs)) {
+                ModelVersion upgraded = upgradeCsharpWorkspaceToFruitShop(workspaceId, existingLabs);
+                if (upgraded != null) {
+                    refModel = upgraded;
+                }
+            } else if (!track.csharpTrack() && needsMocHuongUpgrade(existingLabs)) {
+                ModelVersion upgraded = upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+                if (upgraded != null) {
+                    refModel = upgraded;
+                }
             }
         }
-        ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
+        ensureReferenceRuntimeSetup(refModel, java.util.Map.of(), track.csharpTrack());
 
         List<CourseraModuleSpec> catalogModules = track.modules();
         Set<UUID> matchedIds = new LinkedHashSet<>();
@@ -754,18 +774,30 @@ public class CourseLabSeederService {
     }
 
     private ModelVersion seedReferenceModel(UUID workspaceId, Workspace workspace, User lecturer) {
+        return seedReferenceModel(workspaceId, workspace, lecturer, false);
+    }
+
+    private ModelVersion seedReferenceModel(
+            UUID workspaceId, Workspace workspace, User lecturer, boolean csharpTrack) {
+        String projectName = csharpTrack
+                ? FruitShopReferenceArchitectureBuilder.SYSTEM_NAME
+                : MocHuongReferenceArchitectureBuilder.SYSTEM_NAME;
+        String projectDesc = referenceProjectDescription(csharpTrack);
+
         Project refProject = projects.save(Project.builder()
                 .workspace(workspace)
                 .owner(lecturer)
-                .name(MocHuongReferenceArchitectureBuilder.SYSTEM_NAME)
-                .description("Curated Java 21 / Spring Boot 3 microservices repository (Service Discovery, API Gateway, Identity, Catalog, Order, Notification) from MAVIS-Platform/Moc-Huong-Shop.")
+                .name(projectName)
+                .description(projectDesc)
                 .defaultBranch("main")
                 .projectType("TEACHER_REFERENCE")
                 .isReferenceTemplate(true)
                 .status("ACTIVE")
                 .build());
 
-        byte[] zipBytes = MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
+        byte[] zipBytes = csharpTrack
+                ? FruitShopReferenceArchitectureBuilder.buildFruitShopArchive()
+                : MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
         Path archivePath = persistArchive(workspaceId, refProject.getId(), zipBytes);
         String sha256 = HashUtils.sha256Hex(zipBytes);
 
@@ -791,7 +823,34 @@ public class CourseLabSeederService {
                 .createdBy(lecturer)
                 .build());
 
-        MocHuongReferenceArchitectureBuilder.BuiltResult built = MocHuongReferenceArchitectureBuilder.populate(
+        java.util.Map<String, UUID> serviceIds = populateReferenceArchitecture(refModel, refSnapshot, csharpTrack);
+        ensureReferenceRuntimeSetup(refModel, serviceIds, csharpTrack);
+
+        return refModel;
+    }
+
+    private String referenceProjectDescription(boolean csharpTrack) {
+        return csharpTrack
+                ? "Curated .NET 8 / ASP.NET Core microservices repository (ApiGateway YARP, FruitCatalog.API, FruitBasket.API, FruitOrdering.API) from MAVIS-Platform/fruit-shop-dotnet-microservices."
+                : "Curated Java 21 / Spring Boot 3 microservices repository (Service Discovery, API Gateway, Identity, Catalog, Order, Notification) from MAVIS-Platform/Moc-Huong-Shop.";
+    }
+
+    private java.util.Map<String, UUID> populateReferenceArchitecture(
+            ModelVersion refModel, SourceSnapshot refSnapshot, boolean csharpTrack) {
+        if (csharpTrack) {
+            return FruitShopReferenceArchitectureBuilder.populate(
+                    json,
+                    refModel,
+                    refSnapshot,
+                    new FruitShopReferenceArchitectureBuilder.PersistenceHooks(
+                            elements::save,
+                            relationships::save,
+                            evidences::save,
+                            diagrams::saveAll,
+                            evaluations::save
+                    )).serviceIds();
+        }
+        return MocHuongReferenceArchitectureBuilder.populate(
                 json,
                 refModel,
                 refSnapshot,
@@ -801,14 +860,18 @@ public class CourseLabSeederService {
                         evidences::save,
                         diagrams::saveAll,
                         evaluations::save
-                ));
-
-        ensureReferenceRuntimeSetup(refModel, built.serviceIds());
-
-        return refModel;
+                )).serviceIds();
     }
 
     private boolean needsMocHuongUpgrade(List<Assignment> existingLabs) {
+        return needsReferenceModelUpgrade(existingLabs, false);
+    }
+
+    private boolean needsFruitShopUpgrade(List<Assignment> existingLabs) {
+        return needsReferenceModelUpgrade(existingLabs, true);
+    }
+
+    private boolean needsReferenceModelUpgrade(List<Assignment> existingLabs, boolean csharpTrack) {
         if (existingLabs == null || existingLabs.isEmpty()) {
             return false;
         }
@@ -829,7 +892,10 @@ public class CourseLabSeederService {
                 continue;
             }
             anyNonEmpty = true;
-            if (isOutdatedMocHuongModel(candidate, existing)) {
+            boolean outdated = csharpTrack
+                    ? isOutdatedFruitShopModel(candidate, existing)
+                    : isOutdatedMocHuongModel(candidate, existing);
+            if (outdated) {
                 return true;
             }
         }
@@ -839,7 +905,63 @@ public class CourseLabSeederService {
         if (distinctModels.size() > 1) {
             return true;
         }
-        return existingLabs.stream().anyMatch(lab -> lab.getReferenceModel() == null);
+        if (existingLabs.stream().anyMatch(lab -> lab.getReferenceModel() == null)) {
+            return true;
+        }
+        return existingLabs.stream()
+                .filter(lab -> Boolean.TRUE.equals(lab.getRequireRuntimeTrace()))
+                .anyMatch(lab -> csharpTrack
+                        ? hasStaleFruitShopTopology(lab.getStudioTopologySnapshot())
+                        : hasStaleTopology(lab.getStudioTopologySnapshot()));
+    }
+
+    private boolean isOutdatedFruitShopModel(ModelVersion refModel, List<ModelElement> existing) {
+        if (refModel == null || refModel.getId() == null || refModel.getProject() == null) {
+            return false;
+        }
+        if (existing == null || existing.isEmpty()) {
+            return false;
+        }
+        String projName = refModel.getProject().getName();
+        if (!FruitShopReferenceArchitectureBuilder.SYSTEM_NAME.equals(projName)) {
+            return true;
+        }
+        boolean hasJavaOrLegacy = existing.stream()
+                .anyMatch(e -> e.getName() != null && (
+                        "payment-service".equalsIgnoreCase(e.getName())
+                                || "inventory-service".equalsIgnoreCase(e.getName())
+                                || "order-service".equalsIgnoreCase(e.getName())
+                                || "catalog-service".equalsIgnoreCase(e.getName())
+                                || "identity-service".equalsIgnoreCase(e.getName())
+                                || "notification-service".equalsIgnoreCase(e.getName())
+                                || "service-discovery".equalsIgnoreCase(e.getName())
+                                || "api-gateway".equals(e.getName())));
+        if (hasJavaOrLegacy) {
+            return true;
+        }
+        Set<String> presentNames = new java.util.HashSet<>();
+        for (ModelElement e : existing) {
+            if (e.getName() != null) {
+                presentNames.add(e.getName());
+            }
+        }
+        for (String svc : FruitShopReferenceArchitectureBuilder.REAL_MICROSERVICES) {
+            if (!presentNames.contains(svc)) {
+                return true;
+            }
+        }
+        boolean hasConfirmedActor = existing.stream()
+                .filter(e -> "PERSON".equalsIgnoreCase(e.getElementType()) && e.getProperties() != null)
+                .anyMatch(e -> "USER_CONFIRMED".equals(e.getProperties().path("contextFactOrigin").asText("")));
+        return !hasConfirmedActor
+                || !presentNames.contains("Admin")
+                || !presentNames.contains("Staff")
+                || !presentNames.contains("Customer")
+                || !presentNames.contains("OrdersController")
+                || !presentNames.contains("OrderSagaService")
+                || !presentNames.contains("OutboxRelayBackgroundService")
+                || !presentNames.contains("OrderCreatedConsumer")
+                || !presentNames.contains("YarpReverseProxyPipeline");
     }
 
     private boolean isOutdatedMocHuongModel(ModelVersion refModel, List<ModelElement> existing) {
@@ -888,6 +1010,15 @@ public class CourseLabSeederService {
     }
 
     private ModelVersion upgradeJavaWorkspaceToMocHuong(UUID workspaceId, List<Assignment> existingLabs) {
+        return upgradeReferenceWorkspace(workspaceId, existingLabs, false);
+    }
+
+    private ModelVersion upgradeCsharpWorkspaceToFruitShop(UUID workspaceId, List<Assignment> existingLabs) {
+        return upgradeReferenceWorkspace(workspaceId, existingLabs, true);
+    }
+
+    private ModelVersion upgradeReferenceWorkspace(
+            UUID workspaceId, List<Assignment> existingLabs, boolean csharpTrack) {
         ModelVersion refModel = existingLabs.stream()
                 .map(Assignment::getReferenceModel)
                 .filter(java.util.Objects::nonNull)
@@ -904,34 +1035,29 @@ public class CourseLabSeederService {
             ModelVersion candidate = latestOpt.get();
             if (candidate.getId() != null) {
                 List<ModelElement> candidateEls = elements.findByModelVersionId(candidate.getId());
-                if (candidateEls != null && !candidateEls.isEmpty()
-                        && !isOutdatedMocHuongModel(candidate, candidateEls)) {
+                boolean outdated = csharpTrack
+                        ? isOutdatedFruitShopModel(candidate, candidateEls)
+                        : isOutdatedMocHuongModel(candidate, candidateEls);
+                if (candidateEls != null && !candidateEls.isEmpty() && !outdated) {
                     targetModel = candidate;
                 }
             }
         }
         if (targetModel == null) {
-            ModelVersion created = createNextMocHuongRevision(workspaceId, refProject, refModel);
+            ModelVersion created = createNextReferenceRevision(workspaceId, refProject, refModel, csharpTrack);
             if (created != null && created.getSourceSnapshot() != null) {
                 targetModel = created;
-                MocHuongReferenceArchitectureBuilder.BuiltResult built = MocHuongReferenceArchitectureBuilder.populate(
-                        json,
-                        targetModel,
-                        targetModel.getSourceSnapshot(),
-                        new MocHuongReferenceArchitectureBuilder.PersistenceHooks(
-                                elements::save,
-                                relationships::save,
-                                evidences::save,
-                                diagrams::saveAll,
-                                evaluations::save
-                        ));
-                refreshReferenceRuntimeSetup(targetModel, built.serviceIds());
+                java.util.Map<String, UUID> serviceIds =
+                        populateReferenceArchitecture(targetModel, targetModel.getSourceSnapshot(), csharpTrack);
+                refreshReferenceRuntimeSetup(targetModel, serviceIds, csharpTrack);
             }
         }
         if (targetModel != null && targetModel.getId() != null) {
             models.invalidatePreviousVersions(refProject.getId(), targetModel.getId());
         }
-        ObjectNode targetTopology = buildStudioTopologyForServices(MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES);
+        ObjectNode targetTopology = buildStudioTopologyForServices(
+                csharpTrack ? FruitShopReferenceArchitectureBuilder.REAL_MICROSERVICES
+                        : MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES);
         for (Assignment lab : existingLabs) {
             boolean labChanged = false;
             if (targetModel != null && targetModel.getId() != null && (lab.getReferenceModel() == null
@@ -939,7 +1065,10 @@ public class CourseLabSeederService {
                 lab.setReferenceModel(targetModel);
                 labChanged = true;
             }
-            if (Boolean.TRUE.equals(lab.getRequireRuntimeTrace()) && hasStaleTopology(lab.getStudioTopologySnapshot())) {
+            boolean staleTopology = csharpTrack
+                    ? hasStaleFruitShopTopology(lab.getStudioTopologySnapshot())
+                    : hasStaleTopology(lab.getStudioTopologySnapshot());
+            if (Boolean.TRUE.equals(lab.getRequireRuntimeTrace()) && staleTopology) {
                 lab.setStudioTopologySnapshot(targetTopology);
                 lab.setStudioTopologyRevision(lab.getStudioTopologyRevision() != null ? lab.getStudioTopologyRevision() : 1);
                 labChanged = true;
@@ -951,12 +1080,15 @@ public class CourseLabSeederService {
         return targetModel != null ? targetModel : refModel;
     }
 
-    private ModelVersion createNextMocHuongRevision(UUID workspaceId, Project refProject, ModelVersion previousModel) {
+    private ModelVersion createNextReferenceRevision(
+            UUID workspaceId, Project refProject, ModelVersion previousModel, boolean csharpTrack) {
         Integer dbMaxRev = models.findMaxRevisionByProjectId(refProject.getId());
         int currentRev = previousModel.getRevision() != null ? previousModel.getRevision() : 1;
         int nextRev = Math.max(dbMaxRev != null ? dbMaxRev : 0, currentRev) + 1;
 
-        byte[] zipBytes = MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
+        byte[] zipBytes = csharpTrack
+                ? FruitShopReferenceArchitectureBuilder.buildFruitShopArchive()
+                : MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
         Path archivePath = persistArchive(workspaceId, refProject.getId(), zipBytes);
         User createdBy = refProject.getOwner() != null ? refProject.getOwner() : previousModel.getCreatedBy();
         SourceSnapshot newSnapshot = snapshots.save(SourceSnapshot.builder()
@@ -971,8 +1103,10 @@ public class CourseLabSeederService {
         if (newSnapshot == null) {
             return null;
         }
-        refProject.setName(MocHuongReferenceArchitectureBuilder.SYSTEM_NAME);
-        refProject.setDescription("Curated Java 21 / Spring Boot 3 microservices repository (Service Discovery, API Gateway, Identity, Catalog, Order, Notification) from MAVIS-Platform/Moc-Huong-Shop.");
+        refProject.setName(csharpTrack
+                ? FruitShopReferenceArchitectureBuilder.SYSTEM_NAME
+                : MocHuongReferenceArchitectureBuilder.SYSTEM_NAME);
+        refProject.setDescription(referenceProjectDescription(csharpTrack));
         refProject.setReferenceSnapshotId(newSnapshot.getId());
         projects.saveAndFlush(refProject);
 
@@ -992,6 +1126,18 @@ public class CourseLabSeederService {
         log.info("Created immutable reference model revision r{} ({}) for project {} (replacing r{})",
                 nextRev, newModel.getId(), refProject.getId(), currentRev);
         return newModel;
+    }
+
+    private boolean hasStaleFruitShopTopology(com.fasterxml.jackson.databind.JsonNode snapshot) {
+        if (snapshot == null || !snapshot.path("blocks").isArray()) {
+            return true;
+        }
+        String raw = snapshot.path("blocks").toString();
+        return raw.contains("payment-service")
+                || raw.contains("inventory-service")
+                || raw.contains("order-service")
+                || !raw.contains("FruitOrdering.API")
+                || !raw.contains("ApiGateway");
     }
 
     private boolean hasStaleTopology(com.fasterxml.jackson.databind.JsonNode snapshot) {
@@ -1034,57 +1180,72 @@ public class CourseLabSeederService {
     }
 
     private void ensureReferenceRuntimeSetup(ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds) {
-        upsertReferenceRuntimeSetup(refModel, knownServiceIds, false);
+        upsertReferenceRuntimeSetup(refModel, knownServiceIds, false, false);
     }
 
-    private void refreshReferenceRuntimeSetup(ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds) {
-        upsertReferenceRuntimeSetup(refModel, knownServiceIds, true);
+    private void ensureReferenceRuntimeSetup(
+            ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds, boolean csharpTrack) {
+        upsertReferenceRuntimeSetup(refModel, knownServiceIds, false, csharpTrack);
+    }
+
+    private void refreshReferenceRuntimeSetup(
+            ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds, boolean csharpTrack) {
+        upsertReferenceRuntimeSetup(refModel, knownServiceIds, true, csharpTrack);
     }
 
     private void upsertReferenceRuntimeSetup(
-            ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds, boolean overwriteExisting) {
+            ModelVersion refModel,
+            java.util.Map<String, UUID> knownServiceIds,
+            boolean overwriteExisting,
+            boolean csharpTrack) {
         if (refModel == null || refModel.getProject() == null || refModel.getSourceSnapshot() == null
                 || refModel.getProject().getId() == null) {
             return;
         }
         UUID refProjectId = refModel.getProject().getId();
+        String profileId = csharpTrack ? "DOTNET_8_YARP_COMPOSE_V1" : "SPRING_BOOT_DOTNET_COMPOSE_V1";
         Integer cfgCount = jdbc.queryForObject(
                 "SELECT count(*) FROM runtime_configurations WHERE project_id = ?",
                 Integer.class, refProjectId);
         if (overwriteExisting || cfgCount == null || cfgCount == 0) {
-            ObjectNode profile = buildReferenceRuntimeProfile(refModel, knownServiceIds);
+            ObjectNode profile = buildReferenceRuntimeProfile(refModel, knownServiceIds, csharpTrack);
             jdbc.update("""
                     INSERT INTO runtime_configurations (project_id, source_snapshot_id, model_version_id, profile_id, profile, revision)
-                    VALUES (?, ?, ?, 'SPRING_BOOT_DOTNET_COMPOSE_V1', CAST(? AS jsonb), 1)
+                    VALUES (?, ?, ?, ?, CAST(? AS jsonb), 1)
                     ON CONFLICT (project_id) DO UPDATE
                     SET source_snapshot_id = EXCLUDED.source_snapshot_id,
                         model_version_id = EXCLUDED.model_version_id,
+                        profile_id = EXCLUDED.profile_id,
                         profile = CASE WHEN ? THEN EXCLUDED.profile ELSE runtime_configurations.profile END,
                         revision = CASE WHEN ? THEN runtime_configurations.revision + 1 ELSE runtime_configurations.revision END
-                    """, refProjectId, refModel.getSourceSnapshot().getId(), refModel.getId(), profile.toString(), overwriteExisting, overwriteExisting);
+                    """, refProjectId, refModel.getSourceSnapshot().getId(), refModel.getId(), profileId, profile.toString(), overwriteExisting, overwriteExisting);
         }
 
         Integer scnCount = jdbc.queryForObject(
                 "SELECT count(*) FROM runtime_scenarios WHERE project_id = ?",
                 Integer.class, refProjectId);
-        ArrayNode steps = buildMocHuongRuntimeScenarios();
+        String scenarioName = csharpTrack
+                ? "Project Trai Cay Resilience & Flow Check"
+                : "Moc Huong Resilience & Flow Check";
+        ArrayNode steps = csharpTrack ? buildFruitShopRuntimeScenarios() : buildMocHuongRuntimeScenarios();
         if (scnCount == null || scnCount == 0) {
             jdbc.update("""
                     INSERT INTO runtime_scenarios (id, project_id, name, steps, revision)
-                    VALUES (?, ?, 'Moc Huong Resilience & Flow Check', CAST(? AS jsonb), 1)
-                    """, UUID.randomUUID(), refProjectId, steps.toString());
+                    VALUES (?, ?, ?, CAST(? AS jsonb), 1)
+                    """, UUID.randomUUID(), refProjectId, scenarioName, steps.toString());
         } else if (overwriteExisting) {
             jdbc.update("""
                     UPDATE runtime_scenarios
-                    SET name = 'Moc Huong Resilience & Flow Check',
+                    SET name = ?,
                         steps = CAST(? AS jsonb),
                         revision = revision + 1
                     WHERE project_id = ?
-                    """, steps.toString(), refProjectId);
+                    """, scenarioName, steps.toString(), refProjectId);
         }
     }
 
-    private ObjectNode buildReferenceRuntimeProfile(ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds) {
+    private ObjectNode buildReferenceRuntimeProfile(
+            ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds, boolean csharpTrack) {
         java.util.Map<String, UUID> serviceMap = new java.util.LinkedHashMap<>(knownServiceIds);
         if (serviceMap.isEmpty()) {
             for (ModelElement el : elements.findByModelVersionId(refModel.getId())) {
@@ -1095,18 +1256,38 @@ public class CourseLabSeederService {
         }
         ObjectNode profile = json.createObjectNode();
         ObjectNode apps = profile.putObject("applications");
-        apps.putObject("service-discovery").put("runtime", "java").put("containerPort", 8761);
-        apps.putObject("api-gateway").put("runtime", "java").put("containerPort", 8080);
-        apps.putObject("identity-service").put("runtime", "java").put("containerPort", 8081);
-        apps.putObject("catalog-service").put("runtime", "java").put("containerPort", 8082);
-        apps.putObject("order-service").put("runtime", "java").put("containerPort", 8083);
-        apps.putObject("notification-service").put("runtime", "java").put("containerPort", 8084);
+        if (csharpTrack) {
+            apps.putObject("ApiGateway").put("runtime", "dotnet").put("containerPort", 8080);
+            apps.putObject("FruitCatalog.API").put("runtime", "dotnet").put("containerPort", 8080);
+            apps.putObject("FruitBasket.API").put("runtime", "dotnet").put("containerPort", 8080);
+            apps.putObject("FruitOrdering.API").put("runtime", "dotnet").put("containerPort", 8080);
+        } else {
+            apps.putObject("service-discovery").put("runtime", "java").put("containerPort", 8761);
+            apps.putObject("api-gateway").put("runtime", "java").put("containerPort", 8080);
+            apps.putObject("identity-service").put("runtime", "java").put("containerPort", 8081);
+            apps.putObject("catalog-service").put("runtime", "java").put("containerPort", 8082);
+            apps.putObject("order-service").put("runtime", "java").put("containerPort", 8083);
+            apps.putObject("notification-service").put("runtime", "java").put("containerPort", 8084);
+        }
         ObjectNode mappings = profile.putObject("serviceMappings");
         serviceMap.forEach((name, id) -> {
             if (id != null) mappings.put(name, id.toString());
         });
-        profile.set("studioTopology", buildDefaultStudioTopology());
+        profile.set("studioTopology", buildStudioTopologyForServices(csharpTrack
+                ? CsharpCourseraCatalog.CURATED_SERVICES
+                : MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES));
         return profile;
+    }
+
+    private ArrayNode buildFruitShopRuntimeScenarios() {
+        ArrayNode steps = json.createArrayNode();
+        steps.addObject().put("id", "fruit-ordering-checkout").put("service", "FruitOrdering.API")
+                .put("method", "POST").put("path", "/api/v1/orders").put("expectedStatus", 200);
+        steps.addObject().put("id", "fruit-catalog-items").put("service", "FruitCatalog.API")
+                .put("method", "GET").put("path", "/api/v1/catalog/items").put("expectedStatus", 200);
+        steps.addObject().put("id", "fruit-basket-read").put("service", "FruitBasket.API")
+                .put("method", "GET").put("path", "/api/v1/basket/customer-01").put("expectedStatus", 200);
+        return steps;
     }
 
     private ArrayNode buildMocHuongRuntimeScenarios() {

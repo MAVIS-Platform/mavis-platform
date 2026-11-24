@@ -17,6 +17,38 @@ const interaction = (edge: Edge) =>
     "MESSAGE_SUBSCRIBE",
   ].includes(edge.type ?? "");
 
+const SYSTEM_DESCRIPTION_DEFAULTS: Record<string, string> = {
+  "Mộc Hương Shop Platform":
+    "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices",
+  "Project Trái Cây Platform":
+    "Nền tảng thương mại điện tử trái cây sạch kiến trúc .NET 8 / ASP.NET Core Microservices",
+};
+
+function resolveSystemDescription(
+  model: ArchitecturalModel,
+  resolvedSystemName: string,
+  fallback?: string,
+): string | undefined {
+  const custom = model.elements.find(
+    (el) => typeof el.properties?.["systemDescription"] === "string" && el.properties["systemDescription"].trim(),
+  )?.properties?.["systemDescription"] as string | undefined;
+  return custom?.trim() || SYSTEM_DESCRIPTION_DEFAULTS[resolvedSystemName] || fallback;
+}
+
+export function selectDefaultGuidedC3Service(
+  containers: ReadonlyArray<{ id: string; name: string; count: number }>,
+): string {
+  if (containers.length === 0) return "ALL";
+  const exactOrder = containers.find((node) => node.name === "order-service");
+  if (exactOrder) return exactOrder.id;
+  const orderingService = containers.find((node) => /ordering|order/i.test(node.name));
+  if (orderingService) return orderingService.id;
+  const sorted = [...containers].sort(
+    (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+  );
+  return sorted[0]?.id ?? "ALL";
+}
+
 export function elementOwner(model: ArchitecturalModel, id: string): string {
   const visited = new Set<string>();
   while (!visited.has(id)) {
@@ -84,15 +116,8 @@ export function contextProjection(
       .filter((node) => !["EXTERNAL_SYSTEM", "PERSON"].includes(node.kind ?? ""))
       .map((node) => node.id),
   );
-  const customSystemDescription = model.elements.find(
-    (el) => typeof el.properties?.["systemDescription"] === "string" && el.properties["systemDescription"].trim(),
-  )?.properties?.["systemDescription"] as string | undefined;
   const resolvedSystemName = options?.systemName?.trim() || "System under analysis";
-  const systemDescription =
-    customSystemDescription?.trim() ||
-    (resolvedSystemName === "Mộc Hương Shop Platform"
-      ? "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices"
-      : undefined);
+  const systemDescription = resolveSystemDescription(model, resolvedSystemName);
   const system: DiagramNode = {
     id: `system:${model.projectId}`,
     name: resolvedSystemName,
@@ -578,15 +603,13 @@ export function buildContextDiagramDrawioXml(
   const baseContext = deriveC4ContextModel(model);
   const internalNodeIds = baseContext.internalNodeIds;
   // Context assertions come from the reviewed model. AI wording cannot replace them.
-  const customSystemDescription = model.elements.find(
-    (el) => typeof el.properties?.["systemDescription"] === "string" && el.properties["systemDescription"].trim(),
-  )?.properties?.["systemDescription"] as string | undefined;
   const resolvedSystemName = systemName?.trim() || "System under analysis";
   const systemDescription =
-    customSystemDescription?.trim() ||
-    (resolvedSystemName === "Mộc Hương Shop Platform"
-      ? "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices"
-      : baseContext.systemDescription);
+    resolveSystemDescription(
+      model,
+      resolvedSystemName,
+      baseContext.systemDescription,
+    ) ?? baseContext.systemDescription;
   const persons = baseContext.persons;
   const externals = baseContext.externals;
   const basePalette = palette(theme);
