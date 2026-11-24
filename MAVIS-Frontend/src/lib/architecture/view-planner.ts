@@ -105,6 +105,15 @@ export function planArchitectureViews(
       layoutJson: { nodes: selectedNodes, edges },
     };
   }
+  function mergeOriginLayer(a?: string, b?: string): string | undefined {
+    if (a === "STATIC_AND_RUNTIME" || b === "STATIC_AND_RUNTIME") return "STATIC_AND_RUNTIME";
+    const isRuntime = (v?: string) => v === "RUNTIME";
+    const isStatic = (v?: string) => v === "STATIC" || v === "CONFIG";
+    if ((isRuntime(a) && isStatic(b)) || (isStatic(a) && isRuntime(b))) {
+      return "STATIC_AND_RUNTIME";
+    }
+    return isRuntime(a) || isRuntime(b) ? "RUNTIME" : (a ?? b);
+  }
   // Container edges are architectural interactions; startup ordering stays in deployment views.
   const aggregated = new Map<string, (typeof model.layoutJson.edges)[number]>();
   for (const edge of model.layoutJson.edges.filter((edge) => !deployment(edge))) {
@@ -113,10 +122,13 @@ export function planArchitectureViews(
       to = owner(points.to);
     if (from === to || !byId.has(from) || !byId.has(to)) continue;
     const type = edge.relationType ?? edge.type ?? "UNKNOWN";
-    const key = JSON.stringify([from, to, type, edge.originLayer ?? "UNKNOWN", edge["properties"] && typeof edge["properties"] === "object" ? (edge["properties"] as Record<string, unknown>)["profile"] ?? null : null]);
+    const key = JSON.stringify([from, to, type, edge["properties"] && typeof edge["properties"] === "object" ? (edge["properties"] as Record<string, unknown>)["profile"] ?? null : null]);
     const prior = aggregated.get(key);
-    if (prior) (prior["underlyingEdgeIds"] as string[]).push(edge.id);
-    else
+    if (prior) {
+      (prior["underlyingEdgeIds"] as string[]).push(edge.id);
+      const mergedOrigin = mergeOriginLayer(prior.originLayer, edge.originLayer);
+      if (mergedOrigin) prior.originLayer = mergedOrigin;
+    } else
       aggregated.set(key, {
         ...edge,
         id: `view:${edge.id}`,
@@ -274,13 +286,15 @@ export function planArchitectureViews(
         from = grouped.get(endpoint.from) ?? endpoint.from,
         to = grouped.get(endpoint.to) ?? endpoint.to;
       if (from === to) continue;
-      const key = JSON.stringify([from, to, edge.relationType ?? edge.type, edge.originLayer]);
+      const key = JSON.stringify([from, to, edge.relationType ?? edge.type]);
       const previous = overviewEdges.get(key);
-      if (previous)
+      if (previous) {
         (previous["underlyingEdgeIds"] as string[]).push(
           ...(edge["underlyingEdgeIds"] as string[]),
         );
-      else
+        const mergedOrigin = mergeOriginLayer(previous.originLayer, edge.originLayer);
+        if (mergedOrigin) previous.originLayer = mergedOrigin;
+      } else
         overviewEdges.set(key, {
           ...edge,
           id: `overview:${edge.id}`,

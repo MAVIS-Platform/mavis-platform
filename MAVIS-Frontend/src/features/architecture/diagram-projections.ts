@@ -60,16 +60,31 @@ export function elementOwner(model: ArchitecturalModel, id: string): string {
   return id;
 }
 
+function mergeOriginLayer(existing?: string | null, incoming?: string | null): string | undefined {
+  const a = existing ?? undefined;
+  const b = incoming ?? undefined;
+  if (a === "STATIC_AND_RUNTIME" || b === "STATIC_AND_RUNTIME") return "STATIC_AND_RUNTIME";
+  const isRuntime = (v?: string) => v === "RUNTIME";
+  const isStatic = (v?: string) => v === "STATIC" || v === "CONFIG";
+  if ((isRuntime(a) && isStatic(b)) || (isStatic(a) && isRuntime(b))) {
+    return "STATIC_AND_RUNTIME";
+  }
+  return isRuntime(a) || isRuntime(b) ? "RUNTIME" : (a ?? b);
+}
+
 function aggregate(edges: Edge[], member: (id: string) => string | undefined): Edge[] {
   const links = new Map<string, Edge>();
   for (const edge of edges) {
     const from = member(edge.from ?? ""),
       to = member(edge.to ?? "");
     if (!from || !to || from === to) continue;
-    const token = JSON.stringify([from, to, edge.type, edge.originLayer]);
+    const token = JSON.stringify([from, to, edge.type]);
     const prior = links.get(token);
-    if (prior) (prior["underlyingEdgeIds"] as string[]).push(edge.id);
-    else
+    if (prior) {
+      (prior["underlyingEdgeIds"] as string[]).push(edge.id);
+      const mergedOrigin = mergeOriginLayer(prior.originLayer, edge.originLayer);
+      if (mergedOrigin) prior.originLayer = mergedOrigin;
+    } else
       links.set(token, {
         ...edge,
         id: `projection:${edge.id}`,
