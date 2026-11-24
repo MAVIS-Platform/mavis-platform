@@ -15,6 +15,7 @@ export function AssignmentSourcePicker({
   initial,
   onChange,
   onVersionChange,
+  usageContext = "lab",
 }: {
   workspaceId: string;
   title: string;
@@ -24,6 +25,7 @@ export function AssignmentSourcePicker({
     version: { modelId: string; projectId: string; snapshotId: string },
     pending: boolean,
   ) => void;
+  usageContext?: "lab" | "repository";
 }) {
   const api = useApi(),
     cache = useQueryClient();
@@ -70,14 +72,19 @@ export function AssignmentSourcePicker({
   const prepare = useMutation({
     mutationFn: async () => {
       if (!title.trim()) {
-        throw new Error(t("Enter the Lab title in Step 1 first.", "Hãy nhập tên Lab ở Bước 1 trước."));
+        throw new Error(
+          t("Enter the Lab title in Step 1 first.", "Hãy nhập tên Lab ở Bước 1 trước."),
+        );
       }
       if (
         mode === "zip" &&
         (!file || !/\.zip$/i.test(file.name) || !file.size || file.size > 100 * 1024 * 1024)
       ) {
         throw new Error(
-          t("Choose a non-empty ZIP archive up to 100 MB.", "Hãy chọn file ZIP hợp lệ không rỗng tối đa 100 MB."),
+          t(
+            "Choose a non-empty ZIP archive up to 100 MB.",
+            "Hãy chọn file ZIP hợp lệ không rỗng tối đa 100 MB.",
+          ),
         );
       }
       if (
@@ -85,11 +92,16 @@ export function AssignmentSourcePicker({
         (!selectedBranch || lookup !== repository.trim() || !branches.isSuccess)
       ) {
         throw new Error(
-          t("Wait for the repository branches, then select a branch.", "Đợi tải danh sách nhánh rồi chọn nhánh cần phân tích."),
+          t(
+            "Wait for the repository branches, then select a branch.",
+            "Đợi tải danh sách nhánh rồi chọn nhánh cần phân tích.",
+          ),
         );
       }
       if (mode === "github" && commit && !/^[a-f0-9]{40}$/i.test(commit.trim())) {
-        throw new Error(t("Use the full 40-character commit SHA.", "Hãy nhập đủ 40 ký tự Commit SHA."));
+        throw new Error(
+          t("Use the full 40-character commit SHA.", "Hãy nhập đủ 40 ký tự Commit SHA."),
+        );
       }
       setSnapshotId("");
       setModelId("");
@@ -135,7 +147,9 @@ export function AssignmentSourcePicker({
     mutationFn: async (overrideSnapshotId?: string) => {
       const targetSnapshot = overrideSnapshotId || snapshotId;
       if (!targetSnapshot) {
-        throw new Error(t("No snapshot selected for analysis.", "Chưa chọn snapshot để phân tích."));
+        throw new Error(
+          t("No snapshot selected for analysis.", "Chưa chọn snapshot để phân tích."),
+        );
       }
       setSnapshotId(targetSnapshot);
       const next = await api.execute("startAnalysis", {
@@ -156,18 +170,38 @@ export function AssignmentSourcePicker({
     setModelId(job.data.modelId);
     setMessage(
       job.data.status === "partial"
-        ? t(
-            "Analysis completed with limitations. Review this version before saving it to the Lab.",
-            "Phân tích hoàn tất nhưng có cảnh báo. Hãy kiểm tra trước khi lưu vào Lab.",
-          )
-        : t(
-            "Source analyzed. Click 'Save source to Lab' below to pin this version.",
-            "Đã phân tích xong. Bấm 'Lưu nguồn vào Lab' bên dưới để ghim phiên bản này.",
-          ),
+        ? usageContext === "repository"
+          ? t(
+              "Analysis completed with limitations. Review the generated version before continuing.",
+              "Phân tích hoàn tất nhưng có cảnh báo. Hãy kiểm tra phiên bản được tạo trước khi tiếp tục.",
+            )
+          : t(
+              "Analysis completed with limitations. Review this version before saving it to the Lab.",
+              "Phân tích hoàn tất nhưng có cảnh báo. Hãy kiểm tra trước khi lưu vào Lab.",
+            )
+        : usageContext === "repository"
+          ? t(
+              "Source analyzed. This repository version is ready to use.",
+              "Đã phân tích mã nguồn. Phiên bản repository này đã sẵn sàng sử dụng.",
+            )
+          : t(
+              "Source analyzed. Click 'Save source to Lab' below to pin this version.",
+              "Đã phân tích xong. Bấm 'Lưu nguồn vào Lab' bên dưới để ghim phiên bản này.",
+            ),
     );
     void cache.invalidateQueries({ queryKey: ["api", "modelVersions"] });
     void cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
-  }, [job.data?.modelId, job.data?.status, snapshotId, projectId, cache, t]);
+  }, [
+    job.data?.modelId,
+    job.data?.status,
+    job.data?.snapshotId,
+    job.data?.projectId,
+    snapshotId,
+    projectId,
+    cache,
+    t,
+    usageContext,
+  ]);
   const busy = prepare.isPending || retry.isPending || running;
   const pending = (mode !== "existing" || !!projectId) && !modelId;
   useEffect(() => {
@@ -239,10 +273,13 @@ export function AssignmentSourcePicker({
                 .map((p) => ({ value: p.id, label: p.name })),
             ]}
           />
-          {projectId && (
-            sortedVersions.length > 0 ? (
+          {projectId &&
+            (sortedVersions.length > 0 ? (
               <SelectField
-                label={t("Analyzed revision (Model Version)", "Phiên bản đã phân tích (Model Version)")}
+                label={t(
+                  "Analyzed revision (Model Version)",
+                  "Phiên bản đã phân tích (Model Version)",
+                )}
                 value={modelId}
                 onChange={(value) => {
                   setModelId(value);
@@ -283,8 +320,7 @@ export function AssignmentSourcePicker({
                   "Dự án này chưa có mã nguồn hoặc bản phân tích. Hãy chuyển sang tab Repo GitHub / Tải file ZIP, hoặc bỏ qua nếu là Lab thuần lý thuyết.",
                 )}
               </div>
-            )
-          )}
+            ))}
         </>
       ) : (
         <>
@@ -326,7 +362,10 @@ export function AssignmentSourcePicker({
                 <Input
                   value={commit}
                   aria-label={t("Commit SHA", "Commit SHA")}
-                  placeholder={t("Leave blank for branch HEAD or paste 40-char SHA", "Để trống để lấy mới nhất hoặc dán 40 ký tự SHA")}
+                  placeholder={t(
+                    "Leave blank for branch HEAD or paste 40-char SHA",
+                    "Để trống để lấy mới nhất hoặc dán 40 ký tự SHA",
+                  )}
                   onChange={(e) => {
                     setCommit(e.target.value);
                     setModelId("");
@@ -359,6 +398,7 @@ export function AssignmentSourcePicker({
               try {
                 await prepare.mutateAsync();
               } catch {
+                // Mutation errors are rendered below by the picker.
               } finally {
                 lock.current = false;
               }
@@ -380,7 +420,10 @@ export function AssignmentSourcePicker({
       )}
       {job.data && ["failed", "cancelled", "timed-out"].includes(job.data.status) && (
         <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive">
-          <span>{t("Analysis status:", "Trạng thái phân tích:")} <StatusLabel status={job.data.status} /></span>
+          <span>
+            {t("Analysis status:", "Trạng thái phân tích:")}{" "}
+            <StatusLabel status={job.data.status} />
+          </span>
           <Button type="button" size="sm" variant="outline" onClick={() => retry.mutate(undefined)}>
             {t("Retry analysis", "Thử phân tích lại")}
           </Button>
@@ -405,9 +448,15 @@ export function AssignmentSourcePicker({
         </Button>
       )}
       {modelId && (
-        <p role="status" className="break-all rounded-lg border bg-background px-3 py-2 text-xs text-foreground">
+        <p
+          role="status"
+          className="break-all rounded-lg border bg-background px-3 py-2 text-xs text-foreground"
+        >
           {t("Selected source:", "Nguồn đang chọn:")}{" "}
-          <strong>{imported?.name ?? initial?.projectName ?? t("Selected reference", "Dự án tham chiếu")}</strong> ·{" "}
+          <strong>
+            {imported?.name ?? initial?.projectName ?? t("Selected reference", "Dự án tham chiếu")}
+          </strong>{" "}
+          ·{" "}
           {modelId === initial?.modelId
             ? `Revision ${initial.revision}`
             : `Revision ${versions.data?.find((m) => m.id === modelId)?.revision ?? t("ready", "sẵn sàng")}`}
@@ -419,7 +468,14 @@ export function AssignmentSourcePicker({
           ) : null}
         </p>
       )}
-      {[prepare.error, retry.error, mode === "github" ? branches.error : null, projects.error, versions.error, job.error]
+      {[
+        prepare.error,
+        retry.error,
+        mode === "github" ? branches.error : null,
+        projects.error,
+        versions.error,
+        job.error,
+      ]
         .filter(Boolean)
         .map((error, index) => (
           <p role="alert" key={index} className="text-sm text-destructive">
@@ -454,7 +510,8 @@ export function AssignmentSourceDetails({
         <div>
           <dt className="text-muted-foreground">{t("Branch / commit", "Nhánh / commit")}</dt>
           <dd>
-            {source.branch ?? t("ZIP archive", "Tệp nén ZIP")} · {source.commitSha ?? source.artifactHash}
+            {source.branch ?? t("ZIP archive", "Tệp nén ZIP")} ·{" "}
+            {source.commitSha ?? source.artifactHash}
           </dd>
         </div>
         <div>

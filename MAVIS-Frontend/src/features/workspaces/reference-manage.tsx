@@ -1,100 +1,112 @@
 "use client";
+
 import { useState } from "react";
-import Link from "next/link";
-import { useApiMutation, useApiQuery, usePermission } from "@/hooks/use-api";
-import { FormField, SelectField } from "@/components/shared/forms";
-import { Input } from "@/components/ui/input";
+import { FolderGit2, Plus, X } from "lucide-react";
+import { AssignmentSourcePicker } from "@/features/assignments/source-picker";
 import { Button } from "@/components/ui/button";
-import { DetailPanel } from "@/components/shared/data";
-import { ErrorState } from "@/components/shared/request-state";
+import { usePermission } from "@/hooks/use-api";
+import { useLocale } from "@/lib/i18n/locale-context";
+
 export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const allowed = usePermission("workspace:manage");
-  const projects = useApiQuery(
-    "workspaceProjects",
-    { workspaceId },
-    { enabled: allowed && !!workspaceId },
-  );
-  const create = useApiMutation("createReferenceProject"),
-    publish = useApiMutation("publishReference");
-  const [name, setName] = useState(""),
-    [projectId, setProjectId] = useState(""),
-    [snapshotId, setSnapshotId] = useState("");
-  const project = projects.data?.find((p) => p.id === projectId);
-  const snapshots = useApiQuery("snapshots", { projectId }, { enabled: allowed && !!project });
+  const { t } = useLocale();
+  const [importOpen, setImportOpen] = useState(false);
+  const [selectedModelId, setSelectedModelId] = useState("");
+  const [sourcePending, setSourcePending] = useState(false);
+
   if (!allowed) return null;
+
   return (
-    <DetailPanel title="Manage teaching references">
-      <form
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          create.mutate(
-            { workspaceId, name },
-            {
-              onSuccess: (p) => {
-                setName("");
-                setProjectId(p.id);
-              },
-            },
-          );
-        }}
+    <section className="space-y-5">
+      <button
+        type="button"
+        onClick={() => setImportOpen(true)}
+        className="group flex min-h-[300px] w-full flex-col items-center justify-center rounded-2xl border border-dashed bg-card px-6 py-12 text-center transition-colors hover:border-primary/50 hover:bg-primary/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
-        <FormField label="Reference project name">
-          {(props) => (
-            <Input {...props} required value={name} onChange={(e) => setName(e.target.value)} />
+        <span className="grid size-16 place-items-center rounded-full border-2 border-dashed border-muted-foreground/50 text-foreground transition-colors group-hover:border-primary group-hover:text-primary">
+          <Plus className="size-8" aria-hidden="true" />
+        </span>
+        <span className="mt-5 text-base font-semibold">
+          {t("Import reference repository", "Nhập repository tham chiếu")}
+        </span>
+        <span className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+          {t(
+            "Connect a GitHub repo or ZIP archive to analyze C1–C3 architecture models and the dependency graph.",
+            "Kết nối repo GitHub hoặc file ZIP để phân tích mô hình kiến trúc C1–C3 và Dependency Graph.",
           )}
-        </FormField>
-        <Button disabled={create.isPending}>Create reference project</Button>
-      </form>
-      {create.data && (
-        <Link
-          className="text-sm text-primary underline"
-          href={`/snapshots?project=${encodeURIComponent(create.data.id)}`}
+        </span>
+        {selectedModelId && !sourcePending ? (
+          <span className="mt-4 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+            {t("Repository analysis ready", "Repository đã phân tích xong")}
+          </span>
+        ) : null}
+      </button>
+
+      {importOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("Import reference repository", "Nhập repository tham chiếu")}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          onClick={() => setImportOpen(false)}
         >
-          Import source snapshot (GitHub, ZIP & versions)
-        </Link>
-      )}
-      <SelectField
-        label="Reference project"
-        value={projectId}
-        onChange={setProjectId}
-        options={[
-          { value: "", label: "Select a project" },
-          ...(projects.data ?? []).map((p) => ({ value: p.id, label: p.name })),
-        ]}
-      />
-      {project && (
-        <>
-          <SelectField
-            label="Source snapshot to publish"
-            value={snapshotId}
-            onChange={setSnapshotId}
-            options={[
-              { value: "", label: "Select an analyzed source snapshot" },
-              ...(snapshots.data ?? []).map((s) => ({ value: s.id, label: `${s.name} · ${s.id}` })),
-            ]}
-          />
-          <Button
-            disabled={publish.isPending || !snapshots.data?.some((s) => s.id === snapshotId)}
-            onClick={() => {
-              if (window.confirm("Publish this source snapshot to all class members?"))
-                publish.mutate({ workspaceId, projectId, snapshotId });
-            }}
+          <div
+            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-xl"
+            onClick={(event) => event.stopPropagation()}
           >
-            Publish reference snapshot
-          </Button>
-        </>
-      )}
-      {publish.data && (
-        <p role="status" className="text-sm">
-          Reference published to the workspace.
-        </p>
-      )}
-      {[create.error, publish.error, projects.error, snapshots.error]
-        .filter(Boolean)
-        .map((error, i) => (
-          <ErrorState key={i} error={error} />
-        ))}
-    </DetailPanel>
+            <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+              <div className="flex items-center gap-2">
+                <FolderGit2 className="size-4 text-teal-600" aria-hidden="true" />
+                <h2 className="text-base font-semibold">
+                  {t("Import & analyze repository", "Nhập & phân tích repository")}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImportOpen(false)}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={t("Close", "Đóng")}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5">
+              <AssignmentSourcePicker
+                workspaceId={workspaceId}
+                title={t("Course repository", "Repository khóa học")}
+                usageContext="repository"
+                onChange={(modelId, pending) => {
+                  setSelectedModelId(modelId);
+                  setSourcePending(pending);
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3.5">
+              <p className="text-xs text-muted-foreground">
+                {selectedModelId && !sourcePending
+                  ? t(
+                      "Analysis is complete and the repository version is available for the next steps.",
+                      "Phân tích đã hoàn tất và phiên bản repository có thể dùng cho các bước tiếp theo.",
+                    )
+                  : t(
+                      "Import a GitHub repo, ZIP archive, or select an analyzed project.",
+                      "Nhập repo GitHub, file ZIP hoặc chọn dự án đã phân tích.",
+                    )}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setImportOpen(false)}
+              >
+                {t("Close", "Đóng")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }

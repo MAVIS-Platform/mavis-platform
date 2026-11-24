@@ -883,33 +883,5 @@ export function WorkspaceMembers() {
 
 export function ReferenceVersions() {
   const { workspaceId } = useSelection();
-  const query = useApiQuery(
-    "referenceVersions",
-    { workspaceId },
-    { enabled: Boolean(workspaceId) },
-  );
-  return workspaceId ? (
-    <div className="space-y-5">
-      <ReferenceManagement key={workspaceId} workspaceId={workspaceId} />
-      <RequestState query={query} empty={!query.data?.length}>
-        {query.data?.map((reference) => (
-          <DetailPanel key={reference.id} title={reference.snapshot.name}>
-            <p className="break-all text-sm text-muted-foreground">
-              Reference source {reference.snapshot.id} · model {reference.model.id} · revision{" "}
-              {reference.model.revision}
-            </p>
-            <DataTable
-              rows={reference.model.elements}
-              rowKey={(e) => e.id}
-              caption="Reference architecture elements"
-              columns={[
-                { key: "name", label: "Element", render: (e) => e.name },
-                { key: "description", label: "Description", render: (e) => e.description },
-              ]}
-            />
-          </DetailPanel>
-        ))}
-      </RequestState>
-    </div>
-  ) : null;
+  return workspaceId ? <ReferenceManagement key={workspaceId} workspaceId={workspaceId} /> : null;
 }
