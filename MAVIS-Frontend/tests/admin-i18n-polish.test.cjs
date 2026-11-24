@@ -186,8 +186,9 @@ test("Lecturer UX Pack 1: single-line breadcrumbs & class tabs, Google mark isol
   assert.match(social, /colorScheme: "light"/);
   assert.match(access, /isCopied \? t\("Copied!", "Đã chép!"\) : item\.code/);
   assert.match(assignments, /xl:flex-row xl:items-center xl:justify-between/);
-  assert.match(studioSection, /Configure Exercise & Templates/);
-  assert.match(studioSection, /1-Click Exercise Templates/);
+  assert.match(studioSection, /Open Visual Studio Builder/);
+  assert.doesNotMatch(studioSection, /Configure Exercise & Templates/);
+  assert.doesNotMatch(studioSection, /1-Click Exercise Templates/);
   assert.match(workbench, /finishDisabledReason/);
   assert.match(builder, /scrollIntoView\(\{ behavior: "smooth", block: "nearest" \}\)/);
   assert.match(workspaces, /gradebookLoading/);

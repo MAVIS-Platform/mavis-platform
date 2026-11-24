@@ -61,8 +61,11 @@ export type LiveBlockAuthoringControls = {
   initialStoppedControllers: readonly string[];
   scalableServices: readonly string[];
   availableServices?: readonly string[] | undefined;
+  impactTargetService?: string | null | undefined;
+  predictedImpactedServices?: readonly string[] | undefined;
   onToggleInitialStopped: (service: string, isController: boolean) => void;
   onToggleScalable: (service: string) => void;
+  onDropAuthorChip?: ((chipId: string, service: string) => void) | undefined;
   onAddBlock?: ((service: string) => void) | undefined;
   onRemoveBlock?: ((service: string) => void) | undefined;
   onApplyPreset?: ((preset: AuthorPresetId) => void) | undefined;
@@ -508,9 +511,25 @@ export function LiveSandboxParity({
                       : live === 0
                         ? "0×"
                         : `${live}×`;
+                  const isImpactTarget = authoring?.impactTargetService === block.service;
+                  const isPredictedImpacted = Boolean(
+                    authoring?.predictedImpactedServices?.includes(block.service),
+                  );
                   return (
                     <li
                       key={block.service}
+                      onDragOver={(event) => {
+                        if (!authoring?.onDropAuthorChip) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "copy";
+                      }}
+                      onDrop={(event) => {
+                        const chipId = event.dataTransfer.getData("application/x-mavis-studio-tool");
+                        if (chipId.startsWith("author-") && authoring?.onDropAuthorChip) {
+                          event.preventDefault();
+                          authoring.onDropAuthorChip(chipId, block.service);
+                        }
+                      }}
                       className={`group relative flex items-center justify-between gap-1.5 rounded-lg px-2 py-1.5 text-[11px] transition-colors ${
                         isSelected
                           ? "bg-sky-500/12 text-white ring-1 ring-inset ring-sky-500/45"
@@ -530,7 +549,7 @@ export function LiveSandboxParity({
                             onSelect("");
                           } else {
                             onSelect(block.service);
-                            onSelectSetupPanel?.("service");
+                            onSelectSetupPanel?.(authoring ? "presets" : "service");
                           }
                         }}
                         aria-label={`Inspect ${block.label}`}
@@ -540,7 +559,7 @@ export function LiveSandboxParity({
                           className={`size-1.5 shrink-0 rounded-full ${statusDot}`}
                           aria-hidden="true"
                         />
-                        {renderLiveBlockIcon(block.service, studioStyle)}
+                        {!authoring && renderLiveBlockIcon(block.service, studioStyle)}
                         <span className="truncate font-mono text-[11px] font-medium">
                           {block.label}
                         </span>
@@ -548,16 +567,23 @@ export function LiveSandboxParity({
 
                       <div className="flex shrink-0 items-center gap-1">
                         {authoring && startsStopped && (
-                          <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-semibold text-amber-300">
+                          <span className="rounded bg-rose-500/15 px-1 py-0.5 text-[9px] font-semibold text-rose-300">
                             Down
                           </span>
                         )}
-                        {authoring && !isScalable && (
-                          <span
-                            title="Fixed replicas (student cannot scale)"
-                            className="text-slate-500"
-                          >
-                            <Lock aria-hidden="true" className="size-2.5" />
+                        {authoring && isImpactTarget && (
+                          <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] font-semibold text-amber-300">
+                            Target
+                          </span>
+                        )}
+                        {authoring && !isImpactTarget && isPredictedImpacted && (
+                          <span className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-200">
+                            Impact
+                          </span>
+                        )}
+                        {authoring && isScalable && (
+                          <span className="rounded bg-sky-500/15 px-1 py-0.5 text-[9px] font-semibold text-sky-300">
+                            Scale
                           </span>
                         )}
                         <span
@@ -828,10 +854,7 @@ export function LiveSandboxParity({
                           : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
                       }`}
                     >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Zap aria-hidden="true" className="size-3.5 shrink-0 text-amber-400" />
-                        <span className="truncate">Lab Exercise Presets</span>
-                      </span>
+                      <span className="truncate">Visual Builder</span>
                       <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-600" />
                     </button>
                     <button
@@ -843,10 +866,7 @@ export function LiveSandboxParity({
                           : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
                       }`}
                     >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Target aria-hidden="true" className="size-3.5 shrink-0 text-sky-400" />
-                        <span className="truncate">Mission &amp; Pass Criteria</span>
-                      </span>
+                      <span className="truncate">Mission &amp; Advanced</span>
                       <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-600" />
                     </button>
                   </div>

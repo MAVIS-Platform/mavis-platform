@@ -4,18 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Activity,
-  AlertTriangle,
-  ArrowUpRight,
-  CheckCircle2,
-  Container,
-  Lock,
-  Play,
-  RefreshCw,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
+import { ArrowUpRight, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/request-state";
@@ -29,16 +18,12 @@ import {
   useRuntimeSetupReadiness,
   useStudentLabStudioSessions,
 } from "@/features/workspaces/course-access";
-import { PreparedTopologyEditor } from "@/features/runtime/prepared-topology-editor";
 import {
   buildStudioLiveHref,
   parseStudioTopology,
   type StudioExerciseView,
 } from "@/features/runtime/standalone-studio-live";
-import { StudioExerciseEditor } from "./studio-exercise-editor";
 import { type Assignment } from "./requirements";
-
-type ConfigTab = "exercise" | "topology";
 
 export function LabStudioSection({
   workspaceId,
@@ -70,25 +55,6 @@ export function LabStudioSection({
     assignment.referenceSource?.snapshotId ??
     exercise.data?.runtimeSnapshotId ??
     undefined;
-  const modelId =
-    courseReference?.modelId ??
-    assignment.referenceSource?.modelId ??
-    exercise.data?.runtimeModelId ??
-    undefined;
-  const resolvedReferenceSource: Assignment["referenceSource"] =
-    projectId && snapshotId && modelId
-      ? {
-          projectId,
-          projectName:
-            courseReference?.projectName ?? assignment.referenceSource?.projectName ?? "Course Repository",
-          snapshotId,
-          modelId,
-          revision: courseReference?.modelRevision ?? assignment.referenceSource?.revision ?? 1,
-          sourceType: assignment.referenceSource?.sourceType ?? "COURSE_REPOSITORY",
-          repositoryUrl: assignment.referenceSource?.repositoryUrl ?? null,
-          branch: assignment.referenceSource?.branch ?? null,
-        }
-      : null;
   const readiness = useRuntimeSetupReadiness(projectId);
   const buildImages = useApiMutation("buildRuntimeSandboxImages");
   const autoStudio = useAutoConfigureStudio(workspaceId, assignment.id);
@@ -108,8 +74,6 @@ export function LabStudioSection({
     Boolean(projectId),
   );
 
-  const [configModalOpen, setConfigModalOpen] = useState(false);
-  const [configTab, setConfigTab] = useState<ConfigTab>("exercise");
   const [prepareStage, setPrepareStage] = useState<"idle" | "building" | "configuring">("idle");
   const [prepareError, setPrepareError] = useState<string | null>(null);
 
@@ -145,7 +109,6 @@ export function LabStudioSection({
   const verifiedSession = sessionList.find(
     (session) => session.assignmentId === assignment.id && session.studioVerified,
   );
-  const studioReadyToLaunch = isRuntimeReady;
   const isPreparing = prepareStage !== "idle" || buildImages.isPending || autoStudio.isPending;
 
   const returnTo = `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}&tab=studio`;
@@ -160,6 +123,7 @@ export function LabStudioSection({
   const minReplicaMap = new Map(
     (exercise.data?.successCriteria?.minReplicas ?? []).map((item) => [item.service, item.count]),
   );
+  const impactTarget = exercise.data?.successCriteria?.targetChangeAction?.service ?? null;
   const displayServices = previewTopology?.blocks.length
     ? previewTopology.blocks.map((block) => block.service)
     : availableApplications;
@@ -168,7 +132,6 @@ export function LabStudioSection({
     if (!projectId || isPreparing) return;
     setPrepareError(null);
     try {
-      // Build & pin local Docker images + generate Runner-safe sandboxCompose whenever preflight has unresolved issues or Sync Docker is triggered.
       if (!isRuntimeReady || readinessBlockers.length > 0 || !openAfter) {
         setPrepareStage("building");
         const built = await buildImages.mutateAsync({
@@ -206,8 +169,8 @@ export function LabStudioSection({
             remaining.length > 0
               ? remaining[0]!
               : t(
-                  "Docker runtime still has unresolved Runner requirements. Review the Docker preflight check above and retry Sync Docker.",
-                  "Docker runtime vẫn còn yêu cầu Runner chưa được giải quyết. Kiểm tra mục Kiểm tra Docker phía trên rồi bấm Đồng bộ Docker lại.",
+                  "Docker runtime still has unresolved Runner requirements. Review the check above and retry.",
+                  "Docker runtime vẫn còn yêu cầu Runner chưa được giải quyết. Kiểm tra lại và thử đồng bộ.",
                 ),
           );
         }
@@ -223,19 +186,28 @@ export function LabStudioSection({
     }
   };
 
+  const goalSummary = (() => {
+    const kind = exercise.data?.successCriteria?.exerciseType;
+    if (kind === "CHANGE_IMPACT") return t("Change Impact", "Phân tích ảnh hưởng");
+    if (kind === "SCALE_UNDER_LOAD") return t("Scale-Out", "Chịu tải & Scale");
+    if (kind === "CIRCUIT_BREAKER") return t("Outage Recovery", "Khôi phục sự cố");
+    if (kind === "CONFIG_REGRESSION") return t("CPU Degradation", "Tắc nghẽn CPU");
+    return null;
+  })();
+
   return (
     <div className="space-y-4">
       <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3.5">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Activity className="size-4 text-primary" aria-hidden="true" />
-            <h2 className="text-base font-semibold">{t("Studio Live", "Studio Live")}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold">{t("Visual Studio Builder", "Studio 3D soạn bài")}</h2>
             {isRuntimeReady && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                 <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
                 {t("Runtime ready", "Runtime sẵn sàng")}
               </span>
             )}
+            {goalSummary && <Badge variant="outline">{goalSummary}</Badge>}
             {setupLab?.topologyFrozen && (
               <Badge variant="success">{t("Frozen", "Đã khóa")}</Badge>
             )}
@@ -243,7 +215,7 @@ export function LabStudioSection({
 
           {projectId && (
             <div className="flex flex-wrap items-center gap-2">
-              {studioReadyToLaunch && (
+              {isRuntimeReady && (
                 <Button
                   type="button"
                   size="sm"
@@ -262,18 +234,6 @@ export function LabStudioSection({
                       : t("Sync Docker", "Đồng bộ Docker")}
                 </Button>
               )}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setConfigTab("exercise");
-                  setConfigModalOpen(true);
-                }}
-              >
-                <SlidersHorizontal className="mr-1.5 size-3.5" aria-hidden="true" />
-                {t("Configure Exercise & Templates", "Cấu hình bài tập & Mẫu sẵn")}
-              </Button>
               {published && (
                 <PublishCourseLab
                   workspaceId={workspaceId}
@@ -301,33 +261,29 @@ export function LabStudioSection({
 
         {setup.isPending && !projectId ? (
           <div className="flex min-h-32 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-            <RefreshCw className="mr-2 size-4 animate-spin" aria-hidden="true" />
             {t("Loading Course Repository…", "Đang tải Repository của Course…")}
           </div>
         ) : !projectId ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <Lock className="size-4 shrink-0" aria-hidden="true" />
-              <span>
-                {t(
-                  "Prepare a repository with Docker Compose in the Course Repository step first.",
-                  "Hãy chuẩn bị repository có Docker Compose ở bước Repository của Course trước.",
-                )}
-              </span>
-            </div>
+          <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+            {t(
+              "Import a repository with Docker Compose in Step 1 (Repository) first.",
+              "Hãy nhập repository có Docker Compose ở Bước 1 (Repository) trước.",
+            )}
           </div>
-        ) : !studioReadyToLaunch ? (
-          /* Minimal 1-Click Docker Runtime Preparation Stage */
-          <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/10 px-6 py-10 text-center">
-            <span className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary shadow-xs">
-              <Container className="size-7" aria-hidden="true" />
-            </span>
-            <h3 className="mt-4 text-base font-semibold text-foreground">
-              {t("Prepare Docker Runtime", "Chuẩn bị Docker Runtime")}
+        ) : !isRuntimeReady ? (
+          <div className="flex min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/10 px-6 py-10 text-center">
+            <h3 className="text-base font-semibold text-foreground">
+              {t("Open Visual Studio Builder", "Mở Studio 3D soạn bài")}
             </h3>
+            <p className="mt-1.5 max-w-md text-xs text-muted-foreground">
+              {t(
+                "Prepare the Docker runtime once, then design the exercise directly on the 3D service graph by clicking or dragging chips onto blocks.",
+                "Chuẩn bị Docker runtime một lần rồi thiết kế đề bài trực tiếp trên sơ đồ 3D bằng cách chọn hoặc kéo thả lên từng service.",
+              )}
+            </p>
 
             {availableApplications.length > 0 && (
-              <div className="mt-3 flex max-w-xl flex-wrap items-center justify-center gap-1.5">
+              <div className="mt-4 flex max-w-xl flex-wrap items-center justify-center gap-1.5">
                 {availableApplications.map((svc) => (
                   <span
                     key={svc}
@@ -341,8 +297,7 @@ export function LabStudioSection({
 
             {readinessBlockers.length > 0 && (
               <div className="mt-4 max-w-lg rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-left text-xs text-amber-700 dark:text-amber-300">
-                <p className="mb-1 flex items-center gap-1.5 font-medium">
-                  <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+                <p className="mb-1 font-medium">
                   {t("Docker preflight check", "Kiểm tra Docker")}
                 </p>
                 <ul className="list-disc space-y-0.5 pl-4">
@@ -353,250 +308,112 @@ export function LabStudioSection({
               </div>
             )}
 
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+            <div className="mt-6">
               <Button
                 type="button"
+                size="lg"
                 disabled={isPreparing}
                 onClick={() => void runPrepareRuntime(true)}
               >
-                <Play className="mr-1.5 size-4" aria-hidden="true" />
                 {prepareStage === "building"
-                  ? t(
-                      "Building & pinning Docker images…",
-                      "Đang build & ghim Docker image…",
-                    )
+                  ? t("Building & pinning Docker images…", "Đang build & ghim Docker image…")
                   : isPreparing
                     ? t("Preparing Docker runtime…", "Đang chuẩn bị Docker runtime…")
-                    : t("Prepare Runtime & Open Studio", "Chuẩn bị Runtime & Mở Studio")}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setConfigTab("exercise");
-                  setConfigModalOpen(true);
-                }}
-              >
-                <SlidersHorizontal className="mr-1.5 size-4" aria-hidden="true" />
-                {t("1-Click Exercise Templates", "Chọn mẫu bài tập sẵn")}
+                    : t("Open Visual Studio Builder", "Mở Studio 3D soạn bài")}
+                {!isPreparing && <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />}
               </Button>
             </div>
-            <p className="mt-3 max-w-md text-xs text-muted-foreground">
-              {exercise.data?.instructions
-                ? exercise.data.instructions
-                : t(
-                    "Pick a 1-Click Exercise Template (Change Impact, Scale-Out, or CPU Throttle) or customize auto-grading rules before running a live test.",
-                    "Chọn nhanh mẫu bài tập (Change Impact, Scale-Out, hoặc CPU Throttle) hoặc tùy chỉnh tiêu chí chấm trước khi chạy thử.",
-                  )}
-            </p>
           </div>
         ) : (
-          /* Clean Launchpad to Dedicated Full-Screen Standalone Studio Live */
-          <div className="space-y-4">
-            <div className="flex flex-col items-center justify-between gap-5 rounded-2xl border border-slate-800/80 bg-[#070b12] px-6 py-8 text-slate-100 sm:flex-row">
-              <div className="min-w-0 space-y-3 text-center sm:text-left">
-                <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[11px] font-medium text-emerald-300">
-                    <span className="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
-                    {t("Docker stack ready", "Docker stack sẵn sàng")} · {displayServices.length}{" "}
-                    {displayServices.length === 1 ? "service" : "services"}
+          <div className="flex flex-col items-center justify-between gap-5 rounded-2xl border border-slate-800/80 bg-[#070b12] px-6 py-7 text-slate-100 sm:flex-row">
+            <div className="min-w-0 space-y-3 text-center sm:text-left">
+              <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[11px] font-medium text-emerald-300">
+                  <span className="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+                  {displayServices.length} {displayServices.length === 1 ? "service" : "services"}
+                </span>
+                {exercise.data?.baselineRequests?.[0]?.path && (
+                  <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-0.5 font-mono text-[11px] text-slate-300">
+                    GET {exercise.data.baselineRequests[0].path}
                   </span>
-                  {verifiedSession && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 font-mono text-[11px] text-teal-300">
-                      <CheckCircle2 className="size-3" aria-hidden="true" />
-                      {t("Verified", "Đã xác minh")} {verifiedSession.id.slice(0, 8)}
-                    </span>
-                  )}
-                </div>
+                )}
+                {verifiedSession && (
+                  <span className="rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 font-mono text-[11px] text-teal-300">
+                    {t("Verified", "Đã xác minh")} {verifiedSession.id.slice(0, 8)}
+                  </span>
+                )}
+              </div>
 
-                {displayServices.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
-                    {displayServices.map((svc) => {
-                      const startsDown = stoppedSet.has(svc);
-                      const minRep = minReplicaMap.get(svc);
-                      return (
-                        <span
-                          key={svc}
-                          className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs ${
-                            startsDown
+              {displayServices.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
+                  {displayServices.map((svc) => {
+                    const startsDown = stoppedSet.has(svc);
+                    const minRep = minReplicaMap.get(svc);
+                    const isTarget = impactTarget === svc;
+                    return (
+                      <span
+                        key={svc}
+                        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs ${
+                          startsDown
+                            ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
+                            : isTarget
                               ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
                               : "border-slate-700 bg-slate-900 text-slate-200"
+                        }`}
+                      >
+                        <span
+                          className={`size-1.5 rounded-full ${
+                            startsDown
+                              ? "bg-rose-400"
+                              : isTarget
+                                ? "bg-amber-400"
+                                : "bg-emerald-400"
                           }`}
-                        >
-                          <span
-                            className={`size-1.5 rounded-full ${startsDown ? "bg-amber-400" : "bg-emerald-400"}`}
-                            aria-hidden="true"
-                          />
-                          {svc}
-                          {startsDown && (
-                            <span className="text-[10px] text-amber-300">Down</span>
-                          )}
-                          {minRep && minRep > 1 && (
-                            <span className="rounded bg-sky-500/20 px-1 text-[10px] text-sky-300">
-                              ≥{minRep}×
-                            </span>
-                          )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
+                          aria-hidden="true"
+                        />
+                        {svc}
+                        {startsDown && (
+                          <span className="text-[10px] text-rose-300">Down</span>
+                        )}
+                        {isTarget && !startsDown && (
+                          <span className="text-[10px] text-amber-300">Target</span>
+                        )}
+                        {minRep && minRep > 1 && (
+                          <span className="rounded bg-sky-500/20 px-1 text-[10px] text-sky-300">
+                            &gt;={minRep}x
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
 
-                {exercise.data?.instructions ? (
-                  <p className="max-w-2xl truncate text-xs text-slate-300">
-                    {exercise.data.instructions}
-                  </p>
-                ) : (
-                  <p className="max-w-2xl text-xs text-amber-300/90">
-                    {t(
-                      "No exercise instructions configured yet — pick a 1-Click Template (Change Impact, Scale-Out, CPU Throttle) so students have clear goals.",
-                      "Chưa thiết lập đề bài thực hành — hãy chọn mẫu bài tập sẵn để sinh viên biết rõ nhiệm vụ cần làm.",
+              <p className="max-w-2xl text-xs text-slate-300">
+                {exercise.data?.instructions
+                  ? exercise.data.instructions
+                  : t(
+                      "Open the 3D Studio to pick a goal, drop faults or targets directly onto service blocks, and run a live test.",
+                      "Mở Studio 3D để chọn dạng bài, gắn sự cố hoặc mục tiêu trực tiếp lên từng khối service và chạy thử Docker.",
                     )}
-                  </p>
-                )}
-              </div>
+              </p>
+            </div>
 
-              <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
-                  onClick={() => {
-                    setConfigTab("exercise");
-                    setConfigModalOpen(true);
-                  }}
-                >
-                  <SlidersHorizontal className="mr-1.5 size-3.5" aria-hidden="true" />
-                  {t("Exercise Setup", "Đề bài & Mẫu sẵn")}
-                </Button>
-                <Button
-                  asChild
-                  size="lg"
-                  className="shrink-0 bg-emerald-600 px-5 text-white hover:bg-emerald-500"
-                >
-                  <Link href={studioLiveHref}>
-                    {t("Open Studio Live", "Mở Studio Live")}
-                    <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
-                  </Link>
-                </Button>
-              </div>
+            <div className="flex shrink-0 items-center justify-center">
+              <Button
+                asChild
+                size="lg"
+                className="shrink-0 bg-emerald-600 px-5 text-white hover:bg-emerald-500"
+              >
+                <Link href={studioLiveHref}>
+                  {t("Open Visual Studio Builder", "Mở Studio 3D soạn bài")}
+                  <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
+                </Link>
+              </Button>
             </div>
           </div>
         )}
       </section>
-
-      <div className="flex justify-end">
-      </div>
-
-      {/* Optional Advanced Config Modal (Escape hatch for full form / JSON editing) */}
-      {configModalOpen && projectId && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={t(
-            "Studio Exercise & Topology Configuration",
-            "Cấu hình Bài tập & Topology Studio",
-          )}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
-          onClick={() => setConfigModalOpen(false)}
-        >
-          <div
-            className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3.5">
-              <div
-                className="inline-flex items-center gap-1 rounded-lg bg-muted/40 p-1"
-                role="tablist"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={configTab === "exercise"}
-                  onClick={() => setConfigTab("exercise")}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    configTab === "exercise"
-                      ? "bg-background text-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {t("Exercise Rules", "Kịch bản bài tập")}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={configTab === "topology"}
-                  onClick={() => setConfigTab("topology")}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    configTab === "topology"
-                      ? "bg-background text-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {t("Docker Blocks & Wires", "Khối dịch vụ & Kết nối")}
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => setConfigModalOpen(false)}
-                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={t("Close", "Đóng")}
-              >
-                <X className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className="overflow-y-auto p-5">
-              {configTab === "exercise" ? (
-                <StudioExerciseEditor
-                  workspaceId={workspaceId}
-                  assignmentId={assignment.id}
-                  labTitle={assignment.title}
-                  applications={availableApplications}
-                  defaultModelId={modelId}
-                  referenceSource={resolvedReferenceSource}
-                  onSaved={() => {
-                    void exercise.refetch();
-                    void readiness.refetch();
-                    void runtimeConfig.refetch();
-                    void setup.refetch();
-                  }}
-                />
-              ) : runtimeConfig.data ? (
-                <PreparedTopologyEditor
-                  projectId={projectId}
-                  configuration={runtimeConfig.data}
-                  onSaved={() => {
-                    void runtimeConfig.refetch();
-                    void readiness.refetch();
-                    void setup.refetch();
-                  }}
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-8 text-center text-xs text-muted-foreground">
-                  <p>
-                    {t(
-                      "Docker runtime topology is not initialized yet.",
-                      "Topology Docker runtime chưa được khởi tạo.",
-                    )}
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={isPreparing}
-                    onClick={() => void runPrepareRuntime(false)}
-                  >
-                    {isPreparing
-                      ? t("Preparing…", "Đang chuẩn bị…")
-                      : t("Prepare Runtime", "Chuẩn bị Runtime")}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

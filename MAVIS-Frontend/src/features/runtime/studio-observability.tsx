@@ -1111,12 +1111,24 @@ function renderWireArrow(
   );
 }
 
+export type StudioAuthorHighlights = {
+  authorStoppedServices?: ReadonlySet<string>;
+  impactTarget?: string | null;
+  predictedUpstream?: ReadonlySet<string>;
+  impactEdgeKeys?: ReadonlySet<string>;
+  requiredTraceEdge?: { from: string; to: string } | null;
+  scalableServices?: ReadonlySet<string>;
+};
+
 export function StudioObservability({
   data,
   selected,
   onSelect,
   busy = false,
   onQuickAction,
+  onDropAuthorChip,
+  onSelectEdge,
+  authorHighlights,
   onSpawnBlock,
   onConnect,
   onDisconnect,
@@ -1135,6 +1147,9 @@ export function StudioObservability({
   onSelect: (service: string) => void;
   busy?: boolean;
   onQuickAction?: (command: StudioQuickAction) => void;
+  onDropAuthorChip?: (chipId: string, service: string) => void;
+  onSelectEdge?: (edge: { id: string; from: string; to: string }) => void;
+  authorHighlights?: StudioAuthorHighlights | undefined;
   onSpawnBlock?: (presetKey: string) => string | undefined;
   onConnect?: (from: string, to: string) => void;
   onDisconnect?: (from: string, to: string) => void;
@@ -1580,7 +1595,12 @@ export function StudioObservability({
       const isAffected = affected.has(elId ?? "");
       const isSelected = selected === name;
       const isDropTarget = dropTargetNode === name;
-      const isStopped = live !== undefined && live.runningReplicas === 0;
+      const isNotLiveSession = data.executionStatus !== "RUNNING";
+      const authorStartsDown =
+        isNotLiveSession && Boolean(authorHighlights?.authorStoppedServices?.has(name));
+      const isAuthorImpactTarget = authorHighlights?.impactTarget === name;
+      const isAuthorPredictedUpstream = Boolean(authorHighlights?.predictedUpstream?.has(name));
+      const isStopped = (live !== undefined && live.runningReplicas === 0) || authorStartsDown;
       const lastSvcAction = [...confirmedActions].reverse().find((a) => a.service === name);
       const isPaused = !isStopped && lastSvcAction?.action === "PAUSE";
       const cpuThrottlePct =
@@ -1609,6 +1629,8 @@ export function StudioObservability({
         isPaused ||
         cpuThrottlePct !== null ||
         isImpactedByOutage ||
+        isAuthorImpactTarget ||
+        isAuthorPredictedUpstream ||
         status === "Bottleneck" ||
         status === "Rate limited";
       const palette = resolveStudioNodePalette(activeStyleId, name, archetype, {
@@ -1625,6 +1647,7 @@ export function StudioObservability({
             : archetype === "QUEUE"
               ? "«broker»"
               : "«service»";
+      const liveReplicas = live ? live.runningReplicas : authorStartsDown ? 0 : 1;
       builtNodes.push({
         id: name,
         label: nodeNames?.[name] ?? name,
@@ -1633,7 +1656,7 @@ export function StudioObservability({
         tier: point.tier,
         wx: point.wx,
         wz: point.wz,
-        replicas: live ? live.runningReplicas : 1,
+        replicas: liveReplicas,
         isStopped,
         isPaused,
         isCritical,
@@ -1670,17 +1693,35 @@ export function StudioObservability({
     // 1-to-1 edge rendering: suppress duplicate static dashed line when live observed traffic exists for the same pair
     for (const edge of staticEdges) {
       if (observedPairs.has(`${edge.from}->${edge.to}`)) continue;
-      const targetStopped = replicasFor(edge.to) === 0;
+      const pairKey = `${edge.from}->${edge.to}`;
+      const targetStopped =
+        replicasFor(edge.to) === 0 || Boolean(authorHighlights?.authorStoppedServices?.has(edge.to));
+      const isImpactBlastEdge = Boolean(authorHighlights?.impactEdgeKeys?.has(pairKey));
+      const isRequiredEdge = Boolean(
+        authorHighlights?.requiredTraceEdge &&
+          authorHighlights.requiredTraceEdge.from === edge.from &&
+          authorHighlights.requiredTraceEdge.to === edge.to,
+      );
       builtEdges.push({
         id: `static:${edge.id}`,
         from: edge.from,
         to: edge.to,
-        kind: "static",
-        color: targetStopped ? "#e11d48" : isLight ? "#94a3b8" : "#64748b",
-        dashed: true,
+        kind: isRequiredEdge || isImpactBlastEdge ? "observed" : "static",
+        color: targetStopped
+          ? "#e11d48"
+          : isImpactBlastEdge
+            ? "#f59e0b"
+            : isRequiredEdge
+              ? "#38bdf8"
+              : isLight
+                ? "#94a3b8"
+                : "#64748b",
+        dashed: !isRequiredEdge && !isImpactBlastEdge,
         protocol: edge.protocol,
         isAsync: isAsyncProtocol(edge.protocol),
+        label: isRequiredEdge ? "Required edge" : isImpactBlastEdge ? "Impact path" : null,
         isSevered: targetStopped,
+        isDegraded: isImpactBlastEdge && !targetStopped,
       });
     }
 
@@ -1763,6 +1804,7 @@ export function StudioObservability({
     traceId,
     spansByTraceAndId,
     simulated,
+    authorHighlights,
   ]);
 
   function nodeAt(clientX: number, clientY: number) {
@@ -2419,7 +2461,13 @@ export function StudioObservability({
               if (svc && svc !== selected) onSound?.("select");
               onSelect(svc);
             }}
+            {...(onSelectEdge ? { onSelectEdge } : {})}
             onDropTool={(toolId, targetService) => {
+              if (toolId.startsWith("author-") && onDropAuthorChip) {
+                onDropAuthorChip(toolId, targetService);
+                setDraggedTool(null);
+                return;
+              }
               const tool = PALETTE_ITEMS.find((item) => item.id === toolId) ?? draggedTool ?? null;
               if (tool) applyPaletteToolToService(tool, targetService);
               setDraggedTool(null);
@@ -3148,6 +3196,11 @@ export function StudioObservability({
                       event.preventDefault();
                       setDropTargetNode(null);
                       const toolId = event.dataTransfer.getData("application/x-mavis-studio-tool");
+                      if (toolId.startsWith("author-") && onDropAuthorChip) {
+                        onDropAuthorChip(toolId, name);
+                        setDraggedTool(null);
+                        return;
+                      }
                       const tool =
                         PALETTE_ITEMS.find((item) => item.id === toolId) ?? draggedTool ?? null;
                       if (tool) {
@@ -3314,6 +3367,11 @@ export function StudioObservability({
                     event.preventDefault();
                     setDropTargetNode(null);
                     const toolId = event.dataTransfer.getData("application/x-mavis-studio-tool");
+                    if (toolId.startsWith("author-") && onDropAuthorChip) {
+                      onDropAuthorChip(toolId, name);
+                      setDraggedTool(null);
+                      return;
+                    }
                     const tool =
                       PALETTE_ITEMS.find((item) => item.id === toolId) ?? draggedTool ?? null;
                     if (tool) {

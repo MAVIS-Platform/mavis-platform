@@ -1134,7 +1134,7 @@ test("Studio Live authoring prepares Docker runtime in Step 5 and opens standalo
   assert.ok(standalone.includes("LiveStudioWorkbench"));
   assert.ok(parity.includes("Action Toolbox"));
   assert.ok(parity.includes("application/x-mavis-studio-tool"));
-  assert.ok(parity.includes("Lab Exercise Presets"));
+  assert.ok(parity.includes("Visual Builder"));
   assert.ok(!studio.includes("/sessions?"));
   assert.ok(!studio.includes("/studio?"));
   assert.ok(!theory.includes("/diagrams?"));
@@ -1162,7 +1162,7 @@ test("Studio Live setup uses a visual prepared topology builder and Lab session 
   assert.ok(editor.includes("Save prepared topology"));
   assert.ok(editor.includes("Advanced JSON"));
   assert.doesNotMatch(editor, /textarea[^>]*Prepared Studio topology JSON/);
-  assert.ok(studio.includes("PreparedTopologyEditor"));
+  assert.ok(studio.includes("Open Visual Studio Builder"));
   assert.ok(studio.includes("verifiedSession"));
   assert.ok(studio.includes("sessionId={verifiedSession"));
   assert.ok(studio.includes("useAutoConfigureStudio"));
@@ -1525,7 +1525,7 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(live, /aria-label="Lecturer setup panel tabs"/);
   assert.doesNotMatch(live, /Test Live Docker/);
   assert.match(live, /isBooting \? "Booting…" : "Run"/);
-  assert.match(live, /Step 1 · Pick Lab Scenario/);
+  assert.match(live, /Visual Studio Builder/);
   assert.match(live, /Student Will Receive/);
   assert.match(live, /isTerminalAuthorSession/);
   assert.match(live, /services\.includes\(studio\.service\)/);
@@ -1564,7 +1564,7 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(live, /aria-label="Runtime traffic flows"/);
   const exerciseEditor = read("src/features/assignments/studio-exercise-editor.tsx");
   const apiErrors = read("src/lib/errors/api-error.ts");
-  assert.match(standalone, /data-theme="dark"[\s\S]*bg-\[#0b101b\]/);
+  assert.doesNotMatch(standalone, /StudioExerciseEditor|PreparedTopologyEditor/);
   assert.doesNotMatch(
     exerciseEditor,
     /Recommended Studio Live Exercise Preset|Studio exercise \(teacher\)/,

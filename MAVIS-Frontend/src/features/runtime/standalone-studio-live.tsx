@@ -4,18 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Activity,
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Container,
-  Lock,
-  Play,
-  RefreshCw,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingState } from "@/components/shared/request-state";
@@ -34,11 +23,16 @@ import {
   useStudentLabContext,
   useStudentLabStudioSessions,
 } from "@/features/workspaces/course-access";
-import { StudioExerciseEditor } from "@/features/assignments/studio-exercise-editor";
-import { PreparedTopologyEditor } from "./prepared-topology-editor";
 import { LiveStudioWorkbench, type LiveStudioAuthoringProps } from "./live-studio-workbench";
+import {
+  extractRepoEndpointOptions,
+  type AuthorBlockChipId,
+  type DerivedExerciseFromDemo,
+  type ExerciseTypeKey,
+  type StudioGoalId,
+  type TargetChangeAction,
+} from "./studio-authoring-helpers";
 
-type ConfigTab = "exercise" | "topology";
 export type StudioTopology = NonNullable<Response<"studioState">["topology"]>;
 
 export type StudioExerciseView = {
@@ -262,8 +256,6 @@ function StandaloneStudioContent() {
 
   const [selectedSessionId, setSelectedSessionId] = useState(initialSessionParam);
   const [canvasOpened, setCanvasOpened] = useState(false);
-  const [configModalOpen, setConfigModalOpen] = useState(false);
-  const [configTab, setConfigTab] = useState<ConfigTab>("exercise");
   const [visualSaved, setVisualSaved] = useState(false);
   const [visualError, setVisualError] = useState("");
   const autoStartedRef = useRef(false);
@@ -428,6 +420,32 @@ function StandaloneStudioContent() {
     startStudio,
   ]);
 
+  const endpointOptions = useMemo(
+    () =>
+      extractRepoEndpointOptions(
+        runtimeConfig.data?.profile as Record<string, unknown> | undefined,
+        exercise.data?.baselineRequests?.[0]?.path,
+      ),
+    [runtimeConfig.data?.profile, exercise.data?.baselineRequests],
+  );
+  const defaultBaselinePath = useMemo(() => {
+    const saved = exercise.data?.baselineRequests?.[0]?.path?.trim();
+    if (saved && saved !== "/") return saved;
+    return endpointOptions[0]?.path ?? "/health";
+  }, [exercise.data?.baselineRequests, endpointOptions]);
+
+  const runPrepareRuntime = () => {
+    autoStudio.mutate(undefined, {
+      onSuccess: () => {
+        setCanvasOpened(true);
+        void exercise.refetch();
+        void runtimeConfig.refetch();
+        void readiness.refetch();
+        void setup.refetch();
+      },
+    });
+  };
+
   const saveVisualExercise = useMutation({
     mutationFn: async (input: {
       stoppedServices?: string[];
@@ -435,13 +453,22 @@ function StandaloneStudioContent() {
       instructions?: string;
       baselinePath?: string;
       maxErrorRatePercent?: string;
+      maxP95Ms?: string;
+      minImpactF1?: string;
       minReplicas?: Array<{ service: string; count: number }>;
+      exerciseType?: ExerciseTypeKey | null;
+      predictionRequired?: boolean;
+      targetChangeAction?: TargetChangeAction | null;
+      requiredTraceEdge?: { from: string; to: string } | null;
+      allowedActions?: string[];
       nextTopology?: StudioTopology;
     }) => {
       const ref = assignment?.referenceSource;
       const runtimeProjectId = ref?.projectId ?? exercise.data?.runtimeProjectId ?? projectId;
-      const runtimeModelId = ref?.modelId ?? exercise.data?.runtimeModelId;
-      const runtimeSnapshotId = ref?.snapshotId ?? exercise.data?.runtimeSnapshotId;
+      const runtimeModelId =
+        ref?.modelId ?? exercise.data?.runtimeModelId ?? runtimeConfig.data?.modelId;
+      const runtimeSnapshotId =
+        ref?.snapshotId ?? exercise.data?.runtimeSnapshotId ?? runtimeConfig.data?.snapshotId;
 
       if (input.nextTopology && projectId) {
         // Guard against stale React Query cache right after Prepare Runtime (modelId null / rev 0)
@@ -486,17 +513,63 @@ function StandaloneStudioContent() {
 
       if (runtimeProjectId && runtimeModelId && runtimeSnapshotId) {
         const cur = exercise.data;
-        const nextBaseline = input.baselinePath?.trim()
-          ? [{ method: "GET" as const, path: input.baselinePath.trim(), expectedStatus: 200 }]
-          : cur?.baselineRequests?.length
+        const chosenPath = input.baselinePath?.trim();
+        const nextBaseline = chosenPath
+          ? [{ method: "GET" as const, path: chosenPath, expectedStatus: 200 }]
+          : cur?.baselineRequests?.length && cur.baselineRequests[0]?.path !== "/"
             ? cur.baselineRequests
-            : [{ method: "GET" as const, path: "/health", expectedStatus: 200 }];
+            : [{ method: "GET" as const, path: defaultBaselinePath, expectedStatus: 200 }];
         const nextMaxErr =
           input.maxErrorRatePercent !== undefined
             ? input.maxErrorRatePercent.trim()
               ? Number(input.maxErrorRatePercent)
               : null
             : (cur?.successCriteria?.maxErrorRatePercent ?? 0);
+        const nextMaxP95 =
+          input.maxP95Ms !== undefined
+            ? input.maxP95Ms.trim()
+              ? Number(input.maxP95Ms)
+              : null
+            : (cur?.successCriteria?.maxP95Ms ?? null);
+        const nextMinImpactF1 =
+          input.minImpactF1 !== undefined
+            ? input.minImpactF1.trim()
+              ? Number(input.minImpactF1)
+              : null
+            : (cur?.successCriteria?.minImpactF1 ?? null);
+        const nextExerciseType =
+          "exerciseType" in input
+            ? input.exerciseType
+            : (cur?.successCriteria?.exerciseType ?? null);
+        const nextPredictionRequired =
+          "predictionRequired" in input
+            ? input.predictionRequired
+            : (cur?.successCriteria?.predictionRequired ?? false);
+        const nextTargetAction =
+          "targetChangeAction" in input
+            ? input.targetChangeAction
+            : (cur?.successCriteria?.targetChangeAction ?? null);
+        const nextRequiredTraceEdge =
+          "requiredTraceEdge" in input
+            ? input.requiredTraceEdge
+            : (cur?.successCriteria?.requiredTraceEdge ?? null);
+        const nextAllowedActions =
+          input.allowedActions && input.allowedActions.length > 0
+            ? input.allowedActions
+            : cur?.allowedActions?.length
+              ? cur.allowedActions
+              : [
+                  "START",
+                  "STOP",
+                  "SCALE",
+                  "PAUSE",
+                  "RESUME",
+                  "THROTTLE_CPU",
+                  "SET_LOAD",
+                  "CONNECT",
+                  "DISCONNECT",
+                ];
+
         await api<StudioExerciseView>(
           `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-exercise`,
           {
@@ -513,15 +586,17 @@ function StandaloneStudioContent() {
                 stoppedControllers:
                   input.stoppedControllers ?? cur?.initialState?.stoppedControllers ?? [],
               },
-              allowedActions: cur?.allowedActions?.length
-                ? cur.allowedActions
-                : ["START", "STOP", "SCALE", "CONNECT", "DISCONNECT"],
+              allowedActions: nextAllowedActions,
               successCriteria: {
                 ...cur?.successCriteria,
                 maxErrorRatePercent: nextMaxErr,
-                maxP95Ms: cur?.successCriteria?.maxP95Ms ?? null,
-                requiredTraceEdge: cur?.successCriteria?.requiredTraceEdge ?? null,
+                maxP95Ms: nextMaxP95,
+                requiredTraceEdge: nextRequiredTraceEdge,
                 minReplicas: input.minReplicas ?? cur?.successCriteria?.minReplicas ?? [],
+                exerciseType: nextExerciseType,
+                predictionRequired: nextPredictionRequired,
+                minImpactF1: nextMinImpactF1,
+                targetChangeAction: nextTargetAction,
               },
               instructions: (input.instructions ?? cur?.instructions ?? "").trim(),
             }),
@@ -574,6 +649,23 @@ function StandaloneStudioContent() {
       name.toLowerCase(),
     );
 
+  const currentTargetAction: TargetChangeAction | null =
+    exercise.data?.successCriteria?.targetChangeAction ?? null;
+  const currentRequiredTraceEdge = exercise.data?.successCriteria?.requiredTraceEdge ?? null;
+  const currentAllowedActions = exercise.data?.allowedActions?.length
+    ? exercise.data.allowedActions
+    : [
+        "START",
+        "STOP",
+        "SCALE",
+        "PAUSE",
+        "RESUME",
+        "THROTTLE_CPU",
+        "SET_LOAD",
+        "CONNECT",
+        "DISCONNECT",
+      ];
+
   const authoringProps: LiveStudioAuthoringProps | undefined =
     isAuthorMode && projectId
       ? {
@@ -581,11 +673,28 @@ function StandaloneStudioContent() {
           initialStoppedControllers,
           scalableServices,
           availableServices: composePoolServices,
+          impactTargetService: currentTargetAction?.service ?? null,
+          exerciseType: exercise.data?.successCriteria?.exerciseType ?? null,
+          predictionRequired: exercise.data?.successCriteria?.predictionRequired === true,
+          minImpactF1:
+            exercise.data?.successCriteria?.minImpactF1 != null
+              ? String(exercise.data.successCriteria.minImpactF1)
+              : "0.7",
+          maxP95Ms:
+            exercise.data?.successCriteria?.maxP95Ms != null
+              ? String(exercise.data.successCriteria.maxP95Ms)
+              : "",
+          targetChangeAction: currentTargetAction,
+          requiredTraceEdge: currentRequiredTraceEdge,
+          allowedActions: currentAllowedActions,
+          endpointOptions,
+          syncingDocker: autoStudio.isPending,
+          onSyncDocker: runPrepareRuntime,
           instructions: exercise.data?.instructions ?? "",
-          baselinePath: exercise.data?.baselineRequests?.[0]?.path ?? "/health",
+          baselinePath: defaultBaselinePath,
           maxErrorRatePercent:
             exercise.data?.successCriteria?.maxErrorRatePercent == null
-              ? "0"
+              ? ""
               : String(exercise.data.successCriteria.maxErrorRatePercent),
           replicaService: exercise.data?.successCriteria?.minReplicas?.[0]?.service ?? "",
           replicaCount:
@@ -685,100 +794,268 @@ function StandaloneStudioContent() {
                 }
               : undefined;
             saveVisualExercise.mutate({
-              minReplicas: [{ service, count: clamped }],
+              minReplicas: clamped >= 2 ? [{ service, count: clamped }] : [],
+              ...(clamped >= 2
+                ? {
+                    exerciseType: "SCALE_UNDER_LOAD" as const,
+                    targetChangeAction: { action: "SCALE" as const, service, replicas: clamped },
+                  }
+                : {}),
               ...(nextTopology ? { nextTopology } : {}),
             });
           },
-          onApplyPreset: (preset) => {
+          onSelectGoal: (goalId: StudioGoalId, preferredService?: string) => {
             const currentBlocks = previewTopology?.blocks ?? [];
-            if (currentBlocks.length === 0) return;
-            const stateless = currentBlocks.filter(
-              (b) => !isStatefulService(b.service) && !/gateway|edge|proxy/i.test(b.service),
+            const serviceNames =
+              currentBlocks.length > 0
+                ? currentBlocks.map((b) => b.service)
+                : availableApplications;
+            if (serviceNames.length === 0) return;
+            const stateless = serviceNames.filter(
+              (svc) => !isStatefulService(svc) && !/gateway|edge|proxy/i.test(svc),
             );
+            const nonGateway = serviceNames.filter((svc) => !/gateway|edge|proxy/i.test(svc));
             const primaryScale =
-              stateless[0]?.service ??
-              currentBlocks.find((b) => !isStatefulService(b.service))?.service ??
-              currentBlocks[0]!.service;
+              (preferredService && !isStatefulService(preferredService) ? preferredService : null) ??
+              stateless.find((s) => /order|catalog|product|api/i.test(s)) ??
+              stateless[0] ??
+              serviceNames[0]!;
             const faultTarget =
-              stateless[1]?.service ??
-              stateless[0]?.service ??
-              currentBlocks[currentBlocks.length - 1]!.service;
+              (preferredService && !/gateway|edge|proxy/i.test(preferredService)
+                ? preferredService
+                : null) ??
+              stateless.find((s) => /payment|billing|inventory|cart/i.test(s)) ??
+              stateless[1] ??
+              stateless[0] ??
+              nonGateway[0] ??
+              serviceNames[serviceNames.length - 1]!;
 
-            if (preset === "healthy") {
-              const nextTopology: StudioTopology = {
-                version: 1,
-                blocks: currentBlocks.map((b) => ({ ...b, initiallyStopped: false })),
-                connections: (previewTopology?.connections ?? []).map((c) => ({
-                  ...c,
-                  initiallyStopped: false,
-                })),
-              };
+            const baseTopology = (patchBlock: (svc: string, cur: StudioTopology["blocks"][number]) => StudioTopology["blocks"][number]) =>
+              previewTopology
+                ? {
+                    ...previewTopology,
+                    blocks: previewTopology.blocks.map((b) => patchBlock(b.service, b)),
+                    connections: (previewTopology.connections ?? []).map((c) => ({
+                      ...c,
+                      initiallyStopped: false,
+                    })),
+                  }
+                : undefined;
+
+            if (goalId === "change-impact") {
+              const nextTopology = baseTopology((_svc, b) => ({ ...b, initiallyStopped: false }));
               saveVisualExercise.mutate({
+                exerciseType: "CHANGE_IMPACT",
+                predictionRequired: true,
+                minImpactF1: "0.7",
+                targetChangeAction: { action: "PAUSE", service: faultTarget },
                 stoppedServices: [],
                 stoppedControllers: [],
                 minReplicas: [],
-                instructions: `Verify all ${currentBlocks.length} services run cleanly and capture baseline telemetry evidence.`,
-                maxErrorRatePercent: "0",
-                nextTopology,
+                maxErrorRatePercent: "",
+                baselinePath: defaultBaselinePath,
+                allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
+                instructions: `Inspect the live dependency graph, predict every service impacted when ${faultTarget} is paused, lock your prediction, then PAUSE ${faultTarget} and capture Before/After evidence.`,
+                ...(nextTopology ? { nextTopology } : {}),
               });
               return;
             }
 
-            if (preset === "outage") {
-              const nextTopology: StudioTopology = {
-                version: 1,
-                blocks: currentBlocks.map((b) => ({
-                  ...b,
-                  initiallyStopped: b.service === faultTarget,
-                })),
-                connections: previewTopology?.connections ?? [],
-              };
+            if (goalId === "scale") {
+              const nextTopology = baseTopology((svc, b) => ({
+                ...b,
+                initiallyStopped: false,
+                canScale: svc === primaryScale ? true : b.canScale,
+              }));
               saveVisualExercise.mutate({
+                exerciseType: "SCALE_UNDER_LOAD",
+                predictionRequired: false,
+                minImpactF1: "",
+                targetChangeAction: { action: "SCALE", service: primaryScale, replicas: 2 },
+                stoppedServices: [],
+                stoppedControllers: [],
+                minReplicas: [{ service: primaryScale, count: 2 }],
+                maxErrorRatePercent: "5",
+                baselinePath: defaultBaselinePath,
+                allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
+                instructions: `Capture baseline metrics, raise load, scale ${primaryScale} to at least 2 replicas while keeping error rate <= 5%, and compare Before vs After latency.`,
+                ...(nextTopology ? { nextTopology } : {}),
+              });
+              return;
+            }
+
+            if (goalId === "recovery") {
+              const nextTopology = baseTopology((svc, b) => ({
+                ...b,
+                initiallyStopped: svc === faultTarget,
+              }));
+              saveVisualExercise.mutate({
+                exerciseType: "CIRCUIT_BREAKER",
+                predictionRequired: false,
+                minImpactF1: "",
+                targetChangeAction: { action: "START", service: faultTarget },
                 stoppedServices: [faultTarget],
+                stoppedControllers: [],
                 minReplicas: [],
                 maxErrorRatePercent: "0",
-                instructions: `Diagnose the stopped ${faultTarget} container, recover it via Start, and capture Before/After evidence proving 0% error rate.`,
-                nextTopology,
+                baselinePath: defaultBaselinePath,
+                allowedActions: ["START", "STOP", "PAUSE", "RESUME", "CONNECT", "DISCONNECT"],
+                instructions: `Diagnose the initially stopped ${faultTarget} service, observe error propagation across upstream callers, start ${faultTarget} to restore 0% errors, and capture Before/After evidence.`,
+                ...(nextTopology ? { nextTopology } : {}),
               });
               return;
             }
 
-            if (preset === "scale") {
-              const nextTopology: StudioTopology = {
-                version: 1,
-                blocks: currentBlocks.map((b) => ({
-                  ...b,
-                  initiallyStopped: false,
-                  canScale: b.service === primaryScale ? true : b.canScale,
-                })),
-                connections: previewTopology?.connections ?? [],
-              };
-              saveVisualExercise.mutate({
-                stoppedServices: [],
-                minReplicas: [{ service: primaryScale, count: 2 }],
-                maxErrorRatePercent: "0",
-                instructions: `Capture baseline metrics, scale ${primaryScale} to 2 replicas, and compare p95 latency and throughput Before vs After.`,
-                nextTopology,
-              });
-              return;
-            }
-
-            // chaos-scale
-            const nextTopology: StudioTopology = {
-              version: 1,
-              blocks: currentBlocks.map((b) => ({
-                ...b,
-                initiallyStopped: b.service === faultTarget,
-                canScale: b.service === primaryScale ? true : b.canScale,
-              })),
-              connections: previewTopology?.connections ?? [],
-            };
+            // cpu degradation
+            const nextTopology = baseTopology((svc, b) => ({
+              ...b,
+              initiallyStopped: false,
+              canScale: svc === faultTarget ? true : b.canScale,
+            }));
             saveVisualExercise.mutate({
-              stoppedServices: [faultTarget],
-              minReplicas: [{ service: primaryScale, count: 2 }],
-              maxErrorRatePercent: "0",
-              instructions: `Recover ${faultTarget}, scale ${primaryScale} to 2 replicas, and capture Before/After snapshots with 0% errors.`,
-              nextTopology,
+              exerciseType: "CONFIG_REGRESSION",
+              predictionRequired: false,
+              minImpactF1: "",
+              targetChangeAction: { action: "THROTTLE_CPU", service: faultTarget, cpuPercent: 25 },
+              stoppedServices: [],
+              stoppedControllers: [],
+              minReplicas: [],
+              maxErrorRatePercent: "5",
+              baselinePath: defaultBaselinePath,
+              allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
+              instructions: `Throttle ${faultTarget} CPU to 25%, measure p95 latency jump across upstream callers, and capture Before/After evidence.`,
+              ...(nextTopology ? { nextTopology } : {}),
+            });
+          },
+          onApplyBlockChip: (chipId: AuthorBlockChipId, service: string) => {
+            if (!service) return;
+            if (chipId === "author-starts-down") {
+              const isDown = initialStoppedServices.includes(service);
+              const nextStopped = isDown
+                ? initialStoppedServices.filter((s) => s !== service)
+                : [...initialStoppedServices, service];
+              const nextTopology = previewTopology
+                ? {
+                    ...previewTopology,
+                    blocks: previewTopology.blocks.map((b) => ({
+                      ...b,
+                      initiallyStopped: nextStopped.includes(b.service),
+                    })),
+                  }
+                : undefined;
+              saveVisualExercise.mutate({
+                stoppedServices: nextStopped,
+                ...(!isDown && !currentTargetAction
+                  ? {
+                      exerciseType: "CIRCUIT_BREAKER" as const,
+                      targetChangeAction: { action: "START" as const, service },
+                      maxErrorRatePercent: "0",
+                      baselinePath: defaultBaselinePath,
+                    }
+                  : {}),
+                ...(nextTopology ? { nextTopology } : {}),
+              });
+              return;
+            }
+
+            if (chipId === "author-impact-target") {
+              const isSameTarget =
+                currentTargetAction?.service === service &&
+                (currentTargetAction.action === "PAUSE" || currentTargetAction.action === "STOP");
+              if (isSameTarget) {
+                saveVisualExercise.mutate({
+                  targetChangeAction: null,
+                  predictionRequired: false,
+                  minImpactF1: "",
+                });
+                return;
+              }
+              saveVisualExercise.mutate({
+                exerciseType: "CHANGE_IMPACT",
+                predictionRequired: true,
+                minImpactF1: "0.7",
+                targetChangeAction: { action: "PAUSE", service },
+                baselinePath: defaultBaselinePath,
+                allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
+                instructions: `Inspect the service graph, predict every upstream service impacted when ${service} is paused, lock your prediction, then PAUSE ${service} and capture Before/After evidence.`,
+              });
+              return;
+            }
+
+            if (chipId === "author-scale-2x") {
+              const nextTopology = previewTopology
+                ? {
+                    ...previewTopology,
+                    blocks: previewTopology.blocks.map((b) =>
+                      b.service === service ? { ...b, canScale: true } : b,
+                    ),
+                  }
+                : undefined;
+              saveVisualExercise.mutate({
+                exerciseType: "SCALE_UNDER_LOAD",
+                predictionRequired: false,
+                minImpactF1: "",
+                targetChangeAction: { action: "SCALE", service, replicas: 2 },
+                minReplicas: [{ service, count: 2 }],
+                maxErrorRatePercent: "5",
+                baselinePath: defaultBaselinePath,
+                allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
+                instructions: `Scale ${service} to at least 2 replicas under load while keeping error rate <= 5%, and capture Before/After latency evidence.`,
+                ...(nextTopology ? { nextTopology } : {}),
+              });
+              return;
+            }
+
+            if (chipId === "author-cpu-target") {
+              const isSameCpu =
+                currentTargetAction?.service === service &&
+                currentTargetAction.action === "THROTTLE_CPU";
+              if (isSameCpu) {
+                saveVisualExercise.mutate({ targetChangeAction: null });
+                return;
+              }
+              saveVisualExercise.mutate({
+                exerciseType: "CONFIG_REGRESSION",
+                predictionRequired: false,
+                minImpactF1: "",
+                targetChangeAction: { action: "THROTTLE_CPU", service, cpuPercent: 25 },
+                maxErrorRatePercent: "5",
+                baselinePath: defaultBaselinePath,
+                allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
+                instructions: `Throttle ${service} CPU to 25%, observe p95 latency jump across callers, and capture Before/After evidence.`,
+              });
+            }
+          },
+          onToggleWire: (from: string, to: string) => {
+            const isSame =
+              currentRequiredTraceEdge?.from === from && currentRequiredTraceEdge?.to === to;
+            saveVisualExercise.mutate({
+              requiredTraceEdge: isSame ? null : { from, to },
+            });
+          },
+          onApplyLiveDemoAsExercise: (derived: DerivedExerciseFromDemo) => {
+            const nextTopology = previewTopology
+              ? {
+                  ...previewTopology,
+                  blocks: previewTopology.blocks.map((b) => ({
+                    ...b,
+                    initiallyStopped: derived.stoppedServices.includes(b.service),
+                    canScale: derived.scalableServices.includes(b.service) ? true : b.canScale,
+                  })),
+                }
+              : undefined;
+            saveVisualExercise.mutate({
+              exerciseType: derived.exerciseType,
+              predictionRequired: derived.predictionRequired,
+              minImpactF1: derived.minImpactF1 != null ? String(derived.minImpactF1) : "",
+              targetChangeAction: derived.targetChangeAction,
+              stoppedServices: derived.stoppedServices,
+              minReplicas: derived.minReplicas,
+              allowedActions: derived.allowedActions,
+              maxErrorRatePercent: derived.maxErrorRatePercent,
+              baselinePath: defaultBaselinePath,
+              instructions: derived.instructions,
+              ...(nextTopology ? { nextTopology } : {}),
             });
           },
           onSaveMission: (patch) => {
@@ -790,6 +1067,14 @@ function StandaloneStudioContent() {
               instructions: patch.instructions,
               baselinePath: patch.baselinePath,
               maxErrorRatePercent: patch.maxErrorRatePercent,
+              ...(patch.maxP95Ms !== undefined ? { maxP95Ms: patch.maxP95Ms } : {}),
+              ...(patch.minImpactF1 !== undefined ? { minImpactF1: patch.minImpactF1 } : {}),
+              ...(patch.predictionRequired !== undefined
+                ? { predictionRequired: patch.predictionRequired }
+                : {}),
+              ...(patch.allowedActions !== undefined
+                ? { allowedActions: patch.allowedActions }
+                : {}),
               minReplicas,
             });
           },
@@ -816,18 +1101,6 @@ function StandaloneStudioContent() {
           },
         }
       : undefined;
-
-  const runPrepareRuntime = () => {
-    autoStudio.mutate(undefined, {
-      onSuccess: () => {
-        setCanvasOpened(true);
-        void exercise.refetch();
-        void runtimeConfig.refetch();
-        void readiness.refetch();
-        void setup.refetch();
-      },
-    });
-  };
 
   const labTitle =
     (isAuthorMode ? assignment?.title : studentContext.data?.assignment?.title) ?? "";
@@ -861,7 +1134,6 @@ function StandaloneStudioContent() {
       </Link>
 
       <div className="flex min-w-0 items-center gap-1.5" title={labTitle || undefined}>
-        <Activity className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
         <span className="shrink-0 text-[13px] font-bold tracking-tight text-foreground">
           MAVIS Live
         </span>
@@ -889,17 +1161,6 @@ function StandaloneStudioContent() {
     <div className="flex shrink-0 items-center gap-1.5">
       {isAuthorMode && projectId && (
         <>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            aria-label={t("Advanced Config", "Cấu hình nâng cao")}
-            title={t("Advanced Config & Sync Docker", "Cấu hình nâng cao & Đồng bộ Docker")}
-            onClick={() => setConfigModalOpen(true)}
-            className="h-8 w-8 p-0"
-          >
-            <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-          </Button>
           {published && assignmentId && (
             <PublishCourseLab
               workspaceId={workspaceId}
@@ -924,8 +1185,7 @@ function StandaloneStudioContent() {
                 returnTo: returnHref,
               })}
             >
-              <Play className="mr-1 size-3" aria-hidden="true" />
-              {t("Student", "Thử vai SV")}
+              {t("Student view", "Thử vai SV")}
             </Link>
           </Button>
           <Button
@@ -960,7 +1220,6 @@ function StandaloneStudioContent() {
                   returnTo: returnHref,
                 })}
               >
-                <SlidersHorizontal className="mr-1 size-3" aria-hidden="true" />
                 {t("Author", "Giảng viên")}
               </Link>
             </Button>
@@ -1056,11 +1315,8 @@ function StandaloneStudioContent() {
           </div>
         ) : isAuthorMode && !showAuthorCanvas ? (
           <div className="m-auto flex max-w-lg flex-col items-center rounded-2xl border border-border bg-card px-8 py-10 text-center shadow-sm">
-            <span className="flex size-14 items-center justify-center rounded-2xl border border-border bg-muted text-emerald-600">
-              <Container className="size-7" aria-hidden="true" />
-            </span>
-            <h1 className="mt-4 text-base font-semibold text-foreground">
-              {t("Prepare Docker Runtime", "Chuẩn bị Docker Runtime")}
+            <h1 className="text-base font-semibold text-foreground">
+              {t("Prepare Visual Studio 3D", "Chuẩn bị Studio 3D")}
             </h1>
             {availableApplications.length > 0 && (
               <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
@@ -1076,8 +1332,7 @@ function StandaloneStudioContent() {
             )}
             {readinessBlockers.length > 0 && (
               <div className="mt-4 w-full rounded-xl border border-amber-400/50 bg-amber-50 px-4 py-3 text-left text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-300">
-                <p className="mb-1 flex items-center gap-1.5 font-medium">
-                  <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+                <p className="mb-1 font-medium">
                   {t("Docker preflight check", "Kiểm tra Docker")}
                 </p>
                 <ul className="list-disc space-y-0.5 pl-4">
@@ -1089,10 +1344,9 @@ function StandaloneStudioContent() {
             )}
             <div className="mt-6">
               <Button type="button" disabled={autoStudio.isPending} onClick={runPrepareRuntime}>
-                <Play className="mr-1.5 size-4" aria-hidden="true" />
                 {autoStudio.isPending
-                  ? t("Preparing Docker runtime…", "Đang chuẩn bị Docker runtime…")
-                  : t("Prepare Runtime & Open Studio", "Chuẩn bị Runtime & Mở Studio")}
+                  ? t("Preparing Visual Studio…", "Đang chuẩn bị Studio 3D…")
+                  : t("Open Visual Studio Builder", "Mở Studio 3D soạn bài")}
               </Button>
             </div>
           </div>
@@ -1127,138 +1381,6 @@ function StandaloneStudioContent() {
           />
         )}
       </main>
-
-      {/* Optional Advanced Config Modal (Lecturer Escape Hatch inside Standalone Studio) */}
-      {isAuthorMode && configModalOpen && projectId && assignment && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          data-theme="dark"
-          aria-label={t("Studio Settings", "Cài đặt Studio")}
-          className="dark fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
-          onClick={() => setConfigModalOpen(false)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setConfigModalOpen(false);
-          }}
-        >
-          <div
-            style={{ colorScheme: "dark" }}
-            className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-slate-800 bg-[#0b101b] text-slate-100 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-[#0d1322] px-5 py-3">
-              <div
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-[#070b12] p-0.5"
-                role="tablist"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={configTab === "exercise"}
-                  onClick={() => setConfigTab("exercise")}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    configTab === "exercise"
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {t("Exercise Rules", "Kịch bản bài tập")}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={configTab === "topology"}
-                  onClick={() => setConfigTab("topology")}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    configTab === "topology"
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {t("Services & Wires", "Service & Kết nối")}
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={autoStudio.isPending}
-                  onClick={runPrepareRuntime}
-                  className="h-7 border-slate-700 bg-slate-900 px-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white"
-                >
-                  <RefreshCw
-                    className={`mr-1.5 size-3 ${autoStudio.isPending ? "animate-spin" : ""}`}
-                    aria-hidden="true"
-                  />
-                  {autoStudio.isPending
-                    ? t("Syncing…", "Đang đồng bộ…")
-                    : t("Sync Docker", "Đồng bộ Docker")}
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setConfigModalOpen(false)}
-                  className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
-                  aria-label={t("Close", "Đóng")}
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-
-            <div
-              style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0b101b" }}
-              className="overflow-y-auto px-5 py-4"
-            >
-              {configTab === "exercise" ? (
-                <StudioExerciseEditor
-                  workspaceId={workspaceId}
-                  assignmentId={assignment.id}
-                  labTitle={assignment.title}
-                  applications={availableApplications}
-                  defaultModelId={assignment.referenceSource?.modelId}
-                  referenceSource={assignment.referenceSource}
-                  onSaved={() => {
-                    void exercise.refetch();
-                    void readiness.refetch();
-                    void runtimeConfig.refetch();
-                    void setup.refetch();
-                  }}
-                />
-              ) : runtimeConfig.data ? (
-                <PreparedTopologyEditor
-                  projectId={projectId}
-                  configuration={runtimeConfig.data}
-                  onSaved={() => {
-                    void runtimeConfig.refetch();
-                    void readiness.refetch();
-                    void setup.refetch();
-                  }}
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-slate-800 bg-slate-950/50 p-8 text-center text-xs text-slate-400">
-                  <p>
-                    {t(
-                      "Docker runtime topology is not initialized yet.",
-                      "Topology Docker runtime chưa được khởi tạo.",
-                    )}
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={autoStudio.isPending}
-                    onClick={runPrepareRuntime}
-                  >
-                    {autoStudio.isPending
-                      ? t("Preparing…", "Đang chuẩn bị…")
-                      : t("Prepare Runtime", "Chuẩn bị Runtime")}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

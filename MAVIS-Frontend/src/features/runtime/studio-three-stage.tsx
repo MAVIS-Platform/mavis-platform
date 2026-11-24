@@ -63,6 +63,7 @@ export type StudioThreeStageProps = {
   onPanChange: (next: { x: number; y: number }) => void;
   onMoveNode?: (service: string, deltaWx: number, deltaWz: number) => void;
   onSelect: (service: string) => void;
+  onSelectEdge?: (edge: { id: string; from: string; to: string }) => void;
   onDropTool?: (toolId: string, service: string) => void;
   onReadyChange?: (ready: boolean) => void;
 };
@@ -1417,6 +1418,7 @@ export function StudioThreeStage({
   onPanChange,
   onMoveNode,
   onSelect,
+  onSelectEdge,
   onDropTool,
   onReadyChange,
 }: StudioThreeStageProps) {
@@ -1457,8 +1459,8 @@ export function StudioThreeStage({
   const targetCamRef = useRef({ yaw: camera.yaw, pitch: camera.pitch, zoom, panX: pan.x, panY: pan.y });
   const liveCamRef = useRef({ yaw: camera.yaw, pitch: camera.pitch, zoom, panX: pan.x, panY: pan.y });
   const dragRef = useRef<StageDrag | null>(null);
-  const callbacksRef = useRef({ onCameraChange, onZoomChange, onPanChange, onMoveNode, onSelect, onDropTool });
-  callbacksRef.current = { onCameraChange, onZoomChange, onPanChange, onMoveNode, onSelect, onDropTool };
+  const callbacksRef = useRef({ onCameraChange, onZoomChange, onPanChange, onMoveNode, onSelect, onSelectEdge, onDropTool });
+  callbacksRef.current = { onCameraChange, onZoomChange, onPanChange, onMoveNode, onSelect, onSelectEdge, onDropTool };
 
   useEffect(() => {
     // Do not fight active pointer drag or wheel zoom with throttled/stale React camera props
@@ -1935,6 +1937,7 @@ export function StudioThreeStage({
         });
         const line = new T.Line(lineGeo, lineMat);
         line.computeLineDistances();
+        line.userData["edgeHit"] = { id: edge.id, from: edge.from, to: edge.to };
         contentGroup.add(line);
 
         // Subtle floor directional tip right at target plinth rim
@@ -1947,6 +1950,7 @@ export function StudioThreeStage({
         const tipMesh = new T.Mesh(tipGeo, tipMat);
         tipMesh.position.set(anchor.ex - anchor.nx * 0.08, 0.042, anchor.ez - anchor.nz * 0.08);
         tipMesh.quaternion.setFromUnitVectors(upVec, new T.Vector3(anchor.nx, 0, anchor.nz).normalize());
+        tipMesh.userData["edgeHit"] = { id: edge.id, from: edge.from, to: edge.to };
         contentGroup.add(tipMesh);
 
         edgeRigsRef.current.push({
@@ -2007,11 +2011,13 @@ export function StudioThreeStage({
         });
         asyncLine = new T.Line(asyncGeo, asyncMat);
         asyncLine.computeLineDistances();
+        asyncLine.userData["edgeHit"] = { id: edge.id, from: edge.from, to: edge.to };
         contentGroup.add(asyncLine);
       } else {
         // UML Sync HTTP/gRPC connector: solid continuous conduit
         const tubeGeo = new T.TubeGeometry(curve, 28, tubeRadius, 10, false);
         tubeMesh = new T.Mesh(tubeGeo, conduitMat);
+        tubeMesh.userData["edgeHit"] = { id: edge.id, from: edge.from, to: edge.to };
         contentGroup.add(tubeMesh);
       }
 
@@ -2114,6 +2120,38 @@ export function StudioThreeStage({
         }
         cur = cur.parent;
       }
+    }
+    return null;
+  }
+
+  function raycastEdgeAt(clientX: number, clientY: number): { id: string; from: string; to: string } | null {
+    const T = threeRef.current;
+    const canvas = canvasRef.current;
+    const perspCam = cameraRef.current;
+    const rigs = edgeRigsRef.current;
+    if (!T || !canvas || !perspCam || rigs.length === 0) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const ndc = ndcRef.current ?? (ndcRef.current = new T.Vector2());
+    const raycaster = raycasterRef.current ?? (raycasterRef.current = new T.Raycaster());
+    raycaster.params.Line.threshold = 0.25;
+    ndc.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(ndc, perspCam);
+    const targets: THREE.Object3D[] = [];
+    for (const r of rigs) {
+      if (r.tubeMesh) targets.push(r.tubeMesh);
+      if (r.line) targets.push(r.line);
+      if (r.arrowMesh) targets.push(r.arrowMesh);
+    }
+    const hits = raycaster.intersectObjects(targets, false);
+    for (const hit of hits) {
+      const edgeHit = hit.object.userData?.["edgeHit"] as
+        | { id: string; from: string; to: string }
+        | undefined;
+      if (edgeHit?.from && edgeHit?.to) return edgeHit;
     }
     return null;
   }
@@ -2417,7 +2455,14 @@ export function StudioThreeStage({
             }
           } else {
             if (!drag.moved && event.button === 0) {
-              callbacksRef.current.onSelect("");
+              const hitEdge = callbacksRef.current.onSelectEdge
+                ? raycastEdgeAt(event.clientX, event.clientY)
+                : null;
+              if (hitEdge) {
+                callbacksRef.current.onSelectEdge?.(hitEdge);
+              } else {
+                callbacksRef.current.onSelect("");
+              }
             } else if (drag.moved) {
               callbacksRef.current.onPanChange({
                 x: Math.round(targetCamRef.current.panX),

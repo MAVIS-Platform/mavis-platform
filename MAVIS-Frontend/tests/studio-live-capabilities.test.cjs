@@ -1213,3 +1213,138 @@ test("Studio Live exposes extended interactive session lease, auto-finish diagno
   );
   assert.match(paritySrc, /limits\?\.sessionTimeoutSeconds \?\? limits\?\.timeoutSeconds/);
 });
+
+test("Studio 3D WYSIWYG authoring: Reverse BFS blast radius (incl. cycles), repo endpoint extraction, Author-by-Doing derivation, and single-door UI", () => {
+  const {
+    AUTHOR_GOALS,
+    AUTHOR_DRAG_CHIPS,
+    computeStaticBlastRadius,
+    resolveModelServiceEdges,
+    extractRepoEndpointOptions,
+    deriveExerciseFromLiveActions,
+  } = require("../src/features/runtime/studio-authoring-helpers.ts");
+
+  assert.equal(AUTHOR_GOALS.length, 4);
+  assert.equal(AUTHOR_DRAG_CHIPS.length, 4);
+
+  // Reverse BFS on cyclic dependency graph must terminate and return all upstream callers + edges
+  const blast = computeStaticBlastRadius("payment-service", [
+    { from: "api-gateway", to: "order-service" },
+    { from: "order-service", to: "payment-service" },
+    { from: "payment-service", to: "postgres-db" },
+    { from: "payment-service", to: "api-gateway" }, // cycle back to gateway
+  ]);
+  assert.deepEqual(blast.upstreamImpacted.sort(), ["api-gateway", "order-service"]);
+  assert.ok(blast.impactedEdgeKeys.has("order-service->payment-service"));
+  assert.ok(blast.impactedEdgeKeys.has("api-gateway->order-service"));
+  assert.ok(!blast.impactedEdgeKeys.has("payment-service->postgres-db"));
+
+  // Model element -> Compose service edge resolution
+  const resolvedEdges = resolveModelServiceEdges(
+    {
+      elements: [
+        { id: "e-gw", name: "api-gateway" },
+        { id: "e-ord", name: "order-service" },
+        { id: "e-pay", name: "payment-service" },
+        { id: "e-ctrl", name: "OrderController", parentId: "e-ord" },
+      ],
+      edges: [
+        { from: "e-gw", to: "e-ord" },
+        { from: "e-ctrl", to: "e-pay" },
+      ],
+    },
+    { "api-gateway": "e-gw", "order-service": "e-ord" },
+    ["api-gateway", "order-service", "payment-service"],
+  );
+  assert.deepEqual(resolvedEdges, [
+    { from: "api-gateway", to: "order-service" },
+    { from: "order-service", to: "payment-service" },
+  ]);
+
+  // Repo endpoint extraction ranks real storefront/gateway endpoints above `/` and `/health`
+  const endpoints = extractRepoEndpointOptions(
+    {
+      scenario: {
+        steps: [
+          { method: "GET", service: "api-gateway", path: "/api/v1/storefront/live-flow" },
+          { method: "POST", service: "order-service", path: "/api/v1/orders" },
+        ],
+      },
+      detectedEndpoints: [
+        { method: "GET", service: "order-service", path: "/api/v1/orders/{id}" },
+        { method: "GET", service: "catalog-service", path: "/api/v1/catalog/items" },
+        { method: "GET", service: "api-gateway", path: "/" },
+      ],
+    },
+    "/",
+  );
+  assert.equal(endpoints[0].path, "/api/v1/storefront/live-flow");
+  assert.ok(endpoints.some((e) => e.path === "/api/v1/catalog/items"));
+  assert.ok(!endpoints.some((e) => e.path.includes("{id}")));
+
+  // Author-by-Doing derives Scale-Out, CPU Degradation, Change Impact, and Outage Recovery
+  const scaleDemo = deriveExerciseFromLiveActions(
+    [
+      { action: "SET_LOAD", service: "api-gateway", targetRps: 30, status: "CONFIRMED" },
+      { action: "SCALE", service: "order-service", replicas: 2, status: "CONFIRMED" },
+    ],
+    [],
+  );
+  assert.equal(scaleDemo.exerciseType, "SCALE_UNDER_LOAD");
+  assert.deepEqual(scaleDemo.minReplicas, [{ service: "order-service", count: 2 }]);
+  assert.ok(scaleDemo.instructions.includes("30 RPS"));
+
+  const impactDemo = deriveExerciseFromLiveActions(
+    [{ action: "PAUSE", service: "payment-service", status: "CONFIRMED" }],
+    [],
+  );
+  assert.equal(impactDemo.exerciseType, "CHANGE_IMPACT");
+  assert.equal(impactDemo.predictionRequired, true);
+  assert.equal(impactDemo.targetChangeAction.service, "payment-service");
+
+  const cpuDemo = deriveExerciseFromLiveActions(
+    [{ action: "THROTTLE_CPU", service: "catalog-service", cpuPercent: 25, status: "CONFIRMED" }],
+    [],
+  );
+  assert.equal(cpuDemo.exerciseType, "CONFIG_REGRESSION");
+  assert.equal(cpuDemo.targetChangeAction.cpuPercent, 25);
+
+  const recoveryDemo = deriveExerciseFromLiveActions([], ["payment-service"]);
+  assert.equal(recoveryDemo.exerciseType, "CIRCUIT_BREAKER");
+  assert.deepEqual(recoveryDemo.stoppedServices, ["payment-service"]);
+
+  // Single-door LabStudioSection + icon-free WYSIWYG workbench guards
+  const labStudioSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/assignments/lab-studio-section.tsx"),
+    "utf8",
+  );
+  const standaloneSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const threeSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+
+  assert.match(labStudioSrc, /Open Visual Studio Builder/);
+  assert.doesNotMatch(labStudioSrc, /StudioExerciseEditor|PreparedTopologyEditor/);
+  assert.doesNotMatch(standaloneSrc, /StudioExerciseEditor|PreparedTopologyEditor/);
+  assert.match(workbenchSrc, /Visual Studio Builder/);
+  assert.match(workbenchSrc, /Static Reverse BFS Preview/);
+  assert.match(workbenchSrc, /Use live actions as exercise/);
+  assert.match(workbenchSrc, /Advanced settings/);
+  assert.match(workbenchSrc, /Baseline Endpoint \(auto-detected\)/);
+  assert.match(threeSrc, /raycastEdgeAt/);
+  assert.match(threeSrc, /onSelectEdge/);
+  const helpersSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-authoring-helpers.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(helpersSrc, /[\u26A1\u{1F3AF}\u{1F525}\u{1F680}\u2705\u274C\u{1F527}]/u);
+  assert.doesNotMatch(labStudioSrc, /[\u26A1\u{1F3AF}\u{1F525}\u{1F680}\u2705\u274C\u{1F527}]/u);
+});

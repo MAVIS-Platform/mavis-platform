@@ -55,8 +55,22 @@ import {
   StudioObservability,
   captureStudioImage,
   serializeStudioGraph,
+  type StudioAuthorHighlights,
   type StudioQuickAction,
 } from "./studio-observability";
+import {
+  AUTHOR_DRAG_CHIPS,
+  AUTHOR_GOALS,
+  computeStaticBlastRadius,
+  deriveExerciseFromLiveActions,
+  resolveModelServiceEdges,
+  type AuthorBlockChipId,
+  type DerivedExerciseFromDemo,
+  type EndpointOption,
+  type ExerciseTypeKey,
+  type StudioGoalId,
+  type TargetChangeAction,
+} from "./studio-authoring-helpers";
 import { startStudioRecording } from "./studio-recording";
 import {
   StudioEvidenceReplay,
@@ -215,18 +229,36 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   instructions: string;
   baselinePath: string;
   maxErrorRatePercent: string;
+  maxP95Ms?: string | undefined;
+  minImpactF1?: string | undefined;
+  predictionRequired?: boolean | undefined;
+  exerciseType?: ExerciseTypeKey | null | undefined;
+  targetChangeAction?: TargetChangeAction | null | undefined;
+  requiredTraceEdge?: { from: string; to: string } | null | undefined;
+  allowedActions?: readonly string[] | undefined;
+  endpointOptions?: readonly EndpointOption[] | undefined;
   replicaService: string;
   replicaCount: string;
   saving?: boolean | undefined;
   saved?: boolean | undefined;
+  syncingDocker?: boolean | undefined;
   error?: string | undefined;
   onClearError?: (() => void) | undefined;
+  onSyncDocker?: (() => void) | undefined;
   hasVerifiedSession?: boolean | undefined;
   publishHref?: string | undefined;
+  onSelectGoal?: ((goalId: StudioGoalId, preferredService?: string) => void) | undefined;
+  onApplyBlockChip?: ((chipId: AuthorBlockChipId, service: string) => void) | undefined;
+  onToggleWire?: ((from: string, to: string) => void) | undefined;
+  onApplyLiveDemoAsExercise?: ((derived: DerivedExerciseFromDemo) => void) | undefined;
   onSaveMission: (patch: {
     instructions: string;
     baselinePath: string;
     maxErrorRatePercent: string;
+    maxP95Ms?: string;
+    minImpactF1?: string;
+    predictionRequired?: boolean;
+    allowedActions?: string[];
     replicaService: string;
     replicaCount: string;
   }) => void;
@@ -540,7 +572,7 @@ export function LiveStudioWorkbench({
     }
   };
   const [showLeft, setShowLeft] = useState(false);
-  const [showRight, setShowRight] = useState(false);
+  const [showRight, setShowRight] = useState(() => Boolean(authoring));
   const [rightCardMode, setRightCardMode] = useState<"service" | "diagnostics">("service");
   const [missionCollapsed, setMissionCollapsed] = useState(false);
   const [missionHidden, setMissionHidden] = useState(false);
@@ -556,7 +588,7 @@ export function LiveStudioWorkbench({
     prevFinishSuccessRef.current = finish.isSuccess;
   }, [finish.isSuccess]);
   const [leftWidth, setLeftWidth] = useState(244);
-  const [rightWidth, setRightWidth] = useState(340);
+  const [rightWidth, setRightWidth] = useState(() => (authoring ? 360 : 340));
   const [rightHeight, setRightHeight] = useState<number | null>(null);
   const [rightOffset, setRightOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [missionWidth, setMissionWidth] = useState(278);
@@ -756,8 +788,21 @@ export function LiveStudioWorkbench({
   const [missionDraft, setMissionDraft] = useState(authoring?.instructions ?? "");
   const [baselineDraft, setBaselineDraft] = useState(authoring?.baselinePath ?? "/health");
   const [maxErrDraft, setMaxErrDraft] = useState(authoring?.maxErrorRatePercent ?? "0");
+  const [maxP95Draft, setMaxP95Draft] = useState(authoring?.maxP95Ms ?? "");
+  const [minImpactF1Draft, setMinImpactF1Draft] = useState(authoring?.minImpactF1 ?? "0.7");
+  const [predictionRequiredDraft, setPredictionRequiredDraft] = useState(
+    authoring?.predictionRequired === true,
+  );
+  const [allowedActionsDraft, setAllowedActionsDraft] = useState<string[]>(() =>
+    authoring?.allowedActions?.length
+      ? [...authoring.allowedActions]
+      : ["START", "STOP", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD", "CONNECT", "DISCONNECT"],
+  );
   const [replicaSvcDraft, setReplicaSvcDraft] = useState(authoring?.replicaService ?? "");
   const [replicaCountDraft, setReplicaCountDraft] = useState(authoring?.replicaCount ?? "");
+  const [selectedAuthorWire, setSelectedAuthorWire] = useState<{ from: string; to: string } | null>(
+    null,
+  );
 
   // Runtime replay recording (step-by-step timeline + optional canvas video proof)
   const evidenceScopeId = activeSessionId || (projectId ? `preview:${projectId}` : "preview");
@@ -819,12 +864,22 @@ export function LiveStudioWorkbench({
     setMissionDraft(authoring.instructions);
     setBaselineDraft(authoring.baselinePath);
     setMaxErrDraft(authoring.maxErrorRatePercent);
+    setMaxP95Draft(authoring.maxP95Ms ?? "");
+    setMinImpactF1Draft(authoring.minImpactF1 ?? "0.7");
+    setPredictionRequiredDraft(authoring.predictionRequired === true);
+    if (authoring.allowedActions?.length) {
+      setAllowedActionsDraft([...authoring.allowedActions]);
+    }
     setReplicaSvcDraft(authoring.replicaService);
     setReplicaCountDraft(authoring.replicaCount);
   }, [
     authoring?.instructions,
     authoring?.baselinePath,
     authoring?.maxErrorRatePercent,
+    authoring?.maxP95Ms,
+    authoring?.minImpactF1,
+    authoring?.predictionRequired,
+    authoring?.allowedActions,
     authoring?.replicaService,
     authoring?.replicaCount,
   ]);
@@ -1312,36 +1367,94 @@ export function LiveStudioWorkbench({
     lastOpenedErrorRef.current = terminalAlertSignal;
   }, [terminalAlertSignal]);
 
-  const presetTargets = useMemo(() => {
-    const isStateful = (name: string) =>
-      /postgres|mysql|mariadb|mongo|redis|kafka|rabbit|zookeeper|elastic|minio|db\b/.test(
-        name.toLowerCase(),
-      );
-    const stateless = blocks.filter(
-      (b) => !isStateful(b.service) && !/gateway|edge|proxy/i.test(b.service),
-    );
-    const primaryScale =
-      stateless[0]?.service ??
-      blocks.find((b) => !isStateful(b.service))?.service ??
-      blocks[0]?.service ??
-      "";
-    const faultTarget =
-      stateless[1]?.service ??
-      stateless[0]?.service ??
-      blocks[blocks.length - 1]?.service ??
-      "";
-    return { primaryScale, faultTarget };
-  }, [blocks]);
+  const referenceModel = useApiQuery(
+    "model",
+    { modelId: data.modelVersionId ?? "", projectId: data.projectId ?? "" },
+    { enabled: Boolean(authoring && data.modelVersionId && data.projectId) },
+  );
 
-  const activePreset = useMemo(() => {
+  const staticEdgesForBlast = useMemo(() => {
+    const seen = new Set<string>();
+    const edges: Array<{ from: string; to: string }> = [];
+    const add = (from: string, to: string) => {
+      if (!from || !to || from === to) return;
+      const key = `${from}->${to}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      edges.push({ from, to });
+    };
+    for (const c of data.topology?.connections ?? []) add(c.from, c.to);
+    for (const m of resolveModelServiceEdges(referenceModel.data, data.serviceMappings, services)) {
+      add(m.from, m.to);
+    }
+    for (const inter of data.telemetry?.interactions ?? []) {
+      add(inter.fromService, inter.toService);
+    }
+    return edges;
+  }, [data.topology?.connections, referenceModel.data, data.serviceMappings, services, data.telemetry?.interactions]);
+
+  const staticBlastRadius = useMemo(
+    () =>
+      computeStaticBlastRadius(
+        authoring?.targetChangeAction?.service ?? null,
+        staticEdgesForBlast,
+      ),
+    [authoring?.targetChangeAction?.service, staticEdgesForBlast],
+  );
+
+  const authorHighlights = useMemo<StudioAuthorHighlights | undefined>(() => {
+    if (!authoring) return undefined;
+    return {
+      authorStoppedServices: new Set(authoring.initialStoppedServices),
+      impactTarget: authoring.targetChangeAction?.service ?? null,
+      predictedUpstream: new Set(staticBlastRadius.upstreamImpacted),
+      impactEdgeKeys: staticBlastRadius.impactedEdgeKeys,
+      requiredTraceEdge: authoring.requiredTraceEdge ?? null,
+      scalableServices: new Set(authoring.scalableServices),
+    };
+  }, [authoring, staticBlastRadius]);
+
+  const authoringWithBlast = useMemo<LiveBlockAuthoringControls | undefined>(() => {
+    if (!authoring) return undefined;
+    return {
+      ...authoring,
+      impactTargetService: authoring.targetChangeAction?.service ?? null,
+      predictedImpactedServices: staticBlastRadius.upstreamImpacted,
+      onDropAuthorChip: (chipId: string, svc: string) => {
+        authoring.onApplyBlockChip?.(chipId as AuthorBlockChipId, svc);
+      },
+    };
+  }, [authoring, staticBlastRadius.upstreamImpacted]);
+
+  const activeGoalId = useMemo<StudioGoalId | null>(() => {
     if (!authoring) return null;
-    const stopped = authoring.initialStoppedServices;
-    const hasScale = Boolean(authoring.replicaService && Number(authoring.replicaCount) >= 2);
-    if (stopped.length === 0 && !hasScale) return "healthy";
-    if (stopped.length === 1 && !hasScale) return "outage";
-    if (stopped.length === 0 && hasScale) return "scale";
-    if (stopped.length >= 1 && hasScale) return "chaos-scale";
-    return "custom";
+    if (
+      authoring.exerciseType === "CHANGE_IMPACT" ||
+      (authoring.predictionRequired &&
+        (authoring.targetChangeAction?.action === "PAUSE" ||
+          authoring.targetChangeAction?.action === "STOP"))
+    ) {
+      return "change-impact";
+    }
+    if (
+      authoring.exerciseType === "CONFIG_REGRESSION" ||
+      authoring.targetChangeAction?.action === "THROTTLE_CPU"
+    ) {
+      return "cpu";
+    }
+    if (
+      authoring.exerciseType === "SCALE_UNDER_LOAD" ||
+      (authoring.replicaService && Number(authoring.replicaCount) >= 2)
+    ) {
+      return "scale";
+    }
+    if (
+      authoring.exerciseType === "CIRCUIT_BREAKER" ||
+      authoring.initialStoppedServices.length > 0
+    ) {
+      return "recovery";
+    }
+    return null;
   }, [authoring]);
 
   const missionDirty = Boolean(
@@ -1349,20 +1462,15 @@ export function LiveStudioWorkbench({
       (missionDraft !== authoring.instructions ||
         baselineDraft !== authoring.baselinePath ||
         maxErrDraft !== authoring.maxErrorRatePercent ||
+        maxP95Draft !== (authoring.maxP95Ms ?? "") ||
+        minImpactF1Draft !== (authoring.minImpactF1 ?? "0.7") ||
+        predictionRequiredDraft !== (authoring.predictionRequired === true) ||
         replicaSvcDraft !== authoring.replicaService ||
-        replicaCountDraft !== authoring.replicaCount),
+        replicaCountDraft !== authoring.replicaCount ||
+        (authoring.allowedActions &&
+          allowedActionsDraft.slice().sort().join(",") !==
+            [...authoring.allowedActions].sort().join(","))),
   );
-
-  const probeSuggestions = useMemo(() => {
-    const names = blocks.map((b) => b.service.toLowerCase());
-    const hasGateway = names.some((n) => n.includes("gateway") || n.includes("edge"));
-    const hasOrders = names.some((n) => n.includes("order"));
-    const items: string[] = [];
-    if (hasGateway && hasOrders) items.push("/api/gateway/orders");
-    else if (hasOrders) items.push("/api/orders");
-    items.push("/health");
-    return Array.from(new Set(items));
-  }, [blocks]);
 
   const isQueued = data.executionStatus.toUpperCase() === "QUEUED";
 
@@ -1422,6 +1530,13 @@ export function LiveStudioWorkbench({
       : null;
   const stoppedServiceNames = services.filter(
     (svc) => runningFor(data, svc) === 0 && servicePhase(data, svc) === "stopped",
+  );
+  const liveDemoDerived = useMemo(
+    () =>
+      authoring && !isPreviewMode
+        ? deriveExerciseFromLiveActions(data.actions, stoppedServiceNames)
+        : null,
+    [authoring, isPreviewMode, data.actions, stoppedServiceNames],
   );
   const pausedServiceNames = services.filter((svc) => servicePhase(data, svc) === "paused");
   const faultedServices = [...stoppedServiceNames, ...pausedServiceNames];
@@ -1541,12 +1656,24 @@ export function LiveStudioWorkbench({
               size="sm"
               variant="outline"
               disabled={authoring.saving}
-              onClick={captureLiveCanvasAsExercise}
-              title="Save currently stopped services and scaled replicas on the canvas as the Lab exercise"
+              onClick={() => {
+                if (liveDemoDerived && authoring.onApplyLiveDemoAsExercise) {
+                  authoring.onApplyLiveDemoAsExercise(liveDemoDerived);
+                } else {
+                  captureLiveCanvasAsExercise();
+                }
+              }}
+              title={t(
+                "Turn your live Docker actions into the graded Lab exercise",
+                "Dùng trạng thái và thao tác vừa thử làm đề bài Lab",
+              )}
               className="h-8 px-2.5 text-[12.5px]"
             >
-              <Save aria-hidden="true" className="mr-1 size-3.5" />
-              {authoring.saving ? "Saving…" : "Save Canvas"}
+              {authoring.saving
+                ? t("Saving…", "Đang lưu…")
+                : liveDemoDerived
+                  ? t("Use live actions as exercise", "Dùng thao tác làm đề bài")
+                  : t("Save Canvas", "Lưu trạng thái")}
             </Button>
           )}
 
@@ -2005,8 +2132,10 @@ export function LiveStudioWorkbench({
                 busy={isPreviewMode ? false : busy}
                 onSelect={(svc) => {
                   studio.setService(svc);
+                  setSelectedAuthorWire(null);
                   if (svc) {
-                    setSetupPanel("service");
+                    if (!authoring) setSetupPanel("service");
+                    else if (setupPanel === "mission") setSetupPanel("presets");
                     setRightCardMode("service");
                     setShowRight(true);
                   }
@@ -2016,7 +2145,7 @@ export function LiveStudioWorkbench({
                 compact
                 label="Live block library"
                 studioStyle={studioStyle}
-                authoring={authoring}
+                authoring={authoringWithBlast}
                 activeSetupPanel={setupPanel}
                 onSelectSetupPanel={(panel) => {
                   setSetupPanel(panel);
@@ -2091,8 +2220,10 @@ export function LiveStudioWorkbench({
                 selected={canvasSelected}
                 onSelect={(svc) => {
                   studio.setService(svc);
+                  setSelectedAuthorWire(null);
                   if (svc) {
-                    setSetupPanel("service");
+                    if (!authoring) setSetupPanel("service");
+                    else if (setupPanel === "mission") setSetupPanel("presets");
                     setRightCardMode("service");
                     setShowRight(true);
                   }
@@ -2104,6 +2235,29 @@ export function LiveStudioWorkbench({
                 surfaceTheme={isLight ? "light" : "dark"}
                 nodeNames={nodeNames}
                 {...(configuredEdges && configuredEdges.length > 0 ? { configuredEdges } : {})}
+                {...(authorHighlights ? { authorHighlights } : {})}
+                {...(authoring?.onApplyBlockChip
+                  ? {
+                      onDropAuthorChip: (chipId: string, svc: string) => {
+                        studio.setService(svc);
+                        setSelectedAuthorWire(null);
+                        setSetupPanel("presets");
+                        setRightCardMode("service");
+                        setShowRight(true);
+                        authoring.onApplyBlockChip?.(chipId as AuthorBlockChipId, svc);
+                      },
+                    }
+                  : {})}
+                {...(authoring
+                  ? {
+                      onSelectEdge: (edge: { id: string; from: string; to: string }) => {
+                        setSelectedAuthorWire({ from: edge.from, to: edge.to });
+                        setSetupPanel("presets");
+                        setRightCardMode("service");
+                        setShowRight(true);
+                      },
+                    }
+                  : {})}
                 onConnect={connect}
                 onDisconnect={disconnect}
                 onQuickAction={quickAction}
@@ -4292,12 +4446,12 @@ export function LiveStudioWorkbench({
               <div className="flex min-w-0 items-center gap-1.5">
                 <GripVertical className="size-3.5 shrink-0 opacity-45" aria-hidden="true" />
                 <p className="truncate text-sm font-bold">
-                  {rightCardMode === "diagnostics" && (!authoring || setupPanel === "service")
+                  {rightCardMode === "diagnostics"
                     ? t("Impact & Diagnostics", "Chẩn đoán Change Impact")
-                    : authoring && setupPanel === "presets"
-                      ? t("Scenario Setup", "Thiết lập kịch bản")
-                      : authoring && setupPanel === "mission"
-                        ? t("Mission Setup", "Thiết lập mục tiêu")
+                    : authoring && setupPanel === "mission"
+                      ? t("Mission & Advanced", "Đề bài & Nâng cao")
+                      : authoring
+                        ? t("Visual Studio Builder", "Soạn bài trên Studio 3D")
                         : selected || t("Service Controls", "Điều khiển Service")}
                 </p>
               </div>
@@ -4314,7 +4468,7 @@ export function LiveStudioWorkbench({
             </div>
 
             <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3">
-              {rightCardMode === "diagnostics" && (!authoring || setupPanel === "service") ? (
+              {rightCardMode === "diagnostics" ? (
                 <section aria-label={t("Change Impact Diagnostics", "Chẩn đoán Change Impact")} className="space-y-3.5 text-xs">
                   {/* Overall Status Stamp */}
                   <div
@@ -4765,330 +4919,832 @@ export function LiveStudioWorkbench({
               <div
                 role="tablist"
                 aria-label="Lecturer setup panel tabs"
-                className={`mb-3 grid grid-cols-3 gap-1 rounded-xl border p-1 ${
+                className={`mb-3 grid grid-cols-2 gap-1 rounded-xl border p-1 ${
                   isLight ? "border-slate-200 bg-slate-100" : "border-slate-800 bg-slate-950/90"
                 }`}
               >
                 {(
                   [
-                    ["presets", "1. Scenario"],
-                    ["mission", missionDirty ? "2. Mission *" : "2. Mission"],
-                    ["service", "3. Block"],
+                    ["presets", t("Visual Builder", "Thiết kế 3D")],
+                    [
+                      "mission",
+                      missionDirty
+                        ? t("Mission & Advanced *", "Đề bài & Nâng cao *")
+                        : t("Mission & Advanced", "Đề bài & Nâng cao"),
+                    ],
                   ] as const
-                ).map(([id, tabLabel]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="tab"
-                    aria-selected={setupPanel === id}
-                    onClick={() => setSetupPanel(id)}
-                    className={`rounded-lg px-1.5 py-1.5 text-[11px] font-semibold transition-colors ${
-                      setupPanel === id
-                        ? isLight
-                          ? "bg-white text-slate-900 shadow-xs"
-                          : "bg-slate-800 text-white shadow-xs"
-                        : isLight
-                          ? "text-slate-600 hover:text-slate-900"
-                          : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    {tabLabel}
-                  </button>
-                ))}
+                ).map(([id, tabLabel]) => {
+                  const isTabActive =
+                    id === "presets" ? setupPanel !== "mission" : setupPanel === "mission";
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isTabActive}
+                      onClick={() => setSetupPanel(id)}
+                      className={`rounded-lg px-2 py-1.5 text-[11.5px] font-semibold transition-colors ${
+                        isTabActive
+                          ? isLight
+                            ? "bg-white text-slate-900 shadow-xs"
+                            : "bg-slate-800 text-white shadow-xs"
+                          : isLight
+                            ? "text-slate-600 hover:text-slate-900"
+                            : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {tabLabel}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
             {setupPanel === "mission" && authoring ? (
-              <section aria-label="Mission setup" className="space-y-3 text-xs">
-                <div className={`flex items-center gap-1.5 border-b pb-2 font-bold ${isLight ? "border-slate-200 text-slate-900" : "border-slate-800 text-slate-100"}`}>
-                  <Target aria-hidden="true" className={`size-3.5 ${isLight ? "text-primary" : "text-sky-400"}`} />
-                  <span>Mission &amp; Pass Criteria</span>
-                </div>
-
-                <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
-                  <span>Student Mission</span>
-                  <Textarea
-                    value={missionDraft}
-                    onChange={(e) => setMissionDraft(e.target.value)}
-                    className={`min-h-20 text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                  />
-                </label>
-
-                <div className="space-y-1.5">
-                  <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
-                    <span>Baseline Probe GET Path</span>
-                    <Input
-                      value={baselineDraft}
-                      onChange={(e) => setBaselineDraft(e.target.value)}
-                      placeholder="/api/gateway/orders"
-                      className={`h-8 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                    />
-                  </label>
-                  <div className="flex flex-wrap gap-1">
-                    {probeSuggestions.map((path) => (
-                      <button
-                        key={path}
-                        type="button"
-                        onClick={() => setBaselineDraft(path)}
-                        className={`rounded-md border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors ${
-                          baselineDraft === path
-                            ? isLight
-                              ? "border-primary bg-primary/10 text-primary font-semibold"
-                              : "border-sky-500/50 bg-sky-500/15 text-sky-200"
-                            : isLight
-                              ? "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                              : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+              (() => {
+                const endpointList = authoring.endpointOptions?.length
+                  ? authoring.endpointOptions
+                  : [{ path: baselineDraft || "/health", label: `GET ${baselineDraft || "/health"}` }];
+                const hasSelectedEndpoint = endpointList.some((ep) => ep.path === baselineDraft);
+                const ALL_ACTIONS = [
+                  "START",
+                  "STOP",
+                  "SCALE",
+                  "PAUSE",
+                  "RESUME",
+                  "THROTTLE_CPU",
+                  "SET_LOAD",
+                  "CONNECT",
+                  "DISCONNECT",
+                ] as const;
+                const toggleAllowedAction = (act: string) => {
+                  setAllowedActionsDraft((prev) =>
+                    prev.includes(act)
+                      ? prev.length > 1
+                        ? prev.filter((item) => item !== act)
+                        : prev
+                      : [...prev, act],
+                  );
+                };
+                return (
+                  <section aria-label="Mission setup" className="space-y-3 text-xs">
+                    <label
+                      className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-700" : "text-slate-300"}`}
+                    >
+                      <span>{t("Baseline Endpoint (auto-detected)", "Endpoint kiểm thử (tự quét từ repo)")}</span>
+                      <select
+                        aria-label={t("Baseline Endpoint", "Endpoint kiểm thử")}
+                        value={hasSelectedEndpoint ? baselineDraft : "__custom__"}
+                        onChange={(e) => {
+                          if (e.target.value !== "__custom__") {
+                            setBaselineDraft(e.target.value);
+                          }
+                        }}
+                        className={`h-8 w-full rounded-md border px-2 font-mono text-xs ${
+                          isLight
+                            ? "border-slate-300 bg-white text-slate-900"
+                            : "border-slate-700 bg-slate-950 text-slate-100"
                         }`}
                       >
-                        {path}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                        {endpointList.map((ep) => (
+                          <option key={ep.path} value={ep.path}>
+                            {ep.label}
+                          </option>
+                        ))}
+                        {!hasSelectedEndpoint && baselineDraft && (
+                          <option value="__custom__">GET {baselineDraft}</option>
+                        )}
+                      </select>
+                    </label>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
-                    <span>Max Error %</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={maxErrDraft}
-                      onChange={(e) => setMaxErrDraft(e.target.value)}
-                      placeholder="0"
-                      className={`h-8 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                    />
-                  </label>
-                  <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
-                    <span>Min Replicas</span>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={8}
-                      value={replicaCountDraft}
-                      onChange={(e) => setReplicaCountDraft(e.target.value)}
-                      placeholder="2"
-                      className={`h-8 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                    />
-                  </label>
-                </div>
-
-                <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
-                  <span>Target Scale Service</span>
-                  <select
-                    value={replicaSvcDraft}
-                    onChange={(e) => setReplicaSvcDraft(e.target.value)}
-                    className={`h-8 w-full rounded-md border px-2 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                  >
-                    <option value="">None</option>
-                    {blocks.map((b) => (
-                      <option key={b.service} value={b.service}>
-                        {b.service}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                {/* Live Student Preview */}
-                <div className={`space-y-1 rounded-xl border p-2.5 text-[11px] ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/75"}`}>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                    Student Will Receive
-                  </p>
-                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
-                    Initial Faults:{" "}
-                    <code className={`font-mono font-semibold ${isLight ? "text-amber-700" : "text-amber-300"}`}>
-                      {authoring.initialStoppedServices.length > 0
-                        ? authoring.initialStoppedServices.join(", ")
-                        : "None (all start Up)"}
-                    </code>
-                  </p>
-                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
-                    Pass Target:{" "}
-                    <code className={`font-mono font-semibold ${isLight ? "text-emerald-700" : "text-emerald-300"}`}>
-                      ≤{maxErrDraft || "0"}% err
-                      {replicaSvcDraft && Number(replicaCountDraft) >= 2
-                        ? ` · ${replicaSvcDraft} ≥${replicaCountDraft}×`
-                        : ""}
-                    </code>
-                  </p>
-                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
-                    Probe:{" "}
-                    <code className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
-                      GET {baselineDraft || "/health"}
-                    </code>
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  {authoring.saved && !missionDirty ? (
-                    <span className={`inline-flex items-center gap-1 text-[11.5px] font-semibold ${isLight ? "text-emerald-700" : "text-emerald-400"}`}>
-                      <Check aria-hidden="true" className="size-3.5" /> Saved
-                    </span>
-                  ) : (
-                    <span
-                      className={`text-[11px] ${missionDirty ? (isLight ? "text-amber-700 font-medium" : "text-amber-300") : "text-muted-foreground"}`}
+                    <label
+                      className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-700" : "text-slate-300"}`}
                     >
-                      {missionDirty ? "Unsaved changes" : "Applies immediately to Lab"}
-                    </span>
-                  )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={authoring.saving}
-                    onClick={() =>
-                      authoring.onSaveMission({
-                        instructions: missionDraft,
-                        baselinePath: baselineDraft,
-                        maxErrorRatePercent: maxErrDraft,
-                        replicaService: replicaSvcDraft,
-                        replicaCount: replicaCountDraft,
-                      })
-                    }
-                    className={`h-8 px-3 text-xs text-white ${
-                      missionDirty
-                        ? "bg-amber-600 hover:bg-amber-500"
-                        : "bg-teal-600 hover:bg-teal-500"
-                    }`}
-                  >
-                    <Save aria-hidden="true" className="mr-1.5 size-3.5" />
-                    {authoring.saving
-                      ? "Saving…"
-                      : missionDirty
-                        ? "Save Mission *"
-                        : "Save Mission"}
-                  </Button>
-                </div>
-              </section>
-            ) : setupPanel === "presets" && authoring?.onApplyPreset ? (
-              <section aria-label="Lab Exercise Presets setup" className="space-y-3 text-xs">
-                <div className={`flex items-center gap-1.5 border-b pb-2 font-bold ${isLight ? "border-slate-200 text-slate-900" : "border-slate-800 text-slate-100"}`}>
-                  <Zap aria-hidden="true" className="size-3.5 text-amber-500" />
-                  <span>Step 1 · Pick Lab Scenario</span>
-                </div>
+                      <span>{t("Student Mission", "Đề bài cho sinh viên")}</span>
+                      <Textarea
+                        value={missionDraft}
+                        onChange={(e) => setMissionDraft(e.target.value)}
+                        placeholder={t(
+                          "Pick a goal or click a 3D block to auto-draft instructions.",
+                          "Chọn dạng bài hoặc bấm vào khối 3D để tự sinh đề bài.",
+                        )}
+                        className={`min-h-20 text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
+                      />
+                    </label>
 
-                <div className={`space-y-1 rounded-xl border p-2.5 text-[11px] ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/70"}`}>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                    Active Config ({blocks.length} services)
-                  </p>
-                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
-                    Starts Down:{" "}
-                    <code className={`font-mono font-semibold ${isLight ? "text-amber-700" : "text-amber-300"}`}>
-                      {authoring.initialStoppedServices.length > 0
-                        ? authoring.initialStoppedServices.join(", ")
-                        : "None"}
-                    </code>
-                  </p>
-                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
-                    Scale Target:{" "}
-                    <code className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
-                      {authoring.replicaService && Number(authoring.replicaCount) >= 2
-                        ? `${authoring.replicaService} ≥ ${authoring.replicaCount}×`
-                        : "Any (observe only)"}
-                    </code>
-                  </p>
-                </div>
+                    {/* Live Student Preview */}
+                    <div
+                      className={`space-y-1 rounded-xl border p-2.5 text-[11px] ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/75"}`}
+                    >
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {t("Student Will Receive", "Tóm tắt đề bài")}
+                      </p>
+                      <p className={isLight ? "text-slate-700" : "text-slate-300"}>
+                        {t("Initial Faults:", "Sự cố ban đầu:")}{" "}
+                        <code className={`font-mono font-semibold ${isLight ? "text-rose-700" : "text-rose-300"}`}>
+                          {authoring.initialStoppedServices.length > 0
+                            ? authoring.initialStoppedServices.join(", ")
+                            : t("None (all start Up)", "Không (tất cả chạy)")}
+                        </code>
+                      </p>
+                      {authoring.targetChangeAction?.service && (
+                        <p className={isLight ? "text-slate-700" : "text-slate-300"}>
+                          {t("Target Action:", "Thao tác mục tiêu:")}{" "}
+                          <code className={`font-mono font-semibold ${isLight ? "text-amber-700" : "text-amber-300"}`}>
+                            {authoring.targetChangeAction.action} {authoring.targetChangeAction.service}
+                            {authoring.targetChangeAction.replicas
+                              ? ` (${authoring.targetChangeAction.replicas}x)`
+                              : authoring.targetChangeAction.cpuPercent
+                                ? ` (${authoring.targetChangeAction.cpuPercent}% CPU)`
+                                : ""}
+                          </code>
+                        </p>
+                      )}
+                      {authoring.requiredTraceEdge && (
+                        <p className={isLight ? "text-slate-700" : "text-slate-300"}>
+                          {t("Required Path:", "Đường gọi kiểm chứng:")}{" "}
+                          <code className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+                            {authoring.requiredTraceEdge.from} -&gt; {authoring.requiredTraceEdge.to}
+                          </code>
+                        </p>
+                      )}
+                      <p className={isLight ? "text-slate-700" : "text-slate-300"}>
+                        Probe:{" "}
+                        <code className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+                          GET {baselineDraft || "/health"}
+                        </code>
+                      </p>
+                    </div>
 
-                <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-                  Pick a 1-click scenario for this repo, or click any service node to customize.
-                </p>
+                    {/* Collapsible Advanced Settings (closed by default for simplicity) */}
+                    <details
+                      className={`rounded-xl border p-2.5 ${
+                        isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-950/60"
+                      }`}
+                    >
+                      <summary
+                        className={`cursor-pointer select-none text-[11.5px] font-semibold ${
+                          isLight ? "text-slate-700 hover:text-slate-900" : "text-slate-300 hover:text-white"
+                        }`}
+                      >
+                        {t("Advanced settings", "Tùy chỉnh nâng cao")}
+                      </summary>
+                      <div className="mt-3 space-y-2.5">
+                        <div className="grid grid-cols-3 gap-2">
+                          <label className="block space-y-1 text-[11px] text-muted-foreground">
+                            <span>Max Error %</span>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={maxErrDraft}
+                              onChange={(e) => setMaxErrDraft(e.target.value)}
+                              placeholder="—"
+                              className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
+                            />
+                          </label>
+                          <label className="block space-y-1 text-[11px] text-muted-foreground">
+                            <span>Max p95 (ms)</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={maxP95Draft}
+                              onChange={(e) => setMaxP95Draft(e.target.value)}
+                              placeholder="—"
+                              className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
+                            />
+                          </label>
+                          <label className="block space-y-1 text-[11px] text-muted-foreground">
+                            <span>Min F1 (0-1)</span>
+                            <Input
+                              type="number"
+                              step="0.05"
+                              min={0}
+                              max={1}
+                              value={minImpactF1Draft}
+                              onChange={(e) => setMinImpactF1Draft(e.target.value)}
+                              placeholder="0.7"
+                              className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
+                            />
+                          </label>
+                        </div>
 
-                <div className="space-y-2">
-                  {(
-                    [
-                      [
-                        "outage",
-                        "Outage Recovery",
-                        presetTargets.faultTarget
-                          ? `Starts ${presetTargets.faultTarget} Down · students recover it to 0% error.`
-                          : "Marks 1 core service as Starts Down and requires 0% error rate after recovery.",
-                        isLight
-                          ? "border-amber-200 bg-amber-50/70 hover:border-amber-400"
-                          : "border-amber-500/35 bg-amber-500/10 hover:border-amber-400",
-                      ],
-                      [
-                        "scale",
-                        "Horizontal Scale ×2",
-                        presetTargets.primaryScale
-                          ? `All Up · students scale ${presetTargets.primaryScale} to ≥ 2 replicas.`
-                          : "Enables scaling on the primary stateless service and targets ≥ 2 replicas.",
-                        isLight
-                          ? "border-sky-200 bg-sky-50/70 hover:border-sky-400"
-                          : "border-sky-500/35 bg-sky-500/10 hover:border-sky-400",
-                      ],
-                      [
-                        "chaos-scale",
-                        "Fault + Scale Drill",
-                        presetTargets.faultTarget && presetTargets.primaryScale
-                          ? `Stops ${presetTargets.faultTarget} + scales ${presetTargets.primaryScale} to ≥ 2×.`
-                          : "Combines 1 stopped dependency with scaling the primary service to 2 pods.",
-                        isLight
-                          ? "border-violet-200 bg-violet-50/70 hover:border-violet-400"
-                          : "border-purple-500/35 bg-purple-500/10 hover:border-purple-400",
-                      ],
-                      [
-                        "healthy",
-                        "Healthy Baseline",
-                        `All ${blocks.length} services Start Up · students inspect traces & baseline metrics.`,
-                        isLight
-                          ? "border-slate-200 bg-slate-50/80 hover:border-slate-400"
-                          : "border-slate-700 bg-slate-950/70 hover:border-slate-500",
-                      ],
-                    ] as const
-                  ).map(([id, title, desc, tone]) => {
-                    const isActive = activePreset === id;
-                    return (
-                      <button
-                        key={id}
+                        <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={predictionRequiredDraft}
+                            onChange={(e) => setPredictionRequiredDraft(e.target.checked)}
+                            className="size-3.5 rounded border-slate-400"
+                          />
+                          <span>
+                            {t(
+                              "Require student impact prediction before action",
+                              "Yêu cầu sinh viên dự đoán ảnh hưởng trước khi chạy thao tác",
+                            )}
+                          </span>
+                        </label>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="block space-y-1 text-[11px] text-muted-foreground">
+                            <span>{t("Scale target", "Service cần Scale")}</span>
+                            <select
+                              value={replicaSvcDraft}
+                              onChange={(e) => setReplicaSvcDraft(e.target.value)}
+                              className={`h-7 w-full rounded-md border px-2 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
+                            >
+                              <option value="">{t("None", "Không")}</option>
+                              {blocks.map((b) => (
+                                <option key={b.service} value={b.service}>
+                                  {b.service}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block space-y-1 text-[11px] text-muted-foreground">
+                            <span>{t("Min replicas", "Số replica tối thiểu")}</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={3}
+                              value={replicaCountDraft}
+                              onChange={(e) => setReplicaCountDraft(e.target.value)}
+                              placeholder="2"
+                              className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
+                            />
+                          </label>
+                        </div>
+
+                        <label className="block space-y-1 text-[11px] text-muted-foreground">
+                          <span>{t("Custom GET path", "Đường dẫn GET tùy chỉnh")}</span>
+                          <Input
+                            value={baselineDraft}
+                            onChange={(e) => setBaselineDraft(e.target.value)}
+                            placeholder="/api/v1/storefront/live-flow"
+                            className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
+                          />
+                        </label>
+
+                        <div className="space-y-1">
+                          <p className="text-[11px] text-muted-foreground">
+                            {t("Allowed student actions", "Thao tác cho phép sinh viên")}
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {ALL_ACTIONS.map((act) => {
+                              const on = allowedActionsDraft.includes(act);
+                              return (
+                                <button
+                                  key={act}
+                                  type="button"
+                                  onClick={() => toggleAllowedAction(act)}
+                                  className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium transition ${
+                                    on
+                                      ? isLight
+                                        ? "border-sky-400 bg-sky-50 text-sky-800"
+                                        : "border-sky-500/60 bg-sky-500/20 text-sky-200"
+                                      : isLight
+                                        ? "border-slate-200 bg-slate-50 text-slate-400"
+                                        : "border-slate-800 bg-slate-900 text-slate-500"
+                                  }`}
+                                >
+                                  {act}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {authoring.onSyncDocker && (
+                          <div className="border-t border-border/60 pt-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={authoring.syncingDocker}
+                              onClick={authoring.onSyncDocker}
+                              className="h-7 w-full text-[11px]"
+                            >
+                              {authoring.syncingDocker
+                                ? t("Syncing Docker topology…", "Đang đồng bộ Docker…")
+                                : t("Re-sync Docker Compose from repo", "Đồng bộ lại Docker Compose từ repo")}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </details>
+
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      {authoring.saved && !missionDirty ? (
+                        <span
+                          className={`text-[11.5px] font-semibold ${isLight ? "text-emerald-700" : "text-emerald-400"}`}
+                        >
+                          {t("Saved", "Đã lưu")}
+                        </span>
+                      ) : (
+                        <span
+                          className={`text-[11px] ${missionDirty ? (isLight ? "font-medium text-amber-700" : "text-amber-300") : "text-muted-foreground"}`}
+                        >
+                          {missionDirty
+                            ? t("Unsaved changes", "Có thay đổi chưa lưu")
+                            : t("Applies immediately", "Áp dụng ngay cho Lab")}
+                        </span>
+                      )}
+                      <Button
                         type="button"
-                        disabled={authoring.busy}
-                        onClick={() => authoring.onApplyPreset?.(id)}
-                        className={`w-full rounded-xl border p-2.5 text-left transition-colors disabled:opacity-40 ${tone} ${
-                          isActive
-                            ? isLight
-                              ? "ring-2 ring-emerald-500/60"
-                              : "ring-1 ring-emerald-400/70"
-                            : ""
+                        size="sm"
+                        disabled={authoring.saving}
+                        onClick={() =>
+                          authoring.onSaveMission({
+                            instructions: missionDraft,
+                            baselinePath: baselineDraft,
+                            maxErrorRatePercent: maxErrDraft,
+                            maxP95Ms: maxP95Draft,
+                            minImpactF1: minImpactF1Draft,
+                            predictionRequired: predictionRequiredDraft,
+                            allowedActions: allowedActionsDraft,
+                            replicaService: replicaSvcDraft,
+                            replicaCount: replicaCountDraft,
+                          })
+                        }
+                        className={`h-8 px-3 text-xs text-white ${
+                          missionDirty
+                            ? "bg-amber-600 hover:bg-amber-500"
+                            : "bg-teal-600 hover:bg-teal-500"
+                        }`}
+                      >
+                        {authoring.saving
+                          ? t("Saving…", "Đang lưu…")
+                          : missionDirty
+                            ? t("Save Exercise *", "Lưu đề bài *")
+                            : t("Save Exercise", "Lưu đề bài")}
+                      </Button>
+                    </div>
+                  </section>
+                );
+              })()
+            ) : authoring ? (
+              (() => {
+                const svc = selected || blocks[0]?.service || "";
+                const startsDown = Boolean(svc && authoring.initialStoppedServices.includes(svc));
+                const canScale = Boolean(svc && authoring.scalableServices.includes(svc));
+                const isImpactTarget =
+                  Boolean(svc) &&
+                  authoring.targetChangeAction?.service === svc &&
+                  (authoring.targetChangeAction.action === "PAUSE" ||
+                    authoring.targetChangeAction.action === "STOP");
+                const isCpuTarget =
+                  Boolean(svc) &&
+                  authoring.targetChangeAction?.service === svc &&
+                  authoring.targetChangeAction.action === "THROTTLE_CPU";
+                const scaleTargetCount =
+                  svc && authoring.replicaService === svc ? Number(authoring.replicaCount) || 0 : 0;
+                const activeWireFocus = selectedAuthorWire ?? authoring.requiredTraceEdge ?? null;
+                const wireIsRequired = Boolean(
+                  activeWireFocus &&
+                    authoring.requiredTraceEdge &&
+                    authoring.requiredTraceEdge.from === activeWireFocus.from &&
+                    authoring.requiredTraceEdge.to === activeWireFocus.to,
+                );
+                const wireController = activeWireFocus
+                  ? data.topology?.connections.find(
+                      (c) => c.from === activeWireFocus.from && c.to === activeWireFocus.to,
+                    )?.controllerService
+                  : undefined;
+                const wireCutAtStart = Boolean(
+                  wireController && authoring.initialStoppedControllers.includes(wireController),
+                );
+                const liveSvcPhase = svc ? servicePhase(data, svc) : "running";
+                const isLiveDemoMode = !isPreviewMode && data.executionStatus === "RUNNING";
+
+                return (
+                  <section aria-label="Visual Studio Builder" className="space-y-3 text-xs">
+                    {/* Author-by-Doing Banner when lecturer has performed live Docker actions */}
+                    {liveDemoDerived && authoring.onApplyLiveDemoAsExercise && (
+                      <div
+                        className={`space-y-2 rounded-xl border p-2.5 ${
+                          isLight
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                            : "border-emerald-500/40 bg-emerald-950/40 text-emerald-100"
+                        }`}
+                      >
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                          {t("Author by Doing", "Tự sinh đề từ thao tác vừa thử")}
+                        </p>
+                        <p className="font-mono text-[11px] font-semibold">{liveDemoDerived.summary}</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={authoring.saving}
+                          onClick={() => authoring.onApplyLiveDemoAsExercise?.(liveDemoDerived)}
+                          className="h-7 w-full bg-emerald-600 text-[11.5px] font-semibold text-white hover:bg-emerald-500"
+                        >
+                          {authoring.saving
+                            ? t("Saving…", "Đang lưu…")
+                            : t("Use live actions as exercise", "Dùng thao tác vừa thử làm đề bài")}
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* 1. 4-Card Exercise Goal Picker (Zero Icons / Zero Jargon) */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {t("1. Exercise Goal", "1. Chọn dạng bài")}
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {AUTHOR_GOALS.map((goal) => {
+                          const isActive = activeGoalId === goal.id;
+                          return (
+                            <button
+                              key={goal.id}
+                              type="button"
+                              disabled={authoring.busy}
+                              onClick={() => authoring.onSelectGoal?.(goal.id, svc || undefined)}
+                              className={`rounded-lg border p-2 text-left transition-colors disabled:opacity-45 ${
+                                isActive
+                                  ? isLight
+                                    ? "border-emerald-500 bg-emerald-50/80 ring-1 ring-emerald-500/50"
+                                    : "border-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-400/50"
+                                  : isLight
+                                    ? "border-slate-200 bg-white hover:border-slate-400"
+                                    : "border-slate-800 bg-slate-950/70 hover:border-slate-600"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span
+                                  className={`text-[11.5px] font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
+                                >
+                                  {t(goal.titleEn, goal.titleVi)}
+                                </span>
+                                {isActive && (
+                                  <span className="font-mono text-[9.5px] font-bold text-emerald-700 dark:text-emerald-300">
+                                    ON
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-0.5 text-[10.5px] leading-snug text-muted-foreground">
+                                {t(goal.descEn, goal.descVi)}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 2. Draggable Chips onto 3D Blocks (or Click for Selected Block) */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {t("2. Drag onto 3D block (or click)", "2. Kéo thả lên khối 3D (hoặc bấm)")}
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {AUTHOR_DRAG_CHIPS.map((chip) => {
+                          const toneClass =
+                            chip.accent === "rose"
+                              ? isLight
+                                ? "border-rose-300 bg-rose-50/70 text-rose-800 hover:bg-rose-100"
+                                : "border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                              : chip.accent === "amber"
+                                ? isLight
+                                  ? "border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100"
+                                  : "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                                : chip.accent === "sky"
+                                  ? isLight
+                                    ? "border-sky-300 bg-sky-50/80 text-sky-900 hover:bg-sky-100"
+                                    : "border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                                  : isLight
+                                    ? "border-violet-300 bg-violet-50/80 text-violet-900 hover:bg-violet-100"
+                                    : "border-violet-500/40 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20";
+                          return (
+                            <button
+                              key={chip.id}
+                              type="button"
+                              draggable={!authoring.busy}
+                              disabled={authoring.busy || !svc}
+                              title={t(chip.hintEn, chip.hintVi)}
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData("application/x-mavis-studio-tool", chip.id);
+                                event.dataTransfer.setData("text/plain", chip.id);
+                                event.dataTransfer.effectAllowed = "copy";
+                              }}
+                              onClick={() => svc && authoring.onApplyBlockChip?.(chip.id, svc)}
+                              className={`cursor-grab rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${toneClass}`}
+                            >
+                              {t(chip.labelEn, chip.labelVi)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 3. Selected 3D Block Direct Controls */}
+                    <div
+                      className={`space-y-2 rounded-xl border p-2.5 ${
+                        isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/70"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`truncate font-mono text-xs font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
+                        >
+                          {svc || t("Click a 3D block", "Bấm chọn 1 khối 3D")}
+                        </span>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+                            startsDown
+                              ? isLight
+                                ? "border-rose-300 bg-rose-50 text-rose-700"
+                                : "border-rose-500/40 bg-rose-500/15 text-rose-300"
+                              : isImpactTarget
+                                ? isLight
+                                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                                  : "border-amber-500/40 bg-amber-500/15 text-amber-300"
+                                : isLight
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                  : "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                          }`}
+                        >
+                          {startsDown
+                            ? t("Starts Down", "Tắt sẵn")
+                            : isImpactTarget
+                              ? t("Impact Target", "Mục tiêu Impact")
+                              : t("Starts Up", "Chạy sẵn")}
+                        </span>
+                      </div>
+
+                      {svc && (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={authoring.busy}
+                            onClick={() => authoring.onToggleInitialStopped(svc, false)}
+                            className="h-7 text-[11px] font-semibold"
+                          >
+                            {startsDown
+                              ? t("Set Starts Up", "Bật lại ban đầu")
+                              : t("Set Starts Down", "Đặt sự cố ban đầu")}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={authoring.busy}
+                            onClick={() => authoring.onApplyBlockChip?.("author-impact-target", svc)}
+                            className={`h-7 text-[11px] font-semibold ${
+                              isImpactTarget
+                                ? isLight
+                                  ? "border-amber-400 bg-amber-50 text-amber-900"
+                                  : "border-amber-400/60 bg-amber-500/20 text-amber-200"
+                                : ""
+                            }`}
+                          >
+                            {isImpactTarget
+                              ? t("Clear Impact Target", "Bỏ mục tiêu Impact")
+                              : t("Set Impact Target", "Đặt mục tiêu Impact")}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={authoring.busy}
+                            onClick={() =>
+                              scaleTargetCount === 2
+                                ? authoring.onSetReplicaTarget?.(svc, 3)
+                                : authoring.onSetReplicaTarget?.(svc, 2)
+                            }
+                            className={`h-7 text-[11px] font-semibold ${
+                              canScale || scaleTargetCount >= 2
+                                ? isLight
+                                  ? "border-sky-400 bg-sky-50 text-sky-900"
+                                  : "border-sky-400/60 bg-sky-500/20 text-sky-200"
+                                : ""
+                            }`}
+                          >
+                            {scaleTargetCount >= 2
+                              ? `Scale >= ${scaleTargetCount}x (${scaleTargetCount === 2 ? "-> 3x" : "2x"})`
+                              : canScale
+                                ? t("Scalable · Set 2x", "Cho Scale · Đặt 2x")
+                                : t("Allow Scale 2x", "Cho phép Scale 2x")}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={authoring.busy}
+                            onClick={() => authoring.onApplyBlockChip?.("author-cpu-target", svc)}
+                            className={`h-7 text-[11px] font-semibold ${
+                              isCpuTarget
+                                ? isLight
+                                  ? "border-violet-400 bg-violet-50 text-violet-900"
+                                  : "border-violet-400/60 bg-violet-500/20 text-violet-200"
+                                : ""
+                            }`}
+                          >
+                            {isCpuTarget
+                              ? t("Clear CPU 25%", "Bỏ bóp CPU 25%")
+                              : t("Target CPU 25%", "Mục tiêu CPU 25%")}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Live Docker Test Controls while Running so Lecturer can Author-by-Doing */}
+                      {isLiveDemoMode && svc && (
+                        <div className="space-y-1.5 border-t border-border/60 pt-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                            {t("Live Test (Author by Doing)", "Thao tác thử trực tiếp trên Docker")}
+                          </p>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                void studio.send(
+                                  liveSvcPhase === "paused" ? "RESUME" : "PAUSE",
+                                  svc,
+                                )
+                              }
+                              className="h-7 text-[11px]"
+                            >
+                              {liveSvcPhase === "paused" ? "Resume" : "Pause"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                void dispatchCommand(
+                                  liveSvcPhase === "stopped" ? "START" : "STOP",
+                                  svc,
+                                )
+                              }
+                              className="h-7 text-[11px]"
+                            >
+                              {liveSvcPhase === "stopped" ? "Start" : "Stop"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy || !canScaleFor(svc)}
+                              onClick={() => void dispatchCommand("SCALE", svc, 2)}
+                              className="h-7 text-[11px]"
+                            >
+                              Scale 2x
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void studio.send("THROTTLE_CPU", svc, undefined, 25)}
+                              className="h-7 text-[11px]"
+                            >
+                              CPU 25%
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Static Reverse BFS Blast Radius Preview (Visible before Docker runs!) */}
+                    {staticBlastRadius.target && (
+                      <div
+                        className={`space-y-1 rounded-xl border p-2.5 text-[11px] ${
+                          isLight
+                            ? "border-amber-300 bg-amber-50/80 text-amber-950"
+                            : "border-amber-500/40 bg-amber-950/35 text-amber-100"
+                        }`}
+                      >
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                          {t("Static Reverse BFS Preview", "Dự báo lan truyền (Reverse BFS)")}
+                        </p>
+                        <p>
+                          {t("Target:", "Mục tiêu:")}{" "}
+                          <code className="font-mono font-semibold">{staticBlastRadius.target}</code>
+                        </p>
+                        <p>
+                          {t("Impacted upstream:", "Nhánh upstream bị ảnh hưởng:")}{" "}
+                          <code className="font-mono font-semibold">
+                            {staticBlastRadius.upstreamImpacted.length > 0
+                              ? staticBlastRadius.upstreamImpacted.join(", ")
+                              : t("None detected in static graph", "Chưa có nhánh gọi ngược")}
+                          </code>
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Direct 3D Wire Selection Card */}
+                    {activeWireFocus && (
+                      <div
+                        className={`space-y-1.5 rounded-xl border p-2.5 text-[11px] ${
+                          isLight
+                            ? "border-sky-300 bg-sky-50/75 text-sky-950"
+                            : "border-sky-500/40 bg-sky-950/35 text-sky-100"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <p className={`text-[12.5px] font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}>
-                            {title}
-                          </p>
-                          {isActive && (
-                            <span
-                              className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-bold ${
-                                isLight
-                                  ? "bg-emerald-100 text-emerald-800"
-                                  : "bg-emerald-500/20 text-emerald-300"
-                              }`}
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                            {t("Selected Wire", "Dây nối đang chọn")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAuthorWire(null)}
+                            className="text-[10.5px] underline opacity-75 hover:opacity-100"
+                          >
+                            {t("Dismiss", "Ẩn")}
+                          </button>
+                        </div>
+                        <p className="font-mono text-[11px] font-semibold">
+                          {activeWireFocus.from} -&gt; {activeWireFocus.to}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={authoring.busy}
+                            onClick={() =>
+                              authoring.onToggleWire?.(activeWireFocus.from, activeWireFocus.to)
+                            }
+                            className="h-7 flex-1 text-[11px]"
+                          >
+                            {wireIsRequired
+                              ? t("Clear required path", "Bỏ đánh dấu đường gọi")
+                              : t("Mark required path", "Đánh dấu đường gọi cần kiểm chứng")}
+                          </Button>
+                          {wireController && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={authoring.busy}
+                              onClick={() => authoring.onToggleInitialStopped(wireController, true)}
+                              className="h-7 text-[11px]"
                             >
-                              Active
-                            </span>
+                              {wireCutAtStart
+                                ? t("Reconnect", "Nối lại")
+                                : t("Cut at start", "Ngắt ban đầu")}
+                            </Button>
                           )}
                         </div>
-                        <p className={`mt-1 text-[11px] leading-relaxed ${isLight ? "text-slate-600" : "text-slate-400"}`}>
-                          {desc}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
+                      </div>
+                    )}
 
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setSetupPanel("mission")}
-                  className={`h-8 w-full text-xs font-semibold ${
-                    isLight
-                      ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
-                      : "border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
-                  }`}
-                >
-                  Next: Step 2 Mission &amp; Pass Target
-                  <ArrowRight aria-hidden="true" className="ml-1.5 size-3.5" />
-                </Button>
-              </section>
+                    {/* Compact Service Selector Chips */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {t("Services on 3D Stage", "Service trên sân khấu 3D")} ({blocks.length})
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {blocks.map((block) => {
+                          const down = authoring.initialStoppedServices.includes(block.service);
+                          const targeted = authoring.targetChangeAction?.service === block.service;
+                          const active = block.service === svc;
+                          return (
+                            <button
+                              key={block.service}
+                              type="button"
+                              onClick={() => {
+                                studio.setService(block.service);
+                                setSelectedAuthorWire(null);
+                              }}
+                              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium transition ${
+                                active
+                                  ? isLight
+                                    ? "border-primary bg-primary/10 text-primary font-semibold"
+                                    : "border-sky-400 bg-sky-500/20 text-sky-100 font-semibold"
+                                  : isLight
+                                    ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                    : "border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-600"
+                              }`}
+                            >
+                              <span
+                                className={`size-1.5 rounded-full ${
+                                  down ? "bg-rose-500" : targeted ? "bg-amber-500" : "bg-emerald-500"
+                                }`}
+                                aria-hidden="true"
+                              />
+                              {block.service}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSetupPanel("mission")}
+                      className="h-8 w-full text-xs font-semibold"
+                    >
+                      {t("Next: Mission & Endpoint", "Tiếp: Đề bài & Endpoint")}
+                    </Button>
+                  </section>
+                );
+              })()
             ) : setupPanel === "drills" && !authoring && data.executionStatus === "RUNNING" ? (
               <section aria-label="Quick Live Drills setup" className="space-y-3 text-xs">
                 <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
@@ -5183,107 +5839,6 @@ export function LiveStudioWorkbench({
                   );
                 })()}
               </section>
-            ) : isLight && authoring ? (
-              (() => {
-                const svc = selected || blocks[0]?.service || "";
-                const startsDown = Boolean(svc && authoring.initialStoppedServices.includes(svc));
-                const canScale = Boolean(svc && authoring.scalableServices.includes(svc));
-                return (
-                  <section aria-label="Block authoring setup" className="space-y-3 text-xs text-slate-900">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-mono text-sm font-bold text-slate-900">
-                          {svc || t("Select a service", "Chọn một service")}
-                        </span>
-                        <span
-                          className={`rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold ${
-                            startsDown
-                              ? "border-rose-300 bg-rose-50 text-rose-700"
-                              : "border-emerald-300 bg-emerald-50 text-emerald-700"
-                          }`}
-                        >
-                          {startsDown ? "Starts Down" : "Starts Up"}
-                        </span>
-                      </div>
-                      {svc && (
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={authoring.busy}
-                            onClick={() => authoring.onToggleInitialStopped(svc, false)}
-                            className={`h-8 text-xs font-semibold ${
-                              startsDown
-                                ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                                : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                            }`}
-                          >
-                            {startsDown ? "Set Starts Up" : "Set Starts Down"}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={authoring.busy}
-                            onClick={() => authoring.onToggleScalable(svc)}
-                            className={`h-8 text-xs font-semibold ${
-                              canScale
-                                ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
-                                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                            }`}
-                          >
-                            {canScale ? "Scalable ✓" : "Allow Scale"}
-                          </Button>
-                        </div>
-                      )}
-                      {svc && authoring.onRemoveBlock && blocks.length > 1 && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={authoring.busy}
-                          onClick={() => authoring.onRemoveBlock?.(svc)}
-                          className="mt-2 h-8 w-full border-slate-200 bg-white text-xs text-rose-700 hover:border-rose-300 hover:bg-rose-50"
-                        >
-                          <Trash2 className="mr-1.5 size-3.5" aria-hidden="true" />
-                          Remove from Canvas
-                        </Button>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                        Canvas Services ({blocks.length})
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {blocks.map((block) => {
-                          const down = authoring.initialStoppedServices.includes(block.service);
-                          const active = block.service === svc;
-                          return (
-                            <button
-                              key={block.service}
-                              type="button"
-                              onClick={() => studio.setService(block.service)}
-                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[11.5px] font-semibold transition ${
-                                active
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                              }`}
-                            >
-                              <span
-                                className={`size-1.5 rounded-full ${down ? "bg-rose-500" : "bg-emerald-500"}`}
-                                aria-hidden="true"
-                              />
-                              {block.service}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </section>
-                );
-              })()
             ) : (
               <div className="space-y-3">
                 <LiveSandboxParity
@@ -5298,7 +5853,7 @@ export function LiveStudioWorkbench({
                   sections={["inspector", "hardware", "resilience", "load"]}
                   compact
                   label="Live inspector"
-                  authoring={authoring}
+                  authoring={authoringWithBlast}
                 />
                 {!isPreviewMode && selected && data.executionStatus === "RUNNING" && (() => {
                   const darkPhase = servicePhase(data, selected);
