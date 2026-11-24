@@ -46,6 +46,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
 import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
@@ -5643,51 +5650,96 @@ export function LiveStudioWorkbench({
                           </button>
                         )}
                       </div>
-                      <select
-                        id="studio-stage-service-select"
-                        aria-label={t("Select service on 3D stage", "Chọn service trên sân khấu 3D")}
-                        data-testid="studio-stage-service-select"
-                        value={canvasSelected}
-                        onChange={(event) => {
-                          studio.setService(event.target.value);
+                      <Select
+                        value={canvasSelected || "__none__"}
+                        onValueChange={(nextVal) => {
+                          studio.setService(nextVal === "__none__" ? "" : nextVal);
                           setSelectedAuthorWire(null);
                         }}
-                        style={{ fontSize: 13, lineHeight: "1.25" }}
-                        className={`h-9 w-full truncate px-2.5 font-sans font-medium focus-visible:outline-none focus-visible:ring-1 ${styleCfg.inputClass}`}
                       >
-                        <option value="">{t("Select service…", "Chọn service…")}</option>
-                        {blocks.map((block) => {
-                          const tags: string[] = [];
-                          if (authoring.initialStoppedServices.includes(block.service)) {
-                            tags.push(t("Down", "Tắt sẵn"));
-                          }
-                          if (
-                            authoring.targetChangeAction?.service === block.service &&
-                            (authoring.targetChangeAction.action === "PAUSE" ||
-                              authoring.targetChangeAction.action === "STOP")
-                          ) {
-                            tags.push(t("Impact", "Impact"));
-                          } else if (
-                            authoring.targetChangeAction?.service === block.service &&
-                            authoring.targetChangeAction.action === "THROTTLE_CPU"
-                          ) {
-                            tags.push(`CPU ${authoring.targetChangeAction.cpuPercent ?? 25}%`);
-                          }
-                          if (
-                            authoring.replicaService === block.service &&
-                            Number(authoring.replicaCount) >= 2
-                          ) {
-                            tags.push(`Scale ${authoring.replicaCount}x`);
-                          }
-                          return (
-                            <option key={block.service} value={block.service}>
-                              {tags.length > 0
-                                ? `${block.service} (${tags.join(", ")})`
-                                : block.service}
-                            </option>
-                          );
-                        })}
-                      </select>
+                        <SelectTrigger
+                          id="studio-stage-service-select"
+                          aria-label={t("Select service on 3D stage", "Chọn service trên sân khấu 3D")}
+                          data-testid="studio-stage-service-select"
+                          style={{ fontSize: 13, lineHeight: "1.25" }}
+                          className={`h-9 w-full px-2.5 py-0 font-sans font-medium shadow-none focus:ring-1 focus:ring-offset-0 ${styleCfg.inputClass}`}
+                        >
+                          <SelectValue placeholder={t("Select service…", "Chọn service…")} />
+                        </SelectTrigger>
+                        <SelectContent
+                          align="start"
+                          className={`max-h-64 p-1 ${themeRadius} ${
+                            studioStyle === "pop"
+                              ? "border-2 border-slate-900 bg-white text-slate-950 shadow-[3px_3px_0_#0F172A]"
+                              : studioStyle === "blueprint"
+                                ? "border border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-md"
+                                : isLight
+                                  ? "border border-sky-200/90 bg-white text-slate-900 shadow-lg"
+                                  : "border border-slate-700 bg-[#0C1324] text-slate-100 shadow-xl"
+                          }`}
+                        >
+                          <SelectItem
+                            value="__none__"
+                            style={{ fontSize: 13 }}
+                            className={`min-h-8 py-1.5 font-sans ${themeRadius} ${
+                              isLight
+                                ? "text-slate-500 focus:bg-sky-50 focus:text-slate-900"
+                                : "text-slate-400 focus:bg-slate-800 focus:text-slate-100"
+                            }`}
+                          >
+                            {t("Select service…", "Chọn service…")}
+                          </SelectItem>
+                          {blocks.map((block) => {
+                            const tags: string[] = [];
+                            if (authoring.initialStoppedServices.includes(block.service)) {
+                              tags.push(t("Down", "Tắt sẵn"));
+                            }
+                            if (
+                              authoring.targetChangeAction?.service === block.service &&
+                              (authoring.targetChangeAction.action === "PAUSE" ||
+                                authoring.targetChangeAction.action === "STOP")
+                            ) {
+                              tags.push(t("Impact", "Impact"));
+                            } else if (
+                              authoring.targetChangeAction?.service === block.service &&
+                              authoring.targetChangeAction.action === "THROTTLE_CPU"
+                            ) {
+                              tags.push(`CPU ${authoring.targetChangeAction.cpuPercent ?? 25}%`);
+                            }
+                            if (
+                              authoring.replicaService === block.service &&
+                              Number(authoring.replicaCount) >= 2
+                            ) {
+                              tags.push(`Scale ${authoring.replicaCount}x`);
+                            }
+                            return (
+                              <SelectItem
+                                key={block.service}
+                                value={block.service}
+                                style={{ fontSize: 13 }}
+                                className={`min-h-8 py-1.5 font-sans ${themeRadius} ${
+                                  studioStyle === "pop"
+                                    ? "focus:bg-[#DBEAFE] focus:text-slate-950"
+                                    : studioStyle === "blueprint"
+                                      ? "focus:bg-[#E6F0FF] focus:text-blue-950"
+                                      : isLight
+                                        ? "focus:bg-sky-50 focus:text-sky-950"
+                                        : "focus:bg-sky-500/20 focus:text-sky-100"
+                                }`}
+                              >
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="font-mono font-medium">{block.service}</span>
+                                  {tags.length > 0 && (
+                                    <span style={{ fontSize: 11.5 }} className={themeSubtleText}>
+                                      ({tags.join(", ")})
+                                    </span>
+                                  )}
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     {/* 1. 4-Card Exercise Goal Picker (Theme-Synchronized) */}

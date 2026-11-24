@@ -1495,10 +1495,10 @@ test("Studio Live Author UX & Performance: goal-specific rules, scalable service
   assert.match(workbenchSrc, /activeGoalId === "recovery"/);
   assert.match(workbenchSrc, /activeGoalId === "cpu"/);
 
-  // 2. Service selector sits at top above Exercise Goal (separate from Goal #2 details) as a crisp single-line <select>
+  // 2. Service selector sits at top above Exercise Goal (separate from Goal #2 details) using house Radix Select
   assert.match(
     workbenchSrc,
-    /<select[\s\S]{0,220}data-testid="studio-stage-service-select"[\s\S]*1\. Exercise Goal[\s\S]*data-testid="goal-specific-setup"/,
+    /<SelectTrigger[\s\S]{0,240}data-testid="studio-stage-service-select"[\s\S]*1\. Exercise Goal[\s\S]*data-testid="goal-specific-setup"/,
   );
 
   // 3. Clicking an already-selected service toggles deselection
