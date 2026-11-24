@@ -604,11 +604,12 @@ export function buildContextDiagramDrawioXml(
   const internalNodeIds = baseContext.internalNodeIds;
   // Context assertions come from the reviewed model. AI wording cannot replace them.
   const resolvedSystemName = systemName?.trim() || "System under analysis";
-  const systemDescription = resolveSystemDescription(
-    model,
-    resolvedSystemName,
-    baseContext.systemDescription,
-  );
+  const systemDescription =
+    resolveSystemDescription(
+      model,
+      resolvedSystemName,
+      baseContext.systemDescription,
+    ) ?? baseContext.systemDescription;
   const persons = baseContext.persons;
   const externals = baseContext.externals;
   const basePalette = palette(theme);

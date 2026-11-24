@@ -26,6 +26,7 @@ import com.mavis.common.repository.SourceSnapshotRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
+import com.mavis.platform.workspace.curriculum.CsharpCourseraCatalog;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
