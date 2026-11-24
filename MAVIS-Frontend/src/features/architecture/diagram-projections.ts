@@ -549,10 +549,17 @@ export function buildContextDiagramDrawioXml(
   const baseContext = deriveC4ContextModel(model);
   const internalNodeIds = baseContext.internalNodeIds;
   // Context assertions come from the reviewed model. AI wording cannot replace them.
-  const systemDescription = baseContext.systemDescription;
+  const customSystemDescription = model.elements.find(
+    (el) => typeof el.properties?.["systemDescription"] === "string" && el.properties["systemDescription"].trim(),
+  )?.properties?.["systemDescription"] as string | undefined;
+  const resolvedSystemName = systemName?.trim() || "System under analysis";
+  const systemDescription =
+    customSystemDescription?.trim() ||
+    (resolvedSystemName === "Mộc Hương Shop Platform"
+      ? "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices"
+      : baseContext.systemDescription);
   const persons = baseContext.persons;
   const externals = baseContext.externals;
-  const resolvedSystemName = systemName?.trim() || "System under analysis";
   const basePalette = palette(theme);
   const p =
     theme === "clean"

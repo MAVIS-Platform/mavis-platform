@@ -43,6 +43,9 @@ function formatC4NodeBadge(kind?: string): string {
       return "[Component]";
     case "CLASS_INTERFACE":
       return "[Class/Interface]";
+    case "PERSON":
+    case "ACTOR":
+      return "[Person]";
     case "EXTERNAL_SYSTEM":
       return "[External]";
     default:

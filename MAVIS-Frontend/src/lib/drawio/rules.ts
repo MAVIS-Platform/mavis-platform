@@ -243,9 +243,11 @@ export function nodeText(node: DiagramNode) {
                       ? "Database"
                       : type === "QUEUE_BROKER"
                         ? "Queue / Broker"
-                        : type === "EXTERNAL_SYSTEM"
-                          ? "External system"
-                          : "Unknown element");
+                        : type === "PERSON" || type === "ACTOR"
+                          ? "Person"
+                          : type === "EXTERNAL_SYSTEM"
+                            ? "External system"
+                            : "Unknown element");
   const technology =
     node.languageStack === "JAVA_SPRING"
       ? "Java / Spring"
