@@ -649,9 +649,11 @@ export function LabWorkspace() {
       (session.data?.user?.role === "student" || isLecturer),
     ),
   );
+  const hasNoPublishedLabQuiz = studentContext.isSuccess && studentContext.data?.quiz == null;
   const runtimeReady =
     isTheoryOnlyLab ||
     isLecturer ||
+    hasNoPublishedLabQuiz ||
     (!quiz.isError && quiz.data?.runtimeUnlocked === true) ||
     studentContext.data?.quiz?.runtimeUnlocked === true;
   const requiresRuntime =

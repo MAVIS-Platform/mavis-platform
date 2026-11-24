@@ -883,10 +883,10 @@ export function CourseEnrollment({
         headers: { "Idempotency-Key": id },
         body: JSON.stringify({ code: code.trim() }),
       }),
-    onSuccess: ({ workspaceId }) => {
+    onSuccess: async ({ workspaceId }) => {
       setCode("");
       setRequestId(undefined);
-      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
+      await cache.refetchQueries({ queryKey: ["api", "workspaces"] });
       router.push(`/${destination}?workspace=${encodeURIComponent(workspaceId)}`);
     },
   });

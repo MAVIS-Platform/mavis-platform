@@ -20,8 +20,28 @@ import java.util.UUID;
 public class CourseLabPolicy {
     private final JdbcTemplate jdbc;
 
+    public boolean hasPublishedQuiz(Assignment lab) {
+        if (lab == null || lab.getId() == null) return false;
+        UUID modelId = lab.getReferenceModel() == null ? null : lab.getReferenceModel().getId();
+        if (modelId == null) {
+            return Boolean.TRUE.equals(jdbc.queryForObject("""
+                    SELECT EXISTS (SELECT 1 FROM course_quizzes
+                        WHERE assignment_id = ? AND reference_model_id IS NULL)
+                    """, Boolean.class, lab.getId()));
+        }
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM course_quizzes
+                    WHERE assignment_id = ? AND reference_model_id = ?)
+                """, Boolean.class, lab.getId(), modelId));
+    }
+
+    /** True when the Lab explicitly skips Quiz or has no published per-Lab Quiz row (e.g. unified Course Builder standalone Studio Labs). */
+    public boolean isQuizNotRequired(Assignment lab) {
+        return canSkipQuiz(lab) || !hasPublishedQuiz(lab);
+    }
+
     public boolean hasPassedCurrentQuiz(Assignment lab, UUID studentId) {
-        return currentQuizPass(lab, studentId).isPresent();
+        return currentQuizPass(lab, studentId).isPresent() || !hasPublishedQuiz(lab);
     }
 
     public static boolean canSkipQuiz(Assignment lab) {

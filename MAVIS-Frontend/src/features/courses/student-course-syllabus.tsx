@@ -28,7 +28,7 @@ import {
   toggleCompletedTheoryId,
 } from "@/lib/coursera-ui-helpers";
 import { useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
-import { ChapterQuizRunner } from "./chapter-quiz-runner";
+import { ChapterQuizRunner, parseInlineQuizQuestions } from "./chapter-quiz-runner";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
 import {
   buildCourseraModulesWithLabLinks,
@@ -154,10 +154,14 @@ export function StudentCourseSyllabus({
             ...(typeof item.content?.["curriculumCode"] === "string"
               ? { curriculumCode: String(item.content["curriculumCode"]) }
               : {}),
-            quizQuestions:
-              item.type === "QUIZ" && isJavaCourseraWorkspace && !item.assignmentId
+            quizQuestions: (() => {
+              if (item.type !== "QUIZ") return undefined;
+              const inline = parseInlineQuizQuestions(item.content);
+              if (inline.length > 0) return inline;
+              return isJavaCourseraWorkspace && !item.assignmentId
                 ? matchQuizQuestionsForItem(mod.position, item.title)
-                : undefined,
+                : undefined;
+            })(),
           }));
         const hasQuizItem = mappedItems.some((item) => item.type === "QUIZ");
         const labItem = mappedItems.find(

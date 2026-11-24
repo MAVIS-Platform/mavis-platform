@@ -603,31 +603,27 @@ export function WorkspaceMembers() {
         <CourseWorkspaceShell workspace={workspace} active={activeTab}>
           {activeTab === "settings" && canManage ? (
             <div className="space-y-5">
-              {canEdit && (
-                <div id="class-passkey">
-                  <CoursePasskey workspaceId={workspace.id} />
+              <div id="class-passkey">
+                <CoursePasskey workspaceId={workspace.id} />
+              </div>
+              <section className="rounded-2xl border bg-card p-5 shadow-xs">
+                <div className="space-y-0.5">
+                  <h3 className="text-base font-semibold">
+                    {t("Class settings", "Cài đặt chung của lớp")}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Update class name, description, or archive this class when the term ends.",
+                      "Cập nhật tên lớp, mô tả hoặc lưu trữ lớp học khi kết thúc học kỳ.",
+                    )}
+                  </p>
                 </div>
-              )}
-              {canEdit && (
-                <section className="rounded-2xl border bg-card p-5 shadow-xs">
-                  <div className="space-y-0.5">
-                    <h3 className="text-base font-semibold">
-                      {t("Class settings", "Cài đặt chung của lớp")}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {t(
-                        "Update class name, description, or archive this class when the term ends.",
-                        "Cập nhật tên lớp, mô tả hoặc lưu trữ lớp học khi kết thúc học kỳ.",
-                      )}
-                    </p>
-                  </div>
-                  <WorkspaceControls
-                    key={`${workspace.id}-settings`}
-                    workspace={workspace}
-                    mode="overview"
-                  />
-                </section>
-              )}
+                <WorkspaceControls
+                  key={`${workspace.id}-settings`}
+                  workspace={workspace}
+                  mode="overview"
+                />
+              </section>
             </div>
           ) : (
             <div className="space-y-4">

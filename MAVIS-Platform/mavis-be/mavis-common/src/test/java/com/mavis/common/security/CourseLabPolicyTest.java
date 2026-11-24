@@ -59,4 +59,33 @@ class CourseLabPolicyTest {
         assertTrue(sqlCaptor.getValue().contains("lab_prerequisites"));
         assertTrue(sqlCaptor.getValue().contains("preceding.lab_order < ?"));
     }
+
+    @Test
+    void quizGateUnlocksWhenNoPerLabQuizPublishedButEnforcesPassWhenPublished() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        CourseLabPolicy policy = new CourseLabPolicy(jdbc);
+
+        UUID labId = UUID.randomUUID();
+        UUID modelId = UUID.randomUUID();
+        UUID studentId = UUID.randomUUID();
+        Assignment lab = Assignment.builder()
+                .id(labId)
+                .requireRuntimeTrace(true)
+                .referenceModel(com.mavis.common.entity.ModelVersion.builder().id(modelId).build())
+                .build();
+
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), eq(labId), eq(studentId), eq(modelId)))
+                .thenReturn(java.util.List.of());
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(labId), eq(modelId)))
+                .thenReturn(false);
+
+        assertTrue(policy.isQuizNotRequired(lab));
+        assertTrue(policy.hasPassedCurrentQuiz(lab, studentId));
+
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(labId), eq(modelId)))
+                .thenReturn(true);
+
+        assertFalse(policy.isQuizNotRequired(lab));
+        assertFalse(policy.hasPassedCurrentQuiz(lab, studentId));
+    }
 }

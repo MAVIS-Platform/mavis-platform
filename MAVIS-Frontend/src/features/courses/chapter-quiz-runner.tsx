@@ -56,6 +56,37 @@ function makeAttemptId() {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+export function parseInlineQuizQuestions(
+  content: Record<string, unknown> | null | undefined,
+): QuizQuestionData[] {
+  const raw = content?.["questions"];
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry, idx): QuizQuestionData | null => {
+      if (!entry || typeof entry !== "object") return null;
+      const rec = entry as Record<string, unknown>;
+      const prompt = typeof rec["prompt"] === "string" ? rec["prompt"].trim() : "";
+      const options = Array.isArray(rec["options"])
+        ? rec["options"].map((opt) => String(opt ?? "").trim()).filter(Boolean)
+        : [];
+      const correctOption = typeof rec["correctOption"] === "number" ? rec["correctOption"] : -1;
+      if (!prompt || options.length < 2 || correctOption < 0 || correctOption >= options.length) {
+        return null;
+      }
+      return {
+        id:
+          typeof rec["id"] === "string" && rec["id"].trim()
+            ? rec["id"].trim()
+            : `inline-q-${idx + 1}`,
+        prompt,
+        options,
+        correctOption,
+        explanation: typeof rec["explanation"] === "string" ? rec["explanation"] : "",
+      };
+    })
+    .filter((q): q is QuizQuestionData => q !== null);
+}
+
 /** The curriculum fixture has no quiz-attempt API. This explicit device-local store
  * preserves attempts scoped per user so shared lab machines never leak another student's pass state. */
 export function attemptStorageKey(

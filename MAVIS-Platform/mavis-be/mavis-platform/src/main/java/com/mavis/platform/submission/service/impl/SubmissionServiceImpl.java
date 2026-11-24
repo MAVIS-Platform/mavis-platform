@@ -162,21 +162,28 @@ public class SubmissionServiceImpl implements SubmissionService {
         if (studentLab) {
             var lockedLab = assignmentRepository.findLockedById(assignment.getId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
-            var pass = courseLabs.currentQuizPass(lockedLab, currentUserId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN, "Pass the current Lab Quiz before submitting"));
             var referenceModel = lockedLab.getReferenceModel();
             var referenceSnapshot = referenceModel == null ? null : referenceModel.getSourceSnapshot();
             if (referenceSnapshot == null || !referenceSnapshot.getId().equals(project.getReferenceSnapshotId())
                     || !Objects.equals(referenceSnapshot.getArtifactHash(), sourceSnapshot.getArtifactHash())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Submission source does not match the current Lab reference");
             }
-            courseQuizEvidence = json.createObjectNode().put("status", "PASSED")
-                    .put("attemptId", pass.attemptId().toString()).put("quizVersion", pass.quizVersion())
-                    .put("correctCount", pass.correctCount()).put("questionCount", pass.questionCount())
-                    .put("passPercent", pass.passPercent()).put("submittedAt", pass.submittedAt().toString())
-                    .put("referenceModelId", referenceModel.getId().toString())
-                    .put("referenceSnapshotId", referenceSnapshot.getId().toString())
-                    .put("artifactHash", referenceSnapshot.getArtifactHash()).put("commitSha", referenceSnapshot.getCommitSha());
+            if (courseLabs.isQuizNotRequired(lockedLab)) {
+                courseQuizEvidence = json.createObjectNode().put("status", "NOT_REQUIRED")
+                        .put("referenceModelId", referenceModel.getId().toString())
+                        .put("referenceSnapshotId", referenceSnapshot.getId().toString())
+                        .put("artifactHash", referenceSnapshot.getArtifactHash()).put("commitSha", referenceSnapshot.getCommitSha());
+            } else {
+                var pass = courseLabs.currentQuizPass(lockedLab, currentUserId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN, "Pass the current Lab Quiz before submitting"));
+                courseQuizEvidence = json.createObjectNode().put("status", "PASSED")
+                        .put("attemptId", pass.attemptId().toString()).put("quizVersion", pass.quizVersion())
+                        .put("correctCount", pass.correctCount()).put("questionCount", pass.questionCount())
+                        .put("passPercent", pass.passPercent()).put("submittedAt", pass.submittedAt().toString())
+                        .put("referenceModelId", referenceModel.getId().toString())
+                        .put("referenceSnapshotId", referenceSnapshot.getId().toString())
+                        .put("artifactHash", referenceSnapshot.getArtifactHash()).put("commitSha", referenceSnapshot.getCommitSha());
+            }
         }
 
         // 5. Kiểm tra tính toàn vẹn của ModelVersion (không cho phép nộp bản nháp PARTIAL chưa được xác nhận)
@@ -326,7 +333,8 @@ public class SubmissionServiceImpl implements SubmissionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Studio Lab phải được publish trước khi nộp");
         }
 
-        boolean skipQuiz = com.mavis.common.security.CourseLabPolicy.canSkipQuiz(assignment);
+        boolean skipQuiz = com.mavis.common.security.CourseLabPolicy.canSkipQuiz(assignment)
+                || courseLabs.isQuizNotRequired(assignment);
         JsonNode quizEvidence = null;
         if (!skipQuiz && assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
                 && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {

@@ -31,7 +31,7 @@ import { useApiQuery, useSession } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
-import { ChapterQuizRunner } from "./chapter-quiz-runner";
+import { ChapterQuizRunner, parseInlineQuizQuestions } from "./chapter-quiz-runner";
 import {
   JAVA_COURSERA_COURSE_TITLE,
   buildCourseraModulesWithLabLinks,
@@ -507,7 +507,7 @@ function CourseOutlineBody({
                   const isLab = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(effectiveType);
                   const status = isLab
                     ? statusForLab(lab?.state, canManage)
-                    : item.type === "QUIZ"
+                    : item.type === "QUIZ" && item.assignmentId
                       ? statusForLab(lab?.state, canManage)
                       : null;
                   const StatusIcon = status?.icon;
@@ -519,12 +519,14 @@ function CourseOutlineBody({
                     : canManage
                       ? `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`
                       : null;
+                  const inlineQuizQuestions =
+                    item.type === "QUIZ" ? parseInlineQuizQuestions(item.content) : [];
                   const quizQuestions =
                     item.type === "QUIZ"
                       ? (item.quizQuestions && item.quizQuestions.length > 0
                           ? item.quizQuestions
-                          : Array.isArray(item.content?.["questions"])
-                            ? (item.content["questions"] as QuizQuestionData[])
+                          : inlineQuizQuestions.length > 0
+                            ? inlineQuizQuestions
                           : !item.assignmentId && isJavaCourseraWorkspace && !isCsharpCourse
                             ? matchQuizQuestionsForItem(module.position, item.title)
                             : [])

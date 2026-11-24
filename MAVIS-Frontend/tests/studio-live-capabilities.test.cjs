@@ -1108,3 +1108,60 @@ test("BFF allows workspace quiz-assets CRUD, references link directly to /snapsh
   );
   assert.match(archRoute, /isStudent && project\.data\?\.workspaceId/);
 });
+
+test("Inline module quiz normalizes questions/IDs, Active class Settings shows Passkey, and Lab runtime unlocks when no per-Lab quiz exists", () => {
+  const originalLoad = Module._load;
+  let parseInlineQuizQuestions;
+  try {
+    Module._load = function (id, ...args) {
+      if (id === "lucide-react" || id.endsWith("button") || id.endsWith("locale")) return {};
+      return originalLoad.call(this, id, ...args);
+    };
+    ({ parseInlineQuizQuestions } = require("../src/features/courses/chapter-quiz-runner.tsx"));
+  } finally {
+    Module._load = originalLoad;
+  }
+
+  const parsed = parseInlineQuizQuestions({
+    questions: [
+      { prompt: "Q1?", options: ["A", "B"], correctOption: 1, explanation: "Because B" },
+      { id: "custom-2", prompt: "Q2?", options: ["X", "Y"], correctOption: 0 },
+      { prompt: "", options: ["A", "B"], correctOption: 0 },
+      { prompt: "Bad index", options: ["A", "B"], correctOption: 5 },
+    ],
+  });
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0].id, "inline-q-1");
+  assert.equal(parsed[1].id, "custom-2");
+  assert.equal(parsed[0].explanation, "Because B");
+
+  const outlineSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/course-outline.tsx"),
+    "utf8",
+  );
+  assert.match(outlineSrc, /item\.type === "QUIZ" && item\.assignmentId/);
+
+  const wsScreensSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/workspaces/screens.tsx"),
+    "utf8",
+  );
+  const settingsBlock = wsScreensSrc.slice(
+    wsScreensSrc.indexOf('activeTab === "settings" && canManage'),
+    wsScreensSrc.indexOf('activeTab === "settings" && canManage') + 900,
+  );
+  assert.ok(settingsBlock.includes("<CoursePasskey workspaceId={workspace.id} />"));
+  assert.ok(settingsBlock.includes("<WorkspaceControls"));
+  assert.ok(!settingsBlock.includes("{canEdit &&"), "Active class Settings tab must stay visible without canEdit guard");
+
+  const courseScreensSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/screens.tsx"),
+    "utf8",
+  );
+  assert.match(courseScreensSrc, /hasNoPublishedLabQuiz\s*=\s*studentContext\.isSuccess && studentContext\.data\?\.quiz == null/);
+
+  const accessSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/workspaces/course-access.tsx"),
+    "utf8",
+  );
+  assert.match(accessSrc, /await cache\.refetchQueries\(\{ queryKey: \["api", "workspaces"\] \}\)/);
+});
