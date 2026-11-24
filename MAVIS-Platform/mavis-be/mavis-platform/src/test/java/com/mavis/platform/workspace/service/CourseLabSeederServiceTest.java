@@ -1103,8 +1103,138 @@ class CourseLabSeederServiceTest {
                         .doesNotContain("payment-service", "order-service"));
         assertThat(newElements).extracting(ModelElement::getName).contains(
                 "ApiGateway", "FruitCatalog.API", "FruitBasket.API", "FruitOrdering.API",
-                "Admin", "Staff", "Customer",
+                "Admin", "Staff", "Customer", "Observability Platform (OpenTelemetry)",
                 "OrdersController", "OrderSagaService", "OutboxRelayBackgroundService",
                 "OrderCreatedConsumer", "YarpReverseProxyPipeline");
+        assertThat(newElements).extracting(ModelElement::getName)
+                .noneMatch(name -> name != null && (name.toLowerCase().contains("mavis")
+                        || name.toLowerCase().contains("quản trị hệ thống")));
+    }
+
+    @Test
+    void triggersImmutableRefreshWhenExistingJavaOrCsharpModelHasMavisObservabilityName() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        User lecturer = User.builder().id(UUID.randomUUID()).email("gv.csharp@mavis.edu.vn").build();
+        Workspace workspace = Workspace.builder()
+                .id(workspaceId).code("CSHARP-MS-2026").name("C# .NET 8").status("ACTIVE").courseMode(true).build();
+        Project refProject = Project.builder()
+                .id(UUID.randomUUID())
+                .workspace(workspace)
+                .owner(lecturer)
+                .name(FruitShopReferenceArchitectureBuilder.SYSTEM_NAME)
+                .build();
+        SourceSnapshot r1Snapshot = SourceSnapshot.builder().id(UUID.randomUUID()).project(refProject).build();
+        ModelVersion r1Model = ModelVersion.builder()
+                .id(UUID.randomUUID()).project(refProject).sourceSnapshot(r1Snapshot)
+                .revision(1).isLatestValid(true).createdBy(lecturer).build();
+
+        List<ModelElement> oldElements = List.of(
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("ApiGateway").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("FruitCatalog.API").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("FruitBasket.API").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("FruitOrdering.API").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("Admin").elementType("PERSON")
+                        .properties(new ObjectMapper().createObjectNode().put("contextFactOrigin", "USER_CONFIRMED")).build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("Staff").elementType("PERSON")
+                        .properties(new ObjectMapper().createObjectNode().put("contextFactOrigin", "USER_CONFIRMED")).build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("Customer").elementType("PERSON")
+                        .properties(new ObjectMapper().createObjectNode().put("contextFactOrigin", "USER_CONFIRMED")).build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("OpenTelemetry & MAVIS Observability").elementType("EXTERNAL_SYSTEM").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("OrdersController").elementType("COMPONENT").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("OrderSagaService").elementType("COMPONENT").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("OutboxRelayBackgroundService").elementType("COMPONENT").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("OrderCreatedConsumer").elementType("COMPONENT").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("YarpReverseProxyPipeline").elementType("COMPONENT").build());
+
+        var csModules = CsharpCourseraCatalog.modules();
+        List<Assignment> existingLabs = new ArrayList<>();
+        for (int i = 0; i < csModules.size(); i++) {
+            existingLabs.add(Assignment.builder()
+                    .id(UUID.randomUUID())
+                    .workspace(workspace)
+                    .createdBy(lecturer)
+                    .title(csModules.get(i).labTitle())
+                    .description(csModules.get(i).labDescription())
+                    .labOrder(i + 1)
+                    .requireRuntimeTrace(false)
+                    .referenceModel(r1Model)
+                    .build());
+        }
+
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+        SourceSnapshotRepository snapshots = mock(SourceSnapshotRepository.class);
+        ModelVersionRepository models = mock(ModelVersionRepository.class);
+        ModelElementRepository elements = mock(ModelElementRepository.class);
+        ModelRelationshipRepository relationships = mock(ModelRelationshipRepository.class);
+        DiagramVersionRepository diagrams = mock(DiagramVersionRepository.class);
+        EvaluationRunRepository evaluations = mock(EvaluationRunRepository.class);
+        EvidenceRepository evidences = mock(EvidenceRepository.class);
+        CourseQuizService quizzes = mock(CourseQuizService.class);
+        CourseAccessService courses = mock(CourseAccessService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ObjectMapper json = new ObjectMapper();
+        CourseCurriculum curriculum = new CourseCurriculum(json);
+
+        when(access.requireCurrentActiveUser()).thenReturn(lecturer);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)).thenReturn(existingLabs);
+        when(assignments.saveAndFlush(any(Assignment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(elements.findByModelVersionId(r1Model.getId())).thenReturn(oldElements);
+        when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(refProject.getId()))
+                .thenReturn(Optional.of(r1Model));
+        when(models.findMaxRevisionByProjectId(refProject.getId())).thenReturn(1);
+        when(projects.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(snapshots.save(any())).thenAnswer(inv -> {
+            SourceSnapshot s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(UUID.randomUUID());
+            return s;
+        });
+        AtomicReference<ModelVersion> savedR2 = new AtomicReference<>();
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            if (m.getId() == null) m.setId(UUID.randomUUID());
+            savedR2.set(m);
+            return m;
+        });
+        List<ModelElement> refreshedEls = new ArrayList<>();
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement e = inv.getArgument(0);
+            if (e.getId() == null) e.setId(UUID.randomUUID());
+            refreshedEls.add(e);
+            return e;
+        });
+        when(relationships.save(any())).thenAnswer(inv -> {
+            ModelRelationship r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+        when(evidences.save(any())).thenAnswer(inv -> {
+            Evidence ev = inv.getArgument(0);
+            if (ev.getId() == null) ev.setId(UUID.randomUUID());
+            return ev;
+        });
+        when(diagrams.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(evaluations.save(any())).thenAnswer(inv -> {
+            EvaluationRun run = inv.getArgument(0);
+            if (run.getId() == null) run.setId(UUID.randomUUID());
+            return run;
+        });
+        when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "ENROLLED", List.of()));
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                access, workspaces, assignments, projects, snapshots, models,
+                elements, relationships, diagrams, evaluations, evidences,
+                curriculum, quizzes, courses, jdbc, json, tempDir.toString());
+
+        seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_CSHARP_COURSERA);
+
+        assertThat(savedR2.get()).isNotNull();
+        assertThat(savedR2.get().getRevision()).isEqualTo(2);
+        assertThat(refreshedEls).extracting(ModelElement::getName)
+                .contains("Observability Platform (OpenTelemetry)")
+                .doesNotContain("OpenTelemetry & MAVIS Observability");
     }
 }

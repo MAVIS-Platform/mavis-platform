@@ -106,7 +106,26 @@ class FruitShopReferenceArchitectureTest {
 
         assertThat(built.elements().stream().filter(el -> "EXTERNAL_SYSTEM".equals(el.getElementType())).toList())
                 .extracting(ModelElement::getName)
-                .containsExactly("OpenTelemetry & MAVIS Observability");
+                .containsExactly("Observability Platform (OpenTelemetry)");
+
+        var c1Diagram = built.diagrams().stream()
+                .filter(d -> "C4".equals(d.getNotation()) && "CONTEXT".equals(d.getLevel()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(c1Diagram.getLayoutJson().path("nodes")).hasSize(5);
+        assertThat(c1Diagram.getLayoutJson().path("edges")).hasSize(4);
+
+        Set<String> relTriples = new HashSet<>();
+        for (ModelRelationship rel : built.relationships()) {
+            String key = rel.getSourceElement().getId() + "->" + rel.getTargetElement().getId() + "::" + rel.getRelationType();
+            assertThat(relTriples.add(key))
+                    .as("Duplicate relationship detected in Project Trai Cay model: %s", key)
+                    .isTrue();
+        }
+        assertThat(built.relationships())
+                .noneMatch(r -> r.getSourceElement() != null
+                        && "COMPONENT".equalsIgnoreCase(r.getSourceElement().getElementType())
+                        && ("GATEWAY_ROUTE".equals(r.getRelationType()) || "TRACING_EXPORT".equals(r.getRelationType())));
 
         List<ModelElement> c3Components = built.elements().stream()
                 .filter(el -> "COMPONENT".equals(el.getElementType()))
@@ -247,11 +266,14 @@ class FruitShopReferenceArchitectureTest {
                 .doesNotContain("spring")
                 .doesNotContain("openfeign")
                 .doesNotContain("feign")
+                .doesNotContain("eureka")
                 .doesNotContain("moc huong")
                 .doesNotContain("mộc hương")
                 .doesNotContain("java 21")
                 .doesNotContain("payment-service")
                 .doesNotContain("inventory-service")
+                .doesNotContain("quản trị hệ thống")
+                .doesNotContain("mavis")
                 .doesNotContain("pom.xml");
     }
 
