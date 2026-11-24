@@ -54,4 +54,13 @@ class NotificationControllerTest {
   assertThatThrownBy(()->controller.readAll(new NotificationController.ReadAll(null))).isInstanceOf(ResponseStatusException.class);
   verifyNoInteractions(jdbc);
  }
+ @Test void nonAdminUsersFilterOutSystemAndAdminNotifications() {
+  var studentRole=com.mavis.common.entity.Role.builder().code("STUDENT").build();
+  when(policy.requireCurrentActiveUser()).thenReturn(User.builder().id(user).role(studentRole).build());
+  when(jdbc.queryForObject(anyString(),eq(Long.class),any(Object[].class))).thenReturn(0L);
+  controller.list(0,20,false,"");
+  verify(jdbc,times(2)).queryForObject(contains("AND category <> 'SYSTEM' AND target_path NOT LIKE '/administration%'"),eq(Long.class),eq(user),any(Timestamp.class));
+  assertThat(NotificationController.safePath("/roadmap?workspace=123")).isEqualTo("/roadmap?workspace=123");
+  assertThat(NotificationController.safePath("/courses")).isEqualTo("/courses");
+ }
 }

@@ -426,3 +426,14 @@ test("Commit #07 streamlines 1-click avatar upload, removes unavailable services
   assert.match(mavisShell, /Sign out/);
 });
 
+test("Commit #08 scopes notification categories by role and coalesces duplicate notification items", () => {
+  const inbox = read("src/features/notifications/inbox.tsx");
+  assert.match(inbox, /export function visibleCategoriesForRole/);
+  assert.match(inbox, /if \(role === "student"\)[\s\S]*c\.value !== "SYSTEM" && c\.value !== "ANALYSIS"/);
+  assert.match(inbox, /if \(role === "lecturer"\)[\s\S]*c\.value !== "SYSTEM"/);
+  assert.match(inbox, /export function groupDuplicateNotifications/);
+  assert.match(inbox, /visibleCategoriesForRole\(session\.data\?\.user\?\.role\)/);
+  assert.match(inbox, /groupDuplicateNotifications\(items\)/);
+  assert.match(inbox, /item\.duplicateCount > 1/);
+});
+

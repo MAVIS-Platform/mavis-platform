@@ -46,6 +46,42 @@ const categoryViLabels: Record<string, string> = {
   "Account access": "Quyền truy cập tài khoản",
   "System alerts": "Cảnh báo hệ thống",
 };
+export function visibleCategoriesForRole(role?: string | null) {
+  if (role === "student") {
+    return categories.filter((c) => c.value !== "SYSTEM" && c.value !== "ANALYSIS");
+  }
+  if (role === "lecturer") {
+    return categories.filter((c) => c.value !== "SYSTEM");
+  }
+  return categories;
+}
+
+export type GroupedNotificationItem = Response<"notifications">["items"][number] & {
+  duplicateCount: number;
+};
+
+export function groupDuplicateNotifications(
+  items: ReadonlyArray<Response<"notifications">["items"][number]>,
+): GroupedNotificationItem[] {
+  const indexByKey = new Map<string, number>();
+  const grouped: GroupedNotificationItem[] = [];
+  for (const item of items) {
+    const key = `${item.category}|${item.title}|${item.body}|${item.targetPath}`;
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex === undefined) {
+      indexByKey.set(key, grouped.length);
+      grouped.push({ ...item, duplicateCount: 1 });
+    } else {
+      const current = grouped[existingIndex]!;
+      grouped[existingIndex] = {
+        ...current,
+        duplicateCount: current.duplicateCount + 1,
+        readAt: current.readAt && item.readAt ? current.readAt : null,
+      };
+    }
+  }
+  return grouped;
+}
 const icons: Record<string, typeof Bell> = {
   WORKSPACE: Users,
   ASSIGNMENT: BookOpen,
@@ -81,9 +117,10 @@ function NotificationList({
 }) {
   const { locale, t } = useLocale();
   const read = useApiMutation("readNotification");
+  const groupedItems = groupDuplicateNotifications(items);
   return (
     <ul className="divide-y" aria-label={t("Notifications", "Thông báo")}>
-      {items.map((item) => {
+      {groupedItems.map((item) => {
         const Icon = icons[item.category] ?? Bell;
         const localized = localizeNotification(item, locale);
         return (
@@ -108,6 +145,11 @@ function NotificationList({
                 >
                   {localized.title}
                 </p>
+                {item.duplicateCount > 1 && (
+                  <span className="mt-0.5 shrink-0 rounded-full border bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                    ×{item.duplicateCount}
+                  </span>
+                )}
                 {!item.readAt && (
                   <span
                     className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
@@ -305,6 +347,8 @@ function ConnectedNotificationBell() {
 }
 export function NotificationCenter() {
   const { t } = useLocale();
+  const session = useSession();
+  const roleCategories = visibleCategoriesForRole(session.data?.user?.role);
   const [page, setPage] = useState(0),
     [unreadOnly, setUnreadOnly] = useState(false),
     [category, setCategory] = useState("");
@@ -386,7 +430,7 @@ export function NotificationCenter() {
               setCategory(v);
               setPage(0);
             }}
-            options={categories.map((item) => ({
+            options={roleCategories.map((item) => ({
               value: item.value,
               label: t(item.label, categoryViLabels[item.label] ?? item.label),
             }))}

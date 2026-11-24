@@ -123,6 +123,12 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V49__Scope_And_Deduplicate_Notifications.sql": (49, """
+SELECT CASE
+    WHEN to_regprocedure('mavis_business_notifications()') IS NULL THEN 'partial'
+    WHEN pg_get_functiondef('mavis_business_notifications()'::regprocedure) LIKE '%v49_notification_scope_dedupe%' THEN 'ready'
+    ELSE 'missing' END;
+"""),
     "V48__Allow_Inactive_Workspace_Status.sql": (48, """
 SELECT CASE
     WHEN to_regclass('workspaces') IS NULL THEN 'partial'

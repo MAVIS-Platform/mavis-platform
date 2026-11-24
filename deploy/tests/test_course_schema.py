@@ -89,6 +89,7 @@ class MigrationTest(unittest.TestCase):
             ("V46__Nullable_Submission_Reference_Columns.sql", 46, "submission_snapshots"),
             ("V47__Course_Quiz_Assets.sql", 47, "course_quiz_assets"),
             ("V48__Allow_Inactive_Workspace_Status.sql", 48, "workspaces_status_check"),
+            ("V49__Scope_And_Deduplicate_Notifications.sql", 49, "v49_notification_scope_dedupe"),
         ):
             registered, probe = module.MIGRATIONS[filename]
             self.assertEqual(registered, version)
