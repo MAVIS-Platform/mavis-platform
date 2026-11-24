@@ -5333,9 +5333,17 @@ export function LiveStudioWorkbench({
                   );
                 };
                 const presetBtn = (active: boolean) =>
-                  `h-7 border px-2 font-mono text-[11px] font-semibold transition ${themeRadius} ${
+                  `h-7 whitespace-nowrap border px-1.5 font-mono text-[11px] font-semibold transition ${themeRadius} ${
                     active ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
                   }`;
+                const goalPillClass =
+                  studioStyle === "pop"
+                    ? "border-slate-900 bg-[#DBEAFE] text-slate-950"
+                    : studioStyle === "blueprint"
+                      ? "border-blue-300 bg-blue-50 text-blue-900"
+                      : isLight
+                        ? "border-sky-200 bg-sky-50 text-sky-900"
+                        : "border-sky-500/40 bg-sky-500/15 text-sky-200";
                 const gradingSummary = (() => {
                   if (activeGoalId === "change-impact") {
                     const pct = Math.round((Number(minImpactF1Draft) || 0.7) * 100);
@@ -5481,11 +5489,12 @@ export function LiveStudioWorkbench({
                       <Textarea
                         value={missionDraft}
                         onChange={(e) => setMissionDraft(e.target.value)}
+                        style={{ fontSize: 12.5, lineHeight: "1.45" }}
                         placeholder={t(
                           "Pick a goal or click a 3D block to auto-draft step-by-step instructions.",
                           "Chọn dạng bài hoặc bấm vào khối 3D để tự sinh hướng dẫn từng bước cho sinh viên.",
                         )}
-                        className={`min-h-28 text-xs leading-relaxed ${styleCfg.inputClass}`}
+                        className={`min-h-28 ${styleCfg.inputClass}`}
                       />
                     </div>
 
@@ -5566,7 +5575,7 @@ export function LiveStudioWorkbench({
                       >
                         <span>{t("Advanced settings", "Tùy chỉnh nâng cao")}</span>
                         <span
-                          className={`border px-1.5 py-0.5 text-[10px] font-semibold ${themeRadius} ${styleCfg.controlActiveMutedClass}`}
+                          className={`border px-2 py-0.5 text-[10.5px] font-semibold ${themeRadius} ${goalPillClass}`}
                         >
                           {advancedGoalBadge}
                         </span>
@@ -5588,14 +5597,15 @@ export function LiveStudioWorkbench({
                               <div className="grid grid-cols-4 gap-1.5">
                                 {(
                                   [
-                                    ["0.6", t("60% Basic", "60% Cơ bản")],
-                                    ["0.7", t("70% Std", "70% Chuẩn")],
-                                    ["0.85", t("85% Strict", "85% Chặt")],
+                                    ["0.6", "60%", t("Basic (60%)", "Cơ bản (60%)")],
+                                    ["0.7", "70%", t("Standard (70%)", "Chuẩn (70%)")],
+                                    ["0.85", "85%", t("Strict (85%)", "Chặt (85%)")],
                                   ] as const
-                                ).map(([val, lbl]) => (
+                                ).map(([val, lbl, tip]) => (
                                   <button
                                     key={val}
                                     type="button"
+                                    title={tip}
                                     onClick={() => setMinImpactF1Draft(val)}
                                     className={presetBtn(Number(minImpactF1Draft) === Number(val))}
                                   >
@@ -5605,13 +5615,14 @@ export function LiveStudioWorkbench({
                                 <Input
                                   type="number"
                                   aria-label="Min F1 (0-1)"
+                                  style={{ fontSize: 12 }}
                                   step="0.05"
                                   min={0}
                                   max={1}
                                   value={minImpactF1Draft}
                                   onChange={(e) => setMinImpactF1Draft(e.target.value)}
                                   placeholder="0.7"
-                                  className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                  className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
                                 />
                               </div>
                               <p className={`text-[10.5px] leading-snug ${styleCfg.subtleTextClass}`}>
@@ -5727,12 +5738,13 @@ export function LiveStudioWorkbench({
                                   <Input
                                     type="number"
                                     aria-label="Max Error %"
+                                    style={{ fontSize: 12 }}
                                     min={0}
                                     max={100}
                                     value={maxErrDraft}
                                     onChange={(e) => setMaxErrDraft(e.target.value)}
                                     placeholder="5"
-                                    className={`h-7 flex-1 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                    className={`h-7 flex-1 px-2 font-mono ${styleCfg.inputClass}`}
                                   />
                                 </div>
                               </div>
@@ -5755,11 +5767,12 @@ export function LiveStudioWorkbench({
                                   <Input
                                     type="number"
                                     aria-label="Max p95 (ms)"
+                                    style={{ fontSize: 12 }}
                                     min={1}
                                     value={maxP95Draft}
                                     onChange={(e) => setMaxP95Draft(e.target.value)}
                                     placeholder="—"
-                                    className={`h-7 flex-1 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                    className={`h-7 flex-1 px-2 font-mono ${styleCfg.inputClass}`}
                                   />
                                 </div>
                               </div>
@@ -5777,27 +5790,30 @@ export function LiveStudioWorkbench({
                               <div className="grid grid-cols-3 gap-1.5">
                                 <button
                                   type="button"
+                                  title={t("Strict 0% errors", "Tuyệt đối 0% lỗi")}
                                   onClick={() => setMaxErrDraft("0")}
                                   className={presetBtn(maxErrDraft === "0")}
                                 >
-                                  {t("0% Strict", "0% Tuyệt đối")}
+                                  0%
                                 </button>
                                 <button
                                   type="button"
+                                  title={t("Allow <= 5% errors", "Chấp nhận tối đa 5% lỗi")}
                                   onClick={() => setMaxErrDraft("5")}
                                   className={presetBtn(maxErrDraft === "5")}
                                 >
-                                  {t("<= 5% Mild", "<= 5% Nhẹ")}
+                                  &lt;= 5%
                                 </button>
                                 <Input
                                   type="number"
                                   aria-label="Max Error %"
+                                  style={{ fontSize: 12 }}
                                   min={0}
                                   max={100}
                                   value={maxErrDraft}
                                   onChange={(e) => setMaxErrDraft(e.target.value)}
                                   placeholder="0"
-                                  className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                  className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
                                 />
                               </div>
                             </div>
@@ -5809,11 +5825,12 @@ export function LiveStudioWorkbench({
                               <Input
                                 type="number"
                                 aria-label="Max p95 (ms)"
+                                style={{ fontSize: 12 }}
                                 min={1}
                                 value={maxP95Draft}
                                 onChange={(e) => setMaxP95Draft(e.target.value)}
                                 placeholder={t("Leave empty to skip latency gate", "Để trống nếu không ràng buộc độ trễ")}
-                                className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
                               />
                             </div>
                           </div>
@@ -5829,7 +5846,7 @@ export function LiveStudioWorkbench({
                               <div className="grid grid-cols-4 gap-1.5">
                                 {(
                                   [
-                                    ["", t("None", "Không")],
+                                    ["", "—"],
                                     ["500", "500ms"],
                                     ["1000", "1000ms"],
                                   ] as const
@@ -5846,11 +5863,12 @@ export function LiveStudioWorkbench({
                                 <Input
                                   type="number"
                                   aria-label="Max p95 (ms)"
+                                  style={{ fontSize: 12 }}
                                   min={1}
                                   value={maxP95Draft}
                                   onChange={(e) => setMaxP95Draft(e.target.value)}
                                   placeholder="—"
-                                  className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                  className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
                                 />
                               </div>
                             </div>
@@ -5877,12 +5895,13 @@ export function LiveStudioWorkbench({
                                 <Input
                                   type="number"
                                   aria-label="Max Error %"
+                                  style={{ fontSize: 12 }}
                                   min={0}
                                   max={100}
                                   value={maxErrDraft}
                                   onChange={(e) => setMaxErrDraft(e.target.value)}
                                   placeholder="—"
-                                  className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                  className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
                                 />
                               </div>
                             </div>
@@ -5907,8 +5926,9 @@ export function LiveStudioWorkbench({
                             <Input
                               value={baselineDraft}
                               onChange={(e) => setBaselineDraft(e.target.value)}
+                              style={{ fontSize: 12 }}
                               placeholder="/api/v1/storefront/live-flow"
-                              className={`h-7 font-mono text-xs ${styleCfg.inputClass}`}
+                              className={`h-7 font-mono ${styleCfg.inputClass}`}
                             />
                           </label>
 
