@@ -184,185 +184,131 @@ function buildFruitShopModel() {
       status: "VALIDATED",
       properties: { protocol: "RabbitMQ 3.13 + MassTransit · OrderCreatedIntegrationEvent" },
     },
-
-    // C3 Components
-    { id: "c3-gw-auth", name: "AuthController", elementType: "COMPONENT", technology: "C# 12 · ASP.NET Core Controller", parentId: "ApiGateway", status: "VALIDATED", properties: { tier: "Controller" } },
-    { id: "c3-gw-yarp", name: "YarpReverseProxyPipeline", elementType: "COMPONENT", technology: "C# 12 · YARP 2.2.0 Reverse Proxy", parentId: "ApiGateway", status: "VALIDATED", properties: { tier: "Proxy" } },
-    { id: "c3-gw-jwt", name: "JwtOptions", elementType: "COMPONENT", technology: "C# 12 · JWT Bearer & Policy Options", parentId: "ApiGateway", status: "VALIDATED", properties: { tier: "Security" } },
-    { id: "c3-gw-err", name: "GlobalExceptionHandler", elementType: "COMPONENT", technology: "C# 12 · IExceptionHandler", parentId: "ApiGateway", status: "VALIDATED", properties: { tier: "Middleware" } },
-
-    { id: "c3-cat-ctrl", name: "CatalogItemsController", elementType: "COMPONENT", technology: "C# 12 · ASP.NET Core Controller", parentId: "FruitCatalog.API", status: "VALIDATED", properties: { tier: "Controller" } },
-    { id: "c3-cat-svc", name: "CatalogService", elementType: "COMPONENT", technology: "C# 12 · Application Service", parentId: "FruitCatalog.API", status: "VALIDATED", properties: { tier: "Service" } },
-    { id: "c3-cat-dbctx", name: "CatalogDbContext", elementType: "COMPONENT", technology: "C# 12 · EF Core 8 Npgsql DbContext", parentId: "FruitCatalog.API", status: "VALIDATED", properties: { tier: "Repository" } },
-    { id: "c3-cat-init", name: "CatalogDbInitializer", elementType: "COMPONENT", technology: "C# 12 · Startup Seeder", parentId: "FruitCatalog.API", status: "VALIDATED", properties: { tier: "Initializer" } },
-
-    { id: "c3-bsk-ctrl", name: "BasketController", elementType: "COMPONENT", technology: "C# 12 · ASP.NET Core Controller", parentId: "FruitBasket.API", status: "VALIDATED", properties: { tier: "Controller" } },
-    { id: "c3-bsk-svc", name: "BasketService", elementType: "COMPONENT", technology: "C# 12 · Application Service", parentId: "FruitBasket.API", status: "VALIDATED", properties: { tier: "Service" } },
-    { id: "c3-bsk-cons", name: "OrderCreatedConsumer", elementType: "COMPONENT", technology: "C# 12 · MassTransit IConsumer<T>", parentId: "FruitBasket.API", status: "VALIDATED", properties: { tier: "Consumer" } },
-    { id: "c3-bsk-repo", name: "RedisBasketRepository", elementType: "COMPONENT", technology: "C# 12 · StackExchangeRedis Repository", parentId: "FruitBasket.API", status: "VALIDATED", properties: { tier: "Repository" } },
-    { id: "c3-bsk-proc", name: "RedisProcessedEventStore", elementType: "COMPONENT", technology: "C# 12 · Redis Idempotency Store", parentId: "FruitBasket.API", status: "VALIDATED", properties: { tier: "Repository" } },
-
-    { id: "c3-ord-ctrl", name: "OrdersController", elementType: "COMPONENT", technology: "C# 12 · ASP.NET Core Controller", parentId: "FruitOrdering.API", status: "VALIDATED", properties: { tier: "Controller" } },
-    { id: "c3-ord-saga", name: "OrderSagaService", elementType: "COMPONENT", technology: "C# 12 · Saga Orchestrator Service", parentId: "FruitOrdering.API", status: "VALIDATED", properties: { tier: "Service" } },
-    { id: "c3-ord-qry", name: "OrderQueryService", elementType: "COMPONENT", technology: "C# 12 · Read Query Service", parentId: "FruitOrdering.API", status: "VALIDATED", properties: { tier: "Service" } },
-    { id: "c3-ord-catcli", name: "CatalogApiClient", elementType: "COMPONENT", technology: "C# 12 · Typed HttpClient + Polly v8", parentId: "FruitOrdering.API", status: "VALIDATED", properties: { tier: "HttpClient" } },
-    { id: "c3-ord-bskcli", name: "BasketApiClient", elementType: "COMPONENT", technology: "C# 12 · Typed HttpClient + Polly v8", parentId: "FruitOrdering.API", status: "VALIDATED", properties: { tier: "HttpClient" } },
-    { id: "c3-ord-relay", name: "OutboxRelayBackgroundService", elementType: "COMPONENT", technology: "C# 12 · BackgroundService + MassTransit", parentId: "FruitOrdering.API", status: "VALIDATED", properties: { tier: "BackgroundWorker" } },
-    { id: "c3-ord-dbctx", name: "OrderingDbContext", elementType: "COMPONENT", technology: "C# 12 · EF Core 8 Npgsql DbContext", parentId: "FruitOrdering.API", status: "VALIDATED", properties: { tier: "Repository" } },
   ];
 
-  const c2Relationships = [
-    { id: "admin-gw", from: "admin", to: "ApiGateway", type: "GATEWAY_ROUTE", originLayer: "RUNTIME", label: "Quản trị danh mục trái cây, tồn kho & đơn hàng [HTTPS]" },
-    { id: "staff-gw", from: "staff", to: "ApiGateway", type: "GATEWAY_ROUTE", originLayer: "RUNTIME", label: "Xử lý đơn hàng, kiểm tra giỏ hàng & tồn kho [HTTPS]" },
-    { id: "cust-gw", from: "customer", to: "ApiGateway", type: "GATEWAY_ROUTE", originLayer: "RUNTIME", label: "Duyệt trái cây, quản lý giỏ hàng & đặt hàng [HTTPS]" },
-    { id: "gw-catalog", from: "ApiGateway", to: "FruitCatalog.API", type: "GATEWAY_ROUTE", originLayer: "CONFIG", label: "YARP -> /api/v1/catalog/{**catch-all}" },
-    { id: "gw-basket", from: "ApiGateway", to: "FruitBasket.API", type: "GATEWAY_ROUTE", originLayer: "CONFIG", label: "YARP -> /api/v1/basket/{**catch-all}" },
-    { id: "gw-ordering", from: "ApiGateway", to: "FruitOrdering.API", type: "GATEWAY_ROUTE", originLayer: "CONFIG", label: "YARP -> /api/v1/orders/{**catch-all}" },
-    { id: "ordering-catalog-http", from: "FruitOrdering.API", to: "FruitCatalog.API", type: "SERVICE_HTTP_CALL", originLayer: "STATIC", label: "CatalogApiClient (Polly StandardResilience)" },
-    { id: "ordering-basket-http", from: "FruitOrdering.API", to: "FruitBasket.API", type: "SERVICE_HTTP_CALL", originLayer: "STATIC", label: "BasketApiClient (Polly StandardResilience)" },
-    { id: "cat-db", from: "FruitCatalog.API", to: "catalog-db", type: "DATABASE_ACCESS", originLayer: "CONFIG", label: "Npgsql EF Core · schema catalog" },
-    { id: "ord-db", from: "FruitOrdering.API", to: "ordering-db", type: "DATABASE_ACCESS", originLayer: "CONFIG", label: "Npgsql EF Core · schema ordering" },
-    { id: "basket-redis", from: "FruitBasket.API", to: "redis", type: "DATABASE_ACCESS", originLayer: "CONFIG", label: "StackExchangeRedis · basket:*" },
-    { id: "ord-rabbitmq", from: "FruitOrdering.API", to: "rabbitmq", type: "MESSAGE_PUBLISH", originLayer: "STATIC", label: "Publish OrderCreatedIntegrationEvent, OrderCancelledIntegrationEvent" },
-    { id: "rabbitmq-basket", from: "rabbitmq", to: "FruitBasket.API", type: "MESSAGE_SUBSCRIBE", originLayer: "STATIC", label: "Consume OrderCreatedIntegrationEvent" },
-    { id: "gw-otel", from: "ApiGateway", to: "otel-observability", type: "TRACING_EXPORT", originLayer: "CONFIG", label: "OTLP / .NET OpenTelemetry 1.9" },
-  ];
+  const comp = (id, parentId, name, technology, tier) =>
+    rawNodes.push({
+      id,
+      name,
+      elementType: "COMPONENT",
+      technology,
+      description: `${name} inside ${parentId}`,
+      parentId,
+      status: "VALIDATED",
+      properties: { tier },
+    });
 
-  const c3Edges = [
-    { id: "c3-gw-auth-jwt", from: "c3-gw-auth", to: "c3-gw-jwt", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Issues signed JWT for Admin/Staff/Customer" },
-    { id: "c3-gw-yarp-err", from: "c3-gw-yarp", to: "c3-gw-err", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Handles downstream proxy faults" },
-    { id: "c3-cat-ctrl-svc", from: "c3-cat-ctrl", to: "c3-cat-svc", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Delegates ICatalogService calls" },
-    { id: "c3-cat-svc-db", from: "c3-cat-svc", to: "c3-cat-dbctx", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Persists fruit_products updates" },
-    { id: "c3-bsk-ctrl-svc", from: "c3-bsk-ctrl", to: "c3-bsk-svc", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Delegates IBasketService operations" },
-    { id: "c3-bsk-svc-repo", from: "c3-bsk-svc", to: "c3-bsk-repo", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Reads/writes CustomerBasket" },
-    { id: "c3-bsk-cons-proc", from: "c3-bsk-cons", to: "c3-bsk-proc", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Checks HasProcessedAsync" },
-    { id: "c3-bsk-cons-svc", from: "c3-bsk-cons", to: "c3-bsk-svc", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Invokes DeleteBasketAsync" },
-    { id: "c3-ord-ctrl-saga", from: "c3-ord-ctrl", to: "c3-ord-saga", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Delegates PlaceOrderAsync" },
-    { id: "c3-ord-ctrl-qry", from: "c3-ord-ctrl", to: "c3-ord-qry", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Delegates AsNoTracking queries" },
-    { id: "c3-ord-saga-catcli", from: "c3-ord-saga", to: "c3-ord-catcli", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Reserves & releases fruit stock" },
-    { id: "c3-ord-saga-bskcli", from: "c3-ord-saga", to: "c3-ord-bskcli", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Fetches customer basket snapshot" },
-    { id: "c3-ord-saga-db", from: "c3-ord-saga", to: "c3-ord-dbctx", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Commits Order + IntegrationEventLogEntry" },
-    { id: "c3-ord-qry-db", from: "c3-ord-qry", to: "c3-ord-dbctx", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "AsNoTracking read projections" },
-    { id: "c3-ord-relay-db", from: "c3-ord-relay", to: "c3-ord-dbctx", type: "CODE_DEPENDENCY", originLayer: "STATIC", label: "Polls integration_event_outbox" },
-    { id: "c3-ord-catcli-cat", from: "c3-ord-catcli", to: "c3-cat-ctrl", type: "SERVICE_HTTP_CALL", originLayer: "STATIC", label: "CatalogApiClient (Polly)" },
-    { id: "c3-ord-bskcli-bsk", from: "c3-ord-bskcli", to: "c3-bsk-ctrl", type: "SERVICE_HTTP_CALL", originLayer: "STATIC", label: "BasketApiClient (Polly)" },
-  ];
+  // ApiGateway (4)
+  comp("c3-gw-auth", "ApiGateway", "AuthController", "C# 12 · ASP.NET Core Controller", "Controller");
+  comp("c3-gw-yarp", "ApiGateway", "YarpReverseProxyPipeline", "C# 12 · YARP 2.2.0 Reverse Proxy", "Proxy");
+  comp("c3-gw-jwt", "ApiGateway", "JwtOptions", "C# 12 · JWT Bearer & Policy Options", "Security");
+  comp("c3-gw-err", "ApiGateway", "GlobalExceptionHandler", "C# 12 · IExceptionHandler", "Middleware");
 
-  const c1Diagram = {
-    id: "diag-c1",
-    notation: "C4",
-    level: "CONTEXT",
-    viewId: "context",
-    viewTitle: "C4 · System Context (Project Trái Cây)",
-    layoutJson: {
-      nodes: [
-        { id: "admin", kind: "PERSON", name: "Admin", technology: "Admin Portal" },
-        { id: "staff", kind: "PERSON", name: "Staff", technology: "Staff Portal" },
-        { id: "customer", kind: "PERSON", name: "Customer", technology: "Web / Mobile Client" },
-        {
-          id: "system:fruit-shop-dotnet",
-          kind: "SYSTEM",
-          name: "Project Trái Cây Platform",
-          technology: "Software system",
-          description: "Nền tảng thương mại điện tử trái cây sạch kiến trúc .NET 8 / ASP.NET Core Microservices",
-        },
-        { id: "otel-observability", kind: "EXTERNAL_SYSTEM", name: "OpenTelemetry & MAVIS Observability", technology: "OTLP / .NET OpenTelemetry 1.9" },
-      ],
-      edges: [
-        { id: "c1-admin", from: "admin", to: "system:fruit-shop-dotnet", source: "admin", target: "system:fruit-shop-dotnet", type: "GATEWAY_ROUTE", originLayer: "RUNTIME", label: "Quản trị danh mục trái cây, tồn kho & đơn hàng [HTTPS]" },
-        { id: "c1-staff", from: "staff", to: "system:fruit-shop-dotnet", source: "staff", target: "system:fruit-shop-dotnet", type: "GATEWAY_ROUTE", originLayer: "RUNTIME", label: "Xử lý đơn hàng, kiểm tra giỏ hàng & tồn kho [HTTPS]" },
-        { id: "c1-cust", from: "customer", to: "system:fruit-shop-dotnet", source: "customer", target: "system:fruit-shop-dotnet", type: "GATEWAY_ROUTE", originLayer: "RUNTIME", label: "Duyệt trái cây, quản lý giỏ hàng & đặt hàng [HTTPS]" },
-        { id: "c1-otel", from: "system:fruit-shop-dotnet", to: "otel-observability", source: "system:fruit-shop-dotnet", target: "otel-observability", type: "TRACING_EXPORT", originLayer: "CONFIG", label: "Xuất OTLP traces & metrics [HTTP/OTLP]" },
-      ],
-    },
-  };
+  // FruitCatalog.API (4)
+  comp("c3-cat-ctrl", "FruitCatalog.API", "CatalogItemsController", "C# 12 · ASP.NET Core Controller", "Controller");
+  comp("c3-cat-svc", "FruitCatalog.API", "CatalogService", "C# 12 · Application Service", "Service");
+  comp("c3-cat-dbctx", "FruitCatalog.API", "CatalogDbContext", "C# 12 · EF Core 8 Npgsql DbContext", "Repository");
+  comp("c3-cat-init", "FruitCatalog.API", "CatalogDbInitializer", "C# 12 · Startup Seeder", "Initializer");
 
-  const c2NodeIds = [
-    "admin", "staff", "customer",
-    "ApiGateway", "FruitCatalog.API", "FruitBasket.API", "FruitOrdering.API",
-    "catalog-db", "ordering-db", "redis", "rabbitmq",
-    "otel-observability",
-  ];
+  // FruitBasket.API (5)
+  comp("c3-bsk-ctrl", "FruitBasket.API", "BasketController", "C# 12 · ASP.NET Core Controller", "Controller");
+  comp("c3-bsk-svc", "FruitBasket.API", "BasketService", "C# 12 · Application Service", "Service");
+  comp("c3-bsk-cons", "FruitBasket.API", "OrderCreatedConsumer", "C# 12 · MassTransit IConsumer<T>", "Consumer");
+  comp("c3-bsk-repo", "FruitBasket.API", "RedisBasketRepository", "C# 12 · StackExchangeRedis Repository", "Repository");
+  comp("c3-bsk-proc", "FruitBasket.API", "RedisProcessedEventStore", "C# 12 · Redis Idempotency Store", "Repository");
 
-  const byId = new Map(rawNodes.map((n) => [n.id, n]));
-  const c2Nodes = c2NodeIds.map((id) => {
-    const n = byId.get(id);
-    return { id: n.id, kind: n.elementType, name: n.name, technology: n.technology, description: n.description };
-  });
+  // FruitOrdering.API (7)
+  comp("c3-ord-ctrl", "FruitOrdering.API", "OrdersController", "C# 12 · ASP.NET Core Controller", "Controller");
+  comp("c3-ord-saga", "FruitOrdering.API", "OrderSagaService", "C# 12 · Saga Orchestrator Service", "Service");
+  comp("c3-ord-qry", "FruitOrdering.API", "OrderQueryService", "C# 12 · Read Query Service", "Service");
+  comp("c3-ord-catcli", "FruitOrdering.API", "CatalogApiClient", "C# 12 · Typed HttpClient + Polly v8", "HttpClient");
+  comp("c3-ord-bskcli", "FruitOrdering.API", "BasketApiClient", "C# 12 · Typed HttpClient + Polly v8", "HttpClient");
+  comp("c3-ord-relay", "FruitOrdering.API", "OutboxRelayBackgroundService", "C# 12 · BackgroundService + MassTransit", "BackgroundWorker");
+  comp("c3-ord-dbctx", "FruitOrdering.API", "OrderingDbContext", "C# 12 · EF Core 8 Npgsql DbContext", "Repository");
 
-  const c2Diagram = {
-    id: "diag-c2",
-    notation: "C4",
-    level: "CONTAINER",
-    viewId: "container",
-    viewTitle: "C4 · Container",
-    layoutJson: {
-      nodes: c2Nodes,
-      edges: c2Relationships.map((e) => ({ ...e, source: e.from, target: e.to })),
-    },
-  };
+  const rawEdges = [];
+  const edge = (id, from, to, protocol, properties = {}) =>
+    rawEdges.push({
+      id,
+      from,
+      to,
+      protocol,
+      originLayer: "STATIC",
+      direction: "DIRECTED",
+      uncertain: false,
+      evidence: [],
+      properties,
+    });
 
-  const c3NodeIds = [
-    "ApiGateway", "FruitCatalog.API", "FruitBasket.API", "FruitOrdering.API",
-    ...rawNodes.filter((n) => n.elementType === "COMPONENT").map((n) => n.id),
-  ];
+  // C1 & C2 edges (14)
+  edge("admin-gw", "admin", "ApiGateway", "GATEWAY_ROUTE", { label: "Quản trị danh mục trái cây, tồn kho & đơn hàng [HTTPS]" });
+  edge("staff-gw", "staff", "ApiGateway", "GATEWAY_ROUTE", { label: "Xử lý đơn hàng, kiểm tra giỏ hàng & tồn kho [HTTPS]" });
+  edge("cust-gw", "customer", "ApiGateway", "GATEWAY_ROUTE", { label: "Duyệt trái cây, quản lý giỏ hàng & đặt hàng [HTTPS]" });
+  edge("gw-catalog", "ApiGateway", "FruitCatalog.API", "GATEWAY_ROUTE", { route: "/api/v1/catalog/{**catch-all}" });
+  edge("gw-basket", "ApiGateway", "FruitBasket.API", "GATEWAY_ROUTE", { route: "/api/v1/basket/{**catch-all}" });
+  edge("gw-ordering", "ApiGateway", "FruitOrdering.API", "GATEWAY_ROUTE", { route: "/api/v1/orders/{**catch-all}" });
+  edge("ordering-catalog-http", "FruitOrdering.API", "FruitCatalog.API", "SERVICE_HTTP_CALL", { client: "CatalogApiClient", resilience: "Polly StandardResilience" });
+  edge("ordering-basket-http", "FruitOrdering.API", "FruitBasket.API", "SERVICE_HTTP_CALL", { client: "BasketApiClient", resilience: "Polly StandardResilience" });
+  edge("cat-db", "FruitCatalog.API", "catalog-db", "DATABASE_ACCESS", { protocol: "Npgsql EF Core · schema catalog" });
+  edge("ord-db", "FruitOrdering.API", "ordering-db", "DATABASE_ACCESS", { protocol: "Npgsql EF Core · schema ordering" });
+  edge("basket-redis", "FruitBasket.API", "redis", "DATABASE_ACCESS", { protocol: "StackExchangeRedis · basket:*" });
+  edge("ord-rabbitmq", "FruitOrdering.API", "rabbitmq", "MESSAGE_PUBLISH", { events: "OrderCreatedIntegrationEvent, OrderCancelledIntegrationEvent" });
+  edge("rabbitmq-basket", "rabbitmq", "FruitBasket.API", "MESSAGE_SUBSCRIBE", { events: "OrderCreatedIntegrationEvent" });
+  edge("gw-otel", "ApiGateway", "otel-observability", "TRACING_EXPORT", { protocol: "OTLP / .NET OpenTelemetry 1.9" });
 
-  const c3Diagram = {
-    id: "diag-c3",
-    notation: "C4",
-    level: "COMPONENT",
-    viewId: "component",
-    viewTitle: "C4 · Component",
-    layoutJson: {
-      nodes: c3NodeIds.map((id) => {
-        const n = byId.get(id);
-        return {
-          id: n.id,
-          kind: n.elementType,
-          name: n.name,
-          technology: n.technology,
-          description: n.description,
-          parentId: n.parentId ?? undefined,
-        };
-      }),
-      edges: c3Edges.map((e) => ({ ...e, source: e.from, target: e.to })),
-    },
-  };
+  // C3 edges
+  edge("c3-gw-auth-jwt", "c3-gw-auth", "c3-gw-jwt", "CODE_DEPENDENCY");
+  edge("c3-gw-yarp-err", "c3-gw-yarp", "c3-gw-err", "CODE_DEPENDENCY");
+  edge("c3-cat-ctrl-svc", "c3-cat-ctrl", "c3-cat-svc", "CODE_DEPENDENCY");
+  edge("c3-cat-svc-db", "c3-cat-svc", "c3-cat-dbctx", "CODE_DEPENDENCY");
+  edge("c3-cat-init-db", "c3-cat-init", "c3-cat-dbctx", "CODE_DEPENDENCY");
+  edge("c3-cat-db-pg", "c3-cat-dbctx", "catalog-db", "DATABASE_ACCESS");
+  edge("c3-bsk-ctrl-svc", "c3-bsk-ctrl", "c3-bsk-svc", "CODE_DEPENDENCY");
+  edge("c3-bsk-svc-repo", "c3-bsk-svc", "c3-bsk-repo", "CODE_DEPENDENCY");
+  edge("c3-bsk-repo-redis", "c3-bsk-repo", "redis", "DATABASE_ACCESS");
+  edge("c3-rmq-bsk-cons", "rabbitmq", "c3-bsk-cons", "MESSAGE_SUBSCRIBE");
+  edge("c3-bsk-cons-proc", "c3-bsk-cons", "c3-bsk-proc", "CODE_DEPENDENCY");
+  edge("c3-bsk-proc-redis", "c3-bsk-proc", "redis", "DATABASE_ACCESS");
+  edge("c3-bsk-cons-svc", "c3-bsk-cons", "c3-bsk-svc", "CODE_DEPENDENCY");
+  edge("c3-ord-ctrl-saga", "c3-ord-ctrl", "c3-ord-saga", "CODE_DEPENDENCY");
+  edge("c3-ord-ctrl-qry", "c3-ord-ctrl", "c3-ord-qry", "CODE_DEPENDENCY");
+  edge("c3-ord-saga-catcli", "c3-ord-saga", "c3-ord-catcli", "CODE_DEPENDENCY");
+  edge("c3-ord-saga-bskcli", "c3-ord-saga", "c3-ord-bskcli", "CODE_DEPENDENCY");
+  edge("c3-ord-saga-db", "c3-ord-saga", "c3-ord-dbctx", "CODE_DEPENDENCY");
+  edge("c3-ord-qry-db", "c3-ord-qry", "c3-ord-dbctx", "CODE_DEPENDENCY");
+  edge("c3-ord-relay-db", "c3-ord-relay", "c3-ord-dbctx", "CODE_DEPENDENCY");
+  edge("c3-ord-db-pg", "c3-ord-dbctx", "ordering-db", "DATABASE_ACCESS");
+  edge("c3-ord-catcli-cat", "c3-ord-catcli", "c3-cat-ctrl", "SERVICE_HTTP_CALL");
+  edge("c3-ord-bskcli-bsk", "c3-ord-bskcli", "c3-bsk-ctrl", "SERVICE_HTTP_CALL");
+  edge("c3-ord-relay-rmq", "c3-ord-relay", "rabbitmq", "MESSAGE_PUBLISH");
+
+  const elements = rawNodes.map((node) => ({
+    layer:
+      node.elementType === "DATABASE" || node.elementType === "MESSAGE_CHANNEL"
+        ? "data"
+        : node.elementType === "PERSON" || node.elementType === "EXTERNAL_SYSTEM"
+          ? "edge"
+          : "domain",
+    evidence: [],
+    ...node,
+  }));
 
   return {
+    id: "fruit-shop-dotnet-v1",
     projectId: "proj-fruit-shop",
-    elements: rawNodes,
-    relationships: [...c2Relationships, ...c3Edges].map((r) => ({
-      id: r.id,
-      sourceElementId: r.from,
-      targetElementId: r.to,
-      relationType: r.type,
-      originLayer: r.originLayer,
-      description: r.label,
-      properties: { label: r.label },
-    })),
-    diagrams: [
-      c1Diagram,
-      c2Diagram,
-      c3Diagram,
-      {
-        id: "diag-dep",
-        notation: "DEPENDENCY_GRAPH",
-        level: "SERVICE",
-        viewId: "dependency",
-        viewTitle: "Service Dependency Graph",
-        layoutJson: {
-          nodes: c2Nodes,
-          edges: c2Relationships.map((e) => ({ ...e, source: e.from, target: e.to })),
-        },
-      },
-    ],
+    snapshotId: "snap-fruit-shop-dotnet-v1",
+    revision: 2,
+    label: "Project Trái Cây Platform · r2",
+    elements,
+    edges: rawEdges,
+    diagrams: [],
+    findings: [],
   };
 }
 
 test("Project Trái Cây C1 Context has 3 confirmed Vietnamese roles, 5 nodes, 4 edges and [Person] badges", async () => {
   const model = buildFruitShopModel();
-  const ctx = deriveC4ContextModel(model);
+  const ctx = deriveC4ContextModel(model, "Project Trái Cây Platform");
 
   assert.deepEqual(
     ctx.persons.map((p) => [p.name, p.actionLabel]),
