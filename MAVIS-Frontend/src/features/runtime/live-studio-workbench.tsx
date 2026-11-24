@@ -2957,35 +2957,14 @@ export function LiveStudioWorkbench({
                 aria-label={t("Live Command Dock", "Thanh điều khiển trực tiếp")}
                 className={`pointer-events-auto absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 px-3 py-2 ${styleCfg.floatingPillClass}`}
               >
-                <span
-                  className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[11.5px] font-extrabold uppercase tracking-wide ${
-                    missionCard?.verified || data.executionStatus === "COMPLETED"
-                      ? "border-emerald-400/60 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                      : faultedServices.length > 0
-                        ? "border-rose-400/60 bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
-                        : data.executionStatus === "RUNNING"
-                          ? "border-sky-400/60 bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"
-                          : "border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  }`}
-                >
-                  {missionCard?.verified || data.executionStatus === "COMPLETED"
-                    ? t("VERIFIED", "ĐÃ XÁC MINH")
-                    : faultedServices.length > 0
-                      ? t("IMPACT ACTIVE", "ĐANG SỰ CỐ")
-                      : data.executionStatus === "RUNNING"
-                        ? t("LIVE", "ĐANG CHẠY")
-                        : t("STANDBY", "SẴN SÀNG")}
-                </span>
-
-                {(faultedServices.length > 0 || data.executionStatus !== "RUNNING") && (
-                  <span className="hidden max-w-[260px] truncate text-[13px] font-medium text-muted-foreground xl:inline">
-                    {faultedServices.length > 0
-                      ? t(`${faultedServices.join(", ")} faulted`, `${faultedServices.join(", ")} đang sự cố`)
-                      : t("Boot real Docker stack", "Chạy Docker thật")}
-                  </span>
+                {faultedServices.length > 0 && (
+                  <>
+                    <span className="hidden max-w-[260px] truncate text-[13px] font-medium text-muted-foreground xl:inline">
+                      {t(`${faultedServices.join(", ")} faulted`, `${faultedServices.join(", ")} đang sự cố`)}
+                    </span>
+                    <span className={`hidden h-4 w-px shrink-0 xl:inline-block ${isLight ? "bg-slate-200" : "bg-slate-700"}`} aria-hidden="true" />
+                  </>
                 )}
-
-                <span className={`h-4 w-px shrink-0 ${isLight ? "bg-slate-200" : "bg-slate-700"}`} aria-hidden="true" />
 
                 {/* Primary Run / Boot CTA when not RUNNING */}
                 {data.executionStatus !== "RUNNING" &&
