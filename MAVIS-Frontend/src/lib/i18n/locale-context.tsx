@@ -1998,7 +1998,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "You're signed out.": "Bạn đã đăng xuất.",
   "Experience": "Trải nghiệm",
   "Static C1–C3 & AI": "Kiến trúc tĩnh C1–C3 & AI",
-  "Theory & Quiz Gate": "Lý thuyết & Quiz Gate",
+  "Theory & Module Quiz": "Lý thuyết & Trắc nghiệm",
   "Live Runtime View": "Trực quan Runtime thật",
   "MAVIS Studio & Submit": "MAVIS Studio & Nộp bài",
   "Every required snapshot must exceed 5.0 / 10 to unlock the next Lab.":

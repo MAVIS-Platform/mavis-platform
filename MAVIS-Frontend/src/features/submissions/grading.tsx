@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { formatTenScaleScore } from "@/lib/format/course-display";
+import { stripLegacySubmissionNoise } from "./submission-text";
 import type { Response } from "@/lib/api/contracts";
 import type { SnapshotGradeItem, StudentSnapshotItem } from "@/types/domain";
 
@@ -114,8 +115,10 @@ export function GradingPanel({
                 {t("Awaiting lecturer review. Inline feedback may be available below.")}
               </p>
             )}
-            {query.data.summary && (
-              <p className="whitespace-pre-wrap break-words text-sm">{query.data.summary}</p>
+            {query.data.summary && stripLegacySubmissionNoise(query.data.summary) && (
+              <p className="whitespace-pre-wrap break-words text-sm">
+                {stripLegacySubmissionNoise(query.data.summary)}
+              </p>
             )}
             {query.data.status === "RETURNED" && (
               <p className="text-sm text-muted-foreground">
@@ -455,9 +458,9 @@ export function GradeForm({
                     </Badge>
                   )}
                 </div>
-                {writtenExplanation && (
+                {writtenExplanation && stripLegacySubmissionNoise(writtenExplanation) && (
                   <p className="whitespace-pre-wrap rounded border bg-muted/30 p-2 text-xs text-foreground">
-                    {writtenExplanation}
+                    {stripLegacySubmissionNoise(writtenExplanation)}
                   </p>
                 )}
                 <div className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">

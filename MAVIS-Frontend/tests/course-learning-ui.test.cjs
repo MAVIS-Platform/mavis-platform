@@ -1232,7 +1232,7 @@ test("FrozenArtifacts renders digest, quiz proof and snapshot explanations for L
 
   assert.ok(html.includes("Frozen Lab evidence"));
   assert.ok(html.includes("Evidence package SHA-256:"));
-  assert.ok(html.includes("Course Quiz Gate Proof"));
+  assert.ok(html.includes("Lab Quiz Result"));
   assert.ok(html.includes("Submitted Snapshots &amp; Theoretical Explanations"));
   assert.ok(html.includes("Isolated databases preserve service autonomy."));
   assert.ok(html.includes("No diagram artifact required for this Lab mode."));

@@ -41,7 +41,7 @@ test("locale-context.tsx defines Vietnamese translations for Student sidebar, Lo
     ['"Understand your services.":', "Hiểu rõ các service của bạn."],
     ['"See the connections.":', "Xem các mối liên kết."],
     ['"Static C1–C3 & AI":', "Kiến trúc tĩnh C1–C3 & AI"],
-    ['"Theory & Quiz Gate":', "Lý thuyết & Quiz Gate"],
+    ['"Theory & Module Quiz":', "Lý thuyết & Trắc nghiệm"],
     ['"Live Runtime View":', "Trực quan Runtime thật"],
     ['"MAVIS Studio & Submit":', "MAVIS Studio & Nộp bài"],
     ['"Every required snapshot must exceed 5.0 / 10 to unlock the next Lab.":', "5.0 / 10"],

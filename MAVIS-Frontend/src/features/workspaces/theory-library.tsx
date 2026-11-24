@@ -731,7 +731,7 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
                     <>
                       <select
                         aria-label={t("Choose Module", "Chọn Module")}
-                        className="h-8 rounded-md border bg-background px-2 text-xs"
+                        className="h-8 min-w-[140px] max-w-[200px] truncate rounded-md border bg-background px-2 text-xs"
                         value={moduleByAsset[asset.id] ?? ""}
                         onChange={(event) =>
                           setModuleByAsset({ ...moduleByAsset, [asset.id]: event.target.value })

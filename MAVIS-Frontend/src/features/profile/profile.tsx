@@ -122,7 +122,7 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
     <div className="mt-5 space-y-5 border-t pt-5">
       <dl
         aria-label={t("Account statistics")}
-        className="grid grid-cols-3 gap-2.5"
+        className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 lg:grid-cols-1"
       >
         {[
           [t("Projects", "Dự án"), value(projects, projectList.length)],
@@ -131,10 +131,14 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
         ].map(([label, amount]) => (
           <div
             key={String(label)}
-            className="min-w-0 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5"
+            className="min-w-0 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 lg:flex lg:items-center lg:justify-between lg:gap-3"
           >
-            <dt className="text-[11px] font-medium leading-4 text-muted-foreground">{label}</dt>
-            <dd className="mavis-tabular mt-1 break-words text-base font-bold text-foreground">{amount}</dd>
+            <dt className="break-normal [overflow-wrap:normal] text-xs font-medium leading-4 text-muted-foreground">
+              {label}
+            </dt>
+            <dd className="mavis-tabular mt-1 break-normal [overflow-wrap:normal] text-base font-bold text-foreground lg:mt-0">
+              {amount}
+            </dd>
           </div>
         ))}
       </dl>

@@ -15,7 +15,7 @@ test("Public Homepage aligns 4-stage pipeline with BM04 and removes Studio Sandb
   const homepageCss = read("src/features/homepage/homepage.css");
 
   assert.match(homepage, /Static C1–C3 & AI/);
-  assert.match(homepage, /Theory, Reverse BFS & Quiz Gate/);
+  assert.match(homepage, /Theory, Reverse BFS & Module Quiz/);
   assert.match(homepage, /Live Docker & OTel Runtime/);
   assert.match(homepage, /MAVIS Studio & 4-Stage Submission/);
   assert.doesNotMatch(

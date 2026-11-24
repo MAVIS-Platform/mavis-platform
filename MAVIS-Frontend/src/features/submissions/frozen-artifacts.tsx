@@ -5,6 +5,9 @@ import { DetailPanel } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Submission } from "@/types/domain";
+import { stripLegacySubmissionNoise } from "./submission-text";
+
+export { stripLegacySubmissionNoise };
 
 function useIsDarkTheme() {
   const [isDark, setIsDark] = useState(false);
@@ -23,9 +26,6 @@ function useIsDarkTheme() {
   return isDark;
 }
 
-function stripLegacySubmissionNoise(text: string): string {
-  return text.replace(/\n\[CB=[^\]]*\]\s*$/i, "").trim();
-}
 export function downloadArtifact(name: string, content: string, type = "application/json") {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const anchor = document.createElement("a");
@@ -87,11 +87,12 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
                     {t("Target", "Mục tiêu")}: {snap.targetViewOrService}
                   </p>
                 )}
-                {snap.writtenExplanation && (
-                  <p className="mt-1 whitespace-pre-wrap text-foreground">
-                    {stripLegacySubmissionNoise(snap.writtenExplanation)}
-                  </p>
-                )}
+                {snap.writtenExplanation &&
+                  stripLegacySubmissionNoise(snap.writtenExplanation) && (
+                    <p className="mt-1 whitespace-pre-wrap text-foreground">
+                      {stripLegacySubmissionNoise(snap.writtenExplanation)}
+                    </p>
+                  )}
               </div>
             ))}
           </div>
@@ -99,7 +100,7 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
       )}
       {quizEv && (
         <div className="rounded-lg border bg-muted/20 p-3 text-xs">
-          <p className="font-medium">{t("Course Quiz Gate Proof", "Kết quả Quiz của Lab")}</p>
+          <p className="font-medium">{t("Lab Quiz Result", "Kết quả Quiz của Lab")}</p>
           <p className="text-muted-foreground">
             {quizEv.status === "NOT_REQUIRED"
               ? submission.labMode === "THEORY_QUIZ_STUDIO" ||

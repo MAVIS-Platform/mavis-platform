@@ -437,3 +437,41 @@ test("Commit #08 scopes notification categories by role and coalesces duplicate 
   assert.match(inbox, /item\.duplicateCount > 1/);
 });
 
+test("Commit #10 strips legacy preview/CB tags across submission views, prevents profile stat word breaks, and cleans Quiz Gate copy", () => {
+  const ts = require("typescript");
+  const source = read("src/features/submissions/submission-text.ts");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function("exports", "module", compiled)(mod.exports, mod);
+  const { stripLegacySubmissionNoise } = mod.exports;
+
+  assert.equal(
+    stripLegacySubmissionNoise(
+      "[RubricPreview=8.8/10; CB=true; DBPerService=true; Idempotency=true] Clear answer\nScorePreview=8.8/10 (APPROVED_ELIGIBLE)",
+    ),
+    "Clear answer",
+  );
+  assert.equal(stripLegacySubmissionNoise("[CB=true; DBPerService=true; Idempotency=true]"), "");
+
+  for (const rel of [
+    "src/features/submissions/frozen-artifacts.tsx",
+    "src/features/submissions/components.tsx",
+    "src/features/submissions/grading.tsx",
+    "src/features/submissions/studio-evidence.tsx",
+  ]) {
+    assert.match(read(rel), /stripLegacySubmissionNoise/, `${rel} must sanitize submission text`);
+  }
+
+  const profile = read("src/features/profile/profile.tsx");
+  assert.match(profile, /break-normal/);
+
+  const login = read("app/login/page.tsx");
+  assert.doesNotMatch(login, /Quiz Gate/);
+
+  const workspaces = read("src/features/workspaces/screens.tsx");
+  assert.match(workspaces, /already published \(Active\)/);
+});
+
+

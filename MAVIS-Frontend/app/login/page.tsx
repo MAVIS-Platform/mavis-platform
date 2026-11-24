@@ -147,7 +147,7 @@ export default function LoginPage() {
               {
                 icon: GitBranch,
                 title: t("Explain", "Giải thích"),
-                text: t("Theory & Quiz Gate", "Lý thuyết & Quiz Gate"),
+                text: t("Theory & Module Quiz", "Lý thuyết & Trắc nghiệm"),
               },
               {
                 icon: ShieldCheck,

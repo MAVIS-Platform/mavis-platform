@@ -35,11 +35,11 @@ const milestones = [
   },
   {
     icon: BookOpen,
-    title: ["Theory, Reverse BFS & Quiz Gate", "Lý thuyết, Reverse BFS & Quiz Gate"],
-    result: ["Quiz Gate ≥ 70% unlock", "Đạt Quiz Gate ≥ 70% mở khóa Runtime"],
+    title: ["Theory, Reverse BFS & Module Quiz", "Lý thuyết, Reverse BFS & Trắc nghiệm Module"],
+    result: ["Module Quiz ≥ 70% unlock", "Đạt Trắc nghiệm ≥ 70% mở khóa Runtime"],
     text: [
-      "Read guided architecture theory, trace cycle-safe Reverse BFS blast radius, and pass the versioned Quiz Gate to unlock live Docker.",
-      "Đọc tài liệu lý thuyết, truy vết lan truyền ngược Reverse BFS và vượt qua Quiz Gate để mở khóa môi trường Docker thật.",
+      "Read guided architecture theory, trace cycle-safe Reverse BFS blast radius, and pass the versioned Module Quiz to unlock live Docker.",
+      "Đọc tài liệu lý thuyết, truy vết lan truyền ngược Reverse BFS và vượt qua bài trắc nghiệm Module để mở khóa môi trường Docker thật.",
     ],
   },
   {
@@ -126,8 +126,8 @@ const questions = [
   {
     question: ["When can I run MAVIS Studio Live?", "Khi nào tôi có thể chạy MAVIS Studio Live?"],
     answer: [
-      "MAVIS Studio Live unlocks once you pass the Lab's Step 2 Quiz Gate (≥ 70%) on a Lab with a lecturer-verified Docker Compose runtime topology.",
-      "MAVIS Studio Live mở khóa ngay khi bạn vượt qua Quiz Gate (≥ 70%) ở Bước 2 trên các bài Lab đã được giảng viên cấu hình và xác minh hạ tầng Docker.",
+      "MAVIS Studio Live unlocks once you pass the Lab's Step 2 Module Quiz (≥ 70%) on a Lab with a lecturer-verified Docker Compose runtime topology.",
+      "MAVIS Studio Live mở khóa ngay khi bạn vượt qua bài kiểm tra trắc nghiệm (≥ 70%) ở Bước 2 trên các bài Lab đã được giảng viên cấu hình và xác minh hạ tầng Docker.",
     ],
   },
 ] as const;

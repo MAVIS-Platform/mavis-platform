@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { downloadArtifact } from "./frozen-artifacts";
+import { stripLegacySubmissionNoise } from "./submission-text";
 import { SelectField } from "@/components/shared/forms";
 import { FormField } from "@/components/shared/forms";
 import { ErrorState } from "@/components/shared/request-state";
@@ -88,9 +89,12 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             ? ` · ${t("Compliance", "Tuân thủ 3E")}: ${submission.complianceScore}`
             : ""}
         </p>
-        {submission.submissionNotes && (
-          <p className="whitespace-pre-wrap text-sm">{submission.submissionNotes}</p>
-        )}
+        {submission.submissionNotes &&
+          stripLegacySubmissionNoise(submission.submissionNotes) && (
+            <p className="whitespace-pre-wrap text-sm">
+              {stripLegacySubmissionNoise(submission.submissionNotes)}
+            </p>
+          )}
         {quiz && quiz.status === "PASSED" && quiz.correctCount != null && quiz.questionCount != null && (
           <p className="text-sm">
             {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
@@ -195,11 +199,12 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
         ) : null}
       </div>
 
-      {submission.submissionNotes && (
-        <p className="whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-sm">
-          {submission.submissionNotes}
-        </p>
-      )}
+      {submission.submissionNotes &&
+        stripLegacySubmissionNoise(submission.submissionNotes) && (
+          <p className="whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-sm">
+            {stripLegacySubmissionNoise(submission.submissionNotes)}
+          </p>
+        )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SubmissionExport submissionId={submission.id} />
@@ -362,6 +367,7 @@ function SubmissionExport({ submissionId }: { submissionId: string }) {
       <Button
         size="sm"
         variant="outline"
+        className="border-slate-300 bg-card text-foreground hover:bg-accent dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:bg-slate-700/80"
         disabled={query.isFetching}
         onClick={async () => {
           const result = await query.refetch();

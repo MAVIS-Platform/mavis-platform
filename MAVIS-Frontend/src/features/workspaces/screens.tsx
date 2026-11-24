@@ -579,15 +579,24 @@ export function WorkspaceOverview() {
             {activeTab === "quiz-library" && canManage && canEdit && (
               <QuizLibrary workspaceId={workspace.id} />
             )}
-            {activeTab === "quiz-library" && canManage && !canEdit && (
-              <CourseOutline workspaceId={workspace.id} canManage={false} active />
-            )}
-            {activeTab === "content-actions" && canManage && !canEdit && (
-              <CourseOutline workspaceId={workspace.id} canManage={false} active />
-            )}
-            {activeTab === "authoring" && canManage && !canEdit && (
-              <CourseOutline workspaceId={workspace.id} canManage={false} active />
-            )}
+            {(activeTab === "quiz-library" ||
+              activeTab === "content-actions" ||
+              activeTab === "authoring") &&
+              canManage &&
+              !canEdit && (
+                <div className="space-y-4">
+                  <div
+                    role="status"
+                    className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200"
+                  >
+                    {t(
+                      "This class course is already published (Active), so syllabus editing, Quiz editing, and Lab creation are locked to protect student progress. Open an Inactive draft class or create a new class to build and publish changes.",
+                      "Khóa học của lớp đã được công bố (Active), nên phần chỉnh sửa đề cương, Quiz và tạo Lab được khóa để bảo vệ tiến độ sinh viên. Hãy mở một lớp ở trạng thái nháp (Inactive) hoặc tạo lớp mới để biên soạn nội dung.",
+                    )}
+                  </div>
+                  <CourseOutline workspaceId={workspace.id} canManage={false} active />
+                </div>
+              )}
             {activeTab === "setup" && canManage && canEdit && (
               <div className="space-y-5">
                 <CourseSetupPanel workspaceId={workspace.id} />

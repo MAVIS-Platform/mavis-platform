@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useApiQuery } from "@/hooks/use-api";
 import { ErrorState } from "@/components/shared/request-state";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { stripLegacySubmissionNoise } from "./submission-text";
 
 const evaluationRuleSchema = z
   .object({
@@ -218,7 +219,8 @@ export function StudioSubmissionEvidence({
             {evidence.data.studioEvidence.snapshots.map((snapshot, index) => (
               <figure key={snapshot.id} className="space-y-2">
                 <figcaption className="text-sm">
-                  {new Date(snapshot.capturedAt).toLocaleString()} · {snapshot.explanation}
+                  {new Date(snapshot.capturedAt).toLocaleString()} ·{" "}
+                  {stripLegacySubmissionNoise(snapshot.explanation)}
                 </figcaption>
                 {snapshot.imageData && (
                   <img
