@@ -16,6 +16,7 @@ import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
   CoursePasskey,
   CourseRoadmap,
+  type AuthoringCourse,
   useCourseAuthoring,
   useWorkspaceGradebook,
 } from "./course-access";
@@ -30,6 +31,7 @@ import { CourseFirstSetupFlow } from "@/features/courses/course-first-setup-flow
 import { QuizLibrary } from "@/features/courses/quiz-library";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { api } from "@/lib/mainflow-api";
 import {
   decodePlainTextEntities,
   formatTenScaleScore,
@@ -52,6 +54,7 @@ export function Workspaces() {
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [page, setPage] = useState(1);
   const [changingStatusId, setChangingStatusId] = useState<string | null>(null);
+  const [activationIssueById, setActivationIssueById] = useState<Record<string, string>>({});
   const updateWorkspace = useApiMutation("updateWorkspace");
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
   const submissions = useApiQuery("submissions", {}, { enabled: canCreate });
@@ -299,14 +302,44 @@ export function Workspaces() {
                             );
                             if (!confirmed) return;
                             setChangingStatusId(workspace.id);
+                            setActivationIssueById((current) => {
+                              const next = { ...current };
+                              delete next[workspace.id];
+                              return next;
+                            });
                             try {
+                              if (active) {
+                                const course = await api<AuthoringCourse>(
+                                  `workspaces/${workspace.id}/course`,
+                                ).catch(() => null);
+                                const incomplete =
+                                  !course ||
+                                  course.modules.length === 0 ||
+                                  course.modules.some((module) => module.items.length === 0);
+                                if (incomplete) {
+                                  setActivationIssueById((current) => ({
+                                    ...current,
+                                    [workspace.id]: t(
+                                      "Complete the Course content and place at least one item in every Module before activation.",
+                                      "Hãy hoàn tất nội dung và xếp ít nhất một nội dung vào mỗi Module trước khi kích hoạt.",
+                                    ),
+                                  }));
+                                  return;
+                                }
+                              }
                               await updateWorkspace.mutateAsync({
                                 workspaceId: workspace.id,
                                 name: workspace.name,
                                 status: active ? "ACTIVE" : "INACTIVE",
                               });
                             } catch {
-                              // The mutation retains its error for the shared error state below.
+                              setActivationIssueById((current) => ({
+                                ...current,
+                                [workspace.id]: t(
+                                  "The Course could not be activated. Review its draft content and try again.",
+                                  "Không thể kích hoạt khóa học. Hãy kiểm tra nội dung bản nháp rồi thử lại.",
+                                ),
+                              }));
                             } finally {
                               setChangingStatusId(null);
                             }
@@ -328,6 +361,20 @@ export function Workspaces() {
                       </div>
                     </CourseCover>
                     <div className="flex flex-1 flex-col gap-3 p-5">
+                      {activationIssueById[workspace.id] && (
+                        <div
+                          className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100"
+                          role="alert"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <p>{activationIssueById[workspace.id]}</p>
+                          <Button asChild size="sm" variant="outline" className="mt-2 h-8">
+                            <Link href={workspaceUrl}>
+                              {t("Complete Course setup", "Hoàn tất thiết lập khóa học")}
+                            </Link>
+                          </Button>
+                        </div>
+                      )}
                       <p className="truncate text-xs tracking-wide text-muted-foreground">
                         <span className="uppercase">{t("Lecturer", "Giảng viên")}</span>
                         {creatorName ? ` · ${creatorName}` : ""}
@@ -499,12 +546,15 @@ export function WorkspaceOverview() {
                 active={workspace.status === "ACTIVE"}
               />
             )}
-            {activeTab === "outline" && canManage && (
+            {activeTab === "outline" && canManage && (!canEdit || hasLearningContent) && (
               <LecturerCurriculumManager
                 workspaceId={workspace.id}
                 active={workspace.status === "ACTIVE"}
                 editable={canEdit}
               />
+            )}
+            {activeTab === "outline" && canManage && canEdit && !hasLearningContent && (
+              <CourseFirstSetupFlow workspaceId={workspace.id} />
             )}
             {activeTab === "outline" && !canManage && (
               <CourseOutline

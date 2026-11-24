@@ -6,7 +6,6 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   BookOpen,
   ChevronDown,
-  ClipboardCheck,
   Home,
   Info,
   LogOut,
@@ -399,22 +398,6 @@ function ShellChrome({
       label: t("Home", "Trang chủ"),
       icon: Home,
       active: pathname === "/workspaces" && !selectedWorkspaceId,
-    },
-    {
-      href: selectedWorkspaceId
-        ? `/workspace-overview?workspace=${encodeURIComponent(selectedWorkspaceId)}`
-        : "/workspaces",
-      label: t("Course Workspace", "Không gian khóa học"),
-      icon: BookOpen,
-      active: scope === "workspace" && pathname !== "/submissions",
-    },
-    {
-      href: selectedWorkspaceId
-        ? `/submissions?workspace=${encodeURIComponent(selectedWorkspaceId)}`
-        : "/submissions",
-      label: t("Grades", "Chấm điểm"),
-      icon: ClipboardCheck,
-      active: pathname === "/submissions" || pathname.startsWith("/submissions/"),
     },
   ];
 

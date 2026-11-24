@@ -24,6 +24,7 @@ test("Course Lecturer workspace consumes the shared lifecycle policy", () => {
 });
 
 test("Lecturer Course navigation centralizes authoring in Overview", () => {
+  const workspace = read("src/features/workspaces/screens.tsx");
   const shell = read("src/features/courses/course-workspace-shell.tsx");
   const navigation = read("src/lib/navigation.ts");
   const hub = read("src/features/courses/course-content-hub.tsx");
@@ -43,6 +44,11 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   assert.match(firstFlow, /Publish Changes/);
   assert.match(firstFlow, /Back to Overview/);
   assert.match(firstFlow, /Next:/);
+  assert.match(
+    workspace,
+    /activeTab === "outline" && canManage && canEdit && !hasLearningContent/,
+  );
+  assert.match(workspace, /<CourseFirstSetupFlow workspaceId=\{workspace\.id\} \/>/);
 });
 
 test("Active Lecturer courses lock authoring while Inactive courses expose module and Lab creation", () => {
@@ -68,6 +74,8 @@ test("Global Lecturer workspace hides its sidebar and uses a single Course Manag
   assert.doesNotMatch(workspace, /A great class starts here/);
   assert.doesNotMatch(workspace, /Your teaching space/);
   assert.doesNotMatch(workspace, /Open a class to organize/);
+  assert.doesNotMatch(shell, /label: t\("Course Workspace"/);
+  assert.doesNotMatch(shell, /label: t\("Grades", "Chấm điểm"\)/);
 });
 
 test("Lecturer course cards open directly and own an Active-Inactive lifecycle toggle", () => {
@@ -78,4 +86,6 @@ test("Lecturer course cards open directly and own an Active-Inactive lifecycle t
   assert.match(workspace, /updateWorkspace\.mutateAsync/);
   assert.doesNotMatch(workspace, /t\("Open class", "Mở lớp"\)/);
   assert.doesNotMatch(workspace, /Active · read only/);
+  assert.match(workspace, /course\.modules\.some\(\(module\) => module\.items\.length === 0\)/);
+  assert.match(workspace, /Complete Course setup/);
 });

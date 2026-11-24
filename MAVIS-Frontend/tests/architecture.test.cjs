@@ -1046,8 +1046,9 @@ test("lecturer workspace uses the global top header without the legacy sidebar",
     ),
   );
   assert.ok(html.includes('aria-label="Lecturer navigation"'));
-  assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
-  assert.ok(html.includes("Course Workspace"));
+  assert.ok(html.includes('href="/workspaces"'));
+  assert.ok(!html.includes("Course Workspace"));
+  assert.ok(!html.includes(">Grades<"));
   assert.ok(!html.includes('aria-label="Global navigation"'));
   assert.ok(!html.includes('aria-label="Collapse SE180711 · FA menu"'));
   assert.ok(!html.includes('aria-label="Lab Library"'));
@@ -1108,7 +1109,7 @@ test("student sidebar omits lecturer-only class destinations", () => {
   assert.ok(!html.includes("Lab Creation"));
 });
 
-test("flat sidebar links remain accessible when collapsed without child tree clutter", () => {
+test("lecturer top header stays global while course destinations remain inside the course", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1156,8 +1157,9 @@ test("flat sidebar links remain accessible when collapsed without child tree clu
       ),
     ),
   );
-  assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
-  assert.ok(html.includes('href="/submissions?workspace=class-1"'));
+  assert.ok(html.includes('href="/workspaces"'));
+  assert.ok(!html.includes('href="/workspace-overview?workspace=class-1"'));
+  assert.ok(!html.includes('href="/submissions?workspace=class-1"'));
 });
 
 test("non-live project sidebar never exposes legacy projectNavigation and is hidden for students", () => {
@@ -1192,7 +1194,7 @@ test("non-live project sidebar never exposes legacy projectNavigation and is hid
   assert.ok(html.includes("Project content"));
   assert.ok(html.includes("MAVIS home"));
   assert.ok(html.includes('aria-label="Lecturer navigation"'));
-  assert.ok(html.includes("Course Workspace"));
+  assert.ok(!html.includes("Course Workspace"));
 
   const studentHtml = renderToStaticMarkup(
     React.createElement(
