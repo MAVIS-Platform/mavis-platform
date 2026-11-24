@@ -115,10 +115,10 @@ export function getSvgNodePalette(
           sub: "#94a3b8",
         }
       : {
-          fill: "rgba(255, 255, 255, 0.72)",
-          stroke: "#64748b",
+          fill: "rgba(241, 245, 249, 0.88)",
+          stroke: "#94a3b8",
           accent: "#2563eb",
-          headerFill: "#e2e8f0",
+          headerFill: "#dce5f0",
           title: "#0f172a",
           tag: "#334155",
           sub: "#475569",
@@ -716,7 +716,7 @@ function resolveEdgePoints(edge: ParsedSvgEdge, resolvedById: Map<string, Parsed
 export function renderDiagramXmlToSvgString(xml: string, isDark = false): string | null {
   const parsed = parseDiagramXml(xml);
   if (!parsed) return null;
-  const bg = isDark ? "#080d17" : "#f8fafc";
+  const bg = isDark ? "#080d17" : "#e8eef5";
   const edgeStroke = isDark ? "#7c8fa8" : "#64748b";
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${parsed.viewBox}" width="${Math.round(parsed.vbW)}" height="${Math.round(parsed.vbH)}">`,
@@ -933,7 +933,7 @@ export function ArchitectureSvgViewer({
       }
     >
       {/* Compact Blueprint Header & Interactive Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-2 text-xs dark:border-border/60 dark:bg-muted/15">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300/90 bg-white/95 px-4 py-2 text-xs dark:border-border/60 dark:bg-muted/15">
         <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
           {parsed.title && (
             <span className="font-semibold text-slate-900 dark:text-foreground">{parsed.title}</span>
@@ -1063,7 +1063,7 @@ export function ArchitectureSvgViewer({
         className={`flex w-full overflow-auto p-3 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
         style={{
           height: canvasHeight,
-          backgroundColor: isDark ? "#080d17" : "#f1f5f9",
+          backgroundColor: isDark ? "#080d17" : "#e8eef5",
           backgroundImage: `radial-gradient(${dotColor} 1px, transparent 1px)`,
           backgroundSize: "18px 18px",
         }}
@@ -1453,7 +1453,7 @@ export function ArchitectureSvgViewer({
 
       {/* Crisp HTML Legend Bar */}
       {(parsed.hasLegend || parsed.nodes.length > 0) && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-200 bg-slate-50/90 px-4 py-2 text-[11px] font-medium text-slate-600 dark:border-border/60 dark:bg-muted/15 dark:text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-300/90 bg-white/95 px-4 py-2 text-[11px] font-medium text-slate-700 dark:border-border/60 dark:bg-muted/15 dark:text-muted-foreground">
           {parsed.hasBoundary && (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-3 w-4 rounded-xs border border-dashed border-slate-500 dark:border-slate-400" />

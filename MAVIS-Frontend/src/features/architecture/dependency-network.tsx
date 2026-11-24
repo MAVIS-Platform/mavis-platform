@@ -26,6 +26,17 @@ import {
   type NetworkMode,
   type NetworkSnapshot,
 } from "./network-presentation";
+
+function isDarkThemeActive(): boolean {
+  return (
+    typeof document !== "undefined" &&
+    Boolean(
+      document.documentElement?.classList?.contains("dark") ||
+        document.documentElement?.dataset?.["theme"] === "dark",
+    )
+  );
+}
+
 export function DependencyNetwork({
   model,
   selectedId,
@@ -265,7 +276,8 @@ export function DependencyNetwork({
             "text-margin-y": 9,
             "text-wrap": "ellipsis",
             "text-max-width": "168px",
-            "text-background-color": "#0f172a",
+            color: isDarkThemeActive() ? "#e2e8f0" : "#0f172a",
+            "text-background-color": isDarkThemeActive() ? "#0f172a" : "#ffffff",
             "text-background-opacity": 1,
             "text-background-padding": "3px",
             "overlay-opacity": 0,
@@ -413,27 +425,20 @@ export function DependencyNetwork({
     });
     resize.observe(container);
     const updateTheme = () => {
-      // Tailwind themes use OKLCH; Cytoscape's colour parser expects RGB/hex.
-      const context = document
-        .createElement("canvas")
-        .getContext("2d", { willReadFrequently: true });
-      let foreground = "#64748b";
-      let labelBackground = "#0f172a";
-      if (context) {
-        context.fillStyle = getComputedStyle(container).color;
-        context.fillRect(0, 0, 1, 1);
-        const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-        foreground = `rgb(${r}, ${g}, ${b})`;
-        context.fillStyle = getComputedStyle(container).backgroundColor;
-        context.fillRect(0, 0, 1, 1);
-        const [br, bg, bb] = context.getImageData(0, 0, 1, 1).data;
-        labelBackground = `rgb(${br}, ${bg}, ${bb})`;
-      }
+      // Tailwind themes use OKLCH; Cytoscape's colour parser expects explicit RGB/hex.
+      const isDarkTheme = isDarkThemeActive();
+      const foreground = isDarkTheme ? "#e2e8f0" : "#0f172a";
+      const labelBackground = isDarkTheme ? "#0f172a" : "#ffffff";
       cy.style()
-        .selector("node.analysis")
+        .selector("node, node.analysis")
         .style({
           color: foreground,
           "border-color": foreground,
+          "text-background-color": labelBackground,
+        })
+        .selector("edge.directed-static")
+        .style({
+          color: isDarkTheme ? "#cbd5e1" : "#334155",
           "text-background-color": labelBackground,
         })
         .update();

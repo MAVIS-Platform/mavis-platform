@@ -161,9 +161,9 @@ test("Coursera CDS contrast palette & simplified Lab header deduplicate prefixes
   const step2 = read("src/features/courses/step2-static-impact.tsx");
   const toc = read("src/features/courses/lab-toc.tsx");
 
-  assert.match(css, /--background:\s*#F7F9FC;/);
-  assert.match(css, /--foreground:\s*#0F1114;/);
-  assert.match(css, /--muted-foreground:\s*#1F2937;/);
+  assert.match(css, /--background:\s*#EEF2F6;/);
+  assert.match(css, /--foreground:\s*#0F172A;/);
+  assert.match(css, /--muted-foreground:\s*#475569;/);
   assert.match(css, /--muted-foreground:\s*oklch\(0\.845 0\.022 257\);/);
   assert.match(css, /\.text-\\\[10px\\\].*font-size:\s*0\.8125rem;/);
   assert.match(css, /\.text-\\\[11px\\\].*font-size:\s*0\.875rem;/);
