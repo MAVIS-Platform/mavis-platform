@@ -208,7 +208,7 @@ export function computeLiveZoneRects(
 type ThreeModule = typeof import("three");
 
 type AnimatedPacket = {
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   curve: THREE.QuadraticBezierCurve3;
   speed: number;
   phase: number;
@@ -312,11 +312,123 @@ type AnimatedNodeRig = {
   active: boolean;
   halo?: THREE.Mesh | undefined;
   replicaPods: THREE.Object3D[];
+  rotors: Array<{ obj: THREE.Object3D; axis: "x" | "y" | "z"; speed: number }>;
+  hoverCores: Array<{ obj: THREE.Object3D; baseY: number; amp: number; speed: number }>;
+  pulseMaterials: Array<{
+    mat: THREE.MeshStandardMaterial;
+    baseIntensity: number;
+    amp: number;
+    speed: number;
+  }>;
+  streamCapsules: Array<{
+    obj: THREE.Object3D;
+    minX: number;
+    maxX: number;
+    speed: number;
+    phase: number;
+  }>;
+  smokeParticles: Array<{
+    mesh: THREE.Mesh;
+    baseX: number;
+    baseZ: number;
+    baseY: number;
+    maxRise: number;
+    speed: number;
+    phase: number;
+  }>;
+  stasisRing?: THREE.Object3D | undefined;
   labelSprite: THREE.Sprite;
   labelBaseY: number;
   labelBaseW: number;
   labelBaseH: number;
 };
+
+export type VisualArchetype = "GATEWAY" | "DATABASE" | "QUEUE" | "WORKER" | "SERVICE";
+
+export function resolveVisualArchetype(
+  node: Pick<StudioThreeNode, "id" | "archetype">,
+): VisualArchetype {
+  if (node.archetype === "GATEWAY") return "GATEWAY";
+  if (node.archetype === "DATABASE") return "DATABASE";
+  if (node.archetype === "QUEUE") return "QUEUE";
+  if (/(worker|consumer|processor|dispatcher|scheduler|notifier|cron|job)/i.test(node.id)) {
+    return "WORKER";
+  }
+  return "SERVICE";
+}
+
+type SharedStageTextures = {
+  contactShadow: THREE.CanvasTexture;
+  softGlow: THREE.CanvasTexture;
+};
+
+function createContactShadowTexture(T: ThreeModule): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const grad = ctx.createRadialGradient(64, 64, 14, 64, 64, 62);
+    grad.addColorStop(0, "rgba(15, 23, 42, 0.42)");
+    grad.addColorStop(0.55, "rgba(15, 23, 42, 0.18)");
+    grad.addColorStop(1, "rgba(15, 23, 42, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+  }
+  const tex = new T.CanvasTexture(canvas);
+  tex.colorSpace = T.SRGBColorSpace;
+  tex.userData = { __shared: true };
+  return tex;
+}
+
+function createSoftGlowTexture(T: ThreeModule): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+    grad.addColorStop(0, "rgba(255, 255, 255, 0.98)");
+    grad.addColorStop(0.28, "rgba(255, 255, 255, 0.55)");
+    grad.addColorStop(0.62, "rgba(255, 255, 255, 0.16)");
+    grad.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+  }
+  const tex = new T.CanvasTexture(canvas);
+  tex.colorSpace = T.SRGBColorSpace;
+  tex.userData = { __shared: true };
+  return tex;
+}
+
+function buildTurbineRotor(
+  T: ThreeModule,
+  radius: number,
+  bladeMat: THREE.Material,
+  hubMat: THREE.Material,
+  serviceId: string,
+): THREE.Group {
+  const rotor = new T.Group();
+  rotor.userData = { serviceId };
+  const hub = new T.Mesh(new T.CylinderGeometry(radius * 0.28, radius * 0.32, 0.032, 16), hubMat);
+  hub.userData = { serviceId };
+  rotor.add(hub);
+  const bladeCount = 6;
+  const bladeLen = radius * 0.72;
+  const bladeGeo = new T.BoxGeometry(bladeLen, 0.012, radius * 0.24);
+  for (let i = 0; i < bladeCount; i++) {
+    const angle = (i / bladeCount) * Math.PI * 2;
+    const holder = new T.Group();
+    holder.rotation.y = angle;
+    const blade = new T.Mesh(bladeGeo, bladeMat);
+    blade.position.set(radius * 0.48, 0, 0);
+    blade.rotation.x = 0.36;
+    blade.userData = { serviceId };
+    holder.add(blade);
+    rotor.add(holder);
+  }
+  return rotor;
+}
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -619,16 +731,19 @@ function createTopPlateTexture(
     ctx.stroke();
   }
 
-  // Top-left UML stereotype («gateway» / «service» / «database» / «broker»)
+  // Top-left UML stereotype («gateway» / «service» / «worker» / «database» / «broker»)
+  const visualArchetype = resolveVisualArchetype(node);
   const stereotype =
     node.stereotype ??
-    (node.archetype === "GATEWAY"
+    (visualArchetype === "GATEWAY"
       ? "«gateway»"
-      : node.archetype === "DATABASE"
+      : visualArchetype === "DATABASE"
         ? "«database»"
-        : node.archetype === "QUEUE"
+        : visualArchetype === "QUEUE"
           ? "«broker»"
-          : "«service»");
+          : visualArchetype === "WORKER"
+            ? "«worker»"
+            : "«service»");
   ctx.font = "700 18px ui-monospace, SFMono-Regular, Menlo, monospace";
   ctx.fillStyle = accentCol;
   ctx.textAlign = "left";
@@ -800,7 +915,7 @@ type ZoneRig = {
 };
 
 type DeckRig = {
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   baseW: number;
   baseD: number;
   deckH: number;
@@ -1068,15 +1183,19 @@ function addOutlinedMesh(
 }
 
 /**
- * Authoritative SE-Standard 3D Node Builder:
- * - UML 2.5 Deployment Node + Service Boundary Plinth (host/cgroup boundary)
- * - C4 Container Stereotypes (Gateway Router / Microservice Container Pods / Database Cylinder / EIP Broker)
- * - CodeCity / Kiali Data-Driven Telemetry (real replica pod units 1..3, live RAM/CPU gauges, pause cage, stopped collapse)
+ * Studio-Grade Living 3D Architectural Diorama Node Builder:
+ * - Sculpted PBR clearcoat ceramic, brushed anodized titanium & frosted crystal glass enclosures
+ * - Distinct SE/C4/CNCF silhouettes: Octagonal Ingress Portal (GATEWAY), Glass-Atrium Compute Reactor
+ *   with live 1..3x replica chambers & spinning 6-blade cooling turbine (SERVICE), Asymmetric Kinetic
+ *   Flywheel Processor (WORKER), Crystalline Vault Silo (DATABASE), and Pressurized Glass Stream Hub (QUEUE)
+ * - Telemetry-reactive 60fps animations: rotor speed from CPU/RPS, glowing breathing cores, sliding queue
+ *   capsules, crystalline amber stasis dome on PAUSE, and rising smoke/ember motes on STOP
  */
 function buildServiceRig(
   T: ThreeModule,
   node: StudioThreeNode,
   styleId: StudioStyleId,
+  sharedTex: SharedStageTextures | null,
 ): AnimatedNodeRig {
   const group = new T.Group();
   const wx = node.wx * WORLD_SCALE;
@@ -1087,66 +1206,224 @@ function buildServiceRig(
   const isDark = styleId === "control";
   const isPop = styleId === "pop";
   const isBlueprint = styleId === "blueprint";
+  const visualArchetype = resolveVisualArchetype(node);
 
-  const plinthMat = new T.MeshStandardMaterial({
-    color: new T.Color(isDark ? "#1e293b" : isBlueprint ? "#e0f2fe" : "#e2e8f0"),
-    roughness: isDark ? 0.52 : 0.72,
-    metalness: isDark ? 0.28 : 0.08,
+  const rotors: AnimatedNodeRig["rotors"] = [];
+  const hoverCores: AnimatedNodeRig["hoverCores"] = [];
+  const pulseMaterials: AnimatedNodeRig["pulseMaterials"] = [];
+  const streamCapsules: AnimatedNodeRig["streamCapsules"] = [];
+  const smokeParticles: AnimatedNodeRig["smokeParticles"] = [];
+  let stasisRing: THREE.Object3D | undefined;
+
+  // Determine luminous core accent color from live health / throttle / role palette
+  const coreHex = node.isStopped
+    ? "#f43f5e"
+    : node.isPaused || node.cpuThrottlePct
+      ? "#f59e0b"
+      : node.isCritical
+        ? "#f43f5e"
+        : node.isWarning
+          ? "#f59e0b"
+          : node.palette.accent;
+
+  const isAlive = !node.isStopped && !node.isPaused;
+  const loadFactor =
+    node.cpuPct != null ? Math.max(0.6, Math.min(2.4, 0.75 + node.cpuPct / 55)) : 1.0;
+  const rotorSpeedScale = node.isStopped || node.isPaused ? 0 : node.cpuThrottlePct ? 0.35 : loadFactor;
+
+  // Curated Studio PBR Materials (respond smoothly to RoomEnvironment IBL reflections)
+  const metalMat = new T.MeshPhysicalMaterial({
+    color: new T.Color(isDark ? "#334155" : isBlueprint ? "#bfdbfe" : isPop ? "#334155" : "#cbd5e1"),
+    roughness: isDark ? 0.24 : isPop ? 0.34 : 0.22,
+    metalness: isPop ? 0.38 : isBlueprint ? 0.45 : 0.78,
+    clearcoat: isDark ? 0.5 : 0.35,
+    clearcoatRoughness: 0.2,
   });
 
-  const chassisMat = new T.MeshStandardMaterial({
-    color: new T.Color(node.isStopped ? (isDark ? "#1e293b" : "#cbd5e1") : node.palette.cardFill),
-    roughness: isPop ? 0.58 : isDark ? 0.32 : isBlueprint ? 0.72 : 0.42,
-    metalness: isDark ? 0.34 : isPop ? 0.06 : 0.14,
+  const darkMetalMat = new T.MeshPhysicalMaterial({
+    color: new T.Color(isDark ? "#0f172a" : isBlueprint ? "#1e3a8a" : "#1e293b"),
+    roughness: 0.32,
+    metalness: 0.65,
+    clearcoat: 0.4,
+  });
+
+  const plinthMat = new T.MeshPhysicalMaterial({
+    color: new T.Color(isDark ? "#172033" : isBlueprint ? "#e0f2fe" : isPop ? "#fffdf7" : "#f1f5f9"),
+    roughness: isDark ? 0.38 : isPop ? 0.42 : 0.32,
+    metalness: isDark ? 0.38 : isPop ? 0.08 : 0.16,
+    clearcoat: isDark ? 0.45 : 0.55,
+    clearcoatRoughness: 0.25,
+  });
+
+  const chassisMat = new T.MeshPhysicalMaterial({
+    color: new T.Color(
+      node.isStopped
+        ? isDark
+          ? "#1e293b"
+          : "#cbd5e1"
+        : isPop
+          ? node.palette.cardFill
+          : isDark
+            ? "#131e36"
+            : isBlueprint
+              ? "#eff6ff"
+              : "#ffffff",
+    ),
+    roughness: isPop ? 0.34 : isDark ? 0.24 : isBlueprint ? 0.42 : 0.2,
+    metalness: isDark ? 0.52 : isPop ? 0.06 : isBlueprint ? 0.16 : 0.12,
+    clearcoat: isBlueprint ? 0.35 : 0.78,
+    clearcoatRoughness: 0.14,
     emissive: new T.Color(isDark ? node.palette.iconBg : node.isCritical ? "#4c0519" : "#000000"),
-    emissiveIntensity: isDark ? 0.2 : node.isCritical ? 0.12 : 0,
+    emissiveIntensity: isDark ? 0.18 : node.isCritical ? 0.12 : 0,
     transparent: isBlueprint,
-    opacity: isBlueprint ? 0.94 : 1,
+    opacity: isBlueprint ? 0.92 : 1,
   });
 
-  const capMat = new T.MeshStandardMaterial({
-    color: new T.Color(node.palette.iconBg),
-    roughness: isDark ? 0.28 : 0.38,
-    metalness: isDark ? 0.4 : 0.14,
+  const glassMat = new T.MeshPhysicalMaterial({
+    color: new T.Color(isDark ? "#93c5fd" : isBlueprint ? "#bfdbfe" : isPop ? node.palette.iconBg : "#e0f2fe"),
+    roughness: 0.08,
+    metalness: 0.06,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.06,
+    transparent: true,
+    opacity: isDark ? 0.28 : isBlueprint ? 0.32 : isPop ? 0.34 : 0.3,
+    depthWrite: false,
   });
+
+  const coreMat = new T.MeshStandardMaterial({
+    color: new T.Color(node.isStopped ? (isDark ? "#334155" : "#94a3b8") : coreHex),
+    emissive: new T.Color(node.isStopped ? "#7f1d1d" : coreHex),
+    emissiveIntensity: node.isStopped ? 0.18 : isDark ? 1.55 : isPop ? 0.85 : 0.95,
+    roughness: 0.18,
+    metalness: 0.2,
+  });
+  if (!node.isStopped) {
+    pulseMaterials.push({
+      mat: coreMat,
+      baseIntensity: isDark ? 1.45 : isPop ? 0.78 : 0.9,
+      amp: node.isPaused ? 0.12 : isDark ? 0.45 : 0.28,
+      speed: node.cpuThrottlePct ? 5.2 : 2.4,
+    });
+  }
 
   const accentMat = new T.MeshStandardMaterial({
-    color: new T.Color(node.palette.accent),
-    roughness: 0.28,
-    metalness: isDark ? 0.48 : 0.22,
-    emissive: new T.Color(node.palette.accent),
-    emissiveIntensity: isDark ? 0.5 : node.isCritical || node.isWarning ? 0.28 : 0.1,
+    color: new T.Color(coreHex),
+    roughness: 0.24,
+    metalness: isDark ? 0.48 : 0.24,
+    emissive: new T.Color(coreHex),
+    emissiveIntensity: node.isStopped ? 0.12 : isDark ? 0.85 : node.isCritical || node.isWarning ? 0.45 : 0.28,
   });
 
   const edgeMat = new T.LineBasicMaterial({
-    color: new T.Color(node.palette.stroke),
+    color: new T.Color(isPop ? "#0f172a" : node.palette.stroke),
     transparent: !isPop,
-    opacity: isPop ? 0.95 : isDark ? 0.85 : isBlueprint ? 0.85 : 0.55,
+    opacity: isPop ? 0.96 : isDark ? 0.75 : isBlueprint ? 0.88 : 0.42,
   });
 
   const sculptureGroup = new T.Group();
   group.add(sculptureGroup);
 
-  // 1. Service Boundary Plinth (UML 2.5 Execution Environment / Docker cgroup host boundary)
+  // 0. Grounded Soft Contact AO Shadow + Subtle Emissive Floor Bounce-Glow Pool
   const plinthW = 1.24;
-  const plinthH = 0.085;
+  const plinthH = 0.095;
   const plinthD = 0.92;
+  if (sharedTex) {
+    const aoMesh = new T.Mesh(
+      new T.PlaneGeometry(plinthW + 0.56, plinthD + 0.52),
+      new T.MeshBasicMaterial({
+        map: sharedTex.contactShadow,
+        transparent: true,
+        opacity: isDark ? 0.78 : isPop ? 0.35 : 0.52,
+        depthWrite: false,
+      }),
+    );
+    aoMesh.rotation.x = -Math.PI / 2;
+    aoMesh.position.y = 0.004;
+    aoMesh.renderOrder = 1;
+    group.add(aoMesh);
+
+    if (!node.isStopped) {
+      const floorGlow = new T.Mesh(
+        new T.PlaneGeometry(plinthW + 0.72, plinthD + 0.64),
+        new T.MeshBasicMaterial({
+          map: sharedTex.softGlow,
+          color: new T.Color(coreHex),
+          transparent: true,
+          opacity: isDark ? 0.34 : isPop ? 0.16 : 0.18,
+          blending: isDark ? T.AdditiveBlending : T.NormalBlending,
+          depthWrite: false,
+        }),
+      );
+      floorGlow.rotation.x = -Math.PI / 2;
+      floorGlow.position.y = 0.006;
+      floorGlow.renderOrder = 2;
+      group.add(floorGlow);
+    }
+  }
+
+  // 1. Sculpted 2-Tier Architectural Foundation Pedestal + Corner Anchor Feet + Glowing Trim Rail
   addOutlinedMesh(
     T,
     sculptureGroup,
-    createRoundedSlabGeo(T, plinthW, plinthH, plinthD, 0.1, 0.012),
-    plinthMat,
+    createRoundedSlabGeo(T, plinthW, 0.052, plinthD, 0.11, 0.012),
+    metalMat,
     edgeMat,
     [0, 0, 0],
     node.id,
   );
-  // Color-coded stereotype rail along front rim of boundary plinth
-  const rail = new T.Mesh(new T.BoxGeometry(plinthW - 0.22, 0.028, 0.022), accentMat);
-  rail.position.set(0, plinthH - 0.025, plinthD / 2 + 0.002);
+  addOutlinedMesh(
+    T,
+    sculptureGroup,
+    createRoundedSlabGeo(T, plinthW - 0.07, 0.045, plinthD - 0.07, 0.085, 0.01),
+    plinthMat,
+    edgeMat,
+    [0, 0.05, 0],
+    node.id,
+  );
+  // 4 brushed metallic corner docking pads
+  const footGeo = new T.CylinderGeometry(0.048, 0.056, 0.042, 10);
+  for (const [fx, fz] of [
+    [-plinthW / 2 + 0.1, -plinthD / 2 + 0.1],
+    [plinthW / 2 - 0.1, -plinthD / 2 + 0.1],
+    [-plinthW / 2 + 0.1, plinthD / 2 - 0.1],
+    [plinthW / 2 - 0.1, plinthD / 2 - 0.1],
+  ] as const) {
+    const foot = new T.Mesh(footGeo, darkMetalMat);
+    foot.position.set(fx, 0.024, fz);
+    foot.userData = { serviceId: node.id };
+    sculptureGroup.add(foot);
+  }
+  // Luminous fiber-optic status strip wrapped around the front plinth rim
+  const rail = new T.Mesh(new T.BoxGeometry(plinthW - 0.24, 0.024, 0.026), accentMat);
+  rail.position.set(0, 0.052, plinthD / 2 + 0.002);
   rail.userData = { serviceId: node.id };
   sculptureGroup.add(rail);
 
-  let topY = 0.62;
+  const attachGlowOrb = (pos: [number, number, number], orbRadius: number, haloScale: number) => {
+    const orb = new T.Mesh(new T.SphereGeometry(orbRadius, 14, 14), coreMat);
+    orb.position.set(pos[0], pos[1], pos[2]);
+    orb.userData = { serviceId: node.id };
+    sculptureGroup.add(orb);
+    if (sharedTex && !node.isStopped) {
+      const glowSprite = new T.Sprite(
+        new T.SpriteMaterial({
+          map: sharedTex.softGlow,
+          color: new T.Color(coreHex),
+          transparent: true,
+          opacity: isDark ? 0.85 : 0.55,
+          blending: T.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      glowSprite.position.set(pos[0], pos[1], pos[2]);
+      glowSprite.scale.set(haloScale, haloScale, 1);
+      glowSprite.userData = { serviceId: node.id };
+      sculptureGroup.add(glowSprite);
+    }
+    return orb;
+  };
+
+  let topY = 0.72;
   const topTex = createTopPlateTexture(T, node, styleId);
   const topPlateMat = new T.MeshBasicMaterial({
     map: topTex,
@@ -1154,121 +1431,529 @@ function buildServiceRig(
     polygonOffsetFactor: -1,
   });
 
-  if (node.archetype === "GATEWAY") {
-    // CNCF / Cloudcraft 1U/2U Edge Ingress Router Chassis
-    const gwW = 1.06;
-    const gwH = node.isStopped ? 0.15 : 0.34;
-    const gwD = 0.72;
+  if (visualArchetype === "GATEWAY") {
+    // ── SCULPTED OCTAGONAL INGRESS PORTAL & ORBITING GYRO-SPIRE ──────────────────────
+    const baseCollarH = node.isStopped ? 0.1 : 0.125;
     addOutlinedMesh(
       T,
       sculptureGroup,
-      createRoundedSlabGeo(T, gwW, gwH, gwD, 0.07, 0.014),
+      new T.CylinderGeometry(0.36, 0.42, baseCollarH, 8),
       chassisMat,
       edgeMat,
-      [0, plinthH, 0],
+      [0, plinthH + baseCollarH / 2, 0],
       node.id,
     );
-    // Crisp top technical plate («gateway»)
-    const topPlate = new T.Mesh(new T.PlaneGeometry(gwW - 0.12, gwD - 0.12), topPlateMat);
-    topPlate.rotation.x = -Math.PI / 2;
-    topPlate.position.set(0, plinthH + gwH + 0.004, 0);
-    topPlate.userData = { serviceId: node.id };
-    sculptureGroup.add(topPlate);
+    const collarGlow = new T.Mesh(new T.TorusGeometry(0.365, 0.015, 10, 32), accentMat);
+    collarGlow.rotation.x = Math.PI / 2;
+    collarGlow.position.set(0, plinthH + baseCollarH, 0);
+    collarGlow.userData = { serviceId: node.id };
+    sculptureGroup.add(collarGlow);
 
-    if (!node.isStopped) {
-      attachFrontTelemetryBar(T, sculptureGroup, node, gwW - 0.18, plinthH + gwH * 0.5, gwD / 2 + 0.004, isDark);
+    const chamberH = node.isStopped ? 0.14 : 0.34;
+    const chamberCenterY = plinthH + baseCollarH + chamberH / 2;
+
+    // Translucent crystal octagonal atrium enclosure
+    const glassDome = new T.Mesh(
+      new T.CylinderGeometry(0.30, 0.34, chamberH, 8),
+      glassMat,
+    );
+    glassDome.position.set(0, chamberCenterY, 0);
+    glassDome.userData = { serviceId: node.id };
+    glassDome.add(new T.LineSegments(new T.EdgesGeometry(glassDome.geometry, 25), edgeMat));
+    sculptureGroup.add(glassDome);
+
+    // Suspended rotating luminous crystalline octahedron routing core inside the glass atrium
+    const crystalCore = new T.Mesh(
+      new T.OctahedronGeometry(node.isStopped ? 0.09 : 0.145, 0),
+      coreMat,
+    );
+    crystalCore.position.set(0, node.isStopped ? plinthH + baseCollarH + 0.07 : chamberCenterY, 0);
+    crystalCore.userData = { serviceId: node.id };
+    sculptureGroup.add(crystalCore);
+    if (isAlive) {
+      rotors.push({ obj: crystalCore, axis: "y", speed: 1.45 * rotorSpeedScale });
+      hoverCores.push({ obj: crystalCore, baseY: chamberCenterY, amp: 0.032, speed: 2.3 });
     }
-    topY = plinthH + gwH + 0.06;
-  } else if (node.archetype === "DATABASE") {
-    // Canonical C4 / UML Multi-Platter Data Store Cylinder
-    const cylR = 0.42;
-    const tierH = node.isStopped ? 0.1 : 0.17;
-    const tiers = node.isStopped ? 1 : 3;
-    for (let i = 0; i < tiers; i++) {
-      const y = plinthH + tierH / 2 + i * (tierH + 0.04);
-      addOutlinedMesh(
-        T,
-        sculptureGroup,
-        new T.CylinderGeometry(cylR, cylR, tierH, 28),
-        i === tiers - 1 ? capMat : chassisMat,
-        edgeMat,
-        [0, y, 0],
-        node.id,
-      );
-      if (i < tiers - 1) {
-        const ring = new T.Mesh(
-          new T.CylinderGeometry(cylR - 0.03, cylR - 0.03, 0.035, 28),
-          accentMat,
-        );
-        ring.position.set(0, y + tierH / 2 + 0.02, 0);
-        ring.userData = { serviceId: node.id };
-        sculptureGroup.add(ring);
+
+    // Twin brushed-metal uplink wing pylons flanking the crystal atrium
+    for (const side of [-1, 1] as const) {
+      const pylonGroup = new T.Group();
+      pylonGroup.position.set(side * 0.44, plinthH + 0.02, 0);
+      const pylonBody = new T.Mesh(createRoundedSlabGeo(T, 0.11, 0.46, 0.22, 0.03, 0.008), metalMat);
+      pylonBody.rotation.z = side * 0.18;
+      pylonBody.castShadow = true;
+      pylonBody.receiveShadow = true;
+      pylonBody.userData = { serviceId: node.id };
+      pylonBody.add(new T.LineSegments(new T.EdgesGeometry(pylonBody.geometry, 30), edgeMat));
+      pylonGroup.add(pylonBody);
+
+      const pylonStripe = new T.Mesh(new T.BoxGeometry(0.022, 0.34, 0.05), accentMat);
+      pylonStripe.position.set(-side * 0.04, 0.24, 0);
+      pylonStripe.rotation.z = side * 0.18;
+      pylonStripe.userData = { serviceId: node.id };
+      pylonGroup.add(pylonStripe);
+      sculptureGroup.add(pylonGroup);
+    }
+
+    // Tilted luminous gyroscopic routing halo orbiting around the crystal chamber
+    if (!node.isStopped) {
+      const gyroHolder = new T.Group();
+      gyroHolder.position.set(0, chamberCenterY + 0.03, 0);
+      gyroHolder.rotation.x = 0.42;
+      gyroHolder.rotation.z = -0.22;
+      const gyroRing = new T.Mesh(new T.TorusGeometry(0.39, 0.016, 12, 44), accentMat);
+      gyroRing.userData = { serviceId: node.id };
+      gyroHolder.add(gyroRing);
+      // Two tiny orbiting telemetry nodes locked onto the gyro ring
+      for (const a of [0, Math.PI]) {
+        const bead = new T.Mesh(new T.SphereGeometry(0.036, 10, 10), coreMat);
+        bead.position.set(Math.cos(a) * 0.39, Math.sin(a) * 0.39, 0);
+        bead.userData = { serviceId: node.id };
+        gyroHolder.add(bead);
+      }
+      sculptureGroup.add(gyroHolder);
+      if (isAlive) {
+        rotors.push({ obj: gyroHolder, axis: "y", speed: 1.15 * rotorSpeedScale });
       }
     }
-    const stackTop = plinthH + tiers * tierH + (tiers - 1) * 0.04;
-    const topDisk = new T.Mesh(new T.CircleGeometry(cylR - 0.04, 28), topPlateMat);
+
+    // Crown cap + uplink antenna spire + glowing beacon orb
+    const crownY = plinthH + baseCollarH + chamberH;
+    addOutlinedMesh(
+      T,
+      sculptureGroup,
+      new T.CylinderGeometry(0.22, 0.31, 0.075, 8),
+      chassisMat,
+      edgeMat,
+      [0, crownY + 0.038, 0],
+      node.id,
+    );
+    const spire = new T.Mesh(new T.CylinderGeometry(0.014, 0.024, 0.18, 10), metalMat);
+    spire.position.set(0, crownY + 0.16, 0);
+    spire.userData = { serviceId: node.id };
+    sculptureGroup.add(spire);
+    attachGlowOrb([0, crownY + 0.26, 0], 0.048, 0.34);
+
+    // Compact angled UML «gateway» nameplate mounted cleanly on front collar bevel
+    const gwPlate = new T.Mesh(new T.PlaneGeometry(0.34, 0.21), topPlateMat);
+    gwPlate.position.set(0, plinthH + baseCollarH + 0.03, 0.39);
+    gwPlate.rotation.x = -Math.PI / 3.4;
+    gwPlate.userData = { serviceId: node.id };
+    sculptureGroup.add(gwPlate);
+
+    if (!node.isStopped) {
+      attachFrontTelemetryBar(T, sculptureGroup, node, 0.74, plinthH * 0.62, plinthD / 2 + 0.012, isDark);
+    }
+    topY = crownY + 0.31;
+  } else if (visualArchetype === "DATABASE") {
+    // ── SCULPTED CRYSTALLINE DATA VAULT SILO ─────────────────────────────────────────
+    const siloH = node.isStopped ? 0.22 : 0.56;
+    const siloCenterY = plinthH + siloH / 2 + 0.02;
+
+    // Continuous glowing crystalline vertical data-core inside glass sleeve
+    const dataCore = new T.Mesh(
+      new T.CylinderGeometry(0.2, 0.2, Math.max(0.14, siloH - 0.06), 24),
+      coreMat,
+    );
+    dataCore.position.set(0, siloCenterY, 0);
+    dataCore.userData = { serviceId: node.id };
+    sculptureGroup.add(dataCore);
+
+    // Frosted crystal glass cylindrical containment sleeve
+    const glassSleeve = new T.Mesh(
+      new T.CylinderGeometry(0.35, 0.35, siloH, 28),
+      glassMat,
+    );
+    glassSleeve.position.set(0, siloCenterY, 0);
+    glassSleeve.userData = { serviceId: node.id };
+    sculptureGroup.add(glassSleeve);
+
+    // 3 sculpted beveled metallic vault rings wrapping the glass silo
+    const ringCount = node.isStopped ? 1 : 3;
+    for (let i = 0; i < ringCount; i++) {
+      const ry = plinthH + 0.07 + i * ((siloH - 0.08) / Math.max(1, ringCount - 1));
+      const disc = addOutlinedMesh(
+        T,
+        sculptureGroup,
+        new T.CylinderGeometry(0.41, 0.41, 0.055, 24),
+        i === ringCount - 1 ? chassisMat : metalMat,
+        edgeMat,
+        [0, ry, 0],
+        node.id,
+      );
+      disc.castShadow = true;
+    }
+
+    // 4 vertical brushed-titanium clamping ribs
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const rib = new T.Mesh(new T.BoxGeometry(0.045, siloH + 0.02, 0.055), darkMetalMat);
+      rib.position.set(Math.cos(a) * 0.39, siloCenterY, Math.sin(a) * 0.39);
+      rib.rotation.y = -a;
+      rib.castShadow = true;
+      rib.userData = { serviceId: node.id };
+      sculptureGroup.add(rib);
+    }
+
+    // Orbiting horizontal data-sync halo ring
+    if (!node.isStopped) {
+      const syncRing = new T.Mesh(new T.TorusGeometry(0.45, 0.013, 10, 40), accentMat);
+      syncRing.rotation.x = Math.PI / 2;
+      syncRing.position.set(0, siloCenterY, 0);
+      syncRing.userData = { serviceId: node.id };
+      sculptureGroup.add(syncRing);
+      if (isAlive) {
+        hoverCores.push({ obj: syncRing, baseY: siloCenterY, amp: 0.12, speed: 1.6 });
+      }
+    }
+
+    const stackTop = plinthH + siloH + 0.06;
+    const topDisk = new T.Mesh(new T.CircleGeometry(0.36, 28), topPlateMat);
     topDisk.rotation.x = -Math.PI / 2;
     topDisk.position.set(0, stackTop + 0.004, 0);
     topDisk.userData = { serviceId: node.id };
     sculptureGroup.add(topDisk);
-    topY = stackTop + 0.06;
-  } else if (node.archetype === "QUEUE") {
-    // Canonical EIP Horizontal Message Broker Conduit on Dual Cradles
-    const cradleMat = capMat;
-    for (const cx of [-0.32, 0.32]) {
+
+    if (!node.isStopped) {
+      attachFrontTelemetryBar(T, sculptureGroup, node, 0.72, plinthH * 0.62, plinthD / 2 + 0.012, isDark);
+    }
+    topY = stackTop + 0.08;
+  } else if (visualArchetype === "QUEUE") {
+    // ── SCULPTED PRESSURIZED GLASS STREAM CONDUIT HUB ────────────────────────────────
+    for (const cx of [-0.34, 0.34]) {
       addOutlinedMesh(
         T,
         sculptureGroup,
-        new T.BoxGeometry(0.14, 0.18, 0.56),
-        cradleMat,
+        createRoundedSlabGeo(T, 0.16, 0.22, 0.56, 0.04, 0.01),
+        metalMat,
         edgeMat,
-        [cx, plinthH + 0.09, 0],
+        [cx, plinthH, 0],
         node.id,
       );
     }
     const pipeY = plinthH + 0.34;
+    // Transparent pressurized glass horizontal tube
+    const glassPipe = new T.Mesh(
+      new T.CylinderGeometry(0.22, 0.22, 0.96, 28),
+      glassMat,
+    );
+    glassPipe.rotation.z = Math.PI / 2;
+    glassPipe.position.set(0, pipeY, 0);
+    glassPipe.userData = { serviceId: node.id };
+    sculptureGroup.add(glassPipe);
+
+    // Inner glowing energy guide rail + 3 animated sliding message capsules
+    const guideRail = new T.Mesh(
+      new T.CylinderGeometry(0.032, 0.032, 0.9, 12),
+      accentMat,
+    );
+    guideRail.rotation.z = Math.PI / 2;
+    guideRail.position.set(0, pipeY, 0);
+    guideRail.userData = { serviceId: node.id };
+    sculptureGroup.add(guideRail);
+
+    const capsuleGeo = new T.CapsuleGeometry(0.068, 0.08, 8, 12);
+    for (let i = 0; i < 3; i++) {
+      const cap = new T.Mesh(capsuleGeo, coreMat);
+      cap.rotation.z = Math.PI / 2;
+      cap.position.set(-0.34 + i * 0.34, pipeY, 0);
+      cap.userData = { serviceId: node.id };
+      sculptureGroup.add(cap);
+      if (isAlive) {
+        streamCapsules.push({
+          obj: cap,
+          minX: -0.36,
+          maxX: 0.36,
+          speed: 0.42 * rotorSpeedScale,
+          phase: i / 3,
+        });
+      }
+    }
+
+    // 3 brushed-metal flanged pressure collars
+    for (const rx of [-0.43, 0, 0.43]) {
+      const flange = new T.Mesh(new T.TorusGeometry(0.235, 0.028, 12, 28), metalMat);
+      flange.rotation.y = Math.PI / 2;
+      flange.position.set(rx, pipeY, 0);
+      flange.castShadow = true;
+      flange.userData = { serviceId: node.id };
+      sculptureGroup.add(flange);
+
+      const glowRing = new T.Mesh(new T.TorusGeometry(0.245, 0.01, 8, 28), accentMat);
+      glowRing.rotation.y = Math.PI / 2;
+      glowRing.position.set(rx, pipeY, 0);
+      glowRing.userData = { serviceId: node.id };
+      sculptureGroup.add(glowRing);
+    }
+    if (!node.isStopped) {
+      attachFrontTelemetryBar(T, sculptureGroup, node, 0.72, plinthH * 0.62, plinthD / 2 + 0.012, isDark);
+    }
+    topY = pipeY + 0.28;
+  } else if (visualArchetype === "WORKER") {
+    // ── SCULPTED ASYMMETRIC ASYNC RELAY & KINETIC FLYWHEEL PROCESSOR ─────────────────
+    // Left intake chamber with hovering crystalline message prism + compact status plate
+    const intakeH = node.isStopped ? 0.12 : 0.22;
     addOutlinedMesh(
       T,
       sculptureGroup,
-      new T.CylinderGeometry(0.24, 0.24, 0.96, 24),
+      createRoundedSlabGeo(T, 0.44, intakeH, 0.62, 0.055, 0.012),
       chassisMat,
       edgeMat,
-      [0, pipeY, 0],
+      [-0.28, plinthH, 0],
       node.id,
-      [0, 0, Math.PI / 2],
     );
-    for (const rx of [-0.42, 0, 0.42]) {
-      const collar = new T.Mesh(
-        new T.CylinderGeometry(0.27, 0.27, 0.055, 24),
-        accentMat,
-      );
-      collar.rotation.z = Math.PI / 2;
-      collar.position.set(rx, pipeY, 0);
-      collar.userData = { serviceId: node.id };
-      sculptureGroup.add(collar);
+    const intakeCollar = new T.Mesh(new T.TorusGeometry(0.145, 0.018, 10, 24), metalMat);
+    intakeCollar.rotation.x = Math.PI / 2;
+    intakeCollar.position.set(-0.28, plinthH + intakeH + 0.01, -0.11);
+    intakeCollar.userData = { serviceId: node.id };
+    sculptureGroup.add(intakeCollar);
+
+    const intakePrism = new T.Mesh(
+      new T.OctahedronGeometry(node.isStopped ? 0.065 : 0.095, 0),
+      coreMat,
+    );
+    const prismBaseY = plinthH + intakeH + 0.13;
+    intakePrism.position.set(-0.28, node.isStopped ? plinthH + intakeH + 0.05 : prismBaseY, -0.11);
+    intakePrism.userData = { serviceId: node.id };
+    sculptureGroup.add(intakePrism);
+    if (isAlive) {
+      rotors.push({ obj: intakePrism, axis: "y", speed: -2.0 * rotorSpeedScale });
+      hoverCores.push({ obj: intakePrism, baseY: prismBaseY, amp: 0.028, speed: 3.1 });
     }
-    topY = pipeY + 0.28;
+
+    // Crisp compact UML «worker» nameplate on front-left terrace
+    const wPlate = new T.Mesh(new T.PlaneGeometry(0.36, 0.24), topPlateMat);
+    wPlate.rotation.x = -Math.PI / 2;
+    wPlate.position.set(-0.28, plinthH + intakeH + 0.005, 0.15);
+    wPlate.userData = { serviceId: node.id };
+    sculptureGroup.add(wPlate);
+
+    // Connecting pressurized bridge conduit from intake to kinetic flywheel drum
+    const bridge = new T.Mesh(new T.CylinderGeometry(0.055, 0.055, 0.24, 14), metalMat);
+    bridge.rotation.z = Math.PI / 2;
+    bridge.position.set(0.0, plinthH + 0.18, 0);
+    bridge.castShadow = true;
+    bridge.userData = { serviceId: node.id };
+    sculptureGroup.add(bridge);
+
+    // Right vertical crystal-glass flywheel turbine drum
+    const drumX = 0.25;
+    const drumH = node.isStopped ? 0.16 : 0.44;
+    const drumCenterY = plinthH + drumH / 2 + 0.03;
+
+    // Lower & upper brushed-metal flanged drum caps
+    addOutlinedMesh(
+      T,
+      sculptureGroup,
+      new T.CylinderGeometry(0.30, 0.32, 0.055, 24),
+      metalMat,
+      edgeMat,
+      [drumX, plinthH + 0.028, 0],
+      node.id,
+    );
+    const drumGlass = new T.Mesh(new T.CylinderGeometry(0.26, 0.26, drumH, 24), glassMat);
+    drumGlass.position.set(drumX, drumCenterY, 0);
+    drumGlass.userData = { serviceId: node.id };
+    sculptureGroup.add(drumGlass);
+
+    // Central luminous energy shaft inside the glass drum
+    const shaft = new T.Mesh(
+      new T.CylinderGeometry(0.085, 0.085, Math.max(0.1, drumH - 0.04), 16),
+      coreMat,
+    );
+    shaft.position.set(drumX, drumCenterY, 0);
+    shaft.userData = { serviceId: node.id };
+    sculptureGroup.add(shaft);
+
+    // Dual counter-rotating kinetic flywheel turbine rings inside the drum
+    if (!node.isStopped) {
+      const rotorA = buildTurbineRotor(T, 0.21, metalMat, darkMetalMat, node.id);
+      rotorA.position.set(drumX, drumCenterY - 0.07, 0);
+      sculptureGroup.add(rotorA);
+      const rotorB = buildTurbineRotor(T, 0.19, accentMat, darkMetalMat, node.id);
+      rotorB.position.set(drumX, drumCenterY + 0.09, 0);
+      sculptureGroup.add(rotorB);
+      if (isAlive) {
+        rotors.push({ obj: rotorA, axis: "y", speed: 2.8 * rotorSpeedScale });
+        rotors.push({ obj: rotorB, axis: "y", speed: -2.1 * rotorSpeedScale });
+      }
+    }
+
+    // 4 slender vertical chrome tie-rods around the drum perimeter
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const rod = new T.Mesh(new T.CylinderGeometry(0.015, 0.015, drumH + 0.04, 8), darkMetalMat);
+      rod.position.set(drumX + Math.cos(a) * 0.285, drumCenterY, Math.sin(a) * 0.285);
+      rod.userData = { serviceId: node.id };
+      sculptureGroup.add(rod);
+    }
+
+    // Crown cap + top dispatch beacon
+    const drumTopY = plinthH + drumH + 0.06;
+    addOutlinedMesh(
+      T,
+      sculptureGroup,
+      new T.CylinderGeometry(0.24, 0.30, 0.06, 24),
+      chassisMat,
+      edgeMat,
+      [drumX, drumTopY, 0],
+      node.id,
+    );
+    attachGlowOrb([drumX, drumTopY + 0.075, 0], 0.046, 0.32);
+
+    if (!node.isStopped) {
+      attachFrontTelemetryBar(T, sculptureGroup, node, 0.84, plinthH * 0.62, plinthD / 2 + 0.012, isDark);
+    }
+    topY = drumTopY + 0.14;
   } else {
-    // UML 2.5 Deployment Node + Real Docker Replica Container Pods (1..3 side-by-side inside Service Boundary)
+    // ── SCULPTED GLASS-ATRIUM COMPUTE REACTOR (1..3x LIVE PHYSICAL REPLICAS + SPINNING TURBINE) ──
     const podCount = node.isStopped ? 1 : Math.max(1, Math.min(3, node.replicas || 1));
-    const podH = node.isStopped ? 0.14 : 0.44;
-    const podD = 0.68;
+    const lowerH = 0.085;
+    const chamberH = node.isStopped ? 0.11 : 0.27;
+    const topCapH = 0.075;
+    const totalPodH = lowerH + chamberH + topCapH;
+    const podD = 0.70;
     const spanW = 1.04;
-    const gap = 0.06;
+    const gap = 0.065;
     const podW = (spanW - gap * (podCount - 1)) / podCount;
 
     for (let i = 0; i < podCount; i++) {
       const px = -spanW / 2 + podW / 2 + i * (podW + gap);
-      const podGeo = createRoundedSlabGeo(T, podW, podH, podD, 0.055, 0.013);
-      addOutlinedMesh(T, sculptureGroup, podGeo, chassisMat, edgeMat, [px, plinthH, 0], node.id);
 
-      // Clean subtle top trim bezel strip
-      const capStrip = new T.Mesh(new T.BoxGeometry(podW - 0.06, 0.02, 0.04), accentMat);
-      capStrip.position.set(px, plinthH + podH - 0.015, podD / 2 - 0.045);
-      capStrip.userData = { serviceId: node.id };
-      sculptureGroup.add(capStrip);
+      // A. Chamfered lower ceramic/titanium manifold deck
+      addOutlinedMesh(
+        T,
+        sculptureGroup,
+        createRoundedSlabGeo(T, podW, lowerH, podD, 0.055, 0.012),
+        chassisMat,
+        edgeMat,
+        [px, plinthH, 0],
+        node.id,
+      );
 
-      // Data-driven RAM + CPU telemetry gauge recessed into the front face of each running pod
+      // B. Open-frame crystal glass atrium chamber (visible glowing compute wafers inside!)
+      const chamberBaseY = plinthH + lowerH;
+      const chamberCenterY = chamberBaseY + chamberH / 2;
+      const glassShell = new T.Mesh(
+        createRoundedSlabGeo(T, Math.max(0.18, podW - 0.07), chamberH, podD - 0.08, 0.04, 0.008),
+        glassMat,
+      );
+      glassShell.position.set(px, chamberBaseY, 0);
+      glassShell.userData = { serviceId: node.id };
+      sculptureGroup.add(glassShell);
+
+      // 4 brushed aluminum corner pillars framing the glass chamber
+      const pillarGeo = new T.CylinderGeometry(0.022, 0.024, chamberH + 0.01, 10);
+      const colDx = Math.max(0.08, podW / 2 - 0.048);
+      const colDz = podD / 2 - 0.052;
+      for (const [cx, cz] of [
+        [-colDx, -colDz],
+        [colDx, -colDz],
+        [-colDx, colDz],
+        [colDx, colDz],
+      ] as const) {
+        const pillar = new T.Mesh(pillarGeo, metalMat);
+        pillar.position.set(px + cx, chamberCenterY, cz);
+        pillar.castShadow = true;
+        pillar.userData = { serviceId: node.id };
+        sculptureGroup.add(pillar);
+      }
+
+      // Luminous horizontally-stacked compute core wafers visible inside the crystal chamber
+      const waferCount = node.isStopped ? 1 : 3;
+      const waferW = Math.max(0.12, podW - 0.18);
+      const waferD = podD - 0.22;
+      for (let w = 0; w < waferCount; w++) {
+        const wy = chamberBaseY + 0.045 + w * ((chamberH - 0.09) / Math.max(1, waferCount - 1));
+        const wafer = new T.Mesh(
+          createRoundedSlabGeo(T, waferW, 0.036, waferD, 0.03, 0.006),
+          coreMat,
+        );
+        wafer.position.set(px, wy - 0.018, 0);
+        wafer.userData = { serviceId: node.id };
+        sculptureGroup.add(wafer);
+      }
+
+      // Sculpted side brushed-metal heatsink louver fins on outer left/right edges
+      if (podCount === 1 || i === 0 || i === podCount - 1) {
+        const finGeo = new T.BoxGeometry(0.045, 0.018, podD - 0.22);
+        const sides = podCount === 1 ? [-1, 1] : i === 0 ? [-1] : [1];
+        for (const side of sides) {
+          for (let f = 0; f < 3; f++) {
+            const fin = new T.Mesh(finGeo, metalMat);
+            fin.position.set(
+              px + side * (podW / 2 + 0.006),
+              chamberBaseY + 0.055 + f * ((chamberH - 0.11) / 2),
+              0,
+            );
+            fin.castShadow = true;
+            fin.userData = { serviceId: node.id };
+            sculptureGroup.add(fin);
+          }
+        }
+      }
+
+      // C. Upper chamfered ceramic/titanium shroud crown
+      const crownBaseY = chamberBaseY + chamberH;
+      addOutlinedMesh(
+        T,
+        sculptureGroup,
+        createRoundedSlabGeo(T, podW, topCapH, podD, 0.055, 0.012),
+        chassisMat,
+        edgeMat,
+        [px, crownBaseY, 0],
+        node.id,
+      );
+
+      // D. Recessed circular brushed-metal intake shroud + REAL SPINNING 6-BLADE 3D COOLING TURBINE
+      const turbineR = podCount === 1 ? 0.19 : podCount === 2 ? 0.15 : 0.11;
+      const turbineX = podCount === 1 ? px - 0.24 : px;
+      const turbineZ = podCount === 1 ? 0 : -0.02;
+      const topSurfaceY = crownBaseY + topCapH;
+
+      const fanWell = new T.Mesh(
+        new T.CylinderGeometry(turbineR, turbineR, 0.014, 22),
+        darkMetalMat,
+      );
+      fanWell.position.set(turbineX, topSurfaceY + 0.002, turbineZ);
+      fanWell.userData = { serviceId: node.id };
+      sculptureGroup.add(fanWell);
+
+      const fanShroud = new T.Mesh(
+        new T.TorusGeometry(turbineR + 0.012, 0.02, 10, 26),
+        metalMat,
+      );
+      fanShroud.rotation.x = Math.PI / 2;
+      fanShroud.position.set(turbineX, topSurfaceY + 0.012, turbineZ);
+      fanShroud.userData = { serviceId: node.id };
+      sculptureGroup.add(fanShroud);
+
+      const rotor = buildTurbineRotor(T, turbineR * 0.88, accentMat, darkMetalMat, node.id);
+      rotor.position.set(turbineX, topSurfaceY + 0.016, turbineZ);
+      sculptureGroup.add(rotor);
+      if (isAlive) {
+        rotors.push({ obj: rotor, axis: "y", speed: (2.6 + i * 0.35) * rotorSpeedScale });
+      }
+
+      // E. Crisp engineering top nameplate mounted cleanly beside the turbine (1x) or on front rim (2x/3x)
+      if (podCount === 1) {
+        const plate = new T.Mesh(new T.PlaneGeometry(0.46, 0.44), topPlateMat);
+        plate.rotation.x = -Math.PI / 2;
+        plate.position.set(px + 0.22, topSurfaceY + 0.005, 0);
+        plate.userData = { serviceId: node.id };
+        sculptureGroup.add(plate);
+      } else {
+        const miniPlate = new T.Mesh(
+          new T.PlaneGeometry(Math.max(0.18, podW - 0.08), 0.16),
+          topPlateMat,
+        );
+        miniPlate.rotation.x = -Math.PI / 2;
+        miniPlate.position.set(px, topSurfaceY + 0.005, podD / 2 - 0.12);
+        miniPlate.userData = { serviceId: node.id };
+        sculptureGroup.add(miniPlate);
+      }
+
+      // F. Front recessed RAM + CPU telemetry bezel bar on each pod
       if (!node.isStopped) {
         const gaugeHolder = new T.Group();
         gaugeHolder.position.set(px, 0, 0);
@@ -1277,49 +1962,97 @@ function buildServiceRig(
           gaugeHolder,
           node,
           Math.max(0.22, podW - 0.08),
-          plinthH + podH * 0.48,
+          plinthH + lowerH * 0.65,
           podD / 2 + 0.004,
           isDark,
         );
         sculptureGroup.add(gaugeHolder);
       }
-
-      // Top plate decal on single pod (or compact schematic on each twin/triple replica pod)
-      const plateW = Math.max(0.22, podW - 0.08);
-      const plateD = Math.min(podD - 0.1, plateW * 0.72 + 0.18);
-      const plate = new T.Mesh(new T.PlaneGeometry(plateW, plateD), topPlateMat);
-      plate.rotation.x = -Math.PI / 2;
-      plate.position.set(px, plinthH + podH + 0.004, -0.02);
-      plate.userData = { serviceId: node.id };
-      sculptureGroup.add(plate);
     }
 
-    // Translucent Amber Freeze Enclosure when Docker PAUSE is active
-    if (node.isPaused) {
-      const cageGeo = new T.BoxGeometry(spanW + 0.1, podH + 0.1, podD + 0.1);
-      const cageFill = new T.Mesh(
-        cageGeo,
+    topY = plinthH + totalPodH + 0.08;
+  }
+
+  // ── REACTIVE FAULT FX: Crystalline Amber Stasis Field (PAUSE) ───────────────────────
+  if (node.isPaused) {
+    const stasisH = Math.max(0.48, topY - plinthH + 0.08);
+    const domeGeo = new T.CylinderGeometry(0.64, 0.68, stasisH, 6, 1, false);
+    const domeFill = new T.Mesh(
+      domeGeo,
+      new T.MeshPhysicalMaterial({
+        color: new T.Color("#f59e0b"),
+        emissive: new T.Color("#d97706"),
+        emissiveIntensity: 0.22,
+        roughness: 0.12,
+        clearcoat: 1.0,
+        transparent: true,
+        opacity: 0.14,
+        depthWrite: false,
+      }),
+    );
+    domeFill.position.set(0, plinthH + stasisH / 2, 0);
+    domeFill.userData = { serviceId: node.id };
+    domeFill.add(
+      new T.LineSegments(
+        new T.EdgesGeometry(domeGeo, 12),
+        new T.LineBasicMaterial({ color: new T.Color("#f59e0b"), transparent: true, opacity: 0.78 }),
+      ),
+    );
+    sculptureGroup.add(domeFill);
+
+    const scanRing = new T.Mesh(
+      new T.TorusGeometry(0.67, 0.014, 8, 6),
+      new T.MeshBasicMaterial({ color: new T.Color("#fbbf24"), transparent: true, opacity: 0.9 }),
+    );
+    scanRing.rotation.x = Math.PI / 2;
+    scanRing.position.set(0, plinthH + stasisH * 0.55, 0);
+    scanRing.userData = { serviceId: node.id };
+    sculptureGroup.add(scanRing);
+    stasisRing = scanRing;
+  }
+
+  // ── REACTIVE FAULT FX: Rising Smoke / Ember Motes & Crimson Hazard Beacon (STOPPED) ──
+  if (node.isStopped) {
+    const hazardMat = new T.MeshStandardMaterial({
+      color: new T.Color("#f43f5e"),
+      emissive: new T.Color("#f43f5e"),
+      emissiveIntensity: 1.4,
+      roughness: 0.2,
+    });
+    pulseMaterials.push({ mat: hazardMat, baseIntensity: 1.0, amp: 0.85, speed: 5.5 });
+    const hazardBeacon = new T.Mesh(new T.SphereGeometry(0.055, 12, 12), hazardMat);
+    hazardBeacon.position.set(0, topY + 0.04, 0);
+    hazardBeacon.userData = { serviceId: node.id };
+    sculptureGroup.add(hazardBeacon);
+
+    for (let s = 0; s < 5; s++) {
+      const isEmber = s % 2 === 1;
+      const mote = new T.Mesh(
+        new T.SphereGeometry(isEmber ? 0.028 : 0.058, 10, 10),
         new T.MeshBasicMaterial({
-          color: new T.Color("#f59e0b"),
+          color: new T.Color(isEmber ? "#fb7185" : isDark ? "#64748b" : "#94a3b8"),
           transparent: true,
-          opacity: 0.1,
+          opacity: isEmber ? 0.85 : 0.42,
           depthWrite: false,
         }),
       );
-      cageFill.position.set(0, plinthH + (podH + 0.06) / 2, 0);
-      cageFill.userData = { serviceId: node.id };
-      const cageWire = new T.LineSegments(
-        new T.EdgesGeometry(cageGeo),
-        new T.LineBasicMaterial({ color: new T.Color("#f59e0b") }),
-      );
-      cageFill.add(cageWire);
-      sculptureGroup.add(cageFill);
+      const bx = Math.cos(s * 1.4) * 0.18;
+      const bz = Math.sin(s * 1.4) * 0.14;
+      mote.position.set(bx, topY + 0.06, bz);
+      sculptureGroup.add(mote);
+      smokeParticles.push({
+        mesh: mote,
+        baseX: bx,
+        baseZ: bz,
+        baseY: topY + 0.04,
+        maxRise: 0.52 + (s % 3) * 0.12,
+        speed: 0.36 + (s % 3) * 0.1,
+        phase: s * 0.21,
+      });
     }
-
-    topY = plinthH + podH + 0.08;
   }
 
-  // Rectangular Architectural Selection / Drop-Target / Fault Boundary Halo around Plinth
+  // Rounded Chamfered Selection / Drop-Target / Fault Boundary Halo around Pedestal
   let halo: THREE.Mesh | undefined;
   if (node.isSelected || node.isDropTarget || node.isCritical || node.isWarning) {
     const haloColor = node.isCritical
@@ -1330,26 +2063,31 @@ function buildServiceRig(
           ? "#10b981"
           : styleId === "control"
             ? "#38bdf8"
-            : "#0056D2";
-    const outerW = plinthW + 0.16;
-    const outerD = plinthD + 0.16;
-    const innerW = plinthW + 0.05;
-    const innerD = plinthD + 0.05;
-    const outerShape = new T.Shape();
-    outerShape.moveTo(-outerW / 2, -outerD / 2);
-    outerShape.lineTo(outerW / 2, -outerD / 2);
-    outerShape.lineTo(outerW / 2, outerD / 2);
-    outerShape.lineTo(-outerW / 2, outerD / 2);
-    outerShape.closePath();
-    const hole = new T.Path();
-    hole.moveTo(-innerW / 2, -innerD / 2);
-    hole.lineTo(innerW / 2, -innerD / 2);
-    hole.lineTo(innerW / 2, innerD / 2);
-    hole.lineTo(-innerW / 2, innerD / 2);
-    hole.closePath();
+            : "#0284c7";
+    const outerW = plinthW + 0.18;
+    const outerD = plinthD + 0.18;
+    const innerW = plinthW + 0.06;
+    const innerD = plinthD + 0.06;
+    const makeRoundedPath = (w: number, d: number, r: number) => {
+      const hw = w / 2;
+      const hd = d / 2;
+      const p = new T.Shape();
+      p.moveTo(-hw + r, -hd);
+      p.lineTo(hw - r, -hd);
+      p.quadraticCurveTo(hw, -hd, hw, -hd + r);
+      p.lineTo(hw, hd - r);
+      p.quadraticCurveTo(hw, hd, hw - r, hd);
+      p.lineTo(-hw + r, hd);
+      p.quadraticCurveTo(-hw, hd, -hw, hd - r);
+      p.lineTo(-hw, -hd + r);
+      p.quadraticCurveTo(-hw, -hd, -hw + r, -hd);
+      return p;
+    };
+    const outerShape = makeRoundedPath(outerW, outerD, 0.16);
+    const hole = makeRoundedPath(innerW, innerD, 0.12);
     outerShape.holes.push(hole);
 
-    const haloGeo = new T.ShapeGeometry(outerShape);
+    const haloGeo = new T.ShapeGeometry(outerShape, 8);
     const haloMat = new T.MeshBasicMaterial({
       color: new T.Color(haloColor),
       side: T.DoubleSide,
@@ -1363,9 +2101,9 @@ function buildServiceRig(
     group.add(halo);
   }
 
-  // Crisp 3D Floating Service Pill Sprite
+  // Crisp 3D Floating Service Pill Sprite (positioned cleanly above tallest spire/turbine)
   const labelSprite = createNodeLabelSprite(T, node, styleId);
-  const labelBaseY = topY + 0.30;
+  const labelBaseY = topY + 0.34;
   labelSprite.position.set(0, labelBaseY, 0);
   labelSprite.userData = { serviceId: node.id };
   group.add(labelSprite);
@@ -1375,9 +2113,15 @@ function buildServiceRig(
     group,
     baseY: 0,
     phase: (node.wx * 0.013 + node.wz * 0.017) % (Math.PI * 2),
-    active: !node.isStopped,
+    active: isAlive,
     halo,
     replicaPods: [],
+    rotors,
+    hoverCores,
+    pulseMaterials,
+    streamCapsules,
+    smokeParticles,
+    stasisRing,
     labelSprite,
     labelBaseY,
     labelBaseW: labelSprite.scale.x,
@@ -1392,16 +2136,17 @@ function disposeObjectTree(T: ThreeModule, obj: THREE.Object3D) {
       meshLike.geometry.dispose();
     }
     const mat = meshLike.material;
+    const disposeMat = (m: THREE.Material) => {
+      const spriteMat = m as THREE.SpriteMaterial;
+      if (spriteMat.map && !spriteMat.map.userData?.["__shared"]) {
+        spriteMat.map.dispose();
+      }
+      m.dispose();
+    };
     if (Array.isArray(mat)) {
-      mat.forEach((m) => {
-        const spriteMat = m as THREE.SpriteMaterial;
-        if (spriteMat.map) spriteMat.map.dispose();
-        m.dispose();
-      });
+      mat.forEach(disposeMat);
     } else if (mat) {
-      const spriteMat = mat as THREE.SpriteMaterial;
-      if (spriteMat.map) spriteMat.map.dispose();
-      mat.dispose();
+      disposeMat(mat);
     }
   });
 }
@@ -1445,6 +2190,8 @@ export function StudioThreeStage({
     key: THREE.DirectionalLight;
     rim: THREE.DirectionalLight;
   } | null>(null);
+  const envTargetRef = useRef<THREE.WebGLRenderTarget | null>(null);
+  const sharedTexRef = useRef<SharedStageTextures | null>(null);
   const packetsRef = useRef<AnimatedPacket[]>([]);
   const nodeRigsRef = useRef<AnimatedNodeRig[]>([]);
   const edgeRigsRef = useRef<EdgeRig[]>([]);
@@ -1514,8 +2261,11 @@ export function StudioThreeStage({
     };
     boundCanvas?.addEventListener("wheel", handleWheel, { passive: false });
 
-    void import("three")
-      .then((T) => {
+    void Promise.all([
+      import("three"),
+      import("three/examples/jsm/environments/RoomEnvironment.js").catch(() => null),
+    ])
+      .then(([T, envMod]) => {
         if (cancelled) return;
         const container = containerRef.current;
         const canvas = canvasRef.current;
@@ -1543,9 +2293,29 @@ export function StudioThreeStage({
         renderer.shadowMap.needsUpdate = true;
         renderer.outputColorSpace = T.SRGBColorSpace;
         renderer.toneMapping = T.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.06;
+        renderer.toneMappingExposure = 1.08;
 
         const scene = new T.Scene();
+        // Bake studio softbox PBR environment reflections once via PMREMGenerator (zero external HDR files)
+        if (envMod?.RoomEnvironment) {
+          try {
+            const pmrem = new T.PMREMGenerator(renderer);
+            const roomEnv = new envMod.RoomEnvironment();
+            const envRT = pmrem.fromScene(roomEnv, 0.04);
+            scene.environment = envRT.texture;
+            scene.environmentIntensity = 0.56;
+            envTargetRef.current = envRT;
+            roomEnv.dispose();
+            pmrem.dispose();
+          } catch {
+            // Fallback cleanly to directional + hemisphere lighting on constrained GPUs
+          }
+        }
+        sharedTexRef.current = {
+          contactShadow: createContactShadowTexture(T),
+          softGlow: createSoftGlowTexture(T),
+        };
+
         const width = Math.max(1, container.clientWidth);
         const height = Math.max(1, container.clientHeight);
         viewportSizeRef.current = { w: width, h: height };
@@ -1643,7 +2413,7 @@ export function StudioThreeStage({
           perspCam.position.set(camX, camY, camZ);
           perspCam.lookAt(lookX, 0.32, lookZ);
 
-          // Subtle alive animation on 3D traffic packets & halos
+          // Living 60fps diorama animations (zero per-frame allocations)
           const tSec = now * 0.001;
           for (const pkt of packetsRef.current) {
             const u = (tSec * pkt.speed + pkt.phase) % 1;
@@ -1651,8 +2421,41 @@ export function StudioThreeStage({
           }
           for (const rig of nodeRigsRef.current) {
             if (rig.halo) {
-              const pulse = 1 + Math.sin(tSec * 3.2 + rig.phase) * 0.03;
+              const pulse = 1 + Math.sin(tSec * 3.2 + rig.phase) * 0.028;
               rig.halo.scale.set(pulse, pulse, 1);
+            }
+            for (const rotor of rig.rotors) {
+              if (rotor.axis === "y") rotor.obj.rotation.y += rotor.speed * dt;
+              else if (rotor.axis === "x") rotor.obj.rotation.x += rotor.speed * dt;
+              else rotor.obj.rotation.z += rotor.speed * dt;
+            }
+            for (const hc of rig.hoverCores) {
+              hc.obj.position.y = hc.baseY + Math.sin(tSec * hc.speed + rig.phase) * hc.amp;
+            }
+            for (const pm of rig.pulseMaterials) {
+              pm.mat.emissiveIntensity = Math.max(
+                0.08,
+                pm.baseIntensity + Math.sin(tSec * pm.speed + rig.phase) * pm.amp,
+              );
+            }
+            for (const sc of rig.streamCapsules) {
+              const u = (tSec * sc.speed + sc.phase) % 1;
+              sc.obj.position.x = sc.minX + (sc.maxX - sc.minX) * u;
+            }
+            if (rig.stasisRing) {
+              rig.stasisRing.rotation.z += 0.65 * dt;
+            }
+            for (const sp of rig.smokeParticles) {
+              const u = (tSec * sp.speed + sp.phase) % 1;
+              sp.mesh.position.set(
+                sp.baseX + Math.sin(tSec * 2.0 + sp.phase * 6) * 0.05 * u,
+                sp.baseY + u * sp.maxRise,
+                sp.baseZ + Math.cos(tSec * 1.7 + sp.phase * 6) * 0.05 * u,
+              );
+              const s = 0.65 + u * 0.9;
+              sp.mesh.scale.set(s, s, s);
+              const m = sp.mesh.material as THREE.MeshBasicMaterial;
+              m.opacity = (1 - u) * 0.55;
             }
             const lp = computeNodeLabelPlacement(live.yaw, clampedPitch, live.zoom, rig.labelBaseY);
             rig.labelSprite.position.set(lp.x, lp.y, lp.z);
@@ -1729,6 +2532,13 @@ export function StudioThreeStage({
       if (threeRef.current && contentGroupRef.current) {
         disposeObjectTree(threeRef.current, contentGroupRef.current);
       }
+      envTargetRef.current?.dispose();
+      envTargetRef.current = null;
+      if (sharedTexRef.current) {
+        sharedTexRef.current.contactShadow.dispose();
+        sharedTexRef.current.softGlow.dispose();
+        sharedTexRef.current = null;
+      }
       rendererRef.current?.dispose();
       rendererRef.current = null;
       sceneRef.current = null;
@@ -1787,42 +2597,47 @@ export function StudioThreeStage({
     const styleCfg = STUDIO_STYLES[styleId];
     const isLight = !styleCfg.isDark;
 
-    // Theme-tuned lighting rig
+    // Theme-tuned lighting rig + PBR studio environment intensity
+    const scene = sceneRef.current;
     if (styleId === "control") {
       lights.hemi.color.set("#cbd5e1");
       lights.hemi.groundColor.set("#0f172a");
-      lights.hemi.intensity = 1.05;
+      lights.hemi.intensity = 1.0;
       lights.key.color.set("#e0f2fe");
-      lights.key.intensity = 1.15;
+      lights.key.intensity = 1.25;
       lights.rim.color.set("#38bdf8");
-      lights.rim.intensity = 0.75;
+      lights.rim.intensity = 0.85;
+      if (scene) scene.environmentIntensity = 0.72;
     } else if (styleId === "pop") {
       lights.hemi.color.set("#ffffff");
       lights.hemi.groundColor.set("#fef3c7");
-      lights.hemi.intensity = 1.35;
+      lights.hemi.intensity = 1.3;
       lights.key.color.set("#ffffff");
-      lights.key.intensity = 1.05;
+      lights.key.intensity = 1.1;
       lights.rim.color.set("#bae6fd");
       lights.rim.intensity = 0.45;
+      if (scene) scene.environmentIntensity = 0.32;
     } else if (styleId === "blueprint") {
       lights.hemi.color.set("#f0f9ff");
       lights.hemi.groundColor.set("#bfdbfe");
-      lights.hemi.intensity = 1.3;
+      lights.hemi.intensity = 1.25;
       lights.key.color.set("#ffffff");
-      lights.key.intensity = 1.05;
+      lights.key.intensity = 1.1;
       lights.rim.color.set("#60a5fa");
-      lights.rim.intensity = 0.55;
+      lights.rim.intensity = 0.58;
+      if (scene) scene.environmentIntensity = 0.38;
     } else {
       lights.hemi.color.set("#ffffff");
       lights.hemi.groundColor.set("#dbeafe");
-      lights.hemi.intensity = 1.22;
+      lights.hemi.intensity = 1.15;
       lights.key.color.set("#ffffff");
-      lights.key.intensity = 1.25;
+      lights.key.intensity = 1.3;
       lights.rim.color.set("#93c5fd");
-      lights.rim.intensity = 0.5;
+      lights.rim.intensity = 0.55;
+      if (scene) scene.environmentIntensity = 0.58;
     }
 
-    // 1. Real 3D Platform Deck Slab + Surface Grid Lines
+    // 1. Sculpted 2-Tier Beveled Architectural Diorama Deck + Surface Grid Lines
     const minX = deckBounds.minX * WORLD_SCALE;
     const maxX = deckBounds.maxX * WORLD_SCALE;
     const minZ = deckBounds.minZ * WORLD_SCALE;
@@ -1831,36 +2646,58 @@ export function StudioThreeStage({
     const deckD = Math.max(3.6, maxZ - minZ);
     const deckCx = (minX + maxX) / 2;
     const deckCz = (minZ + maxZ) / 2;
-    const deckH = 0.22;
+    const deckH = 0.16;
 
-    const deckTopMat = new T.MeshStandardMaterial({
+    const deckGroup = new T.Group();
+    deckGroup.position.set(deckCx, 0, deckCz);
+
+    const deckTopMat = new T.MeshPhysicalMaterial({
       color: new T.Color(styleCfg.deckTopFill),
-      roughness: styleId === "control" ? 0.52 : 0.78,
-      metalness: styleId === "control" ? 0.2 : 0.04,
+      roughness: styleId === "control" ? 0.34 : styleId === "pop" ? 0.55 : 0.48,
+      metalness: styleId === "control" ? 0.32 : 0.06,
+      clearcoat: styleId === "control" ? 0.55 : styleId === "daylight" ? 0.38 : 0.18,
+      clearcoatRoughness: 0.32,
     });
-    const deckSideMat = new T.MeshStandardMaterial({
-      color: new T.Color(styleCfg.deckRimFill),
-      roughness: 0.72,
-      metalness: 0.06,
+    const deckSkirtMat = new T.MeshPhysicalMaterial({
+      color: new T.Color(styleId === "control" ? "#0f172a" : styleId === "blueprint" ? "#93c5fd" : styleId === "pop" ? "#0f172a" : "#cbd5e1"),
+      roughness: styleId === "control" ? 0.28 : 0.45,
+      metalness: styleId === "control" ? 0.65 : 0.28,
     });
-    const deckGeo = new T.BoxGeometry(deckW, deckH, deckD);
-    const deckMesh = new T.Mesh(deckGeo, [
-      deckSideMat,
-      deckSideMat,
-      deckTopMat,
-      deckSideMat,
-      deckSideMat,
-      deckSideMat,
-    ]);
-    deckMesh.position.set(deckCx, -deckH / 2, deckCz);
-    deckMesh.receiveShadow = true;
+
+    const upperDeckGeo = createRoundedSlabGeo(
+      T,
+      deckW,
+      deckH,
+      deckD,
+      styleId === "blueprint" ? 0.06 : 0.22,
+      0.028,
+    );
+    const upperDeck = new T.Mesh(upperDeckGeo, deckTopMat);
+    upperDeck.position.set(0, -deckH, 0);
+    upperDeck.receiveShadow = true;
     const deckEdgeMat = new T.LineBasicMaterial({
       color: new T.Color(styleCfg.deckStroke),
       transparent: styleId !== "pop",
-      opacity: styleId === "pop" ? 1 : isLight ? 0.85 : 0.65,
+      opacity: styleId === "pop" ? 1 : isLight ? 0.72 : 0.68,
     });
-    deckMesh.add(new T.LineSegments(new T.EdgesGeometry(deckGeo), deckEdgeMat));
-    contentGroup.add(deckMesh);
+    upperDeck.add(new T.LineSegments(new T.EdgesGeometry(upperDeckGeo, 28), deckEdgeMat));
+    deckGroup.add(upperDeck);
+
+    // Floating lower recessed brushed-metal architectural plinth skirt
+    const skirtH = 0.11;
+    const skirtGeo = createRoundedSlabGeo(
+      T,
+      Math.max(3.8, deckW - 0.26),
+      skirtH,
+      Math.max(2.8, deckD - 0.26),
+      styleId === "blueprint" ? 0.04 : 0.16,
+      0.018,
+    );
+    const skirtMesh = new T.Mesh(skirtGeo, deckSkirtMat);
+    skirtMesh.position.set(0, -(deckH + skirtH - 0.01), 0);
+    deckGroup.add(skirtMesh);
+
+    contentGroup.add(deckGroup);
 
     // Uniform subtle CAD drafting grid across the deck surface
     const gridGeo = buildDeckGridGeometry(T, minX, maxX, minZ, maxZ);
@@ -1869,12 +2706,12 @@ export function StudioThreeStage({
       new T.LineBasicMaterial({
         color: new T.Color(styleCfg.deckGridStroke),
         transparent: true,
-        opacity: isLight ? 0.16 : 0.14,
+        opacity: isLight ? 0.14 : 0.13,
       }),
     );
     contentGroup.add(gridLine);
     deckRigRef.current = {
-      mesh: deckMesh,
+      mesh: deckGroup,
       baseW: deckW,
       baseD: deckD,
       deckH,
@@ -1938,7 +2775,7 @@ export function StudioThreeStage({
         dropHoverService === node.id
           ? { ...node, isDropTarget: true }
           : node;
-      const rig = buildServiceRig(T, effectiveNode, styleId);
+      const rig = buildServiceRig(T, effectiveNode, styleId, sharedTexRef.current);
       rig.labelSprite.visible = showNodeTagsRef.current;
       contentGroup.add(rig.group);
       nodeRigsRef.current.push(rig);
@@ -2020,12 +2857,14 @@ export function StudioThreeStage({
           ? Math.min(0.052, Math.max(0.028, 0.024 + Math.log2(rpsVal + 1) * 0.0095))
           : 0.027;
 
-      const conduitMat = new T.MeshStandardMaterial({
+      const conduitMat = new T.MeshPhysicalMaterial({
         color: new T.Color(edge.color),
         emissive: new T.Color(edge.color),
-        emissiveIntensity: styleId === "control" ? 0.52 : 0.16,
-        roughness: 0.3,
-        metalness: 0.18,
+        emissiveIntensity: styleId === "control" ? 0.72 : 0.28,
+        roughness: 0.16,
+        metalness: 0.22,
+        clearcoat: 0.9,
+        clearcoatRoughness: 0.1,
       });
 
       // Hardware Port Socket Collars at source & destination Service Boundary rims
@@ -2080,7 +2919,7 @@ export function StudioThreeStage({
         contentGroup.add(breakRing);
       }
 
-      // Animated Glowing 3D Packet Sphere matching edge health state
+      // Dual Staggered Luminous Fiber-Optic Packet Orbs with Soft Additive Halo Glow
       const pktColor = edge.isSevered
         ? "#f43f5e"
         : edge.isDegraded
@@ -2088,16 +2927,39 @@ export function StudioThreeStage({
           : styleId === "control"
             ? "#34d399"
             : "#10b981";
-      const pktGeo = new T.SphereGeometry(Math.max(0.07, tubeRadius * 1.9), 12, 12);
-      const pktMat = new T.MeshBasicMaterial({ color: new T.Color(pktColor) });
-      const pktMesh = new T.Mesh(pktGeo, pktMat);
-      contentGroup.add(pktMesh);
-      packetsRef.current.push({
-        mesh: pktMesh,
-        curve,
-        speed: 1 / Math.max(0.8, edge.speedSec ?? 1.8),
-        phase: (edge.id.length * 0.19) % 1,
-      });
+      const pktRadius = Math.max(0.058, tubeRadius * 1.65);
+      const pktSpeed = 1 / Math.max(0.8, edge.speedSec ?? 1.8);
+      const basePhase = (edge.id.length * 0.19) % 1;
+      for (let p = 0; p < 2; p++) {
+        const pktGroup = new T.Group();
+        const coreSphere = new T.Mesh(
+          new T.SphereGeometry(pktRadius, 12, 12),
+          new T.MeshBasicMaterial({ color: new T.Color(styleId === "control" ? "#ffffff" : pktColor) }),
+        );
+        pktGroup.add(coreSphere);
+        if (sharedTexRef.current) {
+          const haloSprite = new T.Sprite(
+            new T.SpriteMaterial({
+              map: sharedTexRef.current.softGlow,
+              color: new T.Color(pktColor),
+              transparent: true,
+              opacity: styleId === "control" ? 0.95 : 0.72,
+              blending: T.AdditiveBlending,
+              depthWrite: false,
+            }),
+          );
+          const hs = pktRadius * 5.2;
+          haloSprite.scale.set(hs, hs, 1);
+          pktGroup.add(haloSprite);
+        }
+        contentGroup.add(pktGroup);
+        packetsRef.current.push({
+          mesh: pktGroup,
+          curve,
+          speed: pktSpeed,
+          phase: (basePhase + p * 0.5) % 1,
+        });
+      }
 
       // Floating Traffic Metric Badge at Cleared Apex
       let badgeSprite: THREE.Sprite | undefined;
@@ -2323,7 +3185,7 @@ export function StudioThreeStage({
       const deckW = Math.max(4.6, maxX - minX);
       const deckD = Math.max(3.6, maxZ - minZ);
       deck.mesh.scale.set(deckW / deck.baseW, 1, deckD / deck.baseD);
-      deck.mesh.position.set((minX + maxX) / 2, -deck.deckH / 2, (minZ + maxZ) / 2);
+      deck.mesh.position.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
       if (deck.gridLine) {
         const nextGridGeo = buildDeckGridGeometry(T, minX, maxX, minZ, maxZ);
         deck.gridLine.geometry.dispose();

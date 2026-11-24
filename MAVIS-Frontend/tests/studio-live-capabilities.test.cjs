@@ -1714,3 +1714,35 @@ test("Studio Live UI panels, rail, drawer, terminal, and 3D controls synchronize
   assert.ok(terminalSrc.includes("STUDIO_STYLES[resolvedStyle]"));
   assert.ok(obsSrc.includes("styleCfg.controlActiveClass"));
 });
+
+test("Studio Live 3D Diorama uses studio PBR RoomEnvironment IBL, 5 distinct sculpted glass-chamber archetypes, and telemetry-driven 60fps animations", () => {
+  const { resolveVisualArchetype } = require("../src/features/runtime/studio-three-stage.tsx");
+  assert.equal(resolveVisualArchetype({ id: "api-gateway", archetype: "GATEWAY" }), "GATEWAY");
+  assert.equal(resolveVisualArchetype({ id: "order-service", archetype: "SERVICE" }), "SERVICE");
+  assert.equal(resolveVisualArchetype({ id: "notification-worker", archetype: "SERVICE" }), "WORKER");
+  assert.equal(resolveVisualArchetype({ id: "email-dispatcher", archetype: "SERVICE" }), "WORKER");
+  assert.equal(resolveVisualArchetype({ id: "postgres-db", archetype: "DATABASE" }), "DATABASE");
+  assert.equal(resolveVisualArchetype({ id: "kafka-broker", archetype: "QUEUE" }), "QUEUE");
+
+  const stageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  // Studio IBL PBR lighting + clearcoat frosted crystal glass + grounded contact shadow & glow textures
+  assert.ok(stageSrc.includes("RoomEnvironment"));
+  assert.ok(stageSrc.includes("PMREMGenerator"));
+  assert.ok(stageSrc.includes("MeshPhysicalMaterial"));
+  assert.ok(stageSrc.includes("createContactShadowTexture"));
+  assert.ok(stageSrc.includes("createSoftGlowTexture"));
+  assert.ok(stageSrc.includes("buildTurbineRotor"));
+  // Living 60fps animations & reactive fault FX (stasis dome on pause, rising smoke/embers on stop, sliding queue capsules)
+  assert.ok(stageSrc.includes("rig.rotors"));
+  assert.ok(stageSrc.includes("rig.hoverCores"));
+  assert.ok(stageSrc.includes("rig.pulseMaterials"));
+  assert.ok(stageSrc.includes("rig.streamCapsules"));
+  assert.ok(stageSrc.includes("rig.smokeParticles"));
+  assert.ok(stageSrc.includes("rig.stasisRing"));
+  // Clean shared-texture protection & unmount disposal
+  assert.ok(stageSrc.includes('!spriteMat.map.userData?.["__shared"]'));
+  assert.ok(stageSrc.includes("envTargetRef.current?.dispose()"));
+});
