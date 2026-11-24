@@ -160,7 +160,7 @@ public final class FruitShopReferenceArchitectureBuilder {
                         "contextActionLabel", "Duyệt trái cây, quản lý giỏ hàng & đặt hàng [HTTPS]",
                         "actorRole", "End-User Shopper", "userRole", "Customer"));
         addNode("otel-observability", null, "EXTERNAL_SYSTEM", "OTLP / .NET OpenTelemetry 1.9",
-                "OpenTelemetry & MAVIS Observability",
+                "Observability Platform (OpenTelemetry)",
                 "Thu thập OTLP traces, W3C traceparent & .NET Runtime/AspNetCore metrics",
                 props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
                         "contextActionLabel", "Xuất OTLP traces & metrics [HTTP/OTLP]",

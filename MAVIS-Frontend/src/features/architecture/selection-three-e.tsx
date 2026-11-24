@@ -359,7 +359,10 @@ export function SelectionThreeE({
             </Button>
           </div>
         )}
-        <h2 className="mt-1 break-words text-lg font-semibold leading-snug tracking-tight">
+        <h2
+          className="mt-1 break-words text-lg font-semibold leading-snug tracking-tight"
+          data-no-translate="true"
+        >
           {subject.title}
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
