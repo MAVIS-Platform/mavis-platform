@@ -345,6 +345,7 @@ export function LabTheorySection({
   const [bodies, setBodies] = useState<Record<string, string>>({});
   const [themes, setThemes] = useState<Record<string, MarkdownTheme>>({});
   const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
+  const [c3Service, setC3Service] = useState<string | undefined>(undefined);
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
@@ -1409,6 +1410,18 @@ export function LabTheorySection({
                       mode={c4Tab === "GRAPH" ? "graph" : "diagram"}
                       guidedStatic
                       controlledKind={c4Tab === "GRAPH" ? undefined : c4Tab}
+                      controlledService={c3Service}
+                      onServiceChange={setC3Service}
+                      onKindChange={(nextKind, svcId) => {
+                        if (svcId) setC3Service(svcId);
+                        if (
+                          nextKind === "CONTEXT" ||
+                          nextKind === "CONTAINER" ||
+                          nextKind === "COMPONENT"
+                        ) {
+                          setC4Tab(nextKind);
+                        }
+                      }}
                       hideKindSelector
                       systemName={assignment.title}
                       selectedId={selectedGraphId}

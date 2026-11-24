@@ -369,6 +369,7 @@ export function ElementDetailsPanel({
   activeTab: controlledTab,
   onTabChange,
   onExplainWithAi,
+  onInspectServiceC3,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
@@ -377,6 +378,7 @@ export function ElementDetailsPanel({
   activeTab?: InspectorTab | undefined;
   onTabChange?: ((tab: InspectorTab) => void) | undefined;
   onExplainWithAi?: (() => void) | undefined;
+  onInspectServiceC3?: ((serviceId: string) => void) | undefined;
 }) {
   const localeCtx = useLocale();
   const t = localeCtx.t;
@@ -675,6 +677,17 @@ export function ElementDetailsPanel({
                   )}
                 </div>
               </div>
+            )}
+            {element.elementType === "SERVICE_CONTAINER" && children.length > 0 && onInspectServiceC3 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                className="w-full"
+                onClick={() => onInspectServiceC3(element.id)}
+              >
+                {t("View C3 diagram for this service →", "Xem sơ đồ C3 của service này →")}
+              </Button>
             )}
             {aiButton}
           </div>

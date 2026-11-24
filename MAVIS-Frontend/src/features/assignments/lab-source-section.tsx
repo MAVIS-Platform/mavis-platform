@@ -232,6 +232,7 @@ export function LabSourceSection({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [repoDetailTab, setRepoDetailTab] = useState<RepoDetailTab>("services");
   const [previewKind, setPreviewKind] = useState<PreviewKind>("CONTAINER");
+  const [previewC3Service, setPreviewC3Service] = useState<string | undefined>(undefined);
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const lastAutoSavedModelRef = useRef<string>(assignment.referenceSource?.modelId ?? "");
 
@@ -1335,6 +1336,18 @@ export function LabSourceSection({
                   mode={previewKind === "GRAPH" ? "graph" : "diagram"}
                   guidedStatic
                   controlledKind={previewKind === "GRAPH" ? undefined : previewKind}
+                  controlledService={previewC3Service}
+                  onServiceChange={setPreviewC3Service}
+                  onKindChange={(nextKind, svcId) => {
+                    if (svcId) setPreviewC3Service(svcId);
+                    if (
+                      nextKind === "CONTEXT" ||
+                      nextKind === "CONTAINER" ||
+                      nextKind === "COMPONENT"
+                    ) {
+                      setPreviewKind(nextKind);
+                    }
+                  }}
                   hideKindSelector
                   systemName={assignment.title}
                   selectedId={selectedGraphId}
