@@ -649,22 +649,34 @@ export function DependencyNetwork({
             fitAriaLabel="Fit graph"
             helpAriaLabel="Graph help"
             helpTourTrigger="graph-help"
-            onToggleFullscreen={() => {
+            onToggleFullscreen={async () => {
               const target =
                 section.current?.closest("[data-architecture-workspace]") ?? section.current;
               if (document.fullscreenElement) {
-                void document.exitFullscreen().catch(() => setOverlayFullscreen(false));
+                try {
+                  await document.exitFullscreen();
+                } catch {
+                  setOverlayFullscreen(false);
+                }
                 return;
               }
               if (overlayFullscreen) {
                 setOverlayFullscreen(false);
                 return;
               }
-              if (target && typeof target.requestFullscreen === "function") {
-                void target.requestFullscreen().catch(() => setOverlayFullscreen(true));
-              } else {
-                setOverlayFullscreen(true);
+              try {
+                if (
+                  document.fullscreenEnabled &&
+                  target &&
+                  typeof target.requestFullscreen === "function"
+                ) {
+                  await target.requestFullscreen();
+                  if (document.fullscreenElement === target) return;
+                }
+              } catch {
+                // Fallback to CSS fixed overlay
               }
+              setOverlayFullscreen(true);
             }}
             guideFooter={
               <div className="mt-3 border-t pt-3 text-xs leading-relaxed">

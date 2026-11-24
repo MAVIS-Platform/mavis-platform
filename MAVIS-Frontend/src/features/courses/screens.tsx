@@ -1855,15 +1855,15 @@ function StepContent({
           description:
             phaseIssue === "runtime-failed"
               ? t(
-                  "The current Runtime Studio session did not start or finish correctly, so its evidence is not valid yet.",
+                  "The current Studio Live session did not start or finish cleanly, so its session results are not ready yet.",
                   "Phiên Studio Live chưa khởi chạy hoặc hoàn tất đúng, nên dữ liệu thực hành chưa được lưu.",
                 )
               : t(
-                  "Runtime Studio is where you run the assigned scenario and capture observed evidence using only allowed actions.",
+                  "Studio Live is where you run the scenario, interact with services, and save your session results.",
                   "Studio Live là nơi bạn thao tác trực tiếp trên kịch bản và lưu lại kết quả thực hành.",
                 ),
           recovery: t(
-            "Open Studio Live, inspect the session, use only Stop, Start, or Scale, capture a snapshot, then choose Finish Studio. If it fails again, copy the report for your lecturer.",
+            "Open Studio Live, run the allowed Stop, Start, or Scale actions, capture a snapshot, and click Finish Studio.",
             "Mở Studio Live, kiểm tra phiên, dùng các thao tác Stop, Start hoặc Scale, chụp một snapshot rồi nhấn Hoàn tất Studio.",
           ),
           actionLabel: t("Open Runtime Studio", "Mở Runtime Studio"),
@@ -1874,11 +1874,11 @@ function StepContent({
         return {
           title: t("Runtime evidence is incomplete", "Chưa đủ dữ liệu thực hành Studio"),
           description: t(
-            "This Lab needs a verified Runtime Studio receipt before it can be submitted for grading.",
+            "Complete a MAVIS Studio Live session before submitting this Module.",
             "Bạn cần hoàn thành một phiên Studio Live trước khi nộp bài.",
           ),
           recovery: t(
-            "Return to Runtime Studio, complete the scenario, capture the required evidence, and select Finish Studio to seal the receipt.",
+            "Return to Studio Live, finish your scenario, capture at least one snapshot, and click Finish Studio.",
             "Quay lại Studio Live, chạy xong kịch bản, chụp ít nhất một ảnh minh họa rồi nhấn Hoàn tất Studio.",
           ),
           actionLabel: t("Return to Runtime Studio", "Quay lại Runtime Studio"),
@@ -1888,11 +1888,11 @@ function StepContent({
         return {
           title: t("Lab submission could not be saved", "Không thể lưu bài nộp Lab"),
           description: t(
-            "Your draft remains in this browser so you can retry safely.",
+            "Your draft remains saved in this browser so you can retry safely.",
             "Bản nháp vẫn được giữ trong trình duyệt này để bạn có thể thử lại an toàn.",
           ),
           recovery: t(
-            "Check the explanation and required Runtime receipt, then try again. If it still fails, copy the report for your lecturer.",
+            "Check your summary reflection and attached Studio session, then try submitting again.",
             "Kiểm tra lại nội dung tổng hợp và phiên Studio đính kèm, rồi thử nộp lại.",
           ),
           actionLabel: t("Retry submission", "Thử nộp lại"),
@@ -1902,11 +1902,11 @@ function StepContent({
         return {
           title: t("Your Lab explanation is required", "Bạn cần nhập nội dung tổng hợp"),
           description: t(
-            "The Lab cannot be submitted without your written explanation of the evidence and what you learned.",
+            "Please write a concise summary of your observations and key takeaways before submitting.",
             "Hãy viết phần tổng hợp kiến thức và những gì bạn quan sát được trước khi nộp bài.",
           ),
           recovery: t(
-            "Write your explanation in the submission box, connect it to the evidence, then submit again.",
+            "Write your summary in the submission box and click Submit Module.",
             "Nhập nội dung tổng hợp vào khung bài nộp rồi nhấn Nộp bài.",
           ),
           actionLabel: t("Go to submission", "Đi tới phần nộp bài"),

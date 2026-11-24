@@ -2437,7 +2437,7 @@ test("Commit #07: Quiz timer renders as compact badge, Retake Quiz works across 
   assert.match(courseQuiz, /handleRetake/);
   assert.match(courseQuiz, /Làm lại bài/);
   assert.match(courseQuiz, /quiz\.runtimeUnlocked && !retakeMode/);
-  assert.doesNotMatch(screens, /niêm phong|phần giải trình/);
+  assert.doesNotMatch(screens, /niêm phong|phần giải trình|seal the receipt/);
   assert.doesNotMatch(steps, /viết giải trình/);
   assert.doesNotMatch(subV2, /giải trình|niêm phong/);
 });

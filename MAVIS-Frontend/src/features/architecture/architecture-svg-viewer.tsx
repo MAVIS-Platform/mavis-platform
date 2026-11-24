@@ -932,9 +932,9 @@ export function ArchitectureSvgViewer({
       return;
     }
     try {
-      if (typeof el.requestFullscreen === "function") {
+      if (document.fullscreenEnabled && typeof el.requestFullscreen === "function") {
         await el.requestFullscreen();
-        return;
+        if (document.fullscreenElement === el) return;
       }
     } catch {
       // Fallback to CSS fixed overlay
