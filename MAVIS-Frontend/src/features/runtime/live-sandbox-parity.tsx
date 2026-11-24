@@ -1329,21 +1329,29 @@ export function LiveSandboxParity({
         </CapabilitySection>
       )}
 
-      {show("config") &&
-        (compact ? (
+      {show("config") && (() => {
+        const leaseSeconds = limits?.sessionTimeoutSeconds ?? limits?.timeoutSeconds;
+        const leaseLabel =
+          leaseSeconds === undefined
+            ? "—"
+            : leaseSeconds >= 60
+              ? `${Math.round(leaseSeconds / 60)}m`
+              : `${leaseSeconds}s`;
+        const idleLabel =
+          limits?.idleTimeoutSeconds !== undefined
+            ? ` · ${Math.round(limits.idleTimeoutSeconds / 60)}m idle`
+            : "";
+        return compact ? (
           <details className="rounded-xl border border-slate-800 bg-slate-950/30 px-2.5 py-2">
             <summary className="cursor-pointer select-none text-[11px] font-medium text-slate-400 hover:text-slate-200">
-              Current configuration &amp; limits ({limits?.timeoutSeconds ?? "—"}s timeout)
+              Current configuration &amp; limits ({leaseLabel} lease{idleLabel})
             </summary>
             <div className="mt-2 space-y-2">
               <dl className="grid grid-cols-2 gap-1.5 text-[11px]">
                 <Fact label="Running pods" value={running?.toLocaleString() ?? "—"} />
                 <Fact label="CPU observed" value={observedStats.cpu} />
                 <Fact label="RAM observed" value={observedStats.memory} />
-                <Fact
-                  label="Session timeout"
-                  value={limits?.timeoutSeconds === undefined ? "—" : `${limits.timeoutSeconds}s`}
-                />
+                <Fact label="Session lease" value={`${leaseLabel}${idleLabel}`} />
               </dl>
               {selectedLimit && (
                 <p className="break-words font-mono text-[10px] text-slate-400">
@@ -1362,10 +1370,7 @@ export function LiveSandboxParity({
               <Fact label="Running pods" value={running?.toLocaleString() ?? "—"} />
               <Fact label="CPU observed" value={observedStats.cpu} />
               <Fact label="RAM observed" value={observedStats.memory} />
-              <Fact
-                label="Session timeout"
-                value={limits?.timeoutSeconds === undefined ? "—" : `${limits.timeoutSeconds}s`}
-              />
+              <Fact label="Session lease" value={`${leaseLabel}${idleLabel}`} />
             </dl>
             {selectedLimit && (
               <p className="break-words font-mono text-[10px] text-slate-400">
@@ -1373,7 +1378,8 @@ export function LiveSandboxParity({
               </p>
             )}
           </CapabilitySection>
-        ))}
+        );
+      })()}
 
       {show("snapshots") && (
         <CapabilitySection

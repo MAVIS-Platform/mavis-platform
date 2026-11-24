@@ -26,11 +26,27 @@ public sealed record RuntimeSessionOutcome(string ExecutionStatus, string Scenar
 /// <summary>One teardown path. Evidence failure must not skip cleanup, and accepted cancel is not claimed as complete prematurely.</summary>
 public static class RuntimeSessionLifecycle
 {
-    public static async Task<RuntimeSessionOutcome> RunAsync(IRuntimeSessionBackend backend, int timeoutSeconds, CancellationToken ct = default)
+    public const int DefaultInteractiveSessionMaxSeconds = 3600;
+    public const int MinInteractiveSessionMaxSeconds = 300;
+    public const int MaxInteractiveSessionMaxSeconds = 14400;
+
+    /// <summary>Resolves the interactive Studio ceiling (default 60m, env MAVIS_STUDIO_MAX_SESSION_SECONDS). Explicit overrides &gt;= 1s are honored for tests.</summary>
+    public static int ResolveInteractiveSessionMaxSeconds(int? overrideSeconds = null)
+    {
+        if (overrideSeconds is int explicitSeconds && explicitSeconds >= 1)
+            return Math.Min(explicitSeconds, MaxInteractiveSessionMaxSeconds);
+        var raw = Environment.GetEnvironmentVariable("MAVIS_STUDIO_MAX_SESSION_SECONDS");
+        if (int.TryParse(raw, out var parsed) && parsed >= MinInteractiveSessionMaxSeconds)
+            return Math.Min(parsed, MaxInteractiveSessionMaxSeconds);
+        return DefaultInteractiveSessionMaxSeconds;
+    }
+
+    public static async Task<RuntimeSessionOutcome> RunAsync(IRuntimeSessionBackend backend, int timeoutSeconds,
+        CancellationToken ct = default, int? interactiveSessionMaxSeconds = null)
     {
         if (timeoutSeconds is < 1 or > 300) throw new ArgumentException("Session deadline must be 1–300 seconds.");
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        deadline.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        using var bootDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        bootDeadline.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         var status = "Failed";
         var evidence = "Unavailable";
         var cleanup = "Incomplete";
@@ -38,25 +54,53 @@ public static class RuntimeSessionLifecycle
         HttpScenarioOutcome? scenario = null;
         TraceCorrelationResult? trace = null;
         IReadOnlyList<RuntimeInfrastructureActionResult> infrastructureActions = [];
+        var studioDeadlineExpired = false;
         try
         {
-            await backend.PrepareAndStartAsync(deadline.Token);
-            await backend.WaitUntilReadyAsync(deadline.Token);
-            scenario = await backend.ExecuteScenarioAsync(deadline.Token);
-            infrastructureActions = await backend.ExecuteInfrastructureActionsAsync(deadline.Token);
-            // A Studio session may start broken (Recovery) or healthy (Change Impact / Load):
-            // re-check after student actions, keeping a verified passing baseline if an intentional fault or load drill ends degraded.
-            if (backend.InteractiveStudio && infrastructureActions.Count > 0)
+            await backend.PrepareAndStartAsync(bootDeadline.Token);
+            await backend.WaitUntilReadyAsync(bootDeadline.Token);
+            scenario = await backend.ExecuteScenarioAsync(bootDeadline.Token);
+            if (backend.InteractiveStudio)
             {
-                var finalScenario = await backend.ExecuteScenarioAsync(deadline.Token);
-                if (finalScenario.Status == "Passed" || scenario.Status != "Passed")
-                    scenario = finalScenario;
+                // Interactive Studio separates bounded boot/readiness (<=300s) from the learner's active session lease (default 60m).
+                using var studioDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                studioDeadline.CancelAfter(TimeSpan.FromSeconds(ResolveInteractiveSessionMaxSeconds(interactiveSessionMaxSeconds)));
+                try
+                {
+                    infrastructureActions = await backend.ExecuteInfrastructureActionsAsync(studioDeadline.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested && studioDeadline.IsCancellationRequested)
+                {
+                    studioDeadlineExpired = true;
+                    if (backend.ObservedInfrastructureActions.Count > 0)
+                    {
+                        // Graceful Auto-Finish: preserve & seal real learner work when hitting the max duration ceiling.
+                        diagnostics.Add("STUDIO_MAX_DURATION_AUTO_FINISHED");
+                        infrastructureActions = backend.ObservedInfrastructureActions.ToArray();
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+                if (infrastructureActions.Count > 0)
+                {
+                    using var finalProbeDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    finalProbeDeadline.CancelAfter(TimeSpan.FromSeconds(Math.Min(120, Math.Max(30, timeoutSeconds))));
+                    var finalScenario = await backend.ExecuteScenarioAsync(finalProbeDeadline.Token);
+                    if (finalScenario.Status == "Passed" || scenario.Status != "Passed")
+                        scenario = finalScenario;
+                }
+            }
+            else
+            {
+                infrastructureActions = await backend.ExecuteInfrastructureActionsAsync(bootDeadline.Token);
             }
             status = "Completed"; // Processing completion is separate from scenario pass/fail.
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !deadline.IsCancellationRequested)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !bootDeadline.IsCancellationRequested && !studioDeadlineExpired)
         {
-            // A single Docker/HTTP command hit its own timeout; the session deadline did not expire.
+            // A single Docker/HTTP command hit its own timeout; neither boot nor studio deadline expired.
             diagnostics.Add("COMMAND_TIMED_OUT_AT_" + backend.Stage);
         }
         catch (OperationCanceledException)

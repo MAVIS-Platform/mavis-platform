@@ -94,8 +94,11 @@ export function explainRuntimeDiagnostic(raw: string): string | null {
   if (/DOCKER_UP_FAILED/i.test(text)) {
     return "Docker Compose failed to start all lab containers. Check the error lines below or click Run to retry.";
   }
+  if (/STUDIO_MAX_DURATION_AUTO_FINISHED/i.test(text)) {
+    return "Docker session reached its maximum session lease and automatically sealed your confirmed evidence. Review your receipt or click Run for a new session.";
+  }
   if (/TIMED_?OUT|SESSION_TIMED_OUT/i.test(text)) {
-    return "Docker session reached the 300-second safety time limit and was cleaned up. Click Run to launch a new session.";
+    return "Docker session timed out or became inactive and was cleaned up. Click Run to launch a new session.";
   }
   if (/STUDIO_QUEUE_FULL|QUEUE_INACTIVE/i.test(text)) {
     return "All Runner slots were busy or the tab stayed inactive while queued. Click Run again to rejoin the queue.";

@@ -26,6 +26,7 @@ services:
       MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS: ${MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS:-1}
       MAVIS_WORKER_CONCURRENCY: ${MAVIS_WORKER_CONCURRENCY:-4}
       MAVIS_WORKER_ID: ${MAVIS_WORKER_ID:-worker-vps-1}
+      MAVIS_STUDIO_MAX_SESSION_SECONDS: ${MAVIS_STUDIO_MAX_SESSION_SECONDS:-3600}
     command:
       - "${MAVIS_JAVA_URL:?Set MAVIS_JAVA_URL (e.g. https://maviss.site)}"
       - "/app/samples/runtime-poc/collector.yaml"

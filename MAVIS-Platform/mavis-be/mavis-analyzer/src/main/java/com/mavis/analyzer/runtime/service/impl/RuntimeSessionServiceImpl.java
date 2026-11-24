@@ -1485,7 +1485,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             String configuredRunnerImg = object.path("scenarioRunnerImage").asText("").trim();
             if (configuredRunnerImg.startsWith("mcr.microsoft.com/dotnet/aspnet")) {
                 String builtId = RuntimeRunnerDispatcher.captureCommandStdout(
-                        List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:4"), 5);
+                        List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:5"), 5);
                 if (builtId != null && builtId.matches("^sha256:[0-9a-f]{64}$")) {
                     object.put("scenarioRunnerImage", builtId);
                 }

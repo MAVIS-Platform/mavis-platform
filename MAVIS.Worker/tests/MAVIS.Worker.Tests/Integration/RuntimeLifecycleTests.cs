@@ -131,6 +131,66 @@ public sealed class RuntimeLifecycleTests
         Assert.Equal("Confirmed", result.CleanupStatus);
     }
 
+    private sealed class InteractiveLeaseBackend : IRuntimeSessionBackend
+    {
+        public string Stage => "STUDIO_LOOP";
+        public bool InteractiveStudio => true;
+        public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions { get; set; } = [];
+        public int ActionLoopDelayMs { get; set; } = 1500;
+        public int ScenarioCalls { get; private set; }
+        public int CleanupCalls { get; private set; }
+        public Task PrepareAndStartAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task WaitUntilReadyAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct)
+        {
+            ScenarioCalls++;
+            return Task.FromResult(new HttpScenarioOutcome("s", "Passed", []));
+        }
+        public async Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct)
+        {
+            await Task.Delay(ActionLoopDelayMs, ct);
+            return ObservedInfrastructureActions;
+        }
+        public Task<TraceCorrelationResult?> PreserveEvidenceAsync(CancellationToken ct) =>
+            Task.FromResult<TraceCorrelationResult?>(new("s", "m", [], [], []));
+        public Task<bool> CleanupAsync(CancellationToken ct) { CleanupCalls++; return Task.FromResult(true); }
+    }
+
+    [Fact]
+    public async Task InteractiveStudioOutlivesBootTimeoutAndAutoFinishesGracefullyWhenCeilingHitsWithActions()
+    {
+        var action = new RuntimeInfrastructureActionResult("PAUSE", "payment", 1, 0,
+            new() { ["replicas"] = 1 }, new() { ["replicas"] = 0 }, DateTimeOffset.UtcNow, true);
+
+        // Runs 1.4s in STUDIO_LOOP with 1s boot timeout and 3s interactive lease -> completes normally without timing out.
+        var normal = new InteractiveLeaseBackend { ObservedInfrastructureActions = [action], ActionLoopDelayMs = 1400 };
+        var normalResult = await RuntimeSessionLifecycle.RunAsync(normal, timeoutSeconds: 1, interactiveSessionMaxSeconds: 3);
+        Assert.Equal("Completed", normalResult.ExecutionStatus);
+        Assert.Equal("Passed", normalResult.ScenarioStatus);
+        Assert.Equal("Confirmed", normalResult.CleanupStatus);
+        Assert.DoesNotContain("STUDIO_MAX_DURATION_AUTO_FINISHED", normalResult.Diagnostics);
+
+        // Hits 1s interactive ceiling while holding a confirmed action -> graceful auto-finish seals Completed instead of TimedOut.
+        var autoFinish = new InteractiveLeaseBackend { ObservedInfrastructureActions = [action], ActionLoopDelayMs = 5000 };
+        var autoResult = await RuntimeSessionLifecycle.RunAsync(autoFinish, timeoutSeconds: 5, interactiveSessionMaxSeconds: 1);
+        Assert.Equal("Completed", autoResult.ExecutionStatus);
+        Assert.Equal("Passed", autoResult.ScenarioStatus);
+        Assert.Equal("Confirmed", autoResult.CleanupStatus);
+        Assert.Contains("STUDIO_MAX_DURATION_AUTO_FINISHED", autoResult.Diagnostics);
+        Assert.Single(autoResult.InfrastructureActions!);
+    }
+
+    [Fact]
+    public async Task InteractiveStudioCeilingWithoutActionsMarksTimedOutAndCleansUp()
+    {
+        var idle = new InteractiveLeaseBackend { ObservedInfrastructureActions = [], ActionLoopDelayMs = 5000 };
+        var result = await RuntimeSessionLifecycle.RunAsync(idle, timeoutSeconds: 5, interactiveSessionMaxSeconds: 1);
+        Assert.Equal("TimedOut", result.ExecutionStatus);
+        Assert.Contains("SESSION_TIMED_OUT_AT_STUDIO_LOOP", result.Diagnostics);
+        Assert.Equal("Confirmed", result.CleanupStatus);
+        Assert.Equal(1, idle.CleanupCalls);
+    }
+
     [Fact]
     public void OverrideForcesResourcesIsolationAndInstrumentation()
     {

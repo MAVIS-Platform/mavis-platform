@@ -63,8 +63,8 @@ public class RuntimeQueueCoordinator {
     @Value("${mavis.runtime.max-queued-studio-sessions:30}")
     private int maxQueuedStudioSessions = 30;
 
-    @Value("${mavis.runtime.studio-abandoned-seconds:90}")
-    private long abandonedIdleSeconds = 90;
+    @Value("${mavis.runtime.studio-abandoned-seconds:180}")
+    private long abandonedIdleSeconds = 180;
 
     @Value("${mavis.runtime.dispatch-stale-seconds:180}")
     private long dispatchStaleSeconds = 180;
@@ -100,6 +100,7 @@ public class RuntimeQueueCoordinator {
     private long alertQueueWaitSeconds = 60;
 
     private final ConcurrentHashMap<UUID, Instant> uiHeartbeats = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Instant> runnerHeartbeats = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Instant> dispatchTimestamps = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Instant> lastAlerts = new ConcurrentHashMap<>();
     private final AtomicLong orphansReapedTotal = new AtomicLong();
@@ -197,15 +198,26 @@ public class RuntimeQueueCoordinator {
         return (int) ahead + 1;
     }
 
+    public long getAbandonedIdleSeconds() {
+        return Math.max(30L, abandonedIdleSeconds);
+    }
+
     public void recordUiHeartbeat(UUID sessionId) {
         if (sessionId != null) {
             uiHeartbeats.put(sessionId, Instant.now());
         }
     }
 
+    public void recordRunnerActivity(UUID sessionId) {
+        if (sessionId != null) {
+            runnerHeartbeats.put(sessionId, Instant.now());
+        }
+    }
+
     public void clearSessionTracking(UUID sessionId) {
         if (sessionId != null) {
             uiHeartbeats.remove(sessionId);
+            runnerHeartbeats.remove(sessionId);
             dispatchTimestamps.remove(sessionId);
         }
     }
@@ -388,21 +400,30 @@ public class RuntimeQueueCoordinator {
         long cancellingAfter = Math.max(15, cancellingStuckSeconds);
         boolean localManaged = !isRemoteWorkerMode() && runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled();
         List<String> orphanProjects = new ArrayList<>();
+        Set<UUID> activeRunnerIds = new HashSet<>();
         for (String status : List.of("ALLOCATED", "RUNNING", "CANCELLING")) {
             for (RuntimeSession candidate : runtimeSessionRepository.findByExecutionStatusOrderByCreatedAtAsc(status)) {
                 UUID id = candidate.getId();
+                if (id != null) {
+                    activeRunnerIds.add(id);
+                }
                 if (id == null || (runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isExecuting(id))) {
                     continue;
                 }
                 boolean simulated = candidate.getStudioControl() != null
                         && candidate.getStudioControl().path("simulatedSandbox").asBoolean(false);
+                boolean interactive = candidate.getScenarioConfig() != null
+                        && candidate.getScenarioConfig().path("interactiveStudio").asBoolean(false);
                 OffsetDateTime since = "CANCELLING".equals(status) ? candidate.getCancelRequestedAt()
                         : "RUNNING".equals(status) ? candidate.getStartedAt() : candidate.getAllocatedAt();
                 if (since == null) since = candidate.getCreatedAt();
                 if (since == null) continue;
                 // Simulated sandboxes have no runner; dead CANCELLING sessions use the shorter teardown threshold.
                 long limit = "CANCELLING".equals(status) ? (simulated ? 0 : cancellingAfter) : stuckAfter;
-                if (Duration.between(since.toInstant(), now).getSeconds() < limit) {
+                Instant lastAlive = ("RUNNING".equals(status) && interactive && !simulated)
+                        ? latestRunnerActivityTimestamp(id, candidate, since.toInstant())
+                        : since.toInstant();
+                if (Duration.between(lastAlive, now).getSeconds() < limit) {
                     continue;
                 }
                 if (simulated && "RUNNING".equals(status)) {
@@ -445,7 +466,22 @@ public class RuntimeQueueCoordinator {
         for (String project : orphanProjects) {
             reapSingleOrphanProject(project);
         }
+        runnerHeartbeats.keySet().retainAll(activeRunnerIds);
         return reaped;
+    }
+
+    private Instant latestRunnerActivityTimestamp(UUID id, RuntimeSession session, Instant fallback) {
+        Instant best = runnerHeartbeats.getOrDefault(id, fallback);
+        if (session.getStudioControl() != null && session.getStudioControl().hasNonNull("telemetryReceivedAt")) {
+            try {
+                Instant received = OffsetDateTime.parse(session.getStudioControl().path("telemetryReceivedAt").asText()).toInstant();
+                if (received.isAfter(best)) {
+                    best = received;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return best;
     }
 
     int reapStaleDispatches(Instant now) {

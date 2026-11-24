@@ -10,7 +10,7 @@ public static class WorkerPoolLoop
 {
     public const string DefaultInstrumentationVolume = "mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3";
     public const string SeedHelperImage = "mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac";
-    public const string ScenarioRunnerImageTag = "mavis-poc-runner:4";
+    public const string ScenarioRunnerImageTag = "mavis-poc-runner:5";
     public const string PlaceholderRunnerSuffix = "0000000000000000000000000000000000000000000000000000000000000001";
 
     private static readonly Regex MavisRunProjectPattern = new("^mavisrun-[0-9a-f]{32}$", RegexOptions.Compiled);
@@ -123,7 +123,8 @@ public static class WorkerPoolLoop
                     try
                     {
                         using var jobTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                        jobTimeout.CancelAfter(TimeSpan.FromMinutes(7));
+                        jobTimeout.CancelAfter(TimeSpan.FromSeconds(
+                            RuntimeSessionLifecycle.ResolveInteractiveSessionMaxSeconds() + 300));
                         var adapter = new ManagedRuntimeAdapter(
                             java, docker, effectiveRuntime, writableRootfsUnderKernelSandbox,
                             (definition, token) => NormalizeDefinitionForWorkerAsync(

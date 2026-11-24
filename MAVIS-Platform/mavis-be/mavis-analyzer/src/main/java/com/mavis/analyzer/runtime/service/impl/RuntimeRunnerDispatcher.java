@@ -548,7 +548,7 @@ public class RuntimeRunnerDispatcher {
                     || configuredRunnerImg.startsWith("mcr.microsoft.com/dotnet/aspnet")
                     || configuredRunnerImg.endsWith("0000000000000000000000000000000000000000000000000000000000000001");
             if (needsBuiltRunnerImg) {
-                String runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:4"), 10);
+                String runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:5"), 10);
                 if (runnerImgId == null || !runnerImgId.matches("^sha256:[0-9a-f]{64}$")) {
                     Optional<Path> dllOpt = resolvePrebuiltRunnerDll(projPath, false);
                     Path dllDir = dllOpt.map(Path::getParent).orElse(null);
@@ -575,7 +575,7 @@ public class RuntimeRunnerDispatcher {
                             }
                             Path dfCopy = buildCtx.resolve("Runner.Dockerfile");
                             Files.copy(dockerfile, dfCopy);
-                            probeCommandZeroExit(List.of("docker", "build", "--quiet", "--file", dfCopy.toString(), "-t", "mavis-poc-runner:4", buildCtx.toString()), 120);
+                            probeCommandZeroExit(List.of("docker", "build", "--quiet", "--file", dfCopy.toString(), "-t", "mavis-poc-runner:5", buildCtx.toString()), 120);
                         } finally {
                             try (Stream<Path> walk = Files.walk(buildCtx)) {
                                 walk.sorted(Comparator.reverseOrder()).forEach(p -> {
@@ -583,7 +583,7 @@ public class RuntimeRunnerDispatcher {
                                 });
                             }
                         }
-                        runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:4"), 10);
+                        runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:5"), 10);
                     }
                 }
                 if (runnerImgId != null && runnerImgId.matches("^sha256:[0-9a-f]{64}$")) {
@@ -820,13 +820,27 @@ public class RuntimeRunnerDispatcher {
     /** Give the runner its configured session timeout plus startup, drain, teardown, and receipt delivery margin. */
     static long resolveProcessDeadlineSeconds(RuntimeSession session) {
         long timeout = 240L;
+        boolean interactive = false;
         if (session != null && session.getScenarioConfig() != null) {
+            interactive = session.getScenarioConfig().path("interactiveStudio").asBoolean(false);
             long profileTimeout = session.getScenarioConfig().path("profile").path("timeoutSeconds").asLong(0L);
             long scenarioTimeout = session.getScenarioConfig().path("scenario").path("timeoutSeconds").asLong(0L);
             long declared = Math.max(profileTimeout, scenarioTimeout);
             if (declared > 0L) {
                 timeout = declared;
             }
+        }
+        if (interactive) {
+            long studioMax = 3600L;
+            String raw = System.getenv("MAVIS_STUDIO_MAX_SESSION_SECONDS");
+            if (raw != null && !raw.isBlank()) {
+                try {
+                    long parsed = Long.parseLong(raw.trim());
+                    if (parsed >= 300L) studioMax = Math.min(14400L, parsed);
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            return Math.min(14700L, Math.max(timeout, studioMax) + 300L);
         }
         return Math.max(420L, Math.min(3600L, timeout + 180L));
     }

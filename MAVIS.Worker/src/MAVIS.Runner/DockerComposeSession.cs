@@ -682,7 +682,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 "--memory", "128m", "--cpus", "0.5", "--pids-limit", "64",
                 "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-                "--env", "MAVIS_RUNNER_INTERNAL_NETWORK=1"
+                "--env", "MAVIS_RUNNER_INTERNAL_NETWORK=1",
+                "--env", "MAVIS_STUDIO_MAX_SESSION_SECONDS=" + RuntimeSessionLifecycle.ResolveInteractiveSessionMaxSeconds()
             };
             if (ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime))
             {

@@ -1175,3 +1175,39 @@ test("Inline module quiz normalizes questions/IDs, Active class Settings shows P
   );
   assert.match(accessSrc, /await cache\.refetchQueries\(\{ queryKey: \["api", "workspaces"\] \}\)/);
 });
+
+test("Studio Live exposes extended interactive session lease, auto-finish diagnostic, and formatted lease label", () => {
+  const { validateResponse } = require("../src/lib/api/validate-response.ts");
+  const sessionId = "550e8400-e29b-41d4-a716-446655440000";
+  const parsed = validateResponse("studioState", { sessionId }, {
+    sessionId,
+    interactive: true,
+    services: ["orders"],
+    finishRequested: false,
+    executionStatus: "RUNNING",
+    cleanupStatus: "PENDING",
+    actions: [],
+    limits: {
+      memoryMiB: 512,
+      cpus: 0.5,
+      timeoutSeconds: 300,
+      sessionTimeoutSeconds: 3600,
+      idleTimeoutSeconds: 180,
+    },
+  });
+  assert.equal(parsed.limits.sessionTimeoutSeconds, 3600);
+  assert.equal(parsed.limits.idleTimeoutSeconds, 180);
+
+  const terminalSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-terminal-console.tsx"),
+    "utf8",
+  );
+  assert.match(terminalSrc, /STUDIO_MAX_DURATION_AUTO_FINISHED/);
+  assert.doesNotMatch(terminalSrc, /300-second safety time limit/);
+
+  const paritySrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-sandbox-parity.tsx"),
+    "utf8",
+  );
+  assert.match(paritySrc, /limits\?\.sessionTimeoutSeconds \?\? limits\?\.timeoutSeconds/);
+});

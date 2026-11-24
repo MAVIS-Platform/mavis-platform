@@ -38,6 +38,9 @@ public class RuntimeStudioService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private jakarta.persistence.EntityManager entityManager;
 
+    @org.springframework.beans.factory.annotation.Value("${mavis.runtime.studio-max-session-seconds:3600}")
+    private int studioMaxSessionSeconds = 3600;
+
     public record ActionRequest(@NotNull UUID actionId,
                                 @NotNull @Pattern(regexp="START|STOP|SCALE|PAUSE|RESUME|THROTTLE_CPU|SET_LOAD|SET_ENV|SWAP_VERSION") String action,
                                 @NotBlank @Size(max=128) String service,
@@ -91,6 +94,7 @@ public class RuntimeStudioService {
     @Transactional
     public JsonNode telemetry(UUID id, TelemetryRequest request) {
         runner.requireRunnerService();
+        if (queueCoordinator != null) queueCoordinator.recordRunnerActivity(id);
         RuntimeSession session = sessions.findById(id)
                 .orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
         if (!id.equals(request.sessionId()) || !request.resourceProject().equals(session.getResourceProject()))
@@ -512,7 +516,10 @@ public class RuntimeStudioService {
     @Transactional
     public JsonNode poll(UUID id, String resourceProject) {
         runner.requireRunnerService();
-        if (queueCoordinator != null) queueCoordinator.recordWorkerPoll();
+        if (queueCoordinator != null) {
+            queueCoordinator.recordWorkerPoll();
+            queueCoordinator.recordRunnerActivity(id);
+        }
         RuntimeSession session = sessions.findById(id)
                 .orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
         if (!resourceProject.equals(session.getResourceProject())) throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
@@ -580,6 +587,7 @@ public class RuntimeStudioService {
     @Transactional
     public JsonNode acknowledge(UUID id, AckRequest request) {
         runner.requireRunnerService();
+        if (queueCoordinator != null) queueCoordinator.recordRunnerActivity(id);
         RuntimeSession session = locked(id);
         if (!id.equals(request.sessionId()) || !request.resourceProject().equals(session.getResourceProject()))
             throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
@@ -743,8 +751,12 @@ public class RuntimeStudioService {
             telemetryHub.notifyState(sessionId, snapshot);
         }
     }
+    private int effectiveStudioMaxSessionSeconds() {
+        return Math.max(300, Math.min(14400, studioMaxSessionSeconds));
+    }
+
     /** Public, bounded profile facts for the Live inspector. Never expose environment values. */
-    private static void appendPinnedLimits(ObjectNode result, RuntimeSession session) {
+    private void appendPinnedLimits(ObjectNode result, RuntimeSession session) {
         JsonNode config = session.getScenarioConfig();
         if (config == null || !config.path("profile").isObject()) return;
         JsonNode profile = config.path("profile");
@@ -752,6 +764,10 @@ public class RuntimeStudioService {
         limits.put("memoryMiB", profile.path("memoryMiB").asInt(512));
         limits.put("cpus", profile.path("cpus").asDouble(1));
         limits.put("timeoutSeconds", config.path("scenario").path("timeoutSeconds").asInt(300));
+        if (config.path("interactiveStudio").asBoolean(false)) {
+            limits.put("sessionTimeoutSeconds", effectiveStudioMaxSessionSeconds());
+            limits.put("idleTimeoutSeconds", queueCoordinator != null ? queueCoordinator.getAbandonedIdleSeconds() : 180L);
+        }
         ObjectNode services = limits.putObject("services");
         JsonNode applications = profile.path("applications");
         if (!applications.isObject()) return;

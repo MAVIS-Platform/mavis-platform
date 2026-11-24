@@ -133,6 +133,43 @@ class RuntimeQueueCoordinatorTest {
     }
 
     @Test
+    void stuckReaperPreservesLongRunningInteractiveStudioWithFreshRunnerHeartbeat() {
+        Instant now = Instant.now();
+        UUID activeLongId = UUID.randomUUID();
+        UUID silentDeadId = UUID.randomUUID();
+        var interactiveCfg = mapper.createObjectNode().put("interactiveStudio", true);
+
+        RuntimeSession activeLong = RuntimeSession.builder()
+                .id(activeLongId)
+                .executionStatus("RUNNING")
+                .scenarioConfig(interactiveCfg)
+                .startedAt(OffsetDateTime.ofInstant(now.minusSeconds(1800), ZoneOffset.UTC))
+                .studioControl(mapper.createObjectNode()
+                        .put("telemetryReceivedAt", OffsetDateTime.ofInstant(now.minusSeconds(5), ZoneOffset.UTC).toString()))
+                .build();
+        RuntimeSession silentDead = RuntimeSession.builder()
+                .id(silentDeadId)
+                .executionStatus("RUNNING")
+                .scenarioConfig(interactiveCfg)
+                .startedAt(OffsetDateTime.ofInstant(now.minusSeconds(1800), ZoneOffset.UTC))
+                .studioControl(mapper.createObjectNode()
+                        .put("telemetryReceivedAt", OffsetDateTime.ofInstant(now.minusSeconds(700), ZoneOffset.UTC).toString()))
+                .build();
+
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc("RUNNING")).thenReturn(List.of(activeLong, silentDead));
+        when(repository.findLockedById(silentDeadId)).thenReturn(Optional.of(silentDead));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        int reaped = coordinator.reapStuckSessions(now);
+
+        assertThat(reaped).isEqualTo(1);
+        assertThat(activeLong.getExecutionStatus()).isEqualTo("RUNNING");
+        assertThat(silentDead.getExecutionStatus()).isEqualTo("FAILED");
+        assertThat(silentDead.getRecoveryResultJson().path("code").asText()).isEqualTo("RUNNER_LOST_RECOVERY_REQUIRED");
+    }
+
+    @Test
     void stuckReaperNeverTouchesSessionsTheLocalRunnerIsStillExecuting() {
         Instant now = Instant.now();
         UUID busyId = UUID.randomUUID();

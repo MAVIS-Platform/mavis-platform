@@ -34,8 +34,8 @@ public class StudioTelemetryHub {
     static final int MAX_RECENT_OBSERVED_AT = 12;
     static final int MAX_SUBSCRIBERS_PER_SESSION = 8;
     static final long DB_SNAPSHOT_INTERVAL_MS = 10_000L;
-    private static final long SSE_TIMEOUT_MS = 300_000L;
-    private static final long IDLE_EVICT_MS = 15 * 60_000L;
+    private static final long SSE_TIMEOUT_MS = 3_600_000L;
+    private static final long IDLE_EVICT_MS = 65 * 60_000L;
 
     private final ObjectMapper mapper;
     private final ConcurrentHashMap<UUID, SessionStream> streams = new ConcurrentHashMap<>();

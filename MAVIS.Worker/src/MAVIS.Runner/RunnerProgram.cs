@@ -34,8 +34,11 @@ public static class RunnerProgram
                 await WorkerPoolLoop.RunAsync(java, new DockerCommands(), args[2], args[3], concurrency, workerId, ociRuntime, writable, shutdown.Token);
                 return 0;
             }
-            // Allow full 300s session budget plus bounded evidence drain, container teardown, and receipt delivery.
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(7));
+            // Allow full interactive Studio session lease (or 7m for short CLI operations) plus drain/teardown/delivery margin.
+            var cliTimeout = args[0] is "managed" or "run" or "live-probe"
+                ? TimeSpan.FromSeconds(RuntimeSessionLifecycle.ResolveInteractiveSessionMaxSeconds() + 300)
+                : TimeSpan.FromMinutes(7);
+            using var cancellation = new CancellationTokenSource(cliTimeout);
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
             if (args[0] is "managed" or "deliver" or "deliver-pending" or "ack-lifecycle" or "managed-recover")
             {

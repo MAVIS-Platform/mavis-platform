@@ -749,6 +749,8 @@ export const contracts = {
           memoryMiB: z.number().optional(),
           cpus: z.number().optional(),
           timeoutSeconds: z.number().optional(),
+          sessionTimeoutSeconds: z.number().optional(),
+          idleTimeoutSeconds: z.number().optional(),
           services: z
             .record(
               z.string(),
