@@ -2,9 +2,13 @@ export type LecturerCourseStatus = string | undefined;
 
 export type LecturerCourseAccess = {
   isActive: boolean;
+  isArchived: boolean;
   isEditable: boolean;
   canCreateModules: boolean;
   canCreateLabs: boolean;
+  canManageGrades: boolean;
+  canManageStudents: boolean;
+  canManageSettings: boolean;
   mode: "read-only" | "edit";
 };
 
@@ -16,12 +20,18 @@ export type LecturerCourseAccess = {
  */
 export function lecturerCourseAccess(status: LecturerCourseStatus): LecturerCourseAccess {
   const isActive = status === "ACTIVE";
-  const isAuthoring = !isActive && status !== "ARCHIVED";
+  const isArchived = status === "ARCHIVED";
+  const isAuthoring = !isActive && !isArchived;
+  const canOperateClass = !isArchived;
   return {
     isActive,
+    isArchived,
     isEditable: isAuthoring,
     canCreateModules: isAuthoring,
     canCreateLabs: isAuthoring,
+    canManageGrades: canOperateClass,
+    canManageStudents: canOperateClass,
+    canManageSettings: canOperateClass,
     mode: isActive ? "read-only" : "edit",
   };
 }

@@ -499,24 +499,16 @@ export function WorkspaceOverview() {
           actions={
             canManage ? (
               <>
-                {canEdit && (
+                {canEdit && !hasLearningContent && (
                   <Button
                     asChild
                     size="sm"
                     variant="outline"
                     className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
                   >
-                    <Link
-                      href={
-                        hasLearningContent
-                          ? `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=content-actions`
-                          : `/references?workspace=${encodeURIComponent(workspace.id)}&from=first-setup`
-                      }
-                    >
+                    <Link href={`/references?workspace=${encodeURIComponent(workspace.id)}&from=first-setup`}>
                       <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                      {hasLearningContent
-                        ? t("Add content", "Thêm nội dung")
-                        : t("Start course setup", "Bắt đầu thiết lập khóa học")}
+                      {t("Start course setup", "Bắt đầu thiết lập khóa học")}
                     </Link>
                   </Button>
                 )}
@@ -630,7 +622,7 @@ export function WorkspaceMembers() {
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage =
     workspace?.myRole?.toUpperCase() === "LECTURER" || session.data?.user?.role === "admin";
-  const canEdit = canEditLecturerCourse(workspace?.status, canManage);
+  const courseAccess = lecturerCourseAccess(workspace?.status);
   const activeTab = canManage && params?.get("tab") === "settings" ? "settings" : "members";
   const gradebook = useWorkspaceGradebook(workspaceId ?? "", Boolean(workspaceId && canManage));
   const studentStatsById = new Map(
@@ -867,7 +859,7 @@ export function WorkspaceMembers() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={remove.isPending || !canEdit}
+                                disabled={remove.isPending || !courseAccess.canManageStudents}
                                 onClick={() => {
                                   if (window.confirm(`Remove ${m.name} from this class?`))
                                     remove.mutate({ workspaceId: workspace.id, userId: m.id });

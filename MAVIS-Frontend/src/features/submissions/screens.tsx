@@ -372,7 +372,7 @@ function TeachingSubmissions() {
         )}
       </div>
 
-      {!courseAccess.isEditable ? (
+      {!courseAccess.canManageGrades ? (
         <ClassGradebookMatrix
           workspaceId={workspaceId}
           workspaceCode={workspace?.code || workspaceId}

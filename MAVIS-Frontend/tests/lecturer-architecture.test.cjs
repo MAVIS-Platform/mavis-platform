@@ -12,6 +12,9 @@ test("Lecturer lifecycle makes Active content read-only and Inactive content edi
   assert.match(policy, /isEditable: isAuthoring/);
   assert.match(policy, /canCreateModules: isAuthoring/);
   assert.match(policy, /canCreateLabs: isAuthoring/);
+  assert.match(policy, /canManageGrades: canOperateClass/);
+  assert.match(policy, /canManageStudents: canOperateClass/);
+  assert.match(policy, /canManageSettings: canOperateClass/);
   assert.match(policy, /hasManageRole && lecturerCourseAccess\(status\)\.isEditable/);
 });
 
@@ -67,12 +70,15 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   assert.match(workspace, /\/references\?workspace=\$\{encodeURIComponent\(workspace\.id\)\}&from=first-setup/);
 });
 
-test("Active Lecturer courses lock authoring while Inactive courses expose module and Lab creation", () => {
+test("Active Lecturer courses lock Overview authoring but keep Grades, Students and Settings operational", () => {
   const workspace = read("src/features/workspaces/screens.tsx");
+  const submissions = read("src/features/submissions/screens.tsx");
   const labs = read("src/features/assignments/screens.tsx");
   const authoring = read("src/features/assignments/lab-authoring.tsx");
   const courseBuilder = read("src/features/courses/course-builder.tsx");
-  assert.match(workspace, /disabled=\{remove\.isPending \|\| !canEdit\}/);
+  assert.match(workspace, /disabled=\{remove\.isPending \|\| !courseAccess\.canManageStudents\}/);
+  assert.match(submissions, /!courseAccess\.canManageGrades/);
+  assert.match(workspace, /<WorkspaceControls[\s\S]*mode="overview"/);
   assert.match(workspace, /activeTab === "authoring" && canManage && canEdit/);
   assert.match(workspace, /canCreateModules=\{courseAccess\.canCreateModules\}/);
   assert.match(labs, /courseAccess\.canCreateLabs &&/);

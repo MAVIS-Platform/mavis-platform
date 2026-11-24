@@ -412,9 +412,10 @@ function CourseOutlineBody({
             {canManage && (
               <Button asChild size="sm" variant="default" className="shrink-0 font-semibold">
                 <Link
-                  href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
+                  href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=content-actions`}
                 >
-                  {t("Setup Labs in Curriculum", "Cấu hình Lab trong Curriculum")}
+                  <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                  {t("Add content", "Thêm nội dung")}
                 </Link>
               </Button>
             )}
