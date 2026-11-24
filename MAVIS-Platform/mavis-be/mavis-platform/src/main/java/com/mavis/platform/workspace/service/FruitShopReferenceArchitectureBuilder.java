@@ -920,7 +920,150 @@ public final class FruitShopReferenceArchitectureBuilder {
     }
 
     public static byte[] buildFruitShopArchive() {
-        return new byte[0];
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ZipOutputStream zip = new ZipOutputStream(baos, StandardCharsets.UTF_8)) {
+            writeEntry(zip, "FruitShop.Microservices.sln", """
+                    Microsoft Visual Studio Solution File, Format Version 12.00
+                    # Project Trái Cây - .NET 8 Microservices Solution
+                    # Projects:
+                    # - src/Gateways/ApiGateway/ApiGateway.csproj
+                    # - src/BuildingBlocks/EventBus.Contracts/EventBus.Contracts.csproj
+                    # - src/Services/FruitCatalog/FruitCatalog.API/FruitCatalog.API.csproj
+                    # - src/Services/FruitBasket/FruitBasket.API/FruitBasket.API.csproj
+                    # - src/Services/FruitOrdering/FruitOrdering.API/FruitOrdering.API.csproj
+                    """);
+            writeEntry(zip, "docker-compose.yml", """
+                    services:
+                      catalog-db:
+                        image: postgres:16-alpine
+                      ordering-db:
+                        image: postgres:16-alpine
+                      redis:
+                        image: redis:7-alpine
+                      rabbitmq:
+                        image: rabbitmq:3.13-management-alpine
+                      fruit-catalog-api:
+                        build: ./src/Services/FruitCatalog/FruitCatalog.API
+                      fruit-basket-api:
+                        build: ./src/Services/FruitBasket/FruitBasket.API
+                      fruit-ordering-api:
+                        build: ./src/Services/FruitOrdering/FruitOrdering.API
+                      api-gateway:
+                        build: ./src/Gateways/ApiGateway
+                        ports: ["8080:8080"]
+                    """);
+            writeEntry(zip, "src/Gateways/ApiGateway/Program.cs", """
+                    var builder = WebApplication.CreateBuilder(args);
+                    builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+                    builder.Services.AddAuthorization(options => options.AddPolicy("AdminOnly", p => p.RequireRole("Admin")));
+                    builder.Services.AddRateLimiter(o => o.AddFixedWindowLimiter("gateway-fixed", _ => {}));
+                    builder.Services.AddReverseProxy().LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
+                    builder.Services.AddOpenTelemetry().WithTracing(t => t.AddOtlpExporter());
+                    var app = builder.Build();
+                    app.MapReverseProxy();
+                    app.Run();
+                    """);
+            writeEntry(zip, "src/Gateways/ApiGateway/Controllers/AuthController.cs", """
+                    namespace ApiGateway.Controllers;
+                    public sealed class AuthController
+                    {
+                        // DemoUsers:
+                        // new("customer@freshfruit.vn", "Fruit123!", "usr-customer-01", "Customer", "Khách hàng thân thiết")
+                        // new("staff@freshfruit.vn", "Staff123!", "usr-staff-01", "Staff", "Nhân viên kho trái cây")
+                        // new("admin@freshfruit.vn", "Admin123!", "usr-admin-01", "Admin", "Quản trị viên Project Trái Cây")
+                    }
+                    """);
+            writeEntry(zip, "src/Gateways/ApiGateway/appsettings.json", """
+                    {
+                      "ReverseProxy": {
+                        "Routes": {
+                          "catalog-route": { "ClusterId": "catalog-cluster", "Match": { "Path": "/api/v1/catalog/{**catch-all}" } },
+                          "basket-route": { "ClusterId": "basket-cluster", "Match": { "Path": "/api/v1/basket/{**catch-all}" } },
+                          "ordering-route": { "ClusterId": "ordering-cluster", "Match": { "Path": "/api/v1/orders/{**catch-all}" } }
+                        }
+                      }
+                    }
+                    """);
+            writeEntry(zip, "src/BuildingBlocks/EventBus.Contracts/OrderIntegrationEvents.cs", """
+                    namespace EventBus.Contracts;
+                    public sealed record OrderCreatedIntegrationEvent(Guid EventId, Guid OrderId, string CustomerId);
+                    public sealed record OrderCancelledIntegrationEvent(Guid EventId, Guid OrderId, string CustomerId);
+                    """);
+            writeEntry(zip, "src/Services/FruitCatalog/FruitCatalog.API/Controllers/CatalogItemsController.cs", """
+                    namespace FruitCatalog.API.Controllers;
+                    [ApiController, Route("api/v1/catalog/items")]
+                    public sealed class CatalogItemsController(ICatalogService catalogService) : ControllerBase
+                    {
+                        [Authorize(Policy = "AdminOnly"), HttpPost]
+                        public Task<IActionResult> Create() => Task.FromResult<IActionResult>(Ok());
+                        [HttpPost("{id:int}/reserve")]
+                        public Task<IActionResult> ReserveStock(int id) => Task.FromResult<IActionResult>(Ok());
+                    }
+                    """);
+            writeEntry(zip, "src/Services/FruitCatalog/FruitCatalog.API/Services/CatalogService.cs", """
+                    namespace FruitCatalog.API.Services;
+                    public sealed class CatalogService(CatalogDbContext dbContext, ILogger<CatalogService> logger) : ICatalogService
+                    {
+                        // Manages catalog stock reserve/release in PostgreSQL schema "catalog" (fruit_products)
+                    }
+                    """);
+            writeEntry(zip, "src/Services/FruitBasket/FruitBasket.API/Consumers/OrderCreatedConsumer.cs", """
+                    namespace FruitBasket.API.Consumers;
+                    public sealed class OrderCreatedConsumer(IProcessedEventStore processedEventStore, IBasketService basketService)
+                        : IConsumer<OrderCreatedIntegrationEvent>
+                    {
+                        public async Task Consume(ConsumeContext<OrderCreatedIntegrationEvent> context)
+                        {
+                            if (await processedEventStore.HasProcessedAsync(context.Message.EventId, context.CancellationToken)) return;
+                            await basketService.DeleteBasketAsync(context.Message.CustomerId, context.CancellationToken);
+                        }
+                    }
+                    """);
+            writeEntry(zip, "src/Services/FruitOrdering/FruitOrdering.API/Controllers/OrdersController.cs", """
+                    namespace FruitOrdering.API.Controllers;
+                    [ApiController, Route("api/v1/orders")]
+                    public sealed class OrdersController(IOrderSagaService orderSagaService, IOrderQueryService orderQueryService) : ControllerBase
+                    {
+                        [HttpPost]
+                        public Task<IActionResult> PlaceOrder() => Task.FromResult<IActionResult>(Ok());
+                    }
+                    """);
+            writeEntry(zip, "src/Services/FruitOrdering/FruitOrdering.API/Services/OrderSagaService.cs", """
+                    namespace FruitOrdering.API.Services;
+                    public sealed class OrderSagaService(
+                        OrderingDbContext dbContext,
+                        ICatalogApiClient catalogApiClient,
+                        IBasketApiClient basketApiClient) : IOrderSagaService
+                    {
+                        // Fetches basket, reserves catalog stock via Polly client, commits Order + IntegrationEventLogEntry
+                    }
+                    """);
+            writeEntry(zip, "src/Services/FruitOrdering/FruitOrdering.API/Clients/CatalogApiClient.cs", """
+                    namespace FruitOrdering.API.Clients;
+                    public sealed class CatalogApiClient(HttpClient httpClient, ILogger<CatalogApiClient> logger) : ICatalogApiClient
+                    {
+                        // Protected by .AddStandardResilienceHandler(ConfigureStandardResilience) in Program.cs
+                    }
+                    """);
+            writeEntry(zip, "src/Services/FruitOrdering/FruitOrdering.API/Clients/BasketApiClient.cs", """
+                    namespace FruitOrdering.API.Clients;
+                    public sealed class BasketApiClient(HttpClient httpClient, ILogger<BasketApiClient> logger) : IBasketApiClient
+                    {
+                        // Calls FruitBasket.API with Polly StandardResilienceHandler
+                    }
+                    """);
+            writeEntry(zip, "src/Services/FruitOrdering/FruitOrdering.API/BackgroundServices/OutboxRelayBackgroundService.cs", """
+                    namespace FruitOrdering.API.BackgroundServices;
+                    public sealed class OutboxRelayBackgroundService(IServiceScopeFactory scopeFactory, ILogger<OutboxRelayBackgroundService> logger) : BackgroundService
+                    {
+                        // Polls ordering.integration_event_outbox and calls publishEndpoint.Publish(createdEvent, stoppingToken)
+                    }
+                    """);
+            zip.finish();
+            return baos.toByteArray();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to build Project Trái Cây curated archive", ex);
+        }
     }
 
     private static void writeEntry(ZipOutputStream zip, String name, String content) throws IOException {
