@@ -313,7 +313,43 @@ public final class FruitShopReferenceArchitectureBuilder {
     }
 
     private void addC3BasketComponents() {
-        // Added in Commit 4
+        addComponent("c3-bsk-ctrl", "FruitBasket.API", "C# 12 · ASP.NET Core Controller",
+                "BasketController", "Controller",
+                "FruitBasket.API.Controllers.BasketController",
+                "Exposes shopping basket endpoints (/api/v1/basket/{customerId}) enforcing owner or Admin/Staff authorization");
+        addComponent("c3-bsk-svc", "FruitBasket.API", "C# 12 · Application Service",
+                "BasketService", "Service",
+                "FruitBasket.API.Services.BasketService",
+                "Coordinates basket reads, updates and deletion for checked-out customers");
+        addComponent("c3-bsk-cons", "FruitBasket.API", "C# 12 · MassTransit IConsumer<T>",
+                "OrderCreatedConsumer", "Consumer",
+                "FruitBasket.API.Consumers.OrderCreatedConsumer",
+                "Consumes OrderCreatedIntegrationEvent from RabbitMQ and clears customer basket idempotently");
+        addComponent("c3-bsk-repo", "FruitBasket.API", "C# 12 · StackExchangeRedis Repository",
+                "RedisBasketRepository", "Repository",
+                "FruitBasket.API.Repositories.RedisBasketRepository",
+                "Serializes CustomerBasket JSON payloads under Redis keys basket:{customerId}");
+        addComponent("c3-bsk-proc", "FruitBasket.API", "C# 12 · Redis Idempotency Store",
+                "RedisProcessedEventStore", "Repository",
+                "FruitBasket.API.Repositories.RedisProcessedEventStore",
+                "Tracks processed integration event IDs in Redis keys processed-event:* to guarantee exactly-once effect");
+
+        addC3Edge("c3-gw-yarp-bsk", "c3-gw-yarp", "c3-bsk-ctrl", "GATEWAY_ROUTE",
+                props("route", "/api/v1/basket/{**catch-all}"));
+        addC3Edge("c3-bsk-ctrl-svc", "c3-bsk-ctrl", "c3-bsk-svc", "CODE_DEPENDENCY",
+                props("label", "Delegates IBasketService operations"));
+        addC3Edge("c3-bsk-svc-repo", "c3-bsk-svc", "c3-bsk-repo", "CODE_DEPENDENCY",
+                props("label", "Reads/writes CustomerBasket via IBasketRepository"));
+        addC3Edge("c3-bsk-repo-redis", "c3-bsk-repo", "redis", "DATABASE_ACCESS",
+                props("protocol", "StackExchangeRedis · basket:*"));
+        addC3Edge("c3-rmq-bsk-cons", "rabbitmq", "c3-bsk-cons", "MESSAGE_SUBSCRIBE",
+                props("events", "OrderCreatedIntegrationEvent"));
+        addC3Edge("c3-bsk-cons-proc", "c3-bsk-cons", "c3-bsk-proc", "CODE_DEPENDENCY",
+                props("label", "Checks HasProcessedAsync & marks processed-event:*"));
+        addC3Edge("c3-bsk-proc-redis", "c3-bsk-proc", "redis", "DATABASE_ACCESS",
+                props("protocol", "StackExchangeRedis · processed-event:*"));
+        addC3Edge("c3-bsk-cons-svc", "c3-bsk-cons", "c3-bsk-svc", "CODE_DEPENDENCY",
+                props("label", "Invokes DeleteBasketAsync after checkout"));
     }
 
     private void addC3OrderingComponents() {
@@ -410,6 +446,48 @@ public final class FruitShopReferenceArchitectureBuilder {
                 "src/Services/FruitCatalog/FruitCatalog.API/Data/CatalogDbInitializer.cs:8",
                 "STATIC_CODE",
                 "public static async Task InitializeAsync(IServiceProvider services, ILogger logger)");
+
+        // FruitBasket.API Redis, MassTransit Consumer & Idempotency
+        addRelEvidence("basket-redis",
+                "src/Services/FruitBasket/FruitBasket.API/Program.cs:33",
+                "STATIC_CODE",
+                "builder.Services.AddStackExchangeRedisCache(options => options.Configuration = redisConnection);");
+        addRelEvidence("rabbitmq-basket",
+                "src/Services/FruitBasket/FruitBasket.API/Consumers/OrderCreatedConsumer.cs:14",
+                "STATIC_CODE",
+                "public sealed class OrderCreatedConsumer(...) : IConsumer<OrderCreatedIntegrationEvent>");
+        addRelEvidence("c3-bsk-cons-proc",
+                "src/Services/FruitBasket/FruitBasket.API/Consumers/OrderCreatedConsumer.cs:20",
+                "STATIC_CODE",
+                "if (await processedEventStore.HasProcessedAsync(context.Message.EventId, context.CancellationToken)) return;");
+        addRelEvidence("c3-bsk-cons-svc",
+                "src/Services/FruitBasket/FruitBasket.API/Consumers/OrderCreatedConsumer.cs:28",
+                "STATIC_CODE",
+                "await basketService.DeleteBasketAsync(context.Message.CustomerId, context.CancellationToken);");
+        addNodeEvidence("FruitBasket.API",
+                "src/Services/FruitBasket/FruitBasket.API/Controllers/BasketController.cs:12",
+                "STATIC_CODE",
+                "public sealed class BasketController(IBasketService basketService) : ControllerBase");
+        addNodeEvidence("c3-bsk-ctrl",
+                "src/Services/FruitBasket/FruitBasket.API/Controllers/BasketController.cs:60",
+                "STATIC_CODE",
+                "var privileged = User.IsInRole(\"Admin\") || User.IsInRole(\"Staff\");");
+        addNodeEvidence("c3-bsk-svc",
+                "src/Services/FruitBasket/FruitBasket.API/Services/BasketService.cs:7",
+                "STATIC_CODE",
+                "public sealed class BasketService(IBasketRepository repository, ILogger<BasketService> logger) : IBasketService");
+        addNodeEvidence("c3-bsk-cons",
+                "src/Services/FruitBasket/FruitBasket.API/Program.cs:44",
+                "STATIC_CODE",
+                "x.AddConsumer<OrderCreatedConsumer>();");
+        addNodeEvidence("c3-bsk-repo",
+                "src/Services/FruitBasket/FruitBasket.API/Repositories/RedisBasketRepository.cs:7",
+                "STATIC_CODE",
+                "public sealed class RedisBasketRepository(IDistributedCache cache) : IBasketRepository");
+        addNodeEvidence("c3-bsk-proc",
+                "src/Services/FruitBasket/FruitBasket.API/Repositories/RedisProcessedEventStore.cs:5",
+                "STATIC_CODE",
+                "public sealed class RedisProcessedEventStore(IDistributedCache cache) : IProcessedEventStore");
     }
 
     private DiagramVersion buildC1ContextDiagram() {
