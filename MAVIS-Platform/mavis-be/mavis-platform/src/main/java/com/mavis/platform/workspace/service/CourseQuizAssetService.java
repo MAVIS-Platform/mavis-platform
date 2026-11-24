@@ -19,13 +19,21 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional
 public class CourseQuizAssetService {
+    private static final int DEFAULT_CATALOG_PASS_PERCENT = 70;
     private final AccessPolicyService access;
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
+    private final CourseCurriculum curriculum;
 
     public record Upsert(String title, String description, Integer passPercent, List<CourseQuizService.Question> questions) {}
     public record View(UUID id, String title, String description, int passPercent, JsonNode questions,
                        OffsetDateTime createdAt, OffsetDateTime updatedAt) {}
+    public record CurriculumQuiz(String chapterId, String track, String phase, String title,
+                                 int passPercent, List<CourseQuizService.Question> questions) {}
+    public record ReusableQuiz(UUID id, UUID sourceWorkspaceId, String sourceWorkspaceName, String title,
+                               String description, int passPercent, JsonNode questions,
+                               OffsetDateTime updatedAt) {}
+    public record CatalogView(List<CurriculumQuiz> curriculumQuizzes, List<ReusableQuiz> reusableQuizzes) {}
 
     @Transactional(readOnly = true)
     public List<View> list(UUID workspaceId) {
@@ -36,6 +44,54 @@ public class CourseQuizAssetService {
                 """, (rs, row) -> view(rs.getObject(1, UUID.class), rs.getString(2), rs.getString(3),
                 rs.getInt(4), rs.getString(5), rs.getObject(6, OffsetDateTime.class),
                 rs.getObject(7, OffsetDateTime.class)), workspaceId);
+    }
+
+    @Transactional(readOnly = true)
+    public CatalogView catalog(UUID workspaceId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        List<CurriculumQuiz> curriculumQuizzes = curriculum.chapters().stream()
+                .filter(chapter -> chapter.questions() != null && !chapter.questions().isEmpty())
+                .map(chapter -> new CurriculumQuiz(
+                        chapter.id(),
+                        chapter.track(),
+                        chapter.phase(),
+                        chapter.title(),
+                        DEFAULT_CATALOG_PASS_PERCENT,
+                        chapter.questions()))
+                .toList();
+        var actor = access.requireCurrentActiveUser();
+        boolean isAdmin = actor != null && actor.getRole() != null
+                && "SYSTEM_ADMIN".equalsIgnoreCase(actor.getRole().getCode());
+        List<ReusableQuiz> reusableQuizzes;
+        if (isAdmin) {
+            reusableQuizzes = jdbc.query("""
+                    SELECT qa.id, qa.workspace_id, COALESCE(w.name, 'Workspace'), qa.title, qa.description,
+                           qa.pass_percent, qa.questions::text, qa.updated_at
+                    FROM course_quiz_assets qa
+                    JOIN workspaces w ON w.id = qa.workspace_id
+                    WHERE qa.workspace_id <> ?
+                    ORDER BY qa.updated_at DESC
+                    LIMIT 50
+                    """, (rs, row) -> reusableView(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class),
+                    rs.getString(3), rs.getString(4), rs.getString(5), rs.getInt(6),
+                    rs.getString(7), rs.getObject(8, OffsetDateTime.class)), workspaceId);
+        } else {
+            UUID actorId = actor == null ? null : actor.getId();
+            reusableQuizzes = jdbc.query("""
+                    SELECT DISTINCT qa.id, qa.workspace_id, COALESCE(w.name, 'Workspace'), qa.title, qa.description,
+                           qa.pass_percent, qa.questions::text, qa.updated_at
+                    FROM course_quiz_assets qa
+                    JOIN workspaces w ON w.id = qa.workspace_id
+                    LEFT JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = ? AND wm.member_role = 'LECTURER'
+                    WHERE qa.workspace_id <> ?
+                      AND (qa.created_by = ? OR w.created_by = ? OR wm.user_id IS NOT NULL)
+                    ORDER BY qa.updated_at DESC
+                    LIMIT 50
+                    """, (rs, row) -> reusableView(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class),
+                    rs.getString(3), rs.getString(4), rs.getString(5), rs.getInt(6),
+                    rs.getString(7), rs.getObject(8, OffsetDateTime.class)), actorId, workspaceId, actorId, actorId);
+        }
+        return new CatalogView(curriculumQuizzes, reusableQuizzes);
     }
 
     public View create(UUID workspaceId, Upsert request) {
@@ -112,6 +168,17 @@ public class CourseQuizAssetService {
             return new View(id, title, description, passPercent, json.readTree(questions), createdAt, updatedAt);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Could not read Quiz asset", exception);
+        }
+    }
+
+    private ReusableQuiz reusableView(UUID id, UUID sourceWorkspaceId, String sourceWorkspaceName,
+                                      String title, String description, int passPercent,
+                                      String questions, OffsetDateTime updatedAt) {
+        try {
+            return new ReusableQuiz(id, sourceWorkspaceId, sourceWorkspaceName, title, description,
+                    passPercent, json.readTree(questions), updatedAt);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Could not read reusable Quiz asset", exception);
         }
     }
 

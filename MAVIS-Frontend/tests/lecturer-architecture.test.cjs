@@ -105,3 +105,32 @@ test("Lecturer course cards open directly and own an Active-Inactive lifecycle t
   assert.match(workspace, /course\.modules\.some\(\(module\) => module\.items\.length === 0\)/);
   assert.match(workspace, /Complete Course setup/);
 });
+
+test("Commit #05 completes 6-step Lecturer setup with curated repos, lesson/quiz libraries and studio essay config", () => {
+  const sourcePicker = read("src/features/assignments/source-picker.tsx");
+  const refManage = read("src/features/workspaces/reference-manage.tsx");
+  const theoryLib = read("src/features/workspaces/theory-library.tsx");
+  const quizLib = read("src/features/courses/quiz-library.tsx");
+  const labAuthoring = read("src/features/assignments/lab-authoring.tsx");
+  const labInfo = read("src/features/assignments/lab-info-form.tsx");
+
+  for (const repoName of [
+    "Moc-Huong-Shop",
+    "mavis-commerce-seed",
+    "fruit-shop-dotnet-microservices",
+    "mavis-studio-live-demo",
+    "mavis-studio-live-seed",
+  ]) {
+    assert.ok(sourcePicker.includes(repoName), `Missing curated repo ${repoName}`);
+  }
+  assert.match(sourcePicker, /otherWorkspaceProjects/);
+  assert.match(refManage, /CURATED_SAMPLE_REPOS/);
+  assert.match(theoryLib, /course-curriculum/);
+  assert.match(theoryLib, /theory-assets\/reusable/);
+  assert.match(theoryLib, /Smart Format/);
+  assert.match(quizLib, /quiz-assets\/catalog/);
+  assert.match(quizLib, /staticDiagramQuizTemplate/);
+  assert.match(quizLib, /<QuizBuilder/);
+  assert.doesNotMatch(labAuthoring, /LabQuizSection|id: "quiz"|LabTheorySection/);
+  assert.match(labInfo, /essayPrompts/);
+});

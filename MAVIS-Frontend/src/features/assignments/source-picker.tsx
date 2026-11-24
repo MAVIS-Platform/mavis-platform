@@ -9,10 +9,63 @@ import { SelectField } from "@/components/shared/forms";
 import { StatusLabel } from "@/components/shared/data";
 import type { Assignment } from "./requirements";
 
+export type CuratedSampleRepo = {
+  id: string;
+  name: string;
+  stack: string;
+  url: string;
+  summaryEn: string;
+  summaryVi: string;
+};
+
+export const CURATED_SAMPLE_REPOS: readonly CuratedSampleRepo[] = [
+  {
+    id: "moc-huong-shop",
+    name: "Moc-Huong-Shop",
+    stack: "Java 21 · Spring Boot 3",
+    url: "https://github.com/MAVIS-Platform/Moc-Huong-Shop",
+    summaryEn: "E-commerce microservices system with Gateway, Orders, Inventory, and Shipping.",
+    summaryVi: "Hệ thống thương mại điện tử microservices gồm Gateway, Orders, Inventory và Shipping.",
+  },
+  {
+    id: "mavis-commerce-seed",
+    name: "mavis-commerce-seed",
+    stack: "Java 21 · Spring Boot 3",
+    url: "https://github.com/MAVIS-Platform/mavis-commerce-seed",
+    summaryEn: "Reference microservices architecture with clean DDD boundaries and Outbox events.",
+    summaryVi: "Kho mã nguồn chuẩn Java DDD tách service & Outbox event.",
+  },
+  {
+    id: "fruit-shop-dotnet",
+    name: "fruit-shop-dotnet-microservices",
+    stack: ".NET 8 · C# Microservices",
+    url: "https://github.com/MAVIS-Platform/fruit-shop-dotnet-microservices",
+    summaryEn: "C#/.NET distributed services with YARP Gateway and OpenTelemetry instrumentation.",
+    summaryVi: "Hệ thống C#/.NET phân tán với YARP Gateway và OpenTelemetry.",
+  },
+  {
+    id: "mavis-studio-live-demo",
+    name: "mavis-studio-live-demo",
+    stack: "Java · Docker Studio Live",
+    url: "https://github.com/MAVIS-Platform/mavis-studio-live-demo",
+    summaryEn: "Ready-to-run Studio Live sandbox for fault injection and scaling experiments.",
+    summaryVi: "Repo chuẩn Studio Live để thực hành giả lập sự cố và scale container.",
+  },
+  {
+    id: "mavis-studio-live-seed",
+    name: "mavis-studio-live-seed",
+    stack: "Java · Docker Studio Live",
+    url: "https://github.com/MAVIS-Platform/mavis-studio-live-seed",
+    summaryEn: "Minimal Studio Live starter topology for custom course labs.",
+    summaryVi: "Khung khởi tạo Studio Live gọn nhẹ cho giảng viên tự thiết kế Lab.",
+  },
+];
+
 export function AssignmentSourcePicker({
   workspaceId,
   title,
   initial,
+  initialRepositoryUrl,
   onChange,
   onVersionChange,
   onAnalysisComplete,
@@ -21,6 +74,7 @@ export function AssignmentSourcePicker({
   workspaceId: string;
   title: string;
   initial?: Assignment["referenceSource"];
+  initialRepositoryUrl?: string | undefined;
   onChange: (modelId: string, pending: boolean) => void;
   onVersionChange?: (
     version: { modelId: string; projectId: string; snapshotId: string },
@@ -36,13 +90,16 @@ export function AssignmentSourcePicker({
   const api = useApi(),
     cache = useQueryClient();
   const { t } = useLocale();
-  const [mode, setMode] = useState(initial?.projectId ? "existing" : "github"),
-    [repository, setRepository] = useState("");
-  const [lookup, setLookup] = useState(""),
+  const [mode, setMode] = useState(
+    initialRepositoryUrl ? "github" : initial?.projectId ? "existing" : "github",
+  ),
+    [repository, setRepository] = useState(initialRepositoryUrl ?? "");
+  const [lookup, setLookup] = useState(initialRepositoryUrl?.trim() ?? ""),
     [branch, setBranch] = useState(""),
     [commit, setCommit] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [projectId, setProjectId] = useState(initial?.projectId ?? "");
+  const [otherProjectId, setOtherProjectId] = useState("");
   const [modelId, setModelId] = useState(initial?.modelId ?? "");
   const [snapshotId, setSnapshotId] = useState(initial?.snapshotId ?? "");
   const [jobId, setJobId] = useState("");
@@ -58,8 +115,19 @@ export function AssignmentSourcePicker({
   const lastEmittedRef = useRef("");
   const completedAnalysisRef = useRef("");
   const projects = useApiQuery("workspaceProjects", { workspaceId });
+  const allProjects = useApiQuery("projects", {});
   const versions = useApiQuery("modelVersions", { projectId }, { enabled: !!projectId });
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
+  useEffect(() => {
+    if (!initialRepositoryUrl) return;
+    setMode("github");
+    setRepository(initialRepositoryUrl);
+    setLookup(initialRepositoryUrl.trim());
+    setBranch("");
+    setCommit("");
+    setModelId("");
+    setJobId("");
+  }, [initialRepositoryUrl]);
   useEffect(() => {
     const timer = setTimeout(() => setLookup(repository.trim()), 500);
     return () => clearTimeout(timer);
@@ -233,6 +301,7 @@ export function AssignmentSourcePicker({
   function changeMode(next: string) {
     setMode(next);
     setProjectId(next === "existing" ? (initial?.projectId ?? "") : "");
+    setOtherProjectId("");
     setModelId(next === "existing" ? (initial?.modelId ?? "") : "");
     setSnapshotId(next === "existing" ? (initial?.snapshotId ?? "") : "");
     setJobId("");
@@ -240,6 +309,13 @@ export function AssignmentSourcePicker({
     prepare.reset();
     retry.reset();
   }
+  const otherWorkspaceProjects = (allProjects.data ?? []).filter(
+    (p) =>
+      p.workspaceId !== workspaceId &&
+      (p.projectType === "TEACHER_REFERENCE" || p.isReferenceTemplate) &&
+      /^https?:\/\/github\.com\//i.test(p.repository ?? ""),
+  );
+  const selectedOtherProject = otherWorkspaceProjects.find((p) => p.id === otherProjectId);
   const sortedVersions = [...(versions.data ?? [])].sort((a, b) => b.revision - a.revision);
 
   // Auto-select the latest analyzed revision when a reference project is selected
@@ -280,6 +356,7 @@ export function AssignmentSourcePicker({
             value={projectId}
             onChange={(value) => {
               setProjectId(value);
+              setOtherProjectId("");
               setModelId("");
               setSnapshotId("");
             }}
@@ -290,6 +367,64 @@ export function AssignmentSourcePicker({
                 .map((p) => ({ value: p.id, label: p.name })),
             ]}
           />
+          {otherWorkspaceProjects.length > 0 && (
+            <div className="space-y-2 rounded-lg border border-dashed bg-background/60 p-3">
+              <SelectField
+                label={t(
+                  "Reuse from your other classes",
+                  "Dùng lại dự án từ lớp học khác của bạn",
+                )}
+                value={otherProjectId}
+                onChange={(value) => {
+                  setOtherProjectId(value);
+                  if (value) {
+                    setProjectId("");
+                    setModelId("");
+                    setSnapshotId("");
+                  }
+                }}
+                options={[
+                  {
+                    value: "",
+                    label: t(
+                      "Choose a reference project from another class…",
+                      "Chọn dự án tham chiếu từ lớp khác…",
+                    ),
+                  },
+                  ...otherWorkspaceProjects.map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                  })),
+                ]}
+              />
+              {selectedOtherProject && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="truncate font-mono text-muted-foreground">
+                    {selectedOtherProject.repository}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const repoUrl = selectedOtherProject.repository.trim();
+                      setMode("github");
+                      setProjectId("");
+                      setOtherProjectId("");
+                      setRepository(repoUrl);
+                      setLookup(repoUrl);
+                      setBranch(selectedOtherProject.defaultBranch ?? "");
+                      setCommit("");
+                      setModelId("");
+                      setJobId("");
+                    }}
+                  >
+                    {t("Clone into this class & analyze", "Sao chép & phân tích vào lớp này")}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
           {projectId &&
             (sortedVersions.length > 0 ? (
               <SelectField
@@ -343,6 +478,31 @@ export function AssignmentSourcePicker({
         <>
           {mode === "github" ? (
             <>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t("Quick-pick MAVIS sample repositories", "Chọn nhanh kho mã nguồn mẫu MAVIS")}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {CURATED_SAMPLE_REPOS.map((repo) => (
+                    <Button
+                      key={repo.id}
+                      type="button"
+                      size="sm"
+                      variant={repository.trim() === repo.url ? "default" : "outline"}
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => {
+                        setRepository(repo.url);
+                        setLookup(repo.url);
+                        setBranch("");
+                        setModelId("");
+                        setJobId("");
+                      }}
+                    >
+                      {repo.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
               <label className="block space-y-1 text-sm">
                 <span>{t("GitHub repository URL", "Đường dẫn GitHub repository")}</span>
                 <Input

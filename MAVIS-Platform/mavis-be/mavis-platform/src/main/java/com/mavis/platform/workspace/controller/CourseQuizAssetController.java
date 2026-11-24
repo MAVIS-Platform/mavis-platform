@@ -20,6 +20,11 @@ public class CourseQuizAssetController {
         return ApiResponse.success(assets.list(workspaceId));
     }
 
+    @GetMapping("/catalog")
+    public ApiResponse<CourseQuizAssetService.CatalogView> catalog(@PathVariable UUID workspaceId) {
+        return ApiResponse.success(assets.catalog(workspaceId));
+    }
+
     @PostMapping
     public ApiResponse<CourseQuizAssetService.View> create(@PathVariable UUID workspaceId,
                                                             @RequestBody CourseQuizAssetService.Upsert request) {

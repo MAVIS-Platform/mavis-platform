@@ -58,6 +58,10 @@ public class TheoryLibraryService {
                             String source, String sourceUrl, String licenseNote, int version,
                             OffsetDateTime updatedAt, String createdByName) {}
 
+    public record ReusableAssetView(UUID id, UUID sourceWorkspaceId, String sourceWorkspaceName, String title,
+                                    String body, String language, String style, String source,
+                                    OffsetDateTime updatedAt) {}
+
     public record Upsert(String title, String body, String language, String style, String source,
                          String sourceUrl, String licenseNote) {}
 
@@ -71,6 +75,55 @@ public class TheoryLibraryService {
     public List<AssetView> list(UUID workspaceId) {
         access.requireWorkspaceLecturer(workspaceId);
         return assets.findByWorkspaceIdOrderByUpdatedAtDesc(workspaceId).stream().map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReusableAssetView> reusable(UUID workspaceId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        User actor = access.requireCurrentActiveUser();
+        boolean isAdmin = actor != null && actor.getRole() != null
+                && "SYSTEM_ADMIN".equalsIgnoreCase(actor.getRole().getCode());
+        if (isAdmin) {
+            return jdbc.query("""
+                    SELECT ta.id, ta.workspace_id, COALESCE(w.name, 'Workspace'), ta.title, ta.body,
+                           ta.language, ta.style, ta.source, ta.updated_at
+                    FROM theory_assets ta
+                    JOIN workspaces w ON w.id = ta.workspace_id
+                    WHERE ta.workspace_id <> ?
+                    ORDER BY ta.updated_at DESC
+                    LIMIT 50
+                    """, (rs, row) -> new ReusableAssetView(
+                    rs.getObject(1, UUID.class),
+                    rs.getObject(2, UUID.class),
+                    rs.getString(3),
+                    rs.getString(4),
+                    rs.getString(5),
+                    rs.getString(6),
+                    rs.getString(7),
+                    rs.getString(8),
+                    rs.getObject(9, OffsetDateTime.class)), workspaceId);
+        }
+        UUID actorId = actor == null ? null : actor.getId();
+        return jdbc.query("""
+                SELECT DISTINCT ta.id, ta.workspace_id, COALESCE(w.name, 'Workspace'), ta.title, ta.body,
+                       ta.language, ta.style, ta.source, ta.updated_at
+                FROM theory_assets ta
+                JOIN workspaces w ON w.id = ta.workspace_id
+                LEFT JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = ? AND wm.member_role = 'LECTURER'
+                WHERE ta.workspace_id <> ?
+                  AND (ta.created_by = ? OR w.created_by = ? OR wm.user_id IS NOT NULL)
+                ORDER BY ta.updated_at DESC
+                LIMIT 50
+                """, (rs, row) -> new ReusableAssetView(
+                rs.getObject(1, UUID.class),
+                rs.getObject(2, UUID.class),
+                rs.getString(3),
+                rs.getString(4),
+                rs.getString(5),
+                rs.getString(6),
+                rs.getString(7),
+                rs.getString(8),
+                rs.getObject(9, OffsetDateTime.class)), actorId, workspaceId, actorId, actorId);
     }
 
     @Transactional

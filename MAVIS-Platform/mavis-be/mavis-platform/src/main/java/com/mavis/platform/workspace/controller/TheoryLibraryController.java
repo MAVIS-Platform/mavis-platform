@@ -27,6 +27,11 @@ public class TheoryLibraryController {
         return ApiResponse.success(library.list(workspaceId));
     }
 
+    @GetMapping("/api/v1/workspaces/{workspaceId}/theory-assets/reusable")
+    public ApiResponse<List<TheoryLibraryService.ReusableAssetView>> reusable(@PathVariable UUID workspaceId) {
+        return ApiResponse.success(library.reusable(workspaceId));
+    }
+
     @PostMapping("/api/v1/workspaces/{workspaceId}/theory-assets")
     public ApiResponse<TheoryLibraryService.AssetView> create(
             @PathVariable UUID workspaceId, @RequestBody TheoryLibraryService.Upsert request) {

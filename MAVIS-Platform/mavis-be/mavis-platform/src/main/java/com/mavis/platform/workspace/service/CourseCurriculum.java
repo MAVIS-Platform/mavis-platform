@@ -32,6 +32,10 @@ public class CourseCurriculum {
                 chapter.minutes(), chapter.objective(), chapter.lesson(), chapter.exercise(), chapter.sources())).toList();
     }
 
+    public List<Chapter> chapters() {
+        return chapters;
+    }
+
     public Chapter chapter(String chapterId) {
         return chapters.stream().filter(item -> item.id().equals(chapterId)).findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Curriculum chapter not found"));

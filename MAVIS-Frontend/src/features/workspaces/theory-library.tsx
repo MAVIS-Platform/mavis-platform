@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileUp, Globe, Pencil, Plus, Search, Sparkles, Trash2, Upload } from "lucide-react";
+import { BookOpenCheck, FileUp, Globe, Library, Pencil, Plus, Search, Sparkles, Trash2, Upload } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,6 +57,47 @@ type ImportResponse = {
   warnings: string[];
 };
 
+type CurriculumPreview = {
+  id: string;
+  track: string;
+  phase: string;
+  title: string;
+  minutes: number;
+  objective: string;
+  lesson: string;
+  exercise: string;
+  sources: Array<{ publisher: string; title: string; url: string }>;
+};
+
+type ReusableTheoryAsset = {
+  id: string;
+  sourceWorkspaceId: string;
+  sourceWorkspaceName: string;
+  title: string;
+  body: string;
+  language: string;
+  style: string;
+  source: string;
+  updatedAt: string;
+};
+
+function curriculumChapterMarkdown(chapter: CurriculumPreview) {
+  const refs = chapter.sources.map((s) => `- **${s.publisher}** · [${s.title}](${s.url})`).join("\n");
+  return [
+    `# ${chapter.title}`,
+    "",
+    `## Mục tiêu`,
+    chapter.objective,
+    "",
+    `## Nội dung lý thuyết`,
+    chapter.lesson,
+    chapter.exercise ? `\n## Bài tập liên hệ\n${chapter.exercise}` : "",
+    refs ? `\n## Tài liệu tham khảo\n${refs}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 const EMPTY_DRAFT: Draft = {
   title: "",
   body: "",
@@ -80,6 +122,10 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
   const cache = useQueryClient();
   const course = useCourseAuthoring(workspaceId);
   const [search, setSearch] = useState("");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogTrack, setCatalogTrack] = useState<"ALL" | "JAVA" | "CSHARP" | "OTHER">("ALL");
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [moduleByAsset, setModuleByAsset] = useState<Record<string, string>>({});
   const [editorId, setEditorId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [editTheme, setEditTheme] = useState<MarkdownTheme>("coursera");
@@ -95,6 +141,46 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
       api<TheoryAsset[]>(`workspaces/${workspaceId}/theory-assets`, { signal }),
     enabled: Boolean(workspaceId),
     retry: false,
+  });
+
+  const curriculumCatalog = useQuery({
+    queryKey: ["api", "course-curriculum"],
+    queryFn: ({ signal }) => api<CurriculumPreview[]>("course-curriculum", { signal }),
+    enabled: Boolean(workspaceId && catalogOpen),
+    retry: false,
+  });
+
+  const reusableCatalog = useQuery({
+    queryKey: ["api", "theory-assets-reusable", workspaceId],
+    queryFn: ({ signal }) =>
+      api<ReusableTheoryAsset[]>(`workspaces/${workspaceId}/theory-assets/reusable`, { signal }),
+    enabled: Boolean(workspaceId && catalogOpen),
+    retry: false,
+  });
+
+  const existingTitles = useMemo(
+    () => new Set((assets.data ?? []).map((item) => item.title.trim().toLowerCase())),
+    [assets.data],
+  );
+
+  const importToLibrary = useMutation({
+    mutationFn: (payload: {
+      title: string;
+      body: string;
+      language: string;
+      style: string;
+      source: string;
+    }) =>
+      api<TheoryAsset>(`workspaces/${workspaceId}/theory-assets`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: ["api", "theory-assets", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+      setError("");
+    },
+    onError: (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
   });
 
   const visible = useMemo(() => {
@@ -236,6 +322,15 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
+          <Button
+            type="button"
+            size="sm"
+            variant={catalogOpen ? "default" : "outline"}
+            onClick={() => setCatalogOpen((open) => !open)}
+          >
+            <Library className="mr-1 size-4" aria-hidden="true" />
+            {t("Browse curated & reusable lessons", "Kho bài giảng có sẵn")}
+          </Button>
           <Button type="button" size="sm" onClick={startNew}>
             <Plus className="mr-1 size-4" aria-hidden="true" />
             {t("New lesson", "Bài mới")}
@@ -246,6 +341,166 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
           </Button>
         </div>
       </div>
+
+      {catalogOpen && (
+        <section className="space-y-4 rounded-xl border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+            <div>
+              <h3 className="text-sm font-semibold">
+                {t(
+                  "Available lessons (Curriculum & Your Other Classes)",
+                  "Kho bài giảng có sẵn (Curriculum & Lớp khác)",
+                )}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Import official SWD lessons or reuse lessons you authored in previous classes with 1 click.",
+                  "Nhập nhanh bài giảng chuẩn SWD hoặc dùng lại bài bạn đã soạn từ lớp khác chỉ với 1 bấm.",
+                )}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  ["ALL", t("All", "Tất cả")],
+                  ["JAVA", "Java"],
+                  ["CSHARP", "C# / .NET"],
+                  ["OTHER", t("Other classes", "Từ lớp khác")],
+                ] as const
+              ).map(([key, label]) => (
+                <Button
+                  key={key}
+                  type="button"
+                  size="sm"
+                  variant={catalogTrack === key ? "default" : "outline"}
+                  className="h-7 px-2.5 text-xs"
+                  onClick={() => setCatalogTrack(key)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <Input
+            value={catalogSearch}
+            onChange={(event) => setCatalogSearch(event.target.value)}
+            placeholder={t("Filter available lessons…", "Lọc theo tên hoặc nội dung bài giảng…")}
+            className="h-9"
+          />
+
+          <div className="max-h-80 space-y-2.5 overflow-y-auto pr-1">
+            {catalogTrack !== "OTHER" &&
+              (curriculumCatalog.data ?? [])
+                .filter((ch) => {
+                  const trackMatch =
+                    catalogTrack === "ALL" ||
+                    (catalogTrack === "JAVA" && ch.track.toLowerCase().includes("java")) ||
+                    (catalogTrack === "CSHARP" && ch.track.toLowerCase().includes("c#"));
+                  const term = catalogSearch.trim().toLowerCase();
+                  const searchMatch =
+                    !term ||
+                    ch.title.toLowerCase().includes(term) ||
+                    ch.objective.toLowerCase().includes(term);
+                  return trackMatch && searchMatch;
+                })
+                .map((ch) => {
+                  const alreadyAdded = existingTitles.has(ch.title.trim().toLowerCase());
+                  return (
+                    <div
+                      key={ch.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm"
+                    >
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge variant="outline" className="text-[10px]">
+                            {ch.track}
+                          </Badge>
+                          <span className="truncate font-semibold">{ch.title}</span>
+                        </div>
+                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                          {ch.objective}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={alreadyAdded ? "secondary" : "outline"}
+                        disabled={importToLibrary.isPending || alreadyAdded}
+                        onClick={() =>
+                          importToLibrary.mutate({
+                            title: ch.title,
+                            body: applyMarkdownTheme(curriculumChapterMarkdown(ch), "coursera"),
+                            language: "vi",
+                            style: "CONCEPT",
+                            source: "SEED",
+                          })
+                        }
+                      >
+                        {alreadyAdded
+                          ? t("Added", "Đã có")
+                          : t("Import to library", "Nhập vào thư viện")}
+                      </Button>
+                    </div>
+                  );
+                })}
+
+            {(catalogTrack === "ALL" || catalogTrack === "OTHER") &&
+              (reusableCatalog.data ?? [])
+                .filter((item) => {
+                  const term = catalogSearch.trim().toLowerCase();
+                  return (
+                    !term ||
+                    item.title.toLowerCase().includes(term) ||
+                    item.sourceWorkspaceName.toLowerCase().includes(term)
+                  );
+                })
+                .map((item) => {
+                  const alreadyAdded = existingTitles.has(item.title.trim().toLowerCase());
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm"
+                    >
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge variant="secondary" className="text-[10px]">
+                            {item.sourceWorkspaceName}
+                          </Badge>
+                          <span className="truncate font-semibold">{item.title}</span>
+                        </div>
+                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                          {extractMarkdownTheme(item.body)
+                            .body.replace(/[#*_>`-]/g, " ")
+                            .trim()
+                            .slice(0, 140)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={alreadyAdded ? "secondary" : "outline"}
+                        disabled={importToLibrary.isPending || alreadyAdded}
+                        onClick={() =>
+                          importToLibrary.mutate({
+                            title: item.title,
+                            body: item.body,
+                            language: item.language || "vi",
+                            style: item.style || "LECTURER",
+                            source: "IMPORT",
+                          })
+                        }
+                      >
+                        {alreadyAdded
+                          ? t("Added", "Đã có")
+                          : t("Reuse in library", "Dùng lại bài này")}
+                      </Button>
+                    </div>
+                  );
+                })}
+          </div>
+        </section>
+      )}
 
       {importOpen && (
         <section className="space-y-4 rounded-xl border bg-card p-5">
@@ -471,7 +726,53 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
                 <span className="text-xs tabular-nums text-muted-foreground">
                   v{asset.version} · {shortDate(asset.updatedAt)}
                 </span>
-                <div className="flex items-center gap-1 md:justify-end">
+                <div className="flex flex-wrap items-center gap-1 md:justify-end">
+                  {!embedded && (course.data?.modules.length ?? 0) > 0 && (
+                    <>
+                      <select
+                        aria-label={t("Choose Module", "Chọn Module")}
+                        className="h-8 rounded-md border bg-background px-2 text-xs"
+                        value={moduleByAsset[asset.id] ?? ""}
+                        onChange={(event) =>
+                          setModuleByAsset({ ...moduleByAsset, [asset.id]: event.target.value })
+                        }
+                      >
+                        <option value="">{t("Choose Module", "Chọn Module")}</option>
+                        {course.data?.modules.map((mod) => (
+                          <option key={mod.id} value={mod.id}>
+                            {mod.title}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={course.addItem.isPending}
+                        onClick={() => {
+                          const targetModuleId =
+                            moduleByAsset[asset.id] || course.data?.modules[0]?.id;
+                          if (!targetModuleId) return;
+                          course.addItem.mutate({
+                            moduleId: targetModuleId,
+                            type: "THEORY",
+                            title: asset.title,
+                            description: "Theory from the workspace library",
+                            required: true,
+                            content: {
+                              body: extractMarkdownTheme(asset.body).body,
+                              format: "markdown",
+                              theoryAssetId: asset.id,
+                              theoryAssetVersion: asset.version,
+                            },
+                          });
+                        }}
+                      >
+                        <BookOpenCheck className="mr-1 size-3.5" aria-hidden="true" />
+                        {t("Add to Module", "Thêm vào Module")}
+                      </Button>
+                    </>
+                  )}
                   <Button
                     type="button"
                     size="sm"

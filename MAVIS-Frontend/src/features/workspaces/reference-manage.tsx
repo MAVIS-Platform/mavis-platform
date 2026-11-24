@@ -2,11 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FolderGit2, Plus, X } from "lucide-react";
+import { CheckCircle2, FolderGit2, GitBranch, Plus, X } from "lucide-react";
 import { toast } from "sonner";
-import { AssignmentSourcePicker } from "@/features/assignments/source-picker";
+import {
+  AssignmentSourcePicker,
+  CURATED_SAMPLE_REPOS,
+} from "@/features/assignments/source-picker";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { usePermission } from "@/hooks/use-api";
+import { useApiQuery, usePermission } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
   CourseSetupFlowFrame,
@@ -20,9 +24,14 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const params = useSearchParams();
   const firstSetup = params.get("from") === "first-setup";
   const [importOpen, setImportOpen] = useState(false);
+  const [prefilledRepoUrl, setPrefilledRepoUrl] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [sourcePending, setSourcePending] = useState(false);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const projects = useApiQuery("workspaceProjects", { workspaceId });
+  const existingRefs = (projects.data ?? []).filter(
+    (project) => project.projectType === "TEACHER_REFERENCE" || project.isReferenceTemplate,
+  );
 
   useEffect(
     () => () => {
@@ -33,27 +42,127 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
 
   if (!allowed) return null;
 
+  const openWithRepo = (url = "") => {
+    setPrefilledRepoUrl(url);
+    setImportOpen(true);
+  };
+
   const content = (
-    <section className="space-y-5">
+    <section className="space-y-6">
+      {existingRefs.length > 0 && (
+        <div className="space-y-3 rounded-2xl border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">
+              {t(
+                "Imported reference repositories in this class",
+                "Repository đã nhập trong lớp này",
+              )}
+            </h3>
+            <Badge variant="outline">{existingRefs.length}</Badge>
+          </div>
+          <ul className="divide-y rounded-xl border">
+            {existingRefs.map((project) => (
+              <li
+                key={project.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <p className="truncate font-semibold">{project.name}</p>
+                  <p className="truncate font-mono text-xs text-muted-foreground">
+                    {project.repository || t("Uploaded ZIP archive", "Tệp nén ZIP")}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={project.status === "ready" ? "success" : "secondary"}>
+                    {project.status === "ready" ? t("Ready", "Sẵn sàng") : project.status}
+                  </Badge>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openWithRepo(project.repository || "")}
+                  >
+                    {t("Re-import / Update", "Cập nhật")}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="space-y-3 rounded-2xl border bg-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-base font-semibold">
+              {t("Curated sample repositories", "Kho dự án mẫu có sẵn")}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Pick one of the official MAVIS benchmark repositories to import & analyze directly into this class.",
+                "Chọn nhanh kho mã nguồn chuẩn của MAVIS để nhập và phân tích thẳng vào lớp này.",
+              )}
+            </p>
+          </div>
+          <Button type="button" size="sm" variant="outline" onClick={() => openWithRepo("")}>
+            <Plus className="mr-1.5 size-3.5" aria-hidden="true" />
+            {t("Custom GitHub / ZIP", "Nhập GitHub / ZIP khác")}
+          </Button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {CURATED_SAMPLE_REPOS.map((repo) => (
+            <article
+              key={repo.id}
+              className="flex flex-col justify-between gap-3 rounded-xl border bg-muted/20 p-4"
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
+                    <GitBranch className="size-3.5 text-primary" aria-hidden="true" />
+                    {repo.name}
+                  </span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {repo.stack}
+                  </Badge>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t(repo.summaryEn, repo.summaryVi)}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => openWithRepo(repo.url)}
+              >
+                {t("Use this repository", "Dùng repo này")}
+              </Button>
+            </article>
+          ))}
+        </div>
+      </div>
+
       <button
         type="button"
-        onClick={() => setImportOpen(true)}
-        className="group flex min-h-[300px] w-full flex-col items-center justify-center rounded-2xl border border-dashed bg-card px-6 py-12 text-center transition-colors hover:border-primary/50 hover:bg-primary/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        onClick={() => openWithRepo("")}
+        className="group flex min-h-[190px] w-full flex-col items-center justify-center rounded-2xl border border-dashed bg-card px-6 py-8 text-center transition-colors hover:border-primary/50 hover:bg-primary/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
-        <span className="grid size-16 place-items-center rounded-full border-2 border-dashed border-muted-foreground/50 text-foreground transition-colors group-hover:border-primary group-hover:text-primary">
-          <Plus className="size-8" aria-hidden="true" />
+        <span className="grid size-12 place-items-center rounded-full border-2 border-dashed border-muted-foreground/50 text-foreground transition-colors group-hover:border-primary group-hover:text-primary">
+          <Plus className="size-6" aria-hidden="true" />
         </span>
-        <span className="mt-5 text-base font-semibold">
+        <span className="mt-3 text-base font-semibold">
           {t("Import reference repository", "Nhập repository tham chiếu")}
         </span>
-        <span className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+        <span className="mt-1.5 max-w-md text-xs leading-5 text-muted-foreground">
           {t(
-            "Connect a GitHub repo or ZIP archive to analyze C1–C3 architecture models and the dependency graph.",
-            "Kết nối repo GitHub hoặc file ZIP để phân tích mô hình kiến trúc C1–C3 và Dependency Graph.",
+            "Connect a GitHub repo, upload a ZIP archive, or copy from another class to analyze C1–C3 architecture models.",
+            "Kết nối repo GitHub, tải file ZIP hoặc dùng lại từ lớp khác để phân tích mô hình kiến trúc C1–C3.",
           )}
         </span>
         {selectedModelId && !sourcePending ? (
-          <span className="mt-4 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+          <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+            <CheckCircle2 className="size-3.5" aria-hidden="true" />
             {t("Repository analysis ready", "Repository đã phân tích xong")}
           </span>
         ) : null}
@@ -93,6 +202,7 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                 workspaceId={workspaceId}
                 title={t("Course repository", "Repository khóa học")}
                 usageContext="repository"
+                initialRepositoryUrl={prefilledRepoUrl}
                 onChange={(modelId, pending) => {
                   setSelectedModelId(modelId);
                   setSourcePending(pending);
@@ -147,5 +257,7 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
     <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="repository">
       {content}
     </CourseSetupFlowFrame>
-  ) : content;
+  ) : (
+    content
+  );
 }

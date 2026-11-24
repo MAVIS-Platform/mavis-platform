@@ -173,4 +173,24 @@ class TheoryLibraryServiceTest {
         verify(authoring).addModule(eq(workspaceId), argThat(req -> "Lab · Lab B - Pure Theory".equals(req.title())));
         verify(authoring).addItem(eq(workspaceId), eq(newModuleId), argThat(item -> labId.equals(item.assignmentId())));
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void reusableListsLessonsFromLecturersOtherWorkspacesAfterAccessCheck() {
+        var actor = User.builder().id(actorId).fullName("Lecturer").build();
+        when(access.requireCurrentActiveUser()).thenReturn(actor);
+        var otherWs = UUID.randomUUID();
+        var item = new TheoryLibraryService.ReusableAssetView(
+                UUID.randomUUID(), otherWs, "SWD392 · SE1807", "Boundary Driven Design",
+                "# Boundary\n\nContent", "vi", "CONCEPT", "LECTURER", java.time.OffsetDateTime.now());
+        when(jdbc.query(contains("FROM theory_assets ta"), any(RowMapper.class),
+                eq(actorId), eq(workspaceId), eq(actorId), eq(actorId)))
+                .thenReturn(List.of(item));
+
+        var result = service.reusable(workspaceId);
+
+        verify(access).requireWorkspaceLecturer(workspaceId);
+        assertEquals(1, result.size());
+        assertEquals("SWD392 · SE1807", result.getFirst().sourceWorkspaceName());
+    }
 }
