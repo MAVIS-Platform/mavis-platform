@@ -1088,3 +1088,23 @@ test("3D service tag shifts smoothly toward the block's back-top rim and shrinks
   assert.ok(zoomedIn.scale < 0.8 && zoomedIn.scale > 0.65, "Close zoom must smoothly shrink tag without hiding it");
   assert.equal(iso.scale, 1, "Default 1x zoom preserves full label legibility");
 });
+
+test("BFF allows workspace quiz-assets CRUD, references link directly to /snapshots, and Submit to Assignment is student-only", () => {
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+  const ws = "bff7ac3d-9d2e-41fa-8287-f1bbdde8ae2a";
+  const qid = "11111111-2222-3333-4444-555555555555";
+  assert.equal(allowedBackendPath(`workspaces/${ws}/quiz-assets`), true);
+  assert.equal(allowedBackendPath(`workspaces/${ws}/quiz-assets/${qid}`), true);
+
+  const refManage = fs.readFileSync(
+    path.join(__dirname, "../src/features/workspaces/reference-manage.tsx"),
+    "utf8",
+  );
+  assert.match(refManage, /href=\{`\/snapshots\?project=\$\{encodeURIComponent\(create\.data\.id\)\}`\}/);
+
+  const archRoute = fs.readFileSync(
+    path.join(__dirname, "../src/routes/architecture.tsx"),
+    "utf8",
+  );
+  assert.match(archRoute, /isStudent && project\.data\?\.workspaceId/);
+});

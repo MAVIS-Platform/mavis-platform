@@ -1859,4 +1859,50 @@ class RuntimePlanningServiceTest {
                     assertThat(ex.getStableCode()).isEqualTo("STUDENT_RUNTIME_CONFIG_FORBIDDEN");
                 });
     }
+
+    @Test
+    @DisplayName("Default-present broker secret (e.g. RABBITMQ_PASSWORD:guest) is not overwritten with a random generated secret")
+    void defaultPresentBrokerSecretIsNotOverwrittenWithRandomSecret() {
+        PreflightCheckResponseDTO pre = PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .composeServices(List.of("notification-worker", "rabbitmq-broker"))
+                .detectedServices(List.of("notification-worker", "rabbitmq-broker"))
+                .infrastructureServices(List.of("rabbitmq-broker"))
+                .requiredEnvVars(List.of(
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("RABBITMQ_PASSWORD")
+                                .service("notification-worker")
+                                .services(List.of("notification-worker"))
+                                .category("SECRET")
+                                .scope("SANDBOX")
+                                .defaultPresent(true)
+                                .defaultValue("guest")
+                                .resolution("DEFAULT")
+                                .build(),
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("JWT_SECRET")
+                                .service("notification-worker")
+                                .services(List.of("notification-worker"))
+                                .category("SECRET")
+                                .scope("SANDBOX")
+                                .defaultPresent(false)
+                                .resolution("GENERATED")
+                                .build()))
+                .build();
+        ObjectNode apps = json.createObjectNode();
+        apps.putObject("notification-worker").put("runtime", "java");
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        Object execEnv = ReflectionTestUtils.invokeMethod(
+                planningService, "buildExecutionEnvironment", projectId, json.createObjectNode(), pre, apps);
+        @SuppressWarnings("unchecked")
+        Map<String, String> protectedEnv = (Map<String, String>) ReflectionTestUtils.invokeMethod(execEnv, "protectedEnvironment");
+        ObjectNode bindings = (ObjectNode) ReflectionTestUtils.invokeMethod(execEnv, "bindings");
+
+        assertThat(protectedEnv).doesNotContainKey("RABBITMQ_PASSWORD");
+        assertThat(protectedEnv).containsKey("JWT_SECRET");
+        List<String> boundNames = new java.util.ArrayList<>();
+        bindings.path("notification-worker").forEach(n -> boundNames.add(n.path("name").asText()));
+        assertThat(boundNames).contains("JWT_SECRET").doesNotContain("RABBITMQ_PASSWORD");
+    }
 }

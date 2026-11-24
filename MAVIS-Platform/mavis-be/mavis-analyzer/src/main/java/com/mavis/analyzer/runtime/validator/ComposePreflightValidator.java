@@ -3578,10 +3578,14 @@ public class ComposePreflightValidator {
         List<String> keys = new ArrayList<>(DB_PASSWORD_KEYS);
         keys.addAll(DB_USER_KEYS);
         keys.addAll(DB_NAME_KEYS);
+        keys.addAll(List.of("RABBITMQ_DEFAULT_USER", "RABBITMQ_DEFAULT_PASS", "RABBITMQ_PASSWORD", "REDIS_PASSWORD"));
         for (String key : keys) {
             String raw = env.get(key);
             String value = raw != null ? resolvePlaceholders(raw, rootDotEnv) : null;
-            if (value != null && !value.isBlank() && !value.contains("$")) credentials.putIfAbsent(key, value);
+            if (value != null && !value.isBlank() && !value.contains("$")) {
+                credentials.putIfAbsent(key, value);
+                if ("RABBITMQ_DEFAULT_PASS".equals(key)) credentials.putIfAbsent("RABBITMQ_PASSWORD", value);
+            }
         }
         String img = image == null ? "" : image.toLowerCase(Locale.ROOT);
         // Image defaults used when Compose sets only the password.
@@ -3708,6 +3712,9 @@ public class ComposePreflightValidator {
         Object buildObj = serviceConfig.get("build");
         String build = buildObj != null ? String.valueOf(buildObj).toLowerCase(Locale.ROOT) : "";
 
+        if (isInfrastructureService(serviceName, img)) {
+            return "infra";
+        }
         if (lowerName.contains("dotnet") || lowerName.contains("csharp") || img.contains("dotnet") || img.contains("aspnet") || build.contains("dotnet")) {
             return img.contains("alpine") ? "dotnet-musl" : "dotnet";
         }

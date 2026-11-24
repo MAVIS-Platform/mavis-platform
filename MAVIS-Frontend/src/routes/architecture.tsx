@@ -138,7 +138,7 @@ export function ArchitectureWorkspace({
                     </Button>
                   </>
                 )}
-                {project.data?.workspaceId && (
+                {isStudent && project.data?.workspaceId && (
                   <Button
                     asChild
                     size="sm"

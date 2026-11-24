@@ -2305,7 +2305,7 @@ export function LiveStudioWorkbench({
                   left: 70 + missionOffset.x,
                   top: 16 + missionOffset.y,
                   width: missionWidth,
-                  maxHeight: `calc(100% - ${Math.max(16, 16 + missionOffset.y) + 16}px)`,
+                  maxHeight: `calc(100% - ${Math.max(16, 16 + missionOffset.y) + 172}px)`,
                   ...(missionHeight != null && !missionCollapsed ? { height: missionHeight } : {}),
                 }}
                 className={`pointer-events-auto absolute flex max-h-[calc(100%-2rem)] max-w-[calc(100%-1rem)] flex-col overflow-hidden ${

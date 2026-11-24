@@ -2946,8 +2946,8 @@ public class RuntimePlanningService {
    for(String svc:orderedOwners){
     if(serviceBindings.getOrDefault(svc,Map.of()).containsKey(key))continue;
     String val=ComposePreflightValidator.databaseCredentialFor(key,svc,perServiceCreds,pre.getServiceDependencies(),credentials);
-    if(val==null&&secret&&ComposePreflightValidator.isGeneratableSandboxSecret(key)){
-     if(sharedGenerated==null)sharedGenerated=randomSecretFor(key,rsaPair);val=sharedGenerated;}else if(val==null&&secret&&"EXTERNAL".equals(v.getScope())&&v.getSource()!=null&&!"STATIC_MODEL".equals(v.getSource())){if(sharedGenerated==null)sharedGenerated="sandbox-dummy-api-key";
+    if(val==null&&!v.isDefaultPresent()&&secret&&ComposePreflightValidator.isGeneratableSandboxSecret(key)){
+     if(sharedGenerated==null)sharedGenerated=randomSecretFor(key,rsaPair);val=sharedGenerated;}else if(val==null&&!v.isDefaultPresent()&&secret&&"EXTERNAL".equals(v.getScope())&&v.getSource()!=null&&!"STATIC_MODEL".equals(v.getSource())){if(sharedGenerated==null)sharedGenerated="sandbox-dummy-api-key";
      val=sharedGenerated;
     }
     if(val!=null){

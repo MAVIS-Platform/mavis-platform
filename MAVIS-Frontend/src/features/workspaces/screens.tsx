@@ -635,8 +635,8 @@ export function WorkspaceMembers() {
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-card/50 px-4 py-3 text-xs text-muted-foreground">
                   <span>
                     {t(
-                      "No students have joined yet. Share the Class Passkey in the header so students can enroll.",
-                      "Chưa có sinh viên nào tham gia. Hãy chia sẻ mã Passkey trên thanh tiêu đề để sinh viên ghi danh.",
+                      "No students have joined yet. Share the Class Passkey from Settings so students can enroll.",
+                      "Chưa có sinh viên nào tham gia. Hãy chia sẻ mã Passkey trong phần Cài đặt để sinh viên ghi danh.",
                     )}
                   </span>
                   <Link
