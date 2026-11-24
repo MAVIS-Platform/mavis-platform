@@ -2422,3 +2422,22 @@ test("Commit #06: Module Summary & Submit fixes stuck studioStateQuery.isPending
   assert.match(subV2, /Next Module:/);
   assert.match(subV2, /Sang Module tiếp theo/);
 });
+
+test("Commit #07: Quiz timer renders as compact badge, Retake Quiz works across passed/failed states, and student copy removes bureaucratic jargon", () => {
+  const timer = read("src/features/courses/quiz-timer.tsx");
+  const runner = read("src/features/courses/chapter-quiz-runner.tsx");
+  const courseQuiz = read("src/features/courses/course-quiz.tsx");
+  const screens = read("src/features/courses/screens.tsx");
+  const steps = read("src/features/courses/module-steps.ts");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
+
+  assert.match(timer, /inline-flex items-center gap-2\.5/);
+  assert.match(runner, /Retake Quiz/);
+  assert.match(runner, /Làm lại bài/);
+  assert.match(courseQuiz, /handleRetake/);
+  assert.match(courseQuiz, /Làm lại bài/);
+  assert.match(courseQuiz, /quiz\.runtimeUnlocked && !retakeMode/);
+  assert.doesNotMatch(screens, /niêm phong|phần giải trình/);
+  assert.doesNotMatch(steps, /viết giải trình/);
+  assert.doesNotMatch(subV2, /giải trình|niêm phong/);
+});

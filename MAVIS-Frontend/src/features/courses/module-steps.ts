@@ -133,8 +133,8 @@ function buildLabModuleSequence(
     type: "IMPACT_LAB",
     title: isVi ? "Tổng hợp & Nộp bài Module" : "Module Summary & Submit",
     description: isVi
-      ? "Kiểm tra lại kết quả cả 4 bước và viết giải trình để nộp bài cho Giảng viên chấm."
-      : "Review all 4 steps and submit your explanation and evidence to your lecturer.",
+      ? "Kiểm tra lại toàn bộ tiến độ và gửi bài tổng hợp cho Giảng viên."
+      : "Review your progress and submit your final reflection for grading.",
     position: positionStart + sequence.length + 1,
     assignmentId,
     required: true,

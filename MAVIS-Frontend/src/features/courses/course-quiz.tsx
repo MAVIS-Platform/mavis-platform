@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, CheckCircle2, Lock, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle2, Lock, RotateCcw, XCircle } from "lucide-react";
 import { DetailPanel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -141,13 +141,14 @@ function AttemptForm({
   const userId = session.data?.user?.id ?? "anon";
   const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [attemptId, setAttemptId] = useState<string>();
+  const [retakeMode, setRetakeMode] = useState(false);
   const timerKey = `mavis:course-quiz-timer:${userId}:${path}:v${quiz.version}`;
   const durationMinutes = calculateQuizDurationMinutes(quiz.questions.length);
   const durationSeconds = durationMinutes * 60;
   const [startedAt, setStartedAt] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!canSubmit || quiz.runtimeUnlocked || typeof window === "undefined") {
+    if (!canSubmit || (quiz.runtimeUnlocked && !retakeMode) || typeof window === "undefined") {
       setStartedAt(undefined);
       return;
     }
@@ -163,7 +164,7 @@ function AttemptForm({
     } catch {
       setStartedAt(new Date().toISOString());
     }
-  }, [canSubmit, quiz.runtimeUnlocked, timerKey]);
+  }, [canSubmit, quiz.runtimeUnlocked, retakeMode, timerKey]);
 
   const submit = useMutation({
     mutationFn: (id: string) =>
@@ -177,6 +178,7 @@ function AttemptForm({
       }),
     onSuccess: (result) => {
       if (result.status === "PASSED") {
+        setRetakeMode(false);
         try {
           window.localStorage.removeItem(timerKey);
         } catch {
@@ -186,6 +188,17 @@ function AttemptForm({
       }
     },
   });
+  const handleRetake = () => {
+    const now = new Date().toISOString();
+    try {
+      window.localStorage.setItem(timerKey, now);
+    } catch {}
+    setAnswers({});
+    setAttemptId(undefined);
+    setStartedAt(now);
+    setRetakeMode(true);
+    submit.reset();
+  };
   const answered = quiz.questions.every((_, index) => (answers[index]?.length ?? 0) > 0);
   const triggerSubmit = () => {
     if (!answered || submit.isPending) return;
@@ -227,7 +240,7 @@ function AttemptForm({
           </div>
         </details>
       )}
-      {canSubmit && !quiz.runtimeUnlocked && !submit.data && startedAt && (
+      {canSubmit && (!quiz.runtimeUnlocked || retakeMode) && !submit.data && startedAt && (
         <QuizCountdownBanner
           startedAt={startedAt}
           durationSeconds={durationSeconds}
@@ -242,7 +255,7 @@ function AttemptForm({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-card px-4 py-3 dark:border-teal-800/70 dark:from-teal-950/40 dark:via-emerald-950/25 dark:to-card">
         <div className="flex flex-wrap items-center gap-3 text-sm text-foreground/85">
           <span className="font-semibold text-teal-900 dark:text-teal-200">
-            {t("Gatekeeper Quiz", "Bài kiểm tra mở khóa Lab")}
+            {t("Module Quiz", "Bài kiểm tra kiến thức")}
           </span>
           <span className="text-xs text-muted-foreground">
             {t("Passing score", "Điểm đạt")} {quiz.passPercent}% ·{" "}
@@ -294,7 +307,7 @@ function AttemptForm({
             ))}
           </ol>
         </div>
-      ) : quiz.runtimeUnlocked ? (
+      ) : quiz.runtimeUnlocked && !retakeMode ? (
         <div className="space-y-4 rounded-2xl border border-emerald-400 bg-emerald-50/90 p-5 text-emerald-950 shadow-sm dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
@@ -309,22 +322,28 @@ function AttemptForm({
                 {t("Quiz passed · Next step unlocked!", "Đã đạt Quiz · Đã mở khóa bước tiếp theo!")}
               </p>
             </div>
-            {showNextCta && (
-              <Button
-                asChild
-                className="w-full bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
-              >
-                <Link href={submissionHref ?? runtimeStepHref}>
-                  {submissionHref
-                    ? t("Proceed to Lab Submission", "Chuyển sang Nộp bài Lab")
-                    : t(
-                        "Proceed to Runtime Studio & Submit",
-                        "Tiếp tục Runtime Studio & Nộp bài",
-                      )}
-                  <ArrowRight />
-                </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" onClick={handleRetake}>
+                <RotateCcw className="mr-2 size-4" aria-hidden="true" />
+                {t("Retake Quiz", "Làm lại bài")}
               </Button>
-            )}
+              {showNextCta && (
+                <Button
+                  asChild
+                  className="w-full bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
+                >
+                  <Link href={submissionHref ?? runtimeStepHref}>
+                    {submissionHref
+                      ? t("Proceed to Lab Submission", "Chuyển sang Nộp bài Lab")
+                      : t(
+                          "Proceed to Runtime Studio & Submit",
+                          "Tiếp tục Runtime Studio & Nộp bài",
+                        )}
+                    <ArrowRight />
+                  </Link>
+                </Button>
+              )}
+            </div>
           </div>
           {submit.data?.questionResults && submit.data.questionResults.length > 0 && (
             <details className="rounded-xl border border-emerald-200 bg-white/90 p-3 text-foreground dark:bg-background/90">
@@ -483,13 +502,10 @@ function AttemptForm({
                 type="button"
                 variant="outline"
                 className="bg-background text-foreground"
-                onClick={() => {
-                  setAnswers({});
-                  setAttemptId(undefined);
-                  submit.reset();
-                }}
+                onClick={handleRetake}
               >
-                {t("Start a new attempt", "Làm Lại Lượt Mới")}
+                <RotateCcw className="mr-2 size-4" aria-hidden="true" />
+                {t("Retake Quiz", "Làm lại bài")}
               </Button>
             </div>
           ) : (

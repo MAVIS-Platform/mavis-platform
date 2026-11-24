@@ -165,7 +165,7 @@ function resolveStepMeta(
       titleVi: "Static Studio",
       shortTitleVi: "Static Studio",
       descriptionVi:
-        "Xem mục tiêu Lab và evidence cần có trước khi chuyển sang giai đoạn tiếp theo.",
+        "Xem mục tiêu Lab và nội dung cần hoàn thành trước khi chuyển sang bước tiếp theo.",
     };
   }
   if (step === 1 && !options.requiresRuntime) {
@@ -1856,15 +1856,15 @@ function StepContent({
             phaseIssue === "runtime-failed"
               ? t(
                   "The current Runtime Studio session did not start or finish correctly, so its evidence is not valid yet.",
-                  "Phiên Runtime Studio hiện tại chưa khởi chạy hoặc hoàn tất đúng nên evidence chưa hợp lệ.",
+                  "Phiên Studio Live chưa khởi chạy hoặc hoàn tất đúng, nên dữ liệu thực hành chưa được lưu.",
                 )
               : t(
                   "Runtime Studio is where you run the assigned scenario and capture observed evidence using only allowed actions.",
-                  "Runtime Studio là nơi bạn chạy kịch bản được giao và lưu evidence quan sát với các thao tác được phép.",
+                  "Studio Live là nơi bạn thao tác trực tiếp trên kịch bản và lưu lại kết quả thực hành.",
                 ),
           recovery: t(
             "Open Studio Live, inspect the session, use only Stop, Start, or Scale, capture a snapshot, then choose Finish Studio. If it fails again, copy the report for your lecturer.",
-            "Mở Studio Live, kiểm tra phiên, chỉ dùng Stop, Start hoặc Scale, lưu snapshot rồi chọn Hoàn tất Studio. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên.",
+            "Mở Studio Live, kiểm tra phiên, dùng các thao tác Stop, Start hoặc Scale, chụp một snapshot rồi nhấn Hoàn tất Studio.",
           ),
           actionLabel: t("Open Runtime Studio", "Mở Runtime Studio"),
           action: () => window.location.assign(standaloneStudioHref),
@@ -1872,14 +1872,14 @@ function StepContent({
       case "evidence-missing":
       case "submission-runtime":
         return {
-          title: t("Runtime evidence is incomplete", "Evidence Runtime chưa đầy đủ"),
+          title: t("Runtime evidence is incomplete", "Chưa đủ dữ liệu thực hành Studio"),
           description: t(
             "This Lab needs a verified Runtime Studio receipt before it can be submitted for grading.",
-            "Lab này cần biên nhận Runtime Studio đã xác minh trước khi nộp bài để giảng viên chấm điểm.",
+            "Bạn cần hoàn thành một phiên Studio Live trước khi nộp bài.",
           ),
           recovery: t(
             "Return to Runtime Studio, complete the scenario, capture the required evidence, and select Finish Studio to seal the receipt.",
-            "Hãy quay lại Runtime Studio, hoàn tất kịch bản, lưu bằng chứng bắt buộc và chọn Hoàn tất Studio để niêm phong biên nhận.",
+            "Quay lại Studio Live, chạy xong kịch bản, chụp ít nhất một ảnh minh họa rồi nhấn Hoàn tất Studio.",
           ),
           actionLabel: t("Return to Runtime Studio", "Quay lại Runtime Studio"),
           action: () => window.location.assign(runtimeEvidenceHref),
@@ -1893,21 +1893,21 @@ function StepContent({
           ),
           recovery: t(
             "Check the explanation and required Runtime receipt, then try again. If it still fails, copy the report for your lecturer.",
-            "Hãy kiểm tra phần giải trình và receipt Runtime bắt buộc, rồi thử lại. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên.",
+            "Kiểm tra lại nội dung tổng hợp và phiên Studio đính kèm, rồi thử nộp lại.",
           ),
           actionLabel: t("Retry submission", "Thử nộp lại"),
           action: jumpToSubmissionBox,
         };
       case "submission-explanation":
         return {
-          title: t("Your Lab explanation is required", "Cần có phần giải trình Lab"),
+          title: t("Your Lab explanation is required", "Bạn cần nhập nội dung tổng hợp"),
           description: t(
             "The Lab cannot be submitted without your written explanation of the evidence and what you learned.",
-            "Không thể nộp Lab nếu chưa có phần giải trình về evidence và kiến thức bạn rút ra.",
+            "Hãy viết phần tổng hợp kiến thức và những gì bạn quan sát được trước khi nộp bài.",
           ),
           recovery: t(
             "Write your explanation in the submission box, connect it to the evidence, then submit again.",
-            "Hãy viết phần giải trình trong khung nộp bài, liên hệ với evidence rồi nộp lại.",
+            "Nhập nội dung tổng hợp vào khung bài nộp rồi nhấn Nộp bài.",
           ),
           actionLabel: t("Go to submission", "Đi tới phần nộp bài"),
           action: jumpToSubmissionBox,
@@ -1917,11 +1917,11 @@ function StepContent({
           title: t("Need help with Static Studio?", "Cần hỗ trợ với Static Studio?"),
           description: t(
             "Static Studio is for reviewing C1–C3 architecture, source evidence, and your Reverse BFS impact hypothesis.",
-            "Static Studio dùng để xem kiến trúc C1–C3, evidence mã nguồn và giả thuyết tác động Reverse BFS.",
+            "Static Studio dùng để xem kiến trúc C1–C3, mã nguồn liên quan và giả thuyết tác động Reverse BFS.",
           ),
           recovery: t(
             "Inspect the selected node or connection, read its evidence, then compare Reverse BFS with the dependency graph before moving on.",
-            "Hãy kiểm tra node hoặc kết nối đã chọn, đọc evidence, rồi đối chiếu Reverse BFS với đồ thị phụ thuộc trước khi chuyển bước.",
+            "Hãy kiểm tra node hoặc kết nối đã chọn, đọc mã nguồn đối chiếu rồi so sánh Reverse BFS với đồ thị phụ thuộc trước khi chuyển bước.",
           ),
           actionLabel: t("Open impact hypothesis", "Mở giả thuyết tác động"),
           action: () =>

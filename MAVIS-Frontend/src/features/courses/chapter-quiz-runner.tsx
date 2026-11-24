@@ -560,9 +560,9 @@ function QuizTaking({
   const allAnswered = answeredCount === questions.length;
   return (
     <section className="mx-auto mt-6 max-w-[850px] pb-10">
-      <header className="space-y-4 border-b pb-5">
-        <div>
-          <Badge variant="outline">{t("Graded assignment", "Bài kiểm tra tính điểm")}</Badge>
+      <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
+        <div className="min-w-0">
+          <Badge variant="outline">{t("Graded quiz", "Bài kiểm tra tính điểm")}</Badge>
           <h2 className="mt-2 text-2xl font-bold tracking-tight">{title}</h2>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <span>
@@ -761,7 +761,7 @@ function QuizResult({
         <div className="mt-6 flex flex-wrap gap-3">
           <Button type="button" variant="outline" onClick={onRetry}>
             <RotateCcw className="mr-2 size-4" aria-hidden="true" />
-            {t("Try again", "Làm lại")}
+            {t("Retake Quiz", "Làm lại bài")}
           </Button>
         </div>
       </div>

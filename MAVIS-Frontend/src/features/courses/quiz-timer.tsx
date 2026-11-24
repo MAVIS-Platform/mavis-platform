@@ -84,13 +84,13 @@ export function QuizCountdownBanner({
     <div
       role="timer"
       aria-live="polite"
-      className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 ${toneClass}`}
+      className={`inline-flex items-center gap-2.5 rounded-xl border px-3 py-1.5 ${toneClass}`}
     >
-      <div className="flex items-center gap-2.5 text-sm font-semibold">
+      <div className="flex items-center gap-1.5 text-xs font-semibold">
         {isExpired || isCritical ? (
-          <AlarmClock className="size-5 shrink-0" aria-hidden="true" />
+          <AlarmClock className="size-4 shrink-0" aria-hidden="true" />
         ) : (
-          <Clock3 className="size-5 shrink-0" aria-hidden="true" />
+          <Clock3 className="size-4 shrink-0" aria-hidden="true" />
         )}
         <span>
           {isExpired
@@ -101,7 +101,7 @@ export function QuizCountdownBanner({
             : t("Time left:", "Còn lại:")}
         </span>
       </div>
-      <span className="rounded-lg bg-background/90 px-3.5 py-1 font-mono text-2xl font-extrabold tracking-tight tabular-nums shadow-xs sm:text-3xl">
+      <span className="rounded-md bg-background/90 px-2.5 py-0.5 font-mono text-2xl font-bold tracking-tight tabular-nums shadow-xs">
         {formatCountdown(remainingSeconds)}
       </span>
     </div>

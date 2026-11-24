@@ -33,7 +33,7 @@ export function StudentCoursesHero({
         <div className="max-w-2xl space-y-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-semibold text-sky-100 backdrop-blur-sm">
             <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
-            {t("MAVIS Coursera Hub", "Không Gian Học Tập MAVIS")}
+            {t("MAVIS Learning Hub", "Học tập cùng MAVIS")}
           </span>
           <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
             {studentName
