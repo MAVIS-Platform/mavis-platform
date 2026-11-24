@@ -5235,7 +5235,7 @@ export function LiveStudioWorkbench({
               <div
                 role="tablist"
                 aria-label="Lecturer setup panel tabs"
-                className={`mb-3 grid grid-cols-2 gap-1 rounded-xl border p-1 ${
+                className={`mb-3 grid grid-cols-2 gap-1 rounded-md border p-1 ${
                   isLight ? "border-slate-200 bg-slate-100" : "border-slate-800 bg-slate-950/90"
                 }`}
               >
@@ -5259,10 +5259,11 @@ export function LiveStudioWorkbench({
                       role="tab"
                       aria-selected={isTabActive}
                       onClick={() => setSetupPanel(id)}
-                      className={`rounded-lg px-2 py-1.5 text-[11.5px] font-semibold transition-colors ${
+                      style={{ fontSize: 12.5, lineHeight: "1.25" }}
+                      className={`rounded-sm px-2 py-1.5 font-semibold transition-colors ${
                         isTabActive
                           ? isLight
-                            ? "bg-white text-slate-900 shadow-xs"
+                            ? "bg-white text-slate-950 shadow-xs"
                             : "bg-slate-800 text-white shadow-xs"
                           : isLight
                             ? "text-slate-600 hover:text-slate-900"
@@ -5657,16 +5658,109 @@ export function LiveStudioWorkbench({
                           ? t("2. CPU Degradation Setup", "2. Cấu hình Tắc nghẽn CPU")
                           : t("2. Goal Setup", "2. Cấu hình theo dạng bài");
 
+                const monoBox = isLight
+                  ? "border-slate-200 bg-slate-50/70 text-slate-900"
+                  : "border-slate-800 bg-slate-900/70 text-slate-100";
+                const monoActiveBtn = isLight
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-white bg-white text-slate-950";
+                const monoIdleBtn = isLight
+                  ? "border-slate-300 bg-white text-slate-800 hover:border-slate-900 hover:text-slate-950"
+                  : "border-slate-700 bg-slate-950 text-slate-200 hover:border-slate-400 hover:text-white";
+                const monoSubtleText = isLight ? "text-slate-500" : "text-slate-400";
+
                 return (
-                  <section aria-label="Visual Studio Builder" className="space-y-2.5 text-xs">
-                    {/* 1. 4-Card Exercise Goal Picker (Zero Icons / Zero Jargon) */}
+                  <section
+                    aria-label="Visual Studio Builder"
+                    style={{ fontSize: 12, lineHeight: "1.35" }}
+                    className="space-y-3"
+                  >
+                    {/* Top Stage Service Selector (belongs to the 3D Stage, separate from Exercise Goal details) */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <label
+                          htmlFor="studio-stage-service-select"
+                          style={{ fontSize: 11 }}
+                          className={`font-semibold uppercase tracking-wide ${monoSubtleText}`}
+                        >
+                          {t("Service on 3D Stage", "Service trên sân khấu 3D")} ({blocks.length})
+                        </label>
+                        {canvasSelected && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              studio.setService("");
+                              setSelectedAuthorWire(null);
+                            }}
+                            style={{ fontSize: 11 }}
+                            className={`font-medium underline underline-offset-2 transition hover:opacity-100 ${monoSubtleText}`}
+                          >
+                            {t("Clear", "Bỏ chọn")}
+                          </button>
+                        )}
+                      </div>
+                      <select
+                        id="studio-stage-service-select"
+                        aria-label={t("Select service on 3D stage", "Chọn service trên sân khấu 3D")}
+                        data-testid="studio-stage-service-select"
+                        value={canvasSelected}
+                        onChange={(event) => {
+                          studio.setService(event.target.value);
+                          setSelectedAuthorWire(null);
+                        }}
+                        style={{ fontSize: 13, lineHeight: "1.25" }}
+                        className={`h-9 w-full truncate rounded-md border px-2.5 font-sans font-medium focus-visible:outline-none focus-visible:ring-1 ${
+                          isLight
+                            ? "border-slate-300 bg-white text-slate-900 focus-visible:border-slate-900 focus-visible:ring-slate-900"
+                            : "border-slate-700 bg-slate-950 text-slate-100 focus-visible:border-white focus-visible:ring-white"
+                        }`}
+                      >
+                        <option value="">{t("Select service…", "Chọn service…")}</option>
+                        {blocks.map((block) => {
+                          const tags: string[] = [];
+                          if (authoring.initialStoppedServices.includes(block.service)) {
+                            tags.push(t("Down", "Tắt sẵn"));
+                          }
+                          if (
+                            authoring.targetChangeAction?.service === block.service &&
+                            (authoring.targetChangeAction.action === "PAUSE" ||
+                              authoring.targetChangeAction.action === "STOP")
+                          ) {
+                            tags.push(t("Impact", "Impact"));
+                          } else if (
+                            authoring.targetChangeAction?.service === block.service &&
+                            authoring.targetChangeAction.action === "THROTTLE_CPU"
+                          ) {
+                            tags.push(`CPU ${authoring.targetChangeAction.cpuPercent ?? 25}%`);
+                          }
+                          if (
+                            authoring.replicaService === block.service &&
+                            Number(authoring.replicaCount) >= 2
+                          ) {
+                            tags.push(`Scale ${authoring.replicaCount}x`);
+                          }
+                          return (
+                            <option key={block.service} value={block.service}>
+                              {tags.length > 0
+                                ? `${block.service} (${tags.join(", ")})`
+                                : block.service}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    {/* 1. 4-Card Exercise Goal Picker (Minimal Monochrome B&W) */}
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                        <p
+                          style={{ fontSize: 11 }}
+                          className={`font-semibold uppercase tracking-wide ${monoSubtleText}`}
+                        >
                           {t("1. Exercise Goal", "1. Chọn dạng bài")}
                         </p>
                         {authoring.saving && (
-                          <span className="font-mono text-[10px] text-muted-foreground">
+                          <span style={{ fontSize: 11 }} className={monoSubtleText}>
                             {t("Saving…", "Đang lưu…")}
                           </span>
                         )}
@@ -5682,29 +5776,34 @@ export function LiveStudioWorkbench({
                               onClick={() =>
                                 authoring.onSelectGoal?.(goal.id, canvasSelected || undefined)
                               }
-                              className={`rounded-lg border p-2 text-left transition-colors disabled:opacity-45 ${
+                              className={`rounded-md border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${
                                 isActive
-                                  ? isLight
-                                    ? "border-emerald-500 bg-emerald-50/80 ring-1 ring-emerald-500/50"
-                                    : "border-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-400/50"
+                                  ? `${monoActiveBtn} ${isLight ? "focus-visible:ring-slate-900" : "focus-visible:ring-white"}`
                                   : isLight
-                                    ? "border-slate-200 bg-white hover:border-slate-400"
-                                    : "border-slate-800 bg-slate-950/70 hover:border-slate-600"
+                                    ? "border-slate-200 bg-white text-slate-900 hover:border-slate-900 focus-visible:ring-slate-900"
+                                    : "border-slate-800 bg-slate-950 text-slate-100 hover:border-slate-400 focus-visible:ring-white"
                               }`}
                             >
                               <div className="flex items-center justify-between gap-1">
-                                <span
-                                  className={`text-[11.5px] font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
-                                >
+                                <span style={{ fontSize: 12.5, lineHeight: "1.3" }} className="font-semibold">
                                   {t(goal.titleEn, goal.titleVi)}
                                 </span>
                                 {isActive && (
-                                  <span className="font-mono text-[9.5px] font-bold text-emerald-700 dark:text-emerald-300">
+                                  <span style={{ fontSize: 10 }} className="font-mono font-bold opacity-80">
                                     ON
                                   </span>
                                 )}
                               </div>
-                              <p className="mt-0.5 text-[10.5px] leading-snug text-muted-foreground">
+                              <p
+                                style={{ fontSize: 11.5, lineHeight: "1.35" }}
+                                className={`mt-1 ${
+                                  isActive
+                                    ? isLight
+                                      ? "text-slate-300"
+                                      : "text-slate-600"
+                                    : monoSubtleText
+                                }`}
+                              >
                                 {t(goal.descEn, goal.descVi)}
                               </p>
                             </button>
@@ -5713,99 +5812,24 @@ export function LiveStudioWorkbench({
                       </div>
                     </div>
 
-                    {/* 2. Goal-Specific Setup + Scalable Service Dropdown */}
+                    {/* 2. Pure Goal-Specific Details (strictly scoped to the Exercise Goal chosen in #1) */}
                     <div
                       data-testid="goal-specific-setup"
                       data-active-goal={activeGoalId ?? "none"}
-                      className={`space-y-2.5 rounded-xl border p-2.5 ${
-                        isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/70"
-                      }`}
+                      className={`space-y-2.5 rounded-md border p-2.5 ${monoBox}`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
-                          {goalSectionTitle}
-                        </p>
-                        {canvasSelected && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              studio.setService("");
-                              setSelectedAuthorWire(null);
-                            }}
-                            className={`text-[10.5px] font-medium underline opacity-75 transition hover:opacity-100 ${
-                              isLight ? "text-slate-600" : "text-slate-300"
-                            }`}
-                          >
-                            {t("Deselect", "Bỏ chọn")}
-                          </button>
-                        )}
-                      </div>
+                      <p
+                        style={{ fontSize: 11 }}
+                        className={`font-semibold uppercase tracking-wide ${monoSubtleText}`}
+                      >
+                        {goalSectionTitle}
+                      </p>
 
-                      {/* Scalable Service Selector Dropdown (handles 5 to 50+ services cleanly) */}
-                      <label className="block space-y-1">
-                        <span className="text-[10.5px] font-medium text-muted-foreground">
-                          {t("Service on 3D Stage", "Service trên sân khấu 3D")} ({blocks.length})
-                        </span>
-                        <select
-                          aria-label={t("Select service on 3D stage", "Chọn service trên sân khấu 3D")}
-                          data-testid="studio-stage-service-select"
-                          value={canvasSelected}
-                          onChange={(event) => {
-                            studio.setService(event.target.value);
-                            setSelectedAuthorWire(null);
-                          }}
-                          className={`h-8 w-full rounded-lg border px-2 font-mono text-[11.5px] font-medium ${
-                            isLight
-                              ? "border-slate-300 bg-white text-slate-900"
-                              : "border-slate-700 bg-slate-900 text-slate-100"
-                          }`}
-                        >
-                          <option value="">
-                            {t(
-                              "— None selected (click a 3D block) —",
-                              "— Chưa chọn (bấm khối 3D) —",
-                            )}
-                          </option>
-                          {blocks.map((block) => {
-                            const tags: string[] = [];
-                            if (authoring.initialStoppedServices.includes(block.service)) {
-                              tags.push(t("Starts Down", "Tắt sẵn"));
-                            }
-                            if (
-                              authoring.targetChangeAction?.service === block.service &&
-                              (authoring.targetChangeAction.action === "PAUSE" ||
-                                authoring.targetChangeAction.action === "STOP")
-                            ) {
-                              tags.push(t("Impact Target", "Mục tiêu Impact"));
-                            } else if (
-                              authoring.targetChangeAction?.service === block.service &&
-                              authoring.targetChangeAction.action === "THROTTLE_CPU"
-                            ) {
-                              tags.push(`CPU ${authoring.targetChangeAction.cpuPercent ?? 25}%`);
-                            }
-                            if (
-                              authoring.replicaService === block.service &&
-                              Number(authoring.replicaCount) >= 2
-                            ) {
-                              tags.push(`Scale >= ${authoring.replicaCount}x`);
-                            }
-                            return (
-                              <option key={block.service} value={block.service}>
-                                {tags.length > 0
-                                  ? `${block.service} · ${tags.join(", ")}`
-                                  : block.service}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </label>
-
-                      {/* Goal-specific controls only — no cross-goal clutter */}
                       {activeGoalId === "change-impact" && (() => {
                         const chip = chipFor("author-impact-target");
                         const impactSvc = svc;
                         return (
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             <button
                               type="button"
                               draggable={!authoring.busy}
@@ -5816,33 +5840,37 @@ export function LiveStudioWorkbench({
                                 impactSvc &&
                                 authoring.onApplyBlockChip?.("author-impact-target", impactSvc)
                               }
-                              className={`flex w-full cursor-grab items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${
-                                isImpactTarget
-                                  ? isLight
-                                    ? "border-amber-500 bg-amber-100/90 text-amber-950 ring-1 ring-amber-400/50"
-                                    : "border-amber-400 bg-amber-500/25 text-amber-100 ring-1 ring-amber-400/50"
-                                  : isLight
-                                    ? "border-amber-200 bg-white text-amber-900 hover:border-amber-400 hover:bg-amber-50"
-                                    : "border-amber-500/35 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                              style={{ fontSize: 12.5, lineHeight: "1.25" }}
+                              className={`flex h-9 w-full cursor-grab items-center justify-between gap-2 rounded-md border px-2.5 text-left font-medium transition active:cursor-grabbing disabled:opacity-45 ${
+                                isImpactTarget ? monoActiveBtn : monoIdleBtn
                               }`}
                             >
-                              <span className="truncate">
-                                {impactSvc
-                                  ? `${t("Impact Target", "Mục tiêu Impact")}: ${impactSvc}`
-                                  : t("Drag onto a 3D block to set Impact Target", "Kéo thả lên khối 3D để đặt mục tiêu")}
+                              <span className="min-w-0 truncate">
+                                {impactSvc ? (
+                                  <>
+                                    {t("Target:", "Mục tiêu:")}{" "}
+                                    <span className="font-mono font-semibold">{impactSvc}</span>
+                                  </>
+                                ) : (
+                                  t("Select or drag onto a 3D block", "Chọn hoặc kéo thả lên khối 3D")
+                                )}
                               </span>
-                              <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
-                                {isImpactTarget ? "ON" : t("Drag / Click", "Kéo / Bấm")}
+                              <span style={{ fontSize: 11 }} className="shrink-0 font-mono font-semibold opacity-80">
+                                {isImpactTarget ? "ON" : t("Set", "Đặt")}
                               </span>
                             </button>
 
                             {isImpactTarget && impactSvc && (
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="text-[11px] text-muted-foreground">
+                                  <span style={{ fontSize: 12 }} className={monoSubtleText}>
                                     {t("Fault action", "Hành động gây lỗi")}
                                   </span>
-                                  <div className="inline-flex rounded-lg border border-border/80 p-0.5">
+                                  <div
+                                    className={`inline-flex rounded-md border p-0.5 ${
+                                      isLight ? "border-slate-300 bg-white" : "border-slate-700 bg-slate-950"
+                                    }`}
+                                  >
                                     {(["PAUSE", "STOP"] as const).map((act) => {
                                       const on = impactActionKind === act;
                                       return (
@@ -5854,12 +5882,13 @@ export function LiveStudioWorkbench({
                                               targetChangeAction: { action: act, service: impactSvc },
                                             })
                                           }
-                                          className={`rounded-md px-2 py-0.5 font-mono text-[10.5px] font-semibold transition ${
+                                          style={{ fontSize: 11 }}
+                                          className={`rounded-sm px-2.5 py-0.5 font-mono font-semibold transition ${
                                             on
                                               ? isLight
-                                                ? "bg-amber-600 text-white"
-                                                : "bg-amber-500 text-slate-950"
-                                              : "text-muted-foreground hover:text-foreground"
+                                                ? "bg-slate-900 text-white"
+                                                : "bg-white text-slate-950"
+                                              : `${monoSubtleText} hover:text-foreground`
                                           }`}
                                         >
                                           {act}
@@ -5869,8 +5898,8 @@ export function LiveStudioWorkbench({
                                   </div>
                                 </div>
 
-                                <label className="flex cursor-pointer items-center justify-between gap-2 text-[11px]">
-                                  <span className="text-muted-foreground">
+                                <label className="flex cursor-pointer items-center justify-between gap-2">
+                                  <span style={{ fontSize: 12 }} className={monoSubtleText}>
                                     {t(
                                       "Require student prediction first",
                                       "Yêu cầu SV dự đoán trước khi chạy",
@@ -5884,7 +5913,9 @@ export function LiveStudioWorkbench({
                                         predictionRequired: e.target.checked,
                                       })
                                     }
-                                    className="size-3.5 rounded border-slate-400 accent-amber-600"
+                                    className={`size-4 rounded border-slate-400 ${
+                                      isLight ? "accent-slate-900" : "accent-white"
+                                    }`}
                                   />
                                 </label>
                               </div>
@@ -5898,7 +5929,7 @@ export function LiveStudioWorkbench({
                         const scaleSvc = svc;
                         const isScaleTarget = scaleTargetCount >= 2;
                         return (
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             <button
                               type="button"
                               draggable={!authoring.busy}
@@ -5909,32 +5940,36 @@ export function LiveStudioWorkbench({
                                 scaleSvc &&
                                 authoring.onApplyBlockChip?.("author-scale-2x", scaleSvc)
                               }
-                              className={`flex w-full cursor-grab items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${
-                                isScaleTarget
-                                  ? isLight
-                                    ? "border-sky-500 bg-sky-100/90 text-sky-950 ring-1 ring-sky-400/50"
-                                    : "border-sky-400 bg-sky-500/25 text-sky-100 ring-1 ring-sky-400/50"
-                                  : isLight
-                                    ? "border-sky-200 bg-white text-sky-900 hover:border-sky-400 hover:bg-sky-50"
-                                    : "border-sky-500/35 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                              style={{ fontSize: 12.5, lineHeight: "1.25" }}
+                              className={`flex h-9 w-full cursor-grab items-center justify-between gap-2 rounded-md border px-2.5 text-left font-medium transition active:cursor-grabbing disabled:opacity-45 ${
+                                isScaleTarget ? monoActiveBtn : monoIdleBtn
                               }`}
                             >
-                              <span className="truncate">
-                                {scaleSvc
-                                  ? `${t("Scale Target", "Service cần Scale")}: ${scaleSvc}`
-                                  : t("Drag onto a 3D block to set Scale Target", "Kéo thả lên khối 3D để chọn service Scale")}
+                              <span className="min-w-0 truncate">
+                                {scaleSvc ? (
+                                  <>
+                                    {t("Target:", "Mục tiêu:")}{" "}
+                                    <span className="font-mono font-semibold">{scaleSvc}</span>
+                                  </>
+                                ) : (
+                                  t("Select or drag onto a 3D block", "Chọn hoặc kéo thả lên khối 3D")
+                                )}
                               </span>
-                              <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
-                                {isScaleTarget ? `${scaleTargetCount}x` : t("Drag / Click", "Kéo / Bấm")}
+                              <span style={{ fontSize: 11 }} className="shrink-0 font-mono font-semibold opacity-80">
+                                {isScaleTarget ? `${scaleTargetCount}x` : t("Set", "Đặt")}
                               </span>
                             </button>
 
                             {scaleSvc && (
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] text-muted-foreground">
+                                <span style={{ fontSize: 12 }} className={monoSubtleText}>
                                   {t("Minimum replicas", "Số replica tối thiểu")}
                                 </span>
-                                <div className="inline-flex rounded-lg border border-border/80 p-0.5">
+                                <div
+                                  className={`inline-flex rounded-md border p-0.5 ${
+                                    isLight ? "border-slate-300 bg-white" : "border-slate-700 bg-slate-950"
+                                  }`}
+                                >
                                   {([2, 3] as const).map((cnt) => {
                                     const on = scaleTargetCount === cnt;
                                     return (
@@ -5942,12 +5977,13 @@ export function LiveStudioWorkbench({
                                         key={cnt}
                                         type="button"
                                         onClick={() => authoring.onSetReplicaTarget?.(scaleSvc, cnt)}
-                                        className={`rounded-md px-2.5 py-0.5 font-mono text-[10.5px] font-semibold transition ${
+                                        style={{ fontSize: 11 }}
+                                        className={`rounded-sm px-2.5 py-0.5 font-mono font-semibold transition ${
                                           on
                                             ? isLight
-                                              ? "bg-sky-600 text-white"
-                                              : "bg-sky-500 text-slate-950"
-                                            : "text-muted-foreground hover:text-foreground"
+                                              ? "bg-slate-900 text-white"
+                                              : "bg-white text-slate-950"
+                                            : `${monoSubtleText} hover:text-foreground`
                                         }`}
                                       >
                                         &gt;= {cnt}x
@@ -5965,7 +6001,7 @@ export function LiveStudioWorkbench({
                         const chip = chipFor("author-starts-down");
                         const downSvc = svc;
                         return (
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             <button
                               type="button"
                               draggable={!authoring.busy}
@@ -5976,38 +6012,39 @@ export function LiveStudioWorkbench({
                                 downSvc &&
                                 authoring.onApplyBlockChip?.("author-starts-down", downSvc)
                               }
-                              className={`flex w-full cursor-grab items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${
-                                startsDown
-                                  ? isLight
-                                    ? "border-rose-500 bg-rose-100/90 text-rose-900 ring-1 ring-rose-400/50"
-                                    : "border-rose-400 bg-rose-500/25 text-rose-100 ring-1 ring-rose-400/50"
-                                  : isLight
-                                    ? "border-rose-200 bg-white text-rose-800 hover:border-rose-400 hover:bg-rose-50"
-                                    : "border-rose-500/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                              style={{ fontSize: 12.5, lineHeight: "1.25" }}
+                              className={`flex h-9 w-full cursor-grab items-center justify-between gap-2 rounded-md border px-2.5 text-left font-medium transition active:cursor-grabbing disabled:opacity-45 ${
+                                startsDown ? monoActiveBtn : monoIdleBtn
                               }`}
                             >
-                              <span className="truncate">
-                                {downSvc
-                                  ? `${t("Starts Down (0x)", "Tắt sẵn ban đầu (0x)")}: ${downSvc}`
-                                  : t("Drag onto any 3D block to start stopped", "Kéo thả lên khối 3D để tắt sẵn")}
+                              <span className="min-w-0 truncate">
+                                {downSvc ? (
+                                  <>
+                                    {t("Starts Down:", "Tắt sẵn:")}{" "}
+                                    <span className="font-mono font-semibold">{downSvc}</span>
+                                  </>
+                                ) : (
+                                  t("Select or drag onto a 3D block", "Chọn hoặc kéo thả lên khối 3D")
+                                )}
                               </span>
-                              <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
-                                {startsDown ? "ON" : t("Drag / Click", "Kéo / Bấm")}
+                              <span style={{ fontSize: 11 }} className="shrink-0 font-mono font-semibold opacity-80">
+                                {startsDown ? "ON" : t("Set", "Đặt")}
                               </span>
                             </button>
 
-                            <div className="flex flex-wrap items-center gap-1 text-[10.5px]">
-                              <span className="text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-1.5" style={{ fontSize: 12 }}>
+                              <span className={monoSubtleText}>
                                 {t("Stopped at start:", "Tắt sẵn lúc mở bài:")}
                               </span>
                               {authoring.initialStoppedServices.length > 0 ? (
                                 authoring.initialStoppedServices.map((stoppedName) => (
                                   <span
                                     key={stoppedName}
-                                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                                    style={{ fontSize: 11.5 }}
+                                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono font-medium ${
                                       isLight
-                                        ? "border-rose-200 bg-rose-50 text-rose-700"
-                                        : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                                        ? "border-slate-300 bg-white text-slate-900"
+                                        : "border-slate-700 bg-slate-950 text-slate-100"
                                     }`}
                                   >
                                     {stoppedName}
@@ -6017,14 +6054,14 @@ export function LiveStudioWorkbench({
                                       onClick={() =>
                                         authoring.onApplyBlockChip?.("author-starts-down", stoppedName)
                                       }
-                                      className="ml-0.5 opacity-70 hover:opacity-100"
+                                      className="ml-0.5 opacity-60 hover:opacity-100"
                                     >
                                       ×
                                     </button>
                                   </span>
                                 ))
                               ) : (
-                                <span className="text-muted-foreground">
+                                <span className={monoSubtleText}>
                                   {t("None (all start Up)", "Không (tất cả chạy sẵn)")}
                                 </span>
                               )}
@@ -6037,7 +6074,7 @@ export function LiveStudioWorkbench({
                         const chip = chipFor("author-cpu-target");
                         const cpuSvc = svc;
                         return (
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             <button
                               type="button"
                               draggable={!authoring.busy}
@@ -6048,32 +6085,36 @@ export function LiveStudioWorkbench({
                                 cpuSvc &&
                                 authoring.onApplyBlockChip?.("author-cpu-target", cpuSvc)
                               }
-                              className={`flex w-full cursor-grab items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${
-                                isCpuTarget
-                                  ? isLight
-                                    ? "border-violet-500 bg-violet-100/90 text-violet-950 ring-1 ring-violet-400/50"
-                                    : "border-violet-400 bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/50"
-                                  : isLight
-                                    ? "border-violet-200 bg-white text-violet-900 hover:border-violet-400 hover:bg-violet-50"
-                                    : "border-violet-500/35 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20"
+                              style={{ fontSize: 12.5, lineHeight: "1.25" }}
+                              className={`flex h-9 w-full cursor-grab items-center justify-between gap-2 rounded-md border px-2.5 text-left font-medium transition active:cursor-grabbing disabled:opacity-45 ${
+                                isCpuTarget ? monoActiveBtn : monoIdleBtn
                               }`}
                             >
-                              <span className="truncate">
-                                {cpuSvc
-                                  ? `${t("CPU Throttle Target", "Mục tiêu bóp CPU")}: ${cpuSvc}`
-                                  : t("Drag onto a 3D block to set CPU target", "Kéo thả lên khối 3D để chọn service bóp CPU")}
+                              <span className="min-w-0 truncate">
+                                {cpuSvc ? (
+                                  <>
+                                    {t("Target:", "Mục tiêu:")}{" "}
+                                    <span className="font-mono font-semibold">{cpuSvc}</span>
+                                  </>
+                                ) : (
+                                  t("Select or drag onto a 3D block", "Chọn hoặc kéo thả lên khối 3D")
+                                )}
                               </span>
-                              <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
-                                {isCpuTarget ? `${cpuTargetPct}%` : t("Drag / Click", "Kéo / Bấm")}
+                              <span style={{ fontSize: 11 }} className="shrink-0 font-mono font-semibold opacity-80">
+                                {isCpuTarget ? `${cpuTargetPct}%` : t("Set", "Đặt")}
                               </span>
                             </button>
 
                             {isCpuTarget && cpuSvc && (
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] text-muted-foreground">
+                                <span style={{ fontSize: 12 }} className={monoSubtleText}>
                                   {t("CPU quota limit", "Ngưỡng giới hạn CPU")}
                                 </span>
-                                <div className="inline-flex rounded-lg border border-border/80 p-0.5">
+                                <div
+                                  className={`inline-flex rounded-md border p-0.5 ${
+                                    isLight ? "border-slate-300 bg-white" : "border-slate-700 bg-slate-950"
+                                  }`}
+                                >
                                   {([25, 50] as const).map((pct) => {
                                     const on = cpuTargetPct === pct;
                                     return (
@@ -6089,12 +6130,13 @@ export function LiveStudioWorkbench({
                                             },
                                           })
                                         }
-                                        className={`rounded-md px-2.5 py-0.5 font-mono text-[10.5px] font-semibold transition ${
+                                        style={{ fontSize: 11 }}
+                                        className={`rounded-sm px-2.5 py-0.5 font-mono font-semibold transition ${
                                           on
                                             ? isLight
-                                              ? "bg-violet-600 text-white"
-                                              : "bg-violet-500 text-white"
-                                            : "text-muted-foreground hover:text-foreground"
+                                              ? "bg-slate-900 text-white"
+                                              : "bg-white text-slate-950"
+                                            : `${monoSubtleText} hover:text-foreground`
                                         }`}
                                       >
                                         {pct}%
@@ -6109,18 +6151,21 @@ export function LiveStudioWorkbench({
                       })()}
 
                       {!activeGoalId && (
-                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        <p style={{ fontSize: 12, lineHeight: "1.45" }} className={monoSubtleText}>
                           {t(
-                            "Pick an Exercise Goal above to show only the rules for that drill.",
-                            "Chọn 1 dạng bài phía trên để chỉ hiển thị phần cấu hình của đúng dạng bài đó.",
+                            "Pick an Exercise Goal above to show its settings.",
+                            "Chọn 1 dạng bài phía trên để hiện phần cấu hình riêng.",
                           )}
                         </p>
                       )}
 
                       {/* Live Docker Test Controls while Running so Lecturer can Author-by-Doing */}
                       {isLiveDemoMode && svc && (
-                        <div className="space-y-1.5 border-t border-border/60 pt-2">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                        <div className="space-y-1.5 border-t border-border/60 pt-2.5">
+                          <p
+                            style={{ fontSize: 11 }}
+                            className={`font-semibold uppercase tracking-wide ${monoSubtleText}`}
+                          >
                             {t("Live Test (Author by Doing)", "Thao tác thử trực tiếp trên Docker")}
                           </p>
                           <div className="grid grid-cols-2 gap-1.5">
@@ -6135,7 +6180,8 @@ export function LiveStudioWorkbench({
                                   svc,
                                 )
                               }
-                              className="h-7 text-[11px]"
+                              style={{ fontSize: 12 }}
+                              className="h-8 rounded-md"
                             >
                               {liveSvcPhase === "paused" ? "Resume" : "Pause"}
                             </Button>
@@ -6150,7 +6196,8 @@ export function LiveStudioWorkbench({
                                   svc,
                                 )
                               }
-                              className="h-7 text-[11px]"
+                              style={{ fontSize: 12 }}
+                              className="h-8 rounded-md"
                             >
                               {liveSvcPhase === "stopped" ? "Start" : "Stop"}
                             </Button>
@@ -6160,7 +6207,8 @@ export function LiveStudioWorkbench({
                               variant="outline"
                               disabled={busy || !canScaleFor(svc)}
                               onClick={() => void dispatchCommand("SCALE", svc, 2)}
-                              className="h-7 text-[11px]"
+                              style={{ fontSize: 12 }}
+                              className="h-8 rounded-md"
                             >
                               Scale 2x
                             </Button>
@@ -6170,7 +6218,8 @@ export function LiveStudioWorkbench({
                               variant="outline"
                               disabled={busy}
                               onClick={() => void studio.send("THROTTLE_CPU", svc, undefined, 25)}
-                              className="h-7 text-[11px]"
+                              style={{ fontSize: 12 }}
+                              className="h-8 rounded-md"
                             >
                               CPU 25%
                             </Button>
@@ -6179,25 +6228,24 @@ export function LiveStudioWorkbench({
                       )}
                     </div>
 
-                    {/* Static Reverse BFS Blast Radius Preview (shown for Change Impact & Outage Recovery) */}
+                    {/* Static Reverse BFS Blast Radius Preview (Minimal Monochrome B&W) */}
                     {staticBlastRadius.target &&
                       (activeGoalId === "change-impact" || activeGoalId === "recovery") && (
-                      <div
-                        className={`space-y-1 rounded-xl border p-2.5 text-[11px] ${
-                          isLight
-                            ? "border-amber-300 bg-amber-50/80 text-amber-950"
-                            : "border-amber-500/40 bg-amber-950/35 text-amber-100"
-                        }`}
-                      >
-                        <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                      <div className={`space-y-1 rounded-md border p-2.5 ${monoBox}`}>
+                        <p
+                          style={{ fontSize: 11 }}
+                          className={`font-semibold uppercase tracking-wide ${monoSubtleText}`}
+                        >
                           {t("Static Reverse BFS Preview", "Dự báo lan truyền (Reverse BFS)")}
                         </p>
-                        <p>
-                          {t("Target:", "Mục tiêu:")}{" "}
+                        <p style={{ fontSize: 12 }}>
+                          <span className={monoSubtleText}>{t("Target:", "Mục tiêu:")}</span>{" "}
                           <code className="font-mono font-semibold">{staticBlastRadius.target}</code>
                         </p>
-                        <p>
-                          {t("Impacted upstream:", "Nhánh upstream bị ảnh hưởng:")}{" "}
+                        <p style={{ fontSize: 12 }}>
+                          <span className={monoSubtleText}>
+                            {t("Impacted upstream:", "Nhánh upstream bị ảnh hưởng:")}
+                          </span>{" "}
                           <code className="font-mono font-semibold">
                             {staticBlastRadius.upstreamImpacted.length > 0
                               ? staticBlastRadius.upstreamImpacted.join(", ")
@@ -6207,28 +6255,26 @@ export function LiveStudioWorkbench({
                       </div>
                     )}
 
-                    {/* Direct 3D Wire Selection Card */}
+                    {/* Direct 3D Wire Selection Card (Minimal Monochrome B&W) */}
                     {activeWireFocus && (
-                      <div
-                        className={`space-y-1.5 rounded-xl border p-2.5 text-[11px] ${
-                          isLight
-                            ? "border-sky-300 bg-sky-50/75 text-sky-950"
-                            : "border-sky-500/40 bg-sky-950/35 text-sky-100"
-                        }`}
-                      >
+                      <div className={`space-y-2 rounded-md border p-2.5 ${monoBox}`}>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                          <span
+                            style={{ fontSize: 11 }}
+                            className={`font-semibold uppercase tracking-wide ${monoSubtleText}`}
+                          >
                             {t("Selected Wire", "Dây nối đang chọn")}
                           </span>
                           <button
                             type="button"
                             onClick={() => setSelectedAuthorWire(null)}
-                            className="text-[10.5px] underline opacity-75 hover:opacity-100"
+                            style={{ fontSize: 11 }}
+                            className={`underline opacity-75 hover:opacity-100 ${monoSubtleText}`}
                           >
                             {t("Dismiss", "Ẩn")}
                           </button>
                         </div>
-                        <p className="font-mono text-[11px] font-semibold">
+                        <p style={{ fontSize: 12 }} className="font-mono font-semibold">
                           {activeWireFocus.from} -&gt; {activeWireFocus.to}
                         </p>
                         <div className="flex flex-wrap gap-1.5">
@@ -6240,7 +6286,8 @@ export function LiveStudioWorkbench({
                             onClick={() =>
                               authoring.onToggleWire?.(activeWireFocus.from, activeWireFocus.to)
                             }
-                            className="h-7 flex-1 text-[11px]"
+                            style={{ fontSize: 12 }}
+                            className="h-8 flex-1 rounded-md"
                           >
                             {wireIsRequired
                               ? t("Clear required path", "Bỏ đánh dấu đường gọi")
@@ -6253,7 +6300,8 @@ export function LiveStudioWorkbench({
                               variant="outline"
                               disabled={authoring.busy}
                               onClick={() => authoring.onToggleInitialStopped(wireController, true)}
-                              className="h-7 text-[11px]"
+                              style={{ fontSize: 12 }}
+                              className="h-8 rounded-md"
                             >
                               {wireCutAtStart
                                 ? t("Reconnect", "Nối lại")
@@ -6269,7 +6317,12 @@ export function LiveStudioWorkbench({
                       size="sm"
                       variant="outline"
                       onClick={() => setSetupPanel("mission")}
-                      className="h-8 w-full text-xs font-semibold"
+                      style={{ fontSize: 12.5 }}
+                      className={`h-9 w-full rounded-md font-semibold ${
+                        isLight
+                          ? "border-slate-300 bg-white text-slate-900 hover:border-slate-900 hover:bg-slate-50"
+                          : "border-slate-700 bg-slate-950 text-slate-100 hover:border-white"
+                      }`}
                     >
                       {t("Next: Mission & Endpoint", "Tiếp: Đề bài & Endpoint")}
                     </Button>
