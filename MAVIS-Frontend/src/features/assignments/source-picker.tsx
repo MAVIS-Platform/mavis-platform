@@ -15,6 +15,7 @@ export function AssignmentSourcePicker({
   initial,
   onChange,
   onVersionChange,
+  onAnalysisComplete,
   usageContext = "lab",
 }: {
   workspaceId: string;
@@ -25,6 +26,11 @@ export function AssignmentSourcePicker({
     version: { modelId: string; projectId: string; snapshotId: string },
     pending: boolean,
   ) => void;
+  onAnalysisComplete?: (version: {
+    modelId: string;
+    projectId: string;
+    snapshotId: string;
+  }) => void;
   usageContext?: "lab" | "repository";
 }) {
   const api = useApi(),
@@ -45,9 +51,12 @@ export function AssignmentSourcePicker({
     createdProject = useRef("");
   const onChangeRef = useRef(onChange);
   const onVersionChangeRef = useRef(onVersionChange);
+  const onAnalysisCompleteRef = useRef(onAnalysisComplete);
   onChangeRef.current = onChange;
   onVersionChangeRef.current = onVersionChange;
+  onAnalysisCompleteRef.current = onAnalysisComplete;
   const lastEmittedRef = useRef("");
+  const completedAnalysisRef = useRef("");
   const projects = useApiQuery("workspaceProjects", { workspaceId });
   const versions = useApiQuery("modelVersions", { projectId }, { enabled: !!projectId });
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
@@ -168,6 +177,14 @@ export function AssignmentSourcePicker({
     )
       return;
     setModelId(job.data.modelId);
+    if (completedAnalysisRef.current !== job.data.modelId) {
+      completedAnalysisRef.current = job.data.modelId;
+      onAnalysisCompleteRef.current?.({
+        modelId: job.data.modelId,
+        projectId,
+        snapshotId,
+      });
+    }
     setMessage(
       job.data.status === "partial"
         ? usageContext === "repository"

@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FolderGit2, Plus, X } from "lucide-react";
+import { toast } from "sonner";
 import { AssignmentSourcePicker } from "@/features/assignments/source-picker";
 import { Button } from "@/components/ui/button";
 import { usePermission } from "@/hooks/use-api";
@@ -10,9 +12,20 @@ import { useLocale } from "@/lib/i18n/locale-context";
 export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const allowed = usePermission("workspace:manage");
   const { t } = useLocale();
+  const router = useRouter();
+  const params = useSearchParams();
+  const firstSetup = params.get("from") === "first-setup";
   const [importOpen, setImportOpen] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState("");
   const [sourcePending, setSourcePending] = useState(false);
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (redirectTimer.current) clearTimeout(redirectTimer.current);
+    },
+    [],
+  );
 
   if (!allowed) return null;
 
@@ -79,6 +92,21 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                 onChange={(modelId, pending) => {
                   setSelectedModelId(modelId);
                   setSourcePending(pending);
+                }}
+                onAnalysisComplete={() => {
+                  setImportOpen(false);
+                  toast.success(
+                    t(
+                      "Repository imported and analyzed successfully.",
+                      "Repository đã được nhập và phân tích thành công.",
+                    ),
+                  );
+                  const step = firstSetup ? "lesson" : "repository";
+                  redirectTimer.current = setTimeout(() => {
+                    router.push(
+                      `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-flow&step=${step}`,
+                    );
+                  }, 900);
                 }}
               />
             </div>

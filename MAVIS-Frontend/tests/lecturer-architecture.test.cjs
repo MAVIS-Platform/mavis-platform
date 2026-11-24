@@ -29,6 +29,7 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   const navigation = read("src/lib/navigation.ts");
   const hub = read("src/features/courses/course-content-hub.tsx");
   const firstFlow = read("src/features/courses/course-first-setup-flow.tsx");
+  const referenceManager = read("src/features/workspaces/reference-manage.tsx");
   assert.doesNotMatch(shell, /en: "Modules"|en: "Labs"/);
   assert.doesNotMatch(navigation, /label: "Modules"|label: "Labs"/);
   assert.match(hub, /Add Repository/);
@@ -44,10 +45,11 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   assert.match(firstFlow, /Publish Changes/);
   assert.match(firstFlow, /Back to Overview/);
   assert.match(firstFlow, /Next:/);
-  assert.match(
-    workspace,
-    /activeTab === "outline" && canManage && canEdit && !hasLearningContent/,
-  );
+  assert.match(firstFlow, /from=first-setup/);
+  assert.match(referenceManager, /onAnalysisComplete/);
+  assert.match(referenceManager, /toast\.success/);
+  assert.match(referenceManager, /firstSetup \? "lesson" : "repository"/);
+  assert.match(workspace, /activeTab === "outline" && canManage && canEdit && !hasLearningContent/);
   assert.match(workspace, /<CourseFirstSetupFlow workspaceId=\{workspace\.id\} \/>/);
 });
 

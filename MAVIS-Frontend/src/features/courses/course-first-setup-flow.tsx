@@ -83,7 +83,8 @@ function flowHref(workspaceId: string, step: StepId) {
 }
 
 function editorHref(workspaceId: string, step: StepId) {
-  if (step === "repository") return `/references?workspace=${encodeURIComponent(workspaceId)}`;
+  if (step === "repository")
+    return `/references?workspace=${encodeURIComponent(workspaceId)}&from=first-setup`;
   if (step === "lesson") return `/theory-library?workspace=${encodeURIComponent(workspaceId)}`;
   if (step === "quiz") {
     return `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=quiz-library`;
@@ -96,7 +97,10 @@ export function CourseFirstSetupFlow({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
   const params = useSearchParams();
   const requested = params.get("step") as StepId | null;
-  const currentIndex = Math.max(0, steps.findIndex((step) => step.id === requested));
+  const currentIndex = Math.max(
+    0,
+    steps.findIndex((step) => step.id === requested),
+  );
   const current = steps[currentIndex] ?? steps[0]!;
   const CurrentIcon = current.icon;
   const previous = currentIndex > 0 ? steps[currentIndex - 1] : null;
@@ -113,7 +117,10 @@ export function CourseFirstSetupFlow({ workspaceId }: { workspaceId: string }) {
         </h2>
       </div>
 
-      <nav aria-label={t("Course setup steps", "Các bước thiết lập khóa học")} className="overflow-x-auto">
+      <nav
+        aria-label={t("Course setup steps", "Các bước thiết lập khóa học")}
+        className="overflow-x-auto"
+      >
         <ol className="flex min-w-max items-center gap-2 pb-1">
           {steps.map((step, index) => {
             const Icon = step.icon;
@@ -136,7 +143,9 @@ export function CourseFirstSetupFlow({ workspaceId }: { workspaceId: string }) {
                   {completed ? <CheckCircle2 className="size-4" /> : <Icon className="size-4" />}
                   {index + 1}. {t(step.en, step.vi)}
                 </Link>
-                {index < steps.length - 1 && <ArrowRight className="size-4 text-muted-foreground/50" />}
+                {index < steps.length - 1 && (
+                  <ArrowRight className="size-4 text-muted-foreground/50" />
+                )}
               </li>
             );
           })}
@@ -150,7 +159,10 @@ export function CourseFirstSetupFlow({ workspaceId }: { workspaceId: string }) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {t(`Step ${currentIndex + 1} of ${steps.length}`, `Bước ${currentIndex + 1}/${steps.length}`)}
+              {t(
+                `Step ${currentIndex + 1} of ${steps.length}`,
+                `Bước ${currentIndex + 1}/${steps.length}`,
+              )}
             </p>
             <h3 className="mt-1 text-xl font-bold">{t(current.en, current.vi)}</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
@@ -193,7 +205,9 @@ export function CourseFirstSetupFlow({ workspaceId }: { workspaceId: string }) {
           </Button>
         ) : (
           <Button asChild>
-            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
+            <Link
+              href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
+            >
               {t("Review & Publish", "Kiểm tra & Publish")}
               <Send className="ml-1.5 size-4" aria-hidden="true" />
             </Link>
