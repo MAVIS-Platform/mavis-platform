@@ -60,6 +60,21 @@ export function contextProjection(
   options?: { systemName?: string | undefined },
 ) {
   const established = deriveC4ContextModel(model);
+  const actorActionLabels = new Map<string, string>();
+  for (const person of established.persons) {
+    if (person.actionLabel && person.actionLabel !== "Declared interaction with the system") {
+      actorActionLabels.set(person.id, person.actionLabel);
+    }
+  }
+  for (const ext of established.externals) {
+    if (
+      ext.actionLabel &&
+      ext.actionLabel !== "Declared inbound dependency" &&
+      ext.actionLabel !== "Declared external dependency"
+    ) {
+      actorActionLabels.set(ext.id, ext.actionLabel);
+    }
+  }
   const allowedContextIds = new Set([...established.persons, ...established.externals].map(item => item.id));
   const external = raw.layoutJson.nodes.filter((node) =>
     ["EXTERNAL_SYSTEM", "PERSON"].includes(node.kind ?? "") && allowedContextIds.has(node.id),
@@ -69,16 +84,30 @@ export function contextProjection(
       .filter((node) => !["EXTERNAL_SYSTEM", "PERSON"].includes(node.kind ?? ""))
       .map((node) => node.id),
   );
+  const customSystemDescription = model.elements.find(
+    (el) => typeof el.properties?.["systemDescription"] === "string" && el.properties["systemDescription"].trim(),
+  )?.properties?.["systemDescription"] as string | undefined;
+  const resolvedSystemName = options?.systemName?.trim() || "System under analysis";
+  const systemDescription =
+    customSystemDescription?.trim() ||
+    (resolvedSystemName === "Mộc Hương Shop Platform"
+      ? "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices"
+      : undefined);
   const system: DiagramNode = {
     id: `system:${model.projectId}`,
-    name: options?.systemName?.trim() || "System under analysis",
+    name: resolvedSystemName,
     kind: "SYSTEM",
+    ...(systemDescription ? { description: systemDescription } : {}),
     underlyingNodeIds: [...inside],
   };
   const links = aggregate(
     raw.layoutJson.edges.filter((edge) => !deployed(edge)),
     (id) => (inside.has(id) ? system.id : external.some((node) => node.id === id) ? id : undefined),
-  );
+  ).map((edge) => {
+    const customLabel =
+      actorActionLabels.get(edge.from ?? "") ?? actorActionLabels.get(edge.to ?? "");
+    return customLabel ? { ...edge, label: customLabel } : edge;
+  });
   // A caller role is supported by declared inbound endpoints, but its identity is not known.
   // Do not infer people, business actors, or external ownership from service names: the entry
   // points only prove an inbound interface, so they stay inside the system and the missing

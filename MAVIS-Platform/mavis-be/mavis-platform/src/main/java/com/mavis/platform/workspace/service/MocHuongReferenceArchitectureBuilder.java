@@ -169,7 +169,9 @@ public final class MocHuongReferenceArchitectureBuilder {
         addNode("api-gateway", null, "SERVICE_CONTAINER", "Java 21 · Spring Cloud Gateway (:8080)",
                 "api-gateway",
                 "Edge reverse proxy · JWT Bearer verification, X-Correlation-Id filter & lb:// routing",
-                props("port", "8080", "role", "Edge API Gateway", "framework", "Java 21 / Spring Cloud Gateway", "layerHint", "edge"));
+                props("port", "8080", "role", "Edge API Gateway", "framework", "Java 21 / Spring Cloud Gateway",
+                        "layerHint", "edge",
+                        "systemDescription", "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices"));
         addNode("service-discovery", null, "SERVICE_CONTAINER", "Java 21 · Netflix Eureka Server (:8761)",
                 "service-discovery",
                 "Dynamic service registry for api-gateway & business microservices",
