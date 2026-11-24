@@ -1,17 +1,28 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { BookOpen, Home, LayoutGrid, UserRound } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { BookOpen, ChevronDown, Home, LayoutGrid, LogOut, UserRound } from "lucide-react";
 import { MavisLogo } from "@/components/mavis-logo";
 import { AppearanceSelector } from "@/components/appearance-selector";
 import { NotificationBell } from "@/features/notifications/inbox";
 import { RequireSession } from "@/features/auth/access";
 import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
-import { useSession } from "@/hooks/use-api";
+import { useApi, useApiMutation, useSession } from "@/hooks/use-api";
+import { roleLabels, type AppRole } from "@/lib/navigation";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { ReactNode } from "react";
 
 const links = [
   { href: "/home", label: "Home", icon: Home },
@@ -21,8 +32,34 @@ const links = [
 
 function MavisChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { t } = useLocale();
+  const api = useApi();
   const session = useSession();
+  const queryClient = useQueryClient();
+  const signOut = useApiMutation("signOut");
+  const [signingOut, setSigningOut] = useState(false);
+
+  const user = session.data?.user;
+  const role: AppRole = user?.role ?? "student";
+  const displayName = user?.name ?? t("Account", "Tài khoản");
+  const displayEmail = user?.email ?? undefined;
+  const avatarUrl = user?.avatarUrl ?? undefined;
+
+  async function logout() {
+    setSigningOut(true);
+    try {
+      await queryClient.cancelQueries();
+      await signOut.mutateAsync({});
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      queryClient.setQueryData(["api", "session", {}], { user: null });
+      router.replace("/login?signedOut=1");
+    } catch {
+      setSigningOut(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur">
@@ -61,20 +98,77 @@ function MavisChrome({ children }: { children: ReactNode }) {
             <LocaleSwitchButton />
             <AppearanceSelector />
             <NotificationBell />
-            <Button
-              asChild
-              variant="ghost"
-              size="icon"
-              aria-label={t("Profile", "Hồ sơ")}
-              title={t("Profile", "Hồ sơ")}
-            >
-              <Link href="/profile">
-                <UserRound aria-hidden="true" />
-              </Link>
-            </Button>
-            <span className="hidden max-w-32 truncate pl-1 text-xs font-medium text-muted-foreground lg:inline">
-              {session.data?.user?.name}
-            </span>
+            <div className="mx-1.5 h-6 border-l" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="h-10 gap-2 rounded-xl px-2"
+                  aria-label={t("Profile menu", "Menu hồ sơ")}
+                >
+                  <UserAvatar
+                    name={displayName}
+                    avatarUrl={avatarUrl}
+                    size="sm"
+                    online
+                    className="border-primary/20 bg-primary text-primary-foreground"
+                  />
+                  <span className="hidden text-left lg:block">
+                    <span className="block max-w-36 truncate text-xs font-medium">
+                      {displayName}
+                    </span>
+                    <span className="block text-[10px] text-muted-foreground">
+                      {t(roleLabels[role] ?? role)}
+                    </span>
+                  </span>
+                  <ChevronDown className="hidden size-3 lg:block" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 rounded-xl p-2">
+                <DropdownMenuLabel className="px-2 py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <UserAvatar name={displayName} avatarUrl={avatarUrl} size="md" />
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">
+                        {displayName}
+                      </span>
+                      {displayEmail && (
+                        <span className="block truncate text-[11px] font-normal text-muted-foreground">
+                          {displayEmail}
+                        </span>
+                      )}
+                      <span className="mt-0.5 block text-[10px] font-medium text-primary">
+                        {t(roleLabels[role] ?? role)}
+                      </span>
+                    </div>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/profile">
+                    <UserRound />
+                    {t("My Profile", "Hồ sơ của tôi")}
+                  </Link>
+                </DropdownMenuItem>
+                {api.mode === "mock" && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/login">Choose sample role</Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                  disabled={signingOut || signOut.isPending}
+                  onSelect={() => {
+                    void logout();
+                  }}
+                >
+                  <LogOut />
+                  {signingOut || signOut.isPending
+                    ? t("Signing out…", "Đang đăng xuất…")
+                    : t("Sign out", "Đăng xuất")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         <nav aria-label="MAVIS mobile" className="flex border-t px-2 md:hidden">

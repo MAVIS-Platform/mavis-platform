@@ -413,3 +413,16 @@ test("Commit #04 i18n copy polish simplifies roles, hides unclassified layer and
   assert.doesNotMatch(step2, /DS-03b/);
 });
 
+test("Commit #07 streamlines 1-click avatar upload, removes unavailable services stat, and unifies MavisShell header profile", () => {
+  const profile = read("src/features/profile/profile.tsx");
+  const mavisShell = read("src/components/mavis-shell.tsx");
+
+  assert.doesNotMatch(profile, /Services indexed/);
+  assert.doesNotMatch(profile, /Profile Photo/);
+  assert.match(profile, /Click to change or remove photo/);
+  assert.match(profile, /grid-cols-3/);
+  assert.match(mavisShell, /UserAvatar/);
+  assert.match(mavisShell, /DropdownMenu/);
+  assert.match(mavisShell, /Sign out/);
+});
+

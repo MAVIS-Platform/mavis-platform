@@ -105,16 +105,6 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
     { enabled: hasPermission(role, "workspace:read") },
   );
   const projectList = projects.data ?? [];
-  const knownServices = projectList.filter((project) => project.services !== null);
-  const services = knownServices.reduce((sum, project) => sum + (project.services ?? 0), 0);
-  const servicesValue =
-    projectList.length === 0
-      ? 0
-      : knownServices.length === 0
-        ? t("Not available")
-        : knownServices.length < projectList.length
-          ? `${services}+`
-          : services;
   const value = (
     query: { isPending: boolean; isError: boolean; data: unknown },
     amount: number | string,
@@ -132,11 +122,10 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
     <div className="mt-5 space-y-5 border-t pt-5">
       <dl
         aria-label={t("Account statistics")}
-        className="grid grid-cols-2 gap-2.5"
+        className="grid grid-cols-3 gap-2.5"
       >
         {[
           [t("Projects", "Dự án"), value(projects, projectList.length)],
-          [t("Services indexed", "Dịch vụ đã quét"), value(projects, servicesValue)],
           [t("Workspaces joined", "Lớp đã tham gia"), value(workspaces, workspaces.data?.length ?? 0)],
           [t("Submissions", "Bài nộp"), value(submissions, submissions.data?.length ?? 0)],
         ].map(([label, amount]) => (
@@ -305,22 +294,37 @@ export function ProfileDetails({ user }: { user: User }) {
         <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="relative -mt-14 inline-flex w-fit shrink-0">
-              <UserAvatar
-                name={fullName || user.name}
-                avatarUrl={avatarUrl}
-                size="xl"
-                className="size-24 text-xl ring-4 ring-card sm:size-28"
-              />
-              {canUploadPhoto && (
+              {canUploadPhoto ? (
                 <button
                   type="button"
-                  aria-label={t("Update profile photo", "Cập nhật ảnh đại diện")}
-                  title={t("Upload photo from device", "Tải ảnh đại diện từ máy")}
+                  aria-label={t(
+                    "Click to change or remove photo",
+                    "Bấm để đổi hoặc xóa ảnh đại diện",
+                  )}
+                  title={t(
+                    "Click to change or remove photo",
+                    "Bấm để đổi hoặc xóa ảnh đại diện",
+                  )}
                   onClick={() => setAvatarDialogOpen(true)}
-                  className="absolute bottom-1 right-1 flex size-9 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="group relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <Camera className="size-4" aria-hidden="true" />
+                  <UserAvatar
+                    name={fullName || user.name}
+                    avatarUrl={avatarUrl}
+                    size="xl"
+                    className="size-24 text-xl ring-4 ring-card transition-opacity group-hover:opacity-90 sm:size-28"
+                  />
+                  <span className="absolute bottom-1 right-1 flex size-9 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground shadow-sm transition-transform group-hover:scale-105 group-hover:bg-primary/90">
+                    <Camera className="size-4" aria-hidden="true" />
+                  </span>
                 </button>
+              ) : (
+                <UserAvatar
+                  name={fullName || user.name}
+                  avatarUrl={avatarUrl}
+                  size="xl"
+                  className="size-24 text-xl ring-4 ring-card sm:size-28"
+                />
               )}
             </div>
             <div className="min-w-0 space-y-1.5 sm:pb-1">
@@ -347,16 +351,6 @@ export function ProfileDetails({ user }: { user: User }) {
               </p>
             </div>
           </div>
-          {canUploadPhoto && (
-            <div className="flex flex-wrap items-center gap-2 sm:pb-1">
-              <Button type="button" size="sm" variant="outline" onClick={() => setAvatarDialogOpen(true)}>
-                <Camera className="mr-1.5 size-3.5" aria-hidden="true" />
-                {avatarUrl
-                  ? t("Change photo", "Đổi ảnh đại diện")
-                  : t("Upload photo", "Tải ảnh đại diện")}
-              </Button>
-            </div>
-          )}
         </div>
       </section>
 
@@ -437,49 +431,6 @@ export function ProfileDetails({ user }: { user: User }) {
                 <KeyRound className="size-4" aria-hidden="true" />
                 {t("Change Password")}
               </Button>
-            </div>
-
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/20 p-4">
-              <div className="flex min-w-0 items-center gap-3.5">
-                <UserAvatar name={fullName || user.name} avatarUrl={avatarUrl} size="lg" />
-                <div className="min-w-0 space-y-0.5">
-                  <p className="text-sm font-semibold text-foreground">
-                    {t("Profile Photo", "Ảnh đại diện")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t(
-                      "PNG, JPG, or WebP up to 2 MB · Square crop supported",
-                      "PNG, JPG hoặc WebP tối đa 2 MB · Hỗ trợ cắt khung tròn & thu phóng",
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={!canUploadPhoto}
-                  onClick={() => setAvatarDialogOpen(true)}
-                >
-                  <Camera className="mr-1.5 size-3.5" aria-hidden="true" />
-                  {avatarUrl
-                    ? t("Change photo", "Đổi ảnh")
-                    : t("Upload photo", "Tải ảnh lên")}
-                </Button>
-                {avatarUrl && canUploadPhoto && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => setAvatarDialogOpen(true)}
-                  >
-                    <Trash2 className="mr-1.5 size-3.5" aria-hidden="true" />
-                    {t("Remove", "Xóa ảnh")}
-                  </Button>
-                )}
-              </div>
             </div>
 
             <form noValidate onSubmit={saveName} className="mt-5 space-y-5">

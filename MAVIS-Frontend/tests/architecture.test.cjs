@@ -1824,7 +1824,7 @@ test("profile renders real account data, compact statistics and a modal password
     "password fields remain unmounted until the modal opens",
   );
   assert.equal((html.match(/type="password"/g) || []).length, 0);
-  assert.ok(html.includes("2+"));
+  assert.ok(html.includes(">2</dd>"));
   assert.ok(html.includes("Account statistics"));
   for (const removed of [
     "Appearance preferences",
@@ -1860,15 +1860,15 @@ test("profile statistics distinguish loading, unavailable, partial and real empt
         user: { id: "fixture", name: "Real User", role: "student", email: null },
       }),
     );
-  const services = (html) => /Services indexed<\/dt><dd[^>]*>([^<]*)<\/dd>/.exec(html)?.[1];
-  assert.equal(services(render()), "Not available");
+  const projectsStat = (html) => /Projects<\/dt><dd[^>]*>([^<]*)<\/dd>/.exec(html)?.[1];
+  assert.equal(projectsStat(render()), "1");
   query = { isPending: false, isError: false, data: [] };
-  assert.equal(services(render()), "0");
+  assert.equal(projectsStat(render()), "0");
   query = { isPending: true, isError: false, data: undefined };
-  assert.equal(services(render()), "Loading…");
+  assert.equal(projectsStat(render()), "Loading…");
   query = { isPending: false, isError: true, data: undefined };
   const failed = render();
-  assert.equal(services(failed), "Unavailable");
+  assert.equal(projectsStat(failed), "Unavailable");
   assert.ok(failed.includes("Some account statistics could not be loaded."));
   assert.ok(failed.includes("Retry"));
 });
