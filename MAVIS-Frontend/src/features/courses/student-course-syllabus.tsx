@@ -50,6 +50,7 @@ import {
   resolveLabStepForItem,
   resolveModuleFlowKind,
 } from "./module-steps";
+import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
 import { CurriculumLibrary } from "./curriculum";
 import type { Response } from "@/lib/api/contracts";
 
@@ -344,6 +345,17 @@ export function StudentCourseSyllabus({
           linkedAssignment.labMode === "THEORY_QUIZ_STUDIO"
         : item.type === "RUNTIME_LAB";
       const targetStep = resolveLabStepForItem(item, itemRequiresRuntime);
+      if (targetStep === 2 && itemRequiresRuntime) {
+        router.push(
+          buildStudioLiveHref({
+            workspaceId,
+            assignmentId: item.assignmentId,
+            mode: "student",
+            returnTo: `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}&step=3#lab-submit`,
+          }),
+        );
+        return;
+      }
       router.push(
         `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}&step=${targetStep}`,
       );

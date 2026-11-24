@@ -835,7 +835,17 @@ export function LabWorkspace() {
   );
   const flowItemHref = (item: OutlineItemData): string => {
     if (item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
-      return labHref(resolveLabStepForItem(item, requiresRuntime));
+      const resolvedStep = resolveLabStepForItem(item, requiresRuntime);
+      if (resolvedStep === 2 && requiresRuntime && !preview) {
+        return buildStudioLiveHref({
+          workspaceId,
+          assignmentId: item.assignmentId,
+          mode: "student",
+          returnTo: `${labHref(3)}#lab-submit`,
+          sessionId: verifiedStudioSession?.id || undefined,
+        });
+      }
+      return labHref(resolvedStep);
     }
     return `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(item.id)}`;
   };
@@ -1378,6 +1388,7 @@ function StepContent({
   studentContextLoading?: boolean | undefined;
 }) {
   const { t, locale } = useLocale();
+  const router = useRouter();
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [inlineC3Service, setInlineC3Service] = useState<string | undefined>(undefined);
@@ -1443,7 +1454,24 @@ function StepContent({
   const hasBeforeAfterEvidence = confirmedRuntimeActions.some(
     (action) => Boolean(action.result?.metricsBefore) && Boolean(action.result?.metricsAfter),
   );
-  const runtimeEvidenceHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`;
+  const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}#lab-submit`;
+  const standaloneStudioHref = buildStudioLiveHref({
+    workspaceId,
+    assignmentId: labId,
+    mode: "student",
+    returnTo: submitHref,
+    sessionId: activeStudioSessionId || undefined,
+  });
+  const runtimeEvidenceHref =
+    requiresRuntime && !preview
+      ? standaloneStudioHref
+      : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`;
+  const shouldAutoOpenStudio =
+    step === 2 && requiresRuntime && runtimeReady && !preview && client.mode === "backend";
+  useEffect(() => {
+    if (!shouldAutoOpenStudio) return;
+    router.replace(standaloneStudioHref);
+  }, [router, shouldAutoOpenStudio, standaloneStudioHref]);
 
   const resolvedModelProjectId =
     referenceArchitecture?.projectId ??
@@ -1470,7 +1498,6 @@ function StepContent({
     return synthesizeFallbackMermaid(activeModel, inlineC4View);
   }, [activeModel, inlineC4View, referenceArchitecture?.diagrams]);
 
-  const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}#lab-submit`;
   const hasSubmittedLab = Boolean(studentContext?.latestSubmission?.id);
   const jumpToSubmissionBox = () => {
     const submissionBox = document.getElementById("lab-submit");
@@ -1479,13 +1506,6 @@ function StepContent({
     submissionBox.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
     window.history.replaceState(null, "", submitHref);
   };
-  const standaloneStudioHref = buildStudioLiveHref({
-    workspaceId,
-    assignmentId: labId,
-    mode: "student",
-    returnTo: `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2`,
-    sessionId: activeStudioSessionId || undefined,
-  });
   const next = step < 3 ? ((step + 1) as 2 | 3) : undefined;
   const nextStep = step === 1 && !requiresRuntime ? 3 : next;
   const prevStep: 1 | 2 = step === 3 && !requiresRuntime ? 1 : ((step - 1) as 1 | 2);
@@ -2483,72 +2503,33 @@ function StepContent({
                     </p>
                   ) : (
                     <div className="space-y-4">
-                      <div className="grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:grid-cols-3">
-                        <div className="rounded-lg bg-background/80 px-3 py-2">
-                          <span className="font-semibold">
-                            2.1 {t("Start Studio Session", "Khởi tạo Phiên Studio")}
-                          </span>
-                          <p className="mt-0.5 text-muted-foreground">
-                            {t("Launch live topology canvas", "Mở topology dịch vụ tương tác")}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-background/80 px-3 py-2">
-                          <span className="font-semibold">
-                            2.2 {t("Operate & Finish Studio", "Thực hành & Hoàn tất Studio")}
-                          </span>
-                          <p className="mt-0.5 text-muted-foreground">
-                            {t(
-                              "Seal runtime observation receipt",
-                              "Ghi nhận thao tác và biên nhận",
-                            )}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-background/80 px-3 py-2">
-                          <span className="font-semibold">
-                            2.3 {t("Capture runtime evidence", "Lưu minh chứng thực hành")}
-                          </span>
-                          <p className="mt-0.5 text-muted-foreground">
-                            {t(
-                              "Continue to Summary & Submit after finishing Studio",
-                              "Sang Tổng hợp & Nộp bài sau khi hoàn tất Studio",
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-slate-800/80 bg-[#070b12] p-5 text-slate-100 sm:flex-row sm:items-center">
+                      <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center">
                         <div className="space-y-1.5">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold text-white">
-                              {t(
-                                "Interactive Studio Live Workspace",
-                                "Không gian Thực hành Studio Live",
-                              )}
+                            <span className="text-sm font-semibold text-foreground">
+                              {shouldAutoOpenStudio
+                                ? t("Opening MAVIS Studio Live…", "Đang chuyển vào MAVIS Studio Live…")
+                                : t("Interactive Studio Live", "Thực hành MAVIS Studio Live")}
                             </span>
                             {liveStudioVerified ? (
                               <Badge variant="success">
-                                {t(
-                                  "Verified Studio Receipt Ready",
-                                  "Đã có Biên nhận Studio xác minh",
-                                )}
+                                {t("Studio completed", "Đã hoàn thành Studio")}
                               </Badge>
                             ) : (
                               <Badge variant="warning">
-                                {t(
-                                  "Action & Finish Studio Required",
-                                  "Cần thao tác & Hoàn tất Studio",
-                                )}
+                                {t("Ready to launch", "Sẵn sàng thực hành")}
                               </Badge>
                             )}
                             {activeStudioSessionId && (
-                              <code className="rounded bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300">
+                              <code className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                                 {activeStudioSessionId.slice(0, 10)}
                               </code>
                             )}
                           </div>
-                          <p className="text-xs text-slate-400">
+                          <p className="text-xs text-muted-foreground">
                             {t(
-                              "Open the full-screen Studio Live to inspect live containers, run Start/Stop/Scale actions, and click Finish Studio to seal your receipt before submitting below.",
-                              "Mở màn hình Studio Live toàn màn hình để thao tác container thật, chạy Start/Stop/Scale và nhấn Kết thúc Studio để đóng gói biên nhận trước khi nộp bài bên dưới.",
+                              "Open Studio Live to interact with the running services and finish your lab activity before submitting.",
+                              "Mở MAVIS Studio Live để thao tác trực tiếp trên hệ thống và hoàn tất thực hành trước khi sang bước Nộp bài.",
                             )}
                           </p>
                         </div>
@@ -2687,7 +2668,9 @@ function StepContent({
               <Link
                 href={
                   moduleNextNav?.href ??
-                  `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`
+                  (step === 1 && requiresRuntime && !preview
+                    ? standaloneStudioHref
+                    : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`)
                 }
               >
                 <span className="truncate">

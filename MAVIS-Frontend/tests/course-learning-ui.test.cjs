@@ -160,7 +160,7 @@ test("guided Lab launches standalone full-screen Runtime Studio without external
   assert.ok(standalone.includes("<LiveStudioWorkbench"));
   assert.ok(standalone.includes("useStartLabStudioSession("));
   assert.ok(!standalone.includes("useBootstrapLabStudio("));
-  assert.ok(standalone.includes("step=2"));
+  assert.ok(!standalone.includes("step=2"));
   assert.ok(standalone.includes("step=3#lab-submit"));
   assert.ok(standalone.includes("Runtime access required"));
   assert.ok(!standalone.includes("Quiz Gate Required"));
@@ -2390,4 +2390,18 @@ test("Commit #04: single-row bottom lesson nav removes clutter note and deduplic
   assert.match(syllabus, /flex items-center justify-between gap-4 border-t pt-4/);
   assert.doesNotMatch(runner, /Go to next lesson|Sang bài tiếp theo/);
   assert.match(courseQuiz, /showNextCta = false/);
+});
+
+test("Commit #05: Studio Live links route directly to standalone studio-live with step=3 returnTo and skip 2.1/2.2/2.3 intermediate box", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const screens = read("src/features/courses/screens.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+
+  assert.match(syllabus, /if \(targetStep === 2 && itemRequiresRuntime\)[\s\S]*buildStudioLiveHref\(/);
+  assert.match(screens, /resolvedStep === 2 && requiresRuntime && !preview[\s\S]*buildStudioLiveHref\(/);
+  assert.match(screens, /shouldAutoOpenStudio[\s\S]*router\.replace\(standaloneStudioHref\)/);
+  assert.doesNotMatch(screens, /2\.1 \{t\("Start Studio Session"/);
+  assert.doesNotMatch(screens, /2\.2 \{t\("Operate & Finish Studio"/);
+  assert.doesNotMatch(screens, /2\.3 \{t\("Capture runtime evidence"/);
+  assert.match(standalone, /step=3#lab-submit/);
 });

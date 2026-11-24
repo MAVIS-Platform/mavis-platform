@@ -160,7 +160,7 @@ function StandaloneStudioContent() {
       ? `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&tab=studio`
       : "/workspaces"
     : workspaceId && assignmentId
-      ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=2`
+      ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=3#lab-submit`
       : "/courses";
   const returnHref = safeRelativeHref(params?.get("returnTo") ?? null, defaultReturnTo);
   const publishHref =
