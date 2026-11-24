@@ -481,9 +481,12 @@ function createNodeLabelSprite(
   const badgeW = Math.max(26 * dpr, Math.ceil(measureCtx.measureText(badge).width) + 12 * dpr);
 
   const padX = 10 * dpr;
-  const dotSize = 14 * dpr;
+  const role = resolveVisualArchetype(node);
+  const roleLabel = role === "DATABASE" ? "DB" : role;
+  const chipW = Math.ceil(measureCtx.measureText(roleLabel).width) + 12 * dpr;
+  const chipH = 18 * dpr;
   const gap = 8 * dpr;
-  const pillW = padX + dotSize + gap + textW + gap + badgeW + padX;
+  const pillW = padX + chipW + gap + textW + gap + badgeW + padX;
   const pillH = 30 * dpr;
   const shadowPad = 8 * dpr;
 
@@ -519,23 +522,23 @@ function createNodeLabelSprite(
   ctx.strokeStyle = node.palette.pillStroke;
   ctx.stroke();
 
-  // Left role chip
   const chipX = x + padX;
-  const chipY = y + (pillH - dotSize) / 2;
-  drawRoundedRect(ctx, chipX, chipY, dotSize, dotSize, styleId === "blueprint" ? 3 * dpr : dotSize / 2);
+  const chipY = y + (pillH - chipH) / 2;
+  drawRoundedRect(ctx, chipX, chipY, chipW, chipH, 4 * dpr);
   ctx.fillStyle = node.palette.pillChipBg;
   ctx.fill();
-  ctx.beginPath();
-  ctx.arc(chipX + dotSize / 2, chipY + dotSize / 2, 3.2 * dpr, 0, Math.PI * 2);
-  ctx.fillStyle = node.palette.pillIconColor;
-  ctx.fill();
+  ctx.font = badgeFont;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = node.palette.pillTextFill;
+  ctx.fillText(roleLabel, chipX + chipW / 2, y + pillH / 2);
 
   // Label text
   ctx.font = font;
   ctx.fillStyle = node.palette.pillTextFill;
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  ctx.fillText(text, chipX + dotSize + gap, y + pillH / 2 + 0.5 * dpr);
+  ctx.fillText(text, chipX + chipW + gap, y + pillH / 2 + 0.5 * dpr);
 
   // Right replica count chip
   const countX = x + pillW - padX - badgeW;
@@ -678,7 +681,7 @@ function createRoundedSlabGeo(
 
 /**
  * High-DPI engineering top nameplate texture rendered flush onto container/gateway top faces.
- * Encodes UML 2.5 stereotype («gateway», «service», «database», «broker»), crisp technical
+ * Shows Studio role labels («gateway», «service», «database», «broker»), crisp technical
  * schematic glyph, and real Docker RAM/lifecycle readout — zero decorative polygons.
  */
 function createTopPlateTexture(
@@ -732,7 +735,7 @@ function createTopPlateTexture(
     ctx.stroke();
   }
 
-  // Top-left UML stereotype («gateway» / «service» / «worker» / «database» / «broker»)
+  // Top-left Studio role label («gateway» / «service» / «worker» / «database» / «broker»)
   const visualArchetype = resolveVisualArchetype(node);
   const stereotype =
     node.stereotype ??
@@ -1405,30 +1408,6 @@ function buildServiceRig(
   rail.userData = { serviceId: node.id };
   sculptureGroup.add(rail);
 
-  const attachGlowOrb = (pos: [number, number, number], orbRadius: number, haloScale: number) => {
-    const orb = new T.Mesh(new T.SphereGeometry(orbRadius, 14, 14), coreMat);
-    orb.position.set(pos[0], pos[1], pos[2]);
-    orb.userData = { serviceId: node.id };
-    sculptureGroup.add(orb);
-    if (sharedTex && !node.isStopped) {
-      const glowSprite = new T.Sprite(
-        new T.SpriteMaterial({
-          map: sharedTex.softGlow,
-          color: new T.Color(coreHex),
-          transparent: true,
-          opacity: isDark ? 0.85 : 0.55,
-          blending: T.AdditiveBlending,
-          depthWrite: false,
-        }),
-      );
-      glowSprite.position.set(pos[0], pos[1], pos[2]);
-      glowSprite.scale.set(haloScale, haloScale, 1);
-      glowSprite.userData = { serviceId: node.id };
-      sculptureGroup.add(glowSprite);
-    }
-    return orb;
-  };
-
   let topY = 0.72;
   const topTex = createTopPlateTexture(T, node, styleId, maxAnisotropy);
   const topPlateMat = new T.MeshBasicMaterial({
@@ -1438,109 +1417,23 @@ function buildServiceRig(
   });
 
   if (visualArchetype === "GATEWAY") {
-    // ── SCULPTED OCTAGONAL INGRESS PORTAL & ORBITING GYRO-SPIRE ──────────────────────
-    const baseCollarH = node.isStopped ? 0.1 : 0.125;
+    // Open frame signals ingress without claiming an actual port or traffic direction.
+    const uprightH = 0.44;
+    for (const side of [-1, 1]) {
+      addOutlinedMesh(
+        T, sculptureGroup, createRoundedSlabGeo(T, 0.14, uprightH, 0.34),
+        metalMat, edgeMat, [side * 0.35, plinthH, -0.04], node.id,
+      );
+    }
     addOutlinedMesh(
-      T,
-      sculptureGroup,
-      new T.CylinderGeometry(0.36, 0.42, baseCollarH, 8),
-      chassisMat,
-      edgeMat,
-      [0, plinthH + baseCollarH / 2, 0],
-      node.id,
+      T, sculptureGroup, createRoundedSlabGeo(T, 0.84, 0.095, 0.34),
+      chassisMat, edgeMat, [0, plinthH + uprightH, -0.04], node.id,
     );
-    const collarGlow = new T.Mesh(new T.TorusGeometry(0.365, 0.015, 10, 32), accentMat);
-    collarGlow.rotation.x = Math.PI / 2;
-    collarGlow.position.set(0, plinthH + baseCollarH, 0);
-    collarGlow.userData = { serviceId: node.id };
-    sculptureGroup.add(collarGlow);
+    const routingMark = new T.Mesh(new T.BoxGeometry(0.44, 0.018, 0.025), accentMat);
+    routingMark.position.set(0, plinthH + uprightH + 0.047, 0.135);
+    routingMark.userData = { serviceId: node.id };
+    sculptureGroup.add(routingMark);
 
-    const chamberH = node.isStopped ? 0.14 : 0.34;
-    const chamberCenterY = plinthH + baseCollarH + chamberH / 2;
-
-    // Translucent crystal octagonal atrium enclosure
-    const glassDome = new T.Mesh(
-      new T.CylinderGeometry(0.30, 0.34, chamberH, 8),
-      glassMat,
-    );
-    glassDome.position.set(0, chamberCenterY, 0);
-    glassDome.userData = { serviceId: node.id };
-    glassDome.add(new T.LineSegments(new T.EdgesGeometry(glassDome.geometry, 25), edgeMat));
-    sculptureGroup.add(glassDome);
-
-    // Suspended rotating luminous crystalline octahedron routing core inside the glass atrium
-    const crystalCore = new T.Mesh(
-      new T.OctahedronGeometry(node.isStopped ? 0.09 : 0.145, 0),
-      coreMat,
-    );
-    crystalCore.position.set(0, node.isStopped ? plinthH + baseCollarH + 0.07 : chamberCenterY, 0);
-    crystalCore.userData = { serviceId: node.id };
-    sculptureGroup.add(crystalCore);
-    if (isAlive) {
-      rotors.push({ obj: crystalCore, axis: "y", speed: 1.45 * rotorSpeedScale });
-      hoverCores.push({ obj: crystalCore, baseY: chamberCenterY, amp: 0.032, speed: 2.3 });
-    }
-
-    // Twin brushed-metal uplink wing pylons flanking the crystal atrium
-    for (const side of [-1, 1] as const) {
-      const pylonGroup = new T.Group();
-      pylonGroup.position.set(side * 0.44, plinthH + 0.02, 0);
-      const pylonBody = new T.Mesh(createRoundedSlabGeo(T, 0.11, 0.46, 0.22, 0.03, 0.008), metalMat);
-      pylonBody.rotation.z = side * 0.18;
-      pylonBody.castShadow = true;
-      pylonBody.receiveShadow = true;
-      pylonBody.userData = { serviceId: node.id };
-      pylonBody.add(new T.LineSegments(new T.EdgesGeometry(pylonBody.geometry, 30), edgeMat));
-      pylonGroup.add(pylonBody);
-
-      const pylonStripe = new T.Mesh(new T.BoxGeometry(0.022, 0.34, 0.05), accentMat);
-      pylonStripe.position.set(-side * 0.04, 0.24, 0);
-      pylonStripe.rotation.z = side * 0.18;
-      pylonStripe.userData = { serviceId: node.id };
-      pylonGroup.add(pylonStripe);
-      sculptureGroup.add(pylonGroup);
-    }
-
-    // Tilted luminous gyroscopic routing halo orbiting around the crystal chamber
-    if (!node.isStopped) {
-      const gyroHolder = new T.Group();
-      gyroHolder.position.set(0, chamberCenterY + 0.03, 0);
-      gyroHolder.rotation.x = 0.42;
-      gyroHolder.rotation.z = -0.22;
-      const gyroRing = new T.Mesh(new T.TorusGeometry(0.39, 0.016, 12, 44), accentMat);
-      gyroRing.userData = { serviceId: node.id };
-      gyroHolder.add(gyroRing);
-      // Two tiny orbiting telemetry nodes locked onto the gyro ring
-      for (const a of [0, Math.PI]) {
-        const bead = new T.Mesh(new T.SphereGeometry(0.036, 10, 10), coreMat);
-        bead.position.set(Math.cos(a) * 0.39, Math.sin(a) * 0.39, 0);
-        bead.userData = { serviceId: node.id };
-        gyroHolder.add(bead);
-      }
-      sculptureGroup.add(gyroHolder);
-      if (isAlive) {
-        rotors.push({ obj: gyroHolder, axis: "y", speed: 1.15 * rotorSpeedScale });
-      }
-    }
-
-    // Crown cap + uplink antenna spire + glowing beacon orb
-    const crownY = plinthH + baseCollarH + chamberH;
-    addOutlinedMesh(
-      T,
-      sculptureGroup,
-      new T.CylinderGeometry(0.22, 0.31, 0.075, 8),
-      chassisMat,
-      edgeMat,
-      [0, crownY + 0.038, 0],
-      node.id,
-    );
-    const spire = new T.Mesh(new T.CylinderGeometry(0.014, 0.024, 0.18, 10), metalMat);
-    spire.position.set(0, crownY + 0.16, 0);
-    spire.userData = { serviceId: node.id };
-    sculptureGroup.add(spire);
-    attachGlowOrb([0, crownY + 0.26, 0], 0.048, 0.34);
-
-    // Sleek angled metallic console lectern for UML «gateway» nameplate (zero collar overlap)
     const lectern = new T.Group();
     lectern.position.set(0, plinthH + 0.145, 0.44);
     lectern.rotation.x = -Math.PI / 3.8;
@@ -1556,7 +1449,7 @@ function buildServiceRig(
     if (!node.isStopped) {
       attachFrontTelemetryBar(T, sculptureGroup, node, 0.74, plinthH * 0.56, plinthD / 2 + 0.012, isDark);
     }
-    topY = crownY + 0.31;
+    topY = plinthH + uprightH + 0.095;
   } else if (visualArchetype === "DATABASE") {
     // ── SCULPTED CRYSTALLINE DATA VAULT SILO ─────────────────────────────────────────
     const siloH = node.isStopped ? 0.22 : 0.56;
@@ -1565,7 +1458,7 @@ function buildServiceRig(
     // Continuous glowing crystalline vertical data-core inside glass sleeve
     const dataCore = new T.Mesh(
       new T.CylinderGeometry(0.2, 0.2, Math.max(0.14, siloH - 0.06), 24),
-      coreMat,
+      metalMat,
     );
     dataCore.position.set(0, siloCenterY, 0);
     dataCore.userData = { serviceId: node.id };
@@ -1733,7 +1626,7 @@ function buildServiceRig(
       hoverCores.push({ obj: intakePrism, baseY: prismBaseY, amp: 0.028, speed: 3.1 });
     }
 
-    // Crisp compact UML «worker» nameplate on front-left terrace
+    // Crisp compact «worker» nameplate on front-left terrace
     const wPlate = new T.Mesh(new T.PlaneGeometry(0.36, 0.24), topPlateMat);
     wPlate.rotation.x = -Math.PI / 2;
     wPlate.position.set(-0.28, plinthH + intakeH + 0.005, 0.15);
@@ -1748,75 +1641,25 @@ function buildServiceRig(
     bridge.userData = { serviceId: node.id };
     sculptureGroup.add(bridge);
 
-    // Right vertical crystal-glass flywheel turbine drum
-    const drumX = 0.25;
-    const drumH = node.isStopped ? 0.16 : 0.44;
-    const drumCenterY = plinthH + drumH / 2 + 0.03;
-
-    // Lower & upper brushed-metal flanged drum caps
+    // A low rectangular processing module keeps the storage silhouette exclusive to databases.
+    const processorX = 0.25;
+    const processorTop = plinthH + 0.29;
     addOutlinedMesh(
-      T,
-      sculptureGroup,
-      new T.CylinderGeometry(0.30, 0.32, 0.055, 24),
-      metalMat,
-      edgeMat,
-      [drumX, plinthH + 0.028, 0],
-      node.id,
+      T, sculptureGroup, createRoundedSlabGeo(T, 0.57, 0.29, 0.62),
+      chassisMat, edgeMat, [processorX, plinthH, 0], node.id,
     );
-    const drumGlass = new T.Mesh(new T.CylinderGeometry(0.26, 0.26, drumH, 24), glassMat);
-    drumGlass.position.set(drumX, drumCenterY, 0);
-    drumGlass.userData = { serviceId: node.id };
-    sculptureGroup.add(drumGlass);
-
-    // Central luminous energy shaft inside the glass drum
-    const shaft = new T.Mesh(
-      new T.CylinderGeometry(0.085, 0.085, Math.max(0.1, drumH - 0.04), 16),
-      coreMat,
-    );
-    shaft.position.set(drumX, drumCenterY, 0);
-    shaft.userData = { serviceId: node.id };
-    sculptureGroup.add(shaft);
-
-    // Dual counter-rotating kinetic flywheel turbine rings inside the drum
-    if (!node.isStopped) {
-      const rotorA = buildTurbineRotor(T, 0.21, metalMat, darkMetalMat, node.id);
-      rotorA.position.set(drumX, drumCenterY - 0.07, 0);
-      sculptureGroup.add(rotorA);
-      const rotorB = buildTurbineRotor(T, 0.19, accentMat, darkMetalMat, node.id);
-      rotorB.position.set(drumX, drumCenterY + 0.09, 0);
-      sculptureGroup.add(rotorB);
-      if (isAlive) {
-        rotors.push({ obj: rotorA, axis: "y", speed: 2.8 * rotorSpeedScale });
-        rotors.push({ obj: rotorB, axis: "y", speed: -2.1 * rotorSpeedScale });
-      }
+    // Parallel processing lanes distinguish the worker from a service cooling fan.
+    for (const offset of [-0.12, 0, 0.12]) {
+      addOutlinedMesh(
+        T, sculptureGroup, createRoundedSlabGeo(T, 0.055, 0.055, 0.40, 0.018),
+        metalMat, edgeMat, [processorX + offset, processorTop, 0], node.id,
+      );
     }
-
-    // 4 slender vertical chrome tie-rods around the drum perimeter
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      const rod = new T.Mesh(new T.CylinderGeometry(0.015, 0.015, drumH + 0.04, 8), darkMetalMat);
-      rod.position.set(drumX + Math.cos(a) * 0.285, drumCenterY, Math.sin(a) * 0.285);
-      rod.userData = { serviceId: node.id };
-      sculptureGroup.add(rod);
-    }
-
-    // Crown cap + top dispatch beacon
-    const drumTopY = plinthH + drumH + 0.06;
-    addOutlinedMesh(
-      T,
-      sculptureGroup,
-      new T.CylinderGeometry(0.24, 0.30, 0.06, 24),
-      chassisMat,
-      edgeMat,
-      [drumX, drumTopY, 0],
-      node.id,
-    );
-    attachGlowOrb([drumX, drumTopY + 0.075, 0], 0.046, 0.32);
 
     if (!node.isStopped) {
       attachFrontTelemetryBar(T, sculptureGroup, node, 0.84, plinthH * 0.62, plinthD / 2 + 0.012, isDark);
     }
-    topY = drumTopY + 0.14;
+    topY = Math.max(processorTop + 0.07, prismBaseY + 0.13);
   } else {
     // ── SCULPTED GLASS-ATRIUM COMPUTE REACTOR (1..3x LIVE PHYSICAL REPLICAS + SPINNING TURBINE) ──
     const podCount = node.isStopped ? 1 : Math.max(1, Math.min(3, node.replicas || 1));
@@ -1918,7 +1761,7 @@ function buildServiceRig(
       );
 
       // D. Recessed circular brushed-metal intake shroud + REAL SPINNING 6-BLADE 3D COOLING TURBINE
-      const turbineR = podCount === 1 ? 0.19 : podCount === 2 ? 0.15 : 0.11;
+      const turbineR = podCount === 1 ? 0.15 : podCount === 2 ? 0.12 : 0.09;
       const turbineX = podCount === 1 ? px - 0.24 : px;
       const turbineZ = podCount === 1 ? 0 : -0.02;
       const topSurfaceY = crownBaseY + topCapH;
@@ -2104,7 +1947,7 @@ function buildServiceRig(
       color: new T.Color(haloColor),
       side: T.DoubleSide,
       transparent: true,
-      opacity: 0.88,
+      opacity: node.isSelected || node.isDropTarget ? 0.72 : 0.36,
     });
     halo = new T.Mesh(haloGeo, haloMat);
     halo.rotation.x = -Math.PI / 2;
@@ -2392,6 +2235,22 @@ export function StudioThreeStage({
         let lastTime = performance.now();
         const scratchVec = new T.Vector3();
 
+        // Compare billboard bounds in camera space so overlap follows orbit and zoom.
+        const projected = new T.Vector3();
+        const occupied: Array<{ x: number; y: number; w: number; h: number }> = [];
+        function reserveLabel(position: THREE.Vector3, width: number, height: number) {
+          projected.copy(position).applyMatrix4(perspCam.matrixWorldInverse);
+          const depth = -projected.z;
+          if (depth <= 0) return false;
+          const x = projected.x / depth;
+          const y = projected.y / depth;
+          const w = width / (2 * depth);
+          const h = height / (2 * depth);
+          if (occupied.some(r => Math.abs(r.x - x) < r.w + w && Math.abs(r.y - y) < r.h + h)) return false;
+          occupied.push({ x, y, w, h });
+          return true;
+        }
+
         const animate = (now: number) => {
           if (cancelled) return;
           rafId = requestAnimationFrame(animate);
@@ -2472,6 +2331,37 @@ export function StudioThreeStage({
             const lp = computeNodeLabelPlacement(live.yaw, clampedPitch, live.zoom, rig.labelBaseY);
             rig.labelSprite.position.set(lp.x, lp.y, lp.z);
             rig.labelSprite.scale.set(rig.labelBaseW * lp.scale, rig.labelBaseH * lp.scale, 1);
+          }
+
+          perspCam.updateMatrixWorld();
+          occupied.length = 0;
+          for (const rig of nodeRigsRef.current) {
+            scratchVec.copy(rig.group.position);
+            scratchVec.y += rig.labelBaseY * 0.32;
+            reserveLabel(scratchVec, 0.85, 0.48);
+          }
+          for (const rig of nodeRigsRef.current) {
+            const tag = rig.labelSprite;
+            if (!tag.visible) continue;
+            for (let attempt = 0; attempt < 4; attempt++) {
+              scratchVec.copy(tag.position).add(rig.group.position);
+              if (reserveLabel(scratchVec, tag.scale.x, tag.scale.y) || attempt === 3) break;
+              tag.position.y += tag.scale.y * 0.65;
+            }
+          }
+          for (const edge of edgeRigsRef.current) {
+            const badge = edge.badgeSprite;
+            if (!badge || !edge.curve) continue;
+            badge.visible = false;
+            if (!showEdgeTagsRef.current) continue;
+            for (const fraction of [0.5, 0.32, 0.68]) {
+              edge.curve.getPoint(fraction, badge.position);
+              badge.position.y += 0.21;
+              if (reserveLabel(badge.position, badge.scale.x, badge.scale.y)) {
+                badge.visible = true;
+                break;
+              }
+            }
           }
 
           renderer.render(scene, perspCam);
