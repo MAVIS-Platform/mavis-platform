@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileQuestion, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
+import { CourseSetupFlowFrame } from "./course-setup-flow-navigation";
 
 type Question = {
   id?: string;
@@ -41,6 +43,7 @@ const EMPTY: Draft = { title: "", description: "", passPercent: 70, questions: [
 
 export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
+  const params = useSearchParams();
   const cache = useQueryClient();
   const course = useCourseAuthoring(workspaceId);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -88,7 +91,7 @@ export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
     questions: draft.questions.map((question, current) => current === index ? next : question),
   });
 
-  return <section className="space-y-5" aria-labelledby="quiz-library-title">
+  const content = <section className="space-y-5" aria-labelledby="quiz-library-title">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 id="quiz-library-title" className="text-2xl font-bold">{t("Quiz Library", "Thư viện Quiz")}</h2>
@@ -124,4 +127,10 @@ export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
       {!assets.isLoading && !assets.data?.length && <p className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">{t("No Quiz drafts yet.", "Chưa có bản nháp Quiz.")}</p>}
     </div>
   </section>;
+
+  return params.get("flow") === "first-setup" ? (
+    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="quiz">
+      {content}
+    </CourseSetupFlowFrame>
+  ) : content;
 }

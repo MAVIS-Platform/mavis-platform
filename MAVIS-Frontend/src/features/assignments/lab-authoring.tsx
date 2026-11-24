@@ -36,6 +36,7 @@ import { LabSourceSection } from "./lab-source-section";
 import { LabQuizSection } from "./lab-quiz-section";
 import { LabStudioSection } from "./lab-studio-section";
 import { LabPublishSection } from "./lab-publish-section";
+import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 
 type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
 type LabWorkspaceSection = "create" | "library" | "theory-library";
@@ -463,14 +464,23 @@ export function LabAuthoring() {
     </div>
   );
 
+  const displayedContent =
+    params?.get("flow") === "first-setup" ? (
+      <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lab">
+        {hubContent}
+      </CourseSetupFlowFrame>
+    ) : (
+      hubContent
+    );
+
   return (
     <RequestState query={workspaces} empty={!workspace}>
       {workspace ? (
         <CourseWorkspaceShell workspace={workspace} active="lab-authoring">
-          {hubContent}
+          {displayedContent}
         </CourseWorkspaceShell>
       ) : (
-        hubContent
+        displayedContent
       )}
     </RequestState>
   );

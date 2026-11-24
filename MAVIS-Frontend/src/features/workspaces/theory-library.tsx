@@ -18,6 +18,7 @@ import { useSelection } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
+import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 
 type TheoryAsset = {
   id: string;
@@ -160,7 +161,7 @@ export function TheoryLibrary() {
   };
   const editing = editorId !== null;
 
-  return (
+  const content = (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold tracking-tight">
@@ -394,4 +395,10 @@ export function TheoryLibrary() {
       )}
     </div>
   );
+
+  return params?.get("flow") === "first-setup" ? (
+    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lesson">
+      {content}
+    </CourseSetupFlowFrame>
+  ) : content;
 }

@@ -27,7 +27,7 @@ import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/course
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseContentHub } from "@/features/courses/course-content-hub";
-import { CourseFirstSetupFlow } from "@/features/courses/course-first-setup-flow";
+import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 import { QuizLibrary } from "@/features/courses/quiz-library";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -477,6 +477,8 @@ export function WorkspaceOverview() {
     authoring.data?.modules.some((module) => module.items.length > 0),
   );
   const requestedView = params.get("view");
+  const requestedFlowStep = params.get("flowStep") === "publish" ? "publish" : "arrange";
+  const inFirstSetupFlow = params.get("flow") === "first-setup";
   const activeTab =
     canManage && requestedView === "course-authoring"
       ? "authoring"
@@ -509,7 +511,7 @@ export function WorkspaceOverview() {
                       href={
                         hasLearningContent
                           ? `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=content-actions`
-                          : `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=course-flow&step=repository`
+                          : `/references?workspace=${encodeURIComponent(workspace.id)}&from=first-setup`
                       }
                     >
                       <Plus className="mr-1.5 size-4" aria-hidden="true" />
@@ -546,15 +548,12 @@ export function WorkspaceOverview() {
                 active={workspace.status === "ACTIVE"}
               />
             )}
-            {activeTab === "outline" && canManage && (!canEdit || hasLearningContent) && (
+            {activeTab === "outline" && canManage && (
               <LecturerCurriculumManager
                 workspaceId={workspace.id}
                 active={workspace.status === "ACTIVE"}
                 editable={canEdit}
               />
-            )}
-            {activeTab === "outline" && canManage && canEdit && !hasLearningContent && (
-              <CourseFirstSetupFlow workspaceId={workspace.id} />
             )}
             {activeTab === "outline" && !canManage && (
               <CourseOutline
@@ -563,19 +562,27 @@ export function WorkspaceOverview() {
                 active={workspace.status === "ACTIVE"}
               />
             )}
-            {activeTab === "authoring" && canManage && canEdit && (
-              <CourseBuilder
-                workspaceId={workspace.id}
-                workspaceName={workspace.name}
-                canCreateModules={courseAccess.canCreateModules}
-              />
-            )}
-            {activeTab === "content-actions" && canManage && canEdit && (
-              requestedView === "course-flow" ? (
-                <CourseFirstSetupFlow workspaceId={workspace.id} />
+            {activeTab === "authoring" && canManage && canEdit &&
+              (inFirstSetupFlow ? (
+                <CourseSetupFlowFrame
+                  workspaceId={workspace.id}
+                  currentStep={requestedFlowStep}
+                >
+                  <CourseBuilder
+                    workspaceId={workspace.id}
+                    workspaceName={workspace.name}
+                    canCreateModules={courseAccess.canCreateModules}
+                  />
+                </CourseSetupFlowFrame>
               ) : (
-                <CourseContentHub workspaceId={workspace.id} />
-              )
+                <CourseBuilder
+                  workspaceId={workspace.id}
+                  workspaceName={workspace.name}
+                  canCreateModules={courseAccess.canCreateModules}
+                />
+              ))}
+            {activeTab === "content-actions" && canManage && canEdit && (
+              <CourseContentHub workspaceId={workspace.id} />
             )}
             {activeTab === "quiz-library" && canManage && canEdit && (
               <QuizLibrary workspaceId={workspace.id} />

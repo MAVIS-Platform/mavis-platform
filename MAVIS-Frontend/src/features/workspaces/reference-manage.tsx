@@ -8,6 +8,10 @@ import { AssignmentSourcePicker } from "@/features/assignments/source-picker";
 import { Button } from "@/components/ui/button";
 import { usePermission } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import {
+  CourseSetupFlowFrame,
+  courseSetupStepHref,
+} from "@/features/courses/course-setup-flow-navigation";
 
 export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const allowed = usePermission("workspace:manage");
@@ -29,7 +33,7 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
 
   if (!allowed) return null;
 
-  return (
+  const content = (
     <section className="space-y-5">
       <button
         type="button"
@@ -101,10 +105,11 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                       "Repository đã được nhập và phân tích thành công.",
                     ),
                   );
-                  const step = firstSetup ? "lesson" : "repository";
                   redirectTimer.current = setTimeout(() => {
                     router.push(
-                      `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-flow&step=${step}`,
+                      firstSetup
+                        ? courseSetupStepHref(workspaceId, "lesson")
+                        : `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=content-actions`,
                     );
                   }, 900);
                 }}
@@ -137,4 +142,10 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
       ) : null}
     </section>
   );
+
+  return firstSetup ? (
+    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="repository">
+      {content}
+    </CourseSetupFlowFrame>
+  ) : content;
 }
