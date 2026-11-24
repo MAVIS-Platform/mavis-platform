@@ -370,7 +370,7 @@ test("Project Trái Cây C2 Container renders 4 .NET 8 services, Postgres/Redis/
   });
   assert.ok(selection.document);
   const doc = selection.document;
-  assert.equal(doc.layoutJson.nodes.length, 12);
+  assert.equal(doc.layoutJson.nodes.length, 13);
   assert.equal(doc.layoutJson.edges.length, 14);
 
   const xml = await generateDrawio(doc);
