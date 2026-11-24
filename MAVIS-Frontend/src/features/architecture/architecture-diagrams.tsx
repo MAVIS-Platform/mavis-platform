@@ -509,6 +509,20 @@ export function ArchitectureDiagrams({
               xml={xml}
               selectedId={selectedId}
               onSelect={resolveCanvasSelect}
+              onDoubleClickNode={
+                kind === "CONTAINER"
+                  ? (rawId) => {
+                      const candidateId = rawId.replace(/^(?:diagram|projection|c4):/, "");
+                      const targetService = containers.find(
+                        (node) => node.id === candidateId && node.count > 0,
+                      );
+                      if (!targetService) return;
+                      updateService(targetService.id);
+                      setKind("COMPONENT");
+                      onKindChange?.("COMPONENT", targetService.id);
+                    }
+                  : undefined
+              }
             />
           ) : <DrawioEditor
             key={`${model.id}:${key}`}

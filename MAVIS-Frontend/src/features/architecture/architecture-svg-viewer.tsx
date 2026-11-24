@@ -782,10 +782,12 @@ export function ArchitectureSvgViewer({
   xml,
   selectedId,
   onSelect,
+  onDoubleClickNode,
 }: {
   xml: string;
   selectedId?: string | null | undefined;
   onSelect?: ((id: string) => void) | undefined;
+  onDoubleClickNode?: ((id: string) => void) | undefined;
 }) {
   const localeCtx = useLocale();
   const t = localeCtx.t;
@@ -1266,6 +1268,14 @@ export function ArchitectureSvgViewer({
                     filter={`url(#${shadowId})`}
                     onClick={
                       onSelect && selectTarget ? () => onSelect(selectTarget) : undefined
+                    }
+                    onDoubleClick={
+                      onDoubleClickNode && selectTarget
+                        ? (event) => {
+                            event.stopPropagation();
+                            onDoubleClickNode(selectTarget);
+                          }
+                        : undefined
                     }
                     className={onSelect && selectTarget ? "cursor-pointer" : undefined}
                   >
