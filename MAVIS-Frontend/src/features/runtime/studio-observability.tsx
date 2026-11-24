@@ -2010,7 +2010,7 @@ export function StudioObservability({
                 <div className="flex items-center gap-1">
                   {cameraFormOpen && (
                     <span
-                      className={`font-mono text-[10px] whitespace-nowrap ${isLight ? "text-slate-500" : "text-slate-400"}`}
+                      className={`font-mono text-[10px] whitespace-nowrap ${styleCfg.subtleTextClass}`}
                     >
                       {Math.round(((((camera.yaw * 180) / Math.PI) % 360) + 360) % 360)}°·
                       {Math.round((clampedPitch * 180) / Math.PI)}°
@@ -2025,11 +2025,7 @@ export function StudioObservability({
                         : t("Expand 3D controls", "Mở điều khiển 3D")
                     }
                     onClick={() => setCameraFormOpen((open) => !open)}
-                    className={`rounded p-0.5 transition ${
-                      isLight
-                        ? "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                    }`}
+                    className={`p-0.5 transition ${styleCfg.railIdleClass}`}
                   >
                     {cameraFormOpen ? (
                       <ChevronDown className="size-3" aria-hidden="true" />
@@ -2042,7 +2038,13 @@ export function StudioObservability({
               {cameraFormOpen && (
                 <div
                   className={`space-y-1.5 border-t px-2 py-1.5 ${
-                    isLight ? "border-slate-200/80" : "border-slate-700/70"
+                    studioStyle === "pop"
+                      ? "border-slate-900"
+                      : studioStyle === "blueprint"
+                        ? "border-blue-300/90"
+                        : isLight
+                          ? "border-sky-200/80"
+                          : "border-slate-700/70"
                   }`}
                 >
                   <div className="grid grid-cols-3 gap-1">
@@ -2066,14 +2068,8 @@ export function StudioObservability({
                             setZoom(1);
                             setCamera({ yaw: presetYaw, pitch: presetPitch });
                           }}
-                          className={`whitespace-nowrap rounded-md px-1 py-1 text-[10px] font-semibold transition ${
-                            active
-                              ? isLight
-                                ? "bg-slate-900 text-white"
-                                : "bg-slate-100 text-slate-950"
-                              : isLight
-                                ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-                                : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
+                          className={`whitespace-nowrap border px-1 py-1 text-[10px] font-semibold transition ${styleCfg.controlRadiusClass} ${
+                            active ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
                           }`}
                         >
                           {t(labelEn, labelVi)}
@@ -2087,11 +2083,7 @@ export function StudioObservability({
                       title={t("Rotate left", "Xoay trái")}
                       aria-label={t("Rotate left", "Xoay trái")}
                       onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.26 }))}
-                      className={`inline-flex h-7 items-center justify-center rounded-md transition ${
-                        isLight
-                          ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-                          : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
-                      }`}
+                      className={`inline-flex h-7 items-center justify-center border transition ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
                     >
                       <RotateCcw className="size-3.5" aria-hidden="true" />
                     </button>
@@ -2100,11 +2092,7 @@ export function StudioObservability({
                       title={t("Rotate right", "Xoay phải")}
                       aria-label={t("Rotate right", "Xoay phải")}
                       onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.26 }))}
-                      className={`inline-flex h-7 items-center justify-center rounded-md transition ${
-                        isLight
-                          ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-                          : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
-                      }`}
+                      className={`inline-flex h-7 items-center justify-center border transition ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
                     >
                       <RotateCw className="size-3.5" aria-hidden="true" />
                     </button>
@@ -2118,11 +2106,7 @@ export function StudioObservability({
                           pitch: Math.min(PITCH_MAX, value.pitch + 0.14),
                         }))
                       }
-                      className={`inline-flex h-7 items-center justify-center rounded-md transition ${
-                        isLight
-                          ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-                          : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
-                      }`}
+                      className={`inline-flex h-7 items-center justify-center border transition ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
                     >
                       <ArrowUp className="size-3.5" aria-hidden="true" />
                     </button>
@@ -2136,11 +2120,7 @@ export function StudioObservability({
                           pitch: Math.max(PITCH_MIN, value.pitch - 0.14),
                         }))
                       }
-                      className={`inline-flex h-7 items-center justify-center rounded-md transition ${
-                        isLight
-                          ? "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-                          : "border border-slate-700/80 bg-slate-900/70 text-slate-200 hover:bg-slate-800 hover:text-white"
-                      }`}
+                      className={`inline-flex h-7 items-center justify-center border transition ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
                     >
                       <ArrowDown className="size-3.5" aria-hidden="true" />
                     </button>
@@ -2163,21 +2143,19 @@ export function StudioObservability({
                   if (mode === "2D") setWebglReady(false);
                   setView(mode);
                 }}
-                className={`rounded-full px-2 py-0.5 font-mono text-xs font-semibold transition ${
+                className={`px-2 py-0.5 font-mono text-xs font-semibold transition ${
+                  studioStyle === "blueprint" ? "rounded-sm" : "rounded-full"
+                } ${
                   view === mode
-                    ? isLight
-                      ? "bg-slate-900 text-white shadow-xs"
-                      : "bg-slate-100 text-slate-950 shadow-xs"
-                    : isLight
-                      ? "text-slate-500 hover:text-slate-900"
-                      : "text-slate-400 hover:text-slate-200"
+                    ? `border ${styleCfg.controlActiveClass}`
+                    : styleCfg.tabIdleClass
                 }`}
               >
                 {mode}
               </button>
             ))}
             <span
-              className={`mx-0.5 h-4 w-px ${isLight ? "bg-slate-200" : "bg-slate-700"}`}
+              className={`mx-0.5 h-4 w-px ${styleCfg.dividerClass}`}
               aria-hidden="true"
             />
             <button
@@ -2188,9 +2166,7 @@ export function StudioObservability({
                 setCustomOffsets({});
                 setPinnedPositions({});
               }}
-              className={`rounded-full p-1 transition ${
-                isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
-              }`}
+              className={`p-1 transition ${styleCfg.railIdleClass}`}
             >
               <LayoutGrid className="size-3.5" aria-hidden="true" />
             </button>
@@ -2203,9 +2179,7 @@ export function StudioObservability({
                 setZoom(1);
                 setCamera(DEFAULT_3D_CAMERA);
               }}
-              className={`rounded-full p-1 transition ${
-                isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
-              }`}
+              className={`p-1 transition ${styleCfg.railIdleClass}`}
             >
               <Maximize2 className="size-3.5" aria-hidden="true" />
             </button>

@@ -37,6 +37,25 @@ export type StudioStyleConfig = {
   drawerClass: string;
   missionCardClass: string;
   missionAccentClass: string;
+  /** Unified inner UI control tokens (synchronized with active theme, single calm accent — no rainbow clutter) */
+  panelHeaderClass: string;
+  subSurfaceClass: string;
+  tabTrackClass: string;
+  tabActiveClass: string;
+  tabIdleClass: string;
+  controlActiveClass: string;
+  controlActiveMutedClass: string;
+  controlIdleClass: string;
+  inputClass: string;
+  topControlClass: string;
+  railActiveClass: string;
+  railIdleClass: string;
+  railBadgeClass: string;
+  drawerTabBarClass: string;
+  subtleTextClass: string;
+  dividerClass: string;
+  controlRadiusClass: string;
+  checkboxAccentClass: string;
 };
 
 export const STUDIO_STYLE_LIST: readonly StudioStyleId[] = [
@@ -87,6 +106,27 @@ export const STUDIO_STYLES: Record<StudioStyleId, StudioStyleConfig> = {
     missionCardClass:
       "rounded-2xl border border-sky-200/90 bg-white/96 text-slate-900 backdrop-blur-md shadow-[0_14px_34px_-10px_rgba(15,23,42,0.14)]",
     missionAccentClass: "bg-gradient-to-r from-sky-500 via-blue-600 to-emerald-500",
+    panelHeaderClass: "border-sky-200/80 bg-sky-50/55 text-slate-900",
+    subSurfaceClass: "rounded-md border border-sky-200/80 bg-sky-50/45 text-slate-900",
+    tabTrackClass: "rounded-md border border-sky-200/85 bg-sky-50/80",
+    tabActiveClass: "rounded-sm bg-white text-sky-900 shadow-xs ring-1 ring-sky-200/90",
+    tabIdleClass: "rounded-sm text-slate-600 hover:bg-white/75 hover:text-slate-900",
+    controlActiveClass: "border-sky-600 bg-sky-600 text-white shadow-xs",
+    controlActiveMutedClass: "text-sky-100",
+    controlIdleClass:
+      "border-sky-200/90 bg-white text-slate-800 hover:border-sky-400 hover:bg-sky-50/50 hover:text-slate-950",
+    inputClass:
+      "rounded-md border border-sky-200/90 bg-white text-slate-900 focus-visible:border-sky-500 focus-visible:ring-sky-500/30",
+    topControlClass:
+      "rounded-md border border-sky-200/90 bg-white/95 text-slate-800 hover:border-sky-300 hover:bg-sky-50/70",
+    railActiveClass: "rounded-md bg-sky-600 text-white shadow-xs",
+    railIdleClass: "rounded-md text-slate-600 hover:bg-sky-50 hover:text-sky-900",
+    railBadgeClass: "bg-sky-600 text-white ring-2 ring-white",
+    drawerTabBarClass: "border-sky-200/80 bg-sky-50/55",
+    subtleTextClass: "text-slate-500",
+    dividerClass: "bg-sky-200/85",
+    controlRadiusClass: "rounded-md",
+    checkboxAccentClass: "accent-sky-600",
   },
   blueprint: {
     id: "blueprint",
@@ -118,16 +158,37 @@ export const STUDIO_STYLES: Record<StudioStyleId, StudioStyleConfig> = {
     topBarClass:
       "border-blue-300/90 bg-[#F7FBFF]/96 text-slate-900 shadow-2xs",
     floatingCardClass:
-      "rounded-lg border border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-[0_10px_28px_-10px_rgba(30,64,175,0.18)]",
+      "rounded-sm border border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-[0_10px_28px_-10px_rgba(30,64,175,0.18)]",
     floatingPillClass:
-      "rounded-lg border border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-[0_6px_18px_-6px_rgba(30,64,175,0.18)]",
+      "rounded-sm border border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-[0_6px_18px_-6px_rgba(30,64,175,0.18)]",
     railClass:
-      "rounded-lg border border-blue-300 bg-[#FAFDFE] text-blue-900 shadow-[0_8px_22px_-8px_rgba(30,64,175,0.18)]",
+      "rounded-sm border border-blue-300 bg-[#FAFDFE] text-blue-900 shadow-[0_8px_22px_-8px_rgba(30,64,175,0.18)]",
     drawerClass:
       "border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-[0_-10px_30px_-10px_rgba(30,64,175,0.16)]",
     missionCardClass:
-      "rounded-lg border border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-[0_10px_26px_-10px_rgba(30,64,175,0.18)]",
-    missionAccentClass: "bg-blue-600",
+      "rounded-sm border border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-[0_10px_26px_-10px_rgba(30,64,175,0.18)]",
+    missionAccentClass: "bg-blue-700",
+    panelHeaderClass: "border-blue-300/90 bg-[#EAF3FF]/90 text-blue-950",
+    subSurfaceClass: "rounded-sm border border-blue-300/85 bg-[#EFF6FF]/85 text-slate-900",
+    tabTrackClass: "rounded-sm border border-blue-300 bg-[#E6F0FF]",
+    tabActiveClass: "rounded-[2px] bg-blue-700 text-white",
+    tabIdleClass: "rounded-[2px] text-blue-900/75 hover:bg-blue-100/80 hover:text-blue-950",
+    controlActiveClass: "border-blue-700 bg-blue-700 text-white",
+    controlActiveMutedClass: "text-blue-100",
+    controlIdleClass:
+      "border-blue-300/90 bg-white text-slate-900 hover:border-blue-600 hover:bg-[#EDF5FF]",
+    inputClass:
+      "rounded-sm border border-blue-300 bg-white text-slate-900 focus-visible:border-blue-700 focus-visible:ring-blue-600/30",
+    topControlClass:
+      "rounded-sm border border-blue-300 bg-white text-blue-950 hover:border-blue-500 hover:bg-[#EDF5FF]",
+    railActiveClass: "rounded-sm bg-blue-700 text-white",
+    railIdleClass: "rounded-sm text-blue-900/75 hover:bg-blue-100/80 hover:text-blue-950",
+    railBadgeClass: "bg-blue-700 text-white ring-2 ring-[#FAFDFE]",
+    drawerTabBarClass: "border-blue-300/90 bg-[#EDF5FF]",
+    subtleTextClass: "text-blue-900/65",
+    dividerClass: "bg-blue-300",
+    controlRadiusClass: "rounded-sm",
+    checkboxAccentClass: "accent-blue-700",
   },
   pop: {
     id: "pop",
@@ -166,8 +227,32 @@ export const STUDIO_STYLES: Record<StudioStyleId, StudioStyleConfig> = {
     drawerClass:
       "border-t-2 border-slate-900 bg-white text-slate-950 shadow-[0_-6px_0_rgba(15,23,42,0.08)]",
     missionCardClass:
-      "rounded-2xl border-2 border-slate-900 bg-[#FFFBEB] text-slate-950 shadow-[4px_4px_0_#0F172A]",
+      "rounded-2xl border-2 border-slate-900 bg-[#FFFDF7] text-slate-950 shadow-[4px_4px_0_#0F172A]",
     missionAccentClass: "bg-slate-900",
+    panelHeaderClass: "border-b-2 border-slate-900 bg-[#FFFDF7] text-slate-950",
+    subSurfaceClass: "rounded-md border-2 border-slate-900 bg-[#FFFDF7] text-slate-950",
+    tabTrackClass: "rounded-md border-2 border-slate-900 bg-[#F8FAFC]",
+    tabActiveClass:
+      "rounded-sm border border-slate-900 bg-[#DBEAFE] text-slate-950 shadow-[2px_2px_0_#0F172A]",
+    tabIdleClass: "rounded-sm text-slate-700 hover:bg-slate-100 hover:text-slate-950",
+    controlActiveClass:
+      "border-2 border-slate-900 bg-[#DBEAFE] text-slate-950 shadow-[2px_2px_0_#0F172A]",
+    controlActiveMutedClass: "text-slate-700",
+    controlIdleClass:
+      "border-2 border-slate-900/80 bg-white text-slate-900 hover:border-slate-900 hover:bg-[#F8FAFC] hover:shadow-[2px_2px_0_#0F172A]",
+    inputClass:
+      "rounded-md border-2 border-slate-900 bg-white text-slate-950 focus-visible:ring-slate-900/30",
+    topControlClass:
+      "rounded-md border-2 border-slate-900 bg-white text-slate-950 hover:bg-[#F8FAFC] hover:shadow-[2px_2px_0_#0F172A]",
+    railActiveClass:
+      "rounded-md border-2 border-slate-900 bg-[#DBEAFE] text-slate-950 shadow-[2px_2px_0_#0F172A]",
+    railIdleClass: "rounded-md text-slate-800 hover:bg-slate-100 hover:text-slate-950",
+    railBadgeClass: "border border-slate-900 bg-[#DBEAFE] text-slate-950 shadow-[1px_1px_0_#0F172A]",
+    drawerTabBarClass: "border-b-2 border-slate-900 bg-[#FFFDF7]",
+    subtleTextClass: "text-slate-600",
+    dividerClass: "bg-slate-900/25",
+    controlRadiusClass: "rounded-md",
+    checkboxAccentClass: "accent-slate-900",
   },
   control: {
     id: "control",
@@ -209,6 +294,28 @@ export const STUDIO_STYLES: Record<StudioStyleId, StudioStyleConfig> = {
     missionCardClass:
       "rounded-2xl border border-slate-700/85 bg-[#0C1324]/95 text-slate-100 backdrop-blur-md shadow-2xl",
     missionAccentClass: "bg-gradient-to-r from-sky-400 via-indigo-400 to-emerald-400",
+    panelHeaderClass: "border-slate-800 bg-[#0A101E]/90 text-slate-100",
+    subSurfaceClass: "rounded-md border border-slate-800 bg-slate-900/70 text-slate-100",
+    tabTrackClass: "rounded-md border border-slate-800 bg-slate-950/90",
+    tabActiveClass: "rounded-sm bg-sky-500/20 text-sky-100 ring-1 ring-sky-400/45",
+    tabIdleClass: "rounded-sm text-slate-400 hover:bg-slate-800/70 hover:text-slate-100",
+    controlActiveClass:
+      "border-sky-400/70 bg-sky-500/20 text-sky-100 shadow-[0_0_0_1px_rgba(56,189,248,0.2)]",
+    controlActiveMutedClass: "text-sky-200/80",
+    controlIdleClass:
+      "border-slate-700/85 bg-slate-900/75 text-slate-200 hover:border-sky-400/55 hover:bg-slate-800/85 hover:text-white",
+    inputClass:
+      "rounded-md border border-slate-700 bg-slate-950/90 text-slate-100 focus-visible:border-sky-400 focus-visible:ring-sky-400/30",
+    topControlClass:
+      "rounded-md border border-slate-700/90 bg-slate-900/90 text-slate-200 hover:border-sky-400/45 hover:bg-slate-800",
+    railActiveClass: "rounded-md bg-sky-500/25 text-sky-200 ring-1 ring-sky-400/50",
+    railIdleClass: "rounded-md text-slate-300 hover:bg-slate-800 hover:text-white",
+    railBadgeClass: "bg-sky-400 text-slate-950 ring-2 ring-[#0C1324]",
+    drawerTabBarClass: "border-slate-800 bg-[#0B1120]",
+    subtleTextClass: "text-slate-400",
+    dividerClass: "bg-slate-700",
+    controlRadiusClass: "rounded-md",
+    checkboxAccentClass: "accent-sky-400",
   },
 };
 

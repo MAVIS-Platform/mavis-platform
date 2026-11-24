@@ -12,6 +12,7 @@ import {
 import type { Response } from "@/lib/api/contracts";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { TraceWaterfallPanel } from "./studio-red-charts";
+import { STUDIO_STYLES, type StudioStyleId } from "./studio-styles";
 
 type Studio = Response<"studioState">;
 
@@ -367,6 +368,7 @@ type LiveTerminalConsoleProps = {
   selectedTraceId?: string | null | undefined;
   onSelectTrace?: ((traceId: string | null) => void) | undefined;
   isLight?: boolean | undefined;
+  studioStyle?: StudioStyleId | undefined;
 };
 
 export function LiveTerminalConsole({
@@ -381,8 +383,12 @@ export function LiveTerminalConsole({
   selectedTraceId,
   onSelectTrace,
   isLight = false,
+  studioStyle,
 }: LiveTerminalConsoleProps) {
   const { t } = useLocale();
+  const resolvedStyle: StudioStyleId = studioStyle ?? (isLight ? "daylight" : "control");
+  const styleCfg = STUDIO_STYLES[resolvedStyle];
+  const isLightTheme = !styleCfg.isDark;
   const [view, setView] = useState<"console" | "traces">("console");
   const [localTraceId, setLocalTraceId] = useState<string | null>(null);
   const activeTraceId = selectedTraceId !== undefined ? selectedTraceId : localTraceId;
@@ -656,43 +662,39 @@ export function LiveTerminalConsole({
   return (
     <section
       aria-label="Project runtime terminal"
-      className={`flex h-full min-h-[168px] flex-col overflow-hidden rounded-xl border ${
-        isLight
-          ? "border-slate-200 bg-white text-slate-900"
-          : "border-slate-800 bg-[#05080f] text-slate-100"
+      className={`flex h-full min-h-[168px] flex-col overflow-hidden border ${styleCfg.controlRadiusClass} ${
+        resolvedStyle === "pop"
+          ? "border-2 border-slate-900 bg-white text-slate-950"
+          : resolvedStyle === "blueprint"
+            ? "border-blue-300 bg-[#FAFDFE] text-slate-900"
+            : isLightTheme
+              ? "border-sky-200/85 bg-white text-slate-900"
+              : "border-slate-800 bg-[#05080f] text-slate-100"
       }`}
     >
       {/* Terminal Toolbar */}
       <div
-        className={`flex flex-wrap items-center gap-1.5 border-b px-2.5 py-1.5 text-[11px] ${
-          isLight
-            ? "border-slate-200 bg-slate-50/90 text-slate-700"
-            : "border-slate-800 bg-[#0a0f1a] text-slate-200"
+        className={`flex flex-wrap items-center gap-1.5 border-b px-2.5 py-1.5 text-[11px] ${styleCfg.drawerTabBarClass} ${
+          isLightTheme ? "text-slate-700" : "text-slate-200"
         }`}
       >
         <div
           role="tablist"
           aria-label="Console view mode"
-          className={`inline-flex shrink-0 items-center rounded-lg border p-0.5 ${
-            isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-[#05080f]"
-          }`}
+          className={`inline-flex shrink-0 items-center p-0.5 ${styleCfg.tabTrackClass}`}
         >
           <button
             type="button"
             role="tab"
             aria-selected={view === "console"}
             onClick={() => setView("console")}
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[11px] font-semibold transition ${
+            className={`inline-flex items-center gap-1 border px-2 py-0.5 font-mono text-[11px] font-semibold transition ${
               view === "console"
-                ? isLight
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-800 text-slate-100"
-                : isLight
-                  ? "text-slate-600 hover:text-slate-900"
-                  : "text-slate-400 hover:text-slate-200"
+                ? `${styleCfg.controlRadiusClass} ${styleCfg.controlActiveClass}`
+                : `border-transparent ${styleCfg.tabIdleClass}`
             }`}
           >
-            <Terminal aria-hidden="true" className={`size-3 ${isLight && view !== "console" ? "text-emerald-600" : "text-emerald-400"}`} />
+            <Terminal aria-hidden="true" className="size-3 opacity-85" />
             Logs ({visibleBaseEntries.length})
           </button>
           <button
@@ -700,17 +702,13 @@ export function LiveTerminalConsole({
             role="tab"
             aria-selected={view === "traces"}
             onClick={() => setView("traces")}
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[11px] font-semibold transition ${
+            className={`inline-flex items-center gap-1 border px-2 py-0.5 font-mono text-[11px] font-semibold transition ${
               view === "traces"
-                ? isLight
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-800 text-slate-100"
-                : isLight
-                  ? "text-slate-600 hover:text-slate-900"
-                  : "text-slate-400 hover:text-slate-200"
+                ? `${styleCfg.controlRadiusClass} ${styleCfg.controlActiveClass}`
+                : `border-transparent ${styleCfg.tabIdleClass}`
             }`}
           >
-            <Activity aria-hidden="true" className={`size-3 ${isLight && view !== "traces" ? "text-sky-600" : "text-sky-400"}`} />
+            <Activity aria-hidden="true" className="size-3 opacity-85" />
             Traces ({spans.length})
           </button>
         </div>
@@ -719,14 +717,10 @@ export function LiveTerminalConsole({
         <Select value={activeServiceFilter} onValueChange={setServiceFilter}>
           <SelectTrigger
             aria-label="Filter by service"
-            className={`h-7 w-auto min-w-[138px] max-w-[220px] shrink-0 gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium transition focus:ring-1 focus:ring-offset-0 ${
+            className={`h-7 w-auto min-w-[138px] max-w-[220px] shrink-0 gap-1.5 px-2.5 py-0.5 font-mono text-[11px] font-medium transition focus:ring-1 focus:ring-offset-0 ${styleCfg.controlRadiusClass} ${
               activeServiceFilter !== "ALL"
-                ? isLight
-                  ? "border-sky-400 bg-sky-50 text-sky-900"
-                  : "border-sky-500/50 bg-sky-500/15 text-sky-100"
-                : isLight
-                  ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                  : "border-slate-800 bg-[#05080f] text-slate-200 hover:border-slate-700"
+                ? `border ${styleCfg.controlActiveClass}`
+                : styleCfg.inputClass
             }`}
           >
             <SelectValue />
@@ -734,7 +728,7 @@ export function LiveTerminalConsole({
           <SelectContent
             align="start"
             className={
-              isLight
+              isLightTheme
                 ? "border-slate-200 bg-white text-slate-900 shadow-lg"
                 : "border-slate-700 bg-[#0c1322] text-slate-100 shadow-xl"
             }
@@ -742,7 +736,7 @@ export function LiveTerminalConsole({
             <SelectItem
               value="ALL"
               className={`min-h-8 py-1.5 font-mono text-xs ${
-                isLight
+                isLightTheme
                   ? "focus:bg-slate-100 focus:text-slate-900"
                   : "focus:bg-slate-800 focus:text-slate-100"
               }`}
@@ -750,13 +744,13 @@ export function LiveTerminalConsole({
               {t("All services", "Tất cả service")} ({serviceList.length})
             </SelectItem>
             {serviceList.map((svc) => {
-              const color = serviceColorFor(svc, serviceList, isLight);
+              const color = serviceColorFor(svc, serviceList, isLightTheme);
               return (
                 <SelectItem
                   key={svc}
                   value={svc}
                   className={`min-h-8 py-1.5 font-mono text-xs ${
-                    isLight
+                    isLightTheme
                       ? "focus:bg-slate-100 focus:text-slate-900"
                       : "focus:bg-slate-800 focus:text-slate-100"
                   }`}
@@ -774,9 +768,7 @@ export function LiveTerminalConsole({
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           {view === "console" && (
             <div
-              className={`inline-flex items-center rounded-md border p-0.5 font-mono text-[10.5px] ${
-                isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-[#05080f]"
-              }`}
+              className={`inline-flex items-center p-0.5 font-mono text-[10.5px] ${styleCfg.tabTrackClass}`}
             >
               {(
                 [
@@ -790,18 +782,18 @@ export function LiveTerminalConsole({
                   key={lvl}
                   type="button"
                   onClick={() => setLevelFilter(lvl)}
-                  className={`rounded px-1.5 py-0.5 font-medium transition ${
+                  className={`border px-1.5 py-0.5 font-medium transition ${
                     levelFilter === lvl
                       ? lvl === "ERROR"
-                        ? isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/20 text-rose-200"
+                        ? isLightTheme
+                          ? "rounded-sm border-rose-300 bg-rose-100 text-rose-700"
+                          : "rounded-sm border-rose-500/40 bg-rose-500/20 text-rose-200"
                         : lvl === "WARN"
-                          ? isLight ? "bg-amber-100 text-amber-800" : "bg-amber-500/20 text-amber-200"
-                          : lvl === "ACT"
-                            ? isLight ? "bg-indigo-100 text-indigo-800" : "bg-indigo-500/20 text-indigo-200"
-                            : isLight ? "bg-slate-900 text-white" : "bg-slate-800 text-slate-100"
-                      : isLight
-                        ? "text-slate-600 hover:text-slate-900"
-                        : "text-slate-400 hover:text-slate-200"
+                          ? isLightTheme
+                            ? "rounded-sm border-amber-300 bg-amber-100 text-amber-800"
+                            : "rounded-sm border-amber-500/40 bg-amber-500/20 text-amber-200"
+                          : `${styleCfg.controlRadiusClass} ${styleCfg.controlActiveClass}`
+                      : `border-transparent ${styleCfg.tabIdleClass}`
                   }`}
                 >
                   {label}
@@ -816,14 +808,8 @@ export function LiveTerminalConsole({
               data-testid="studio-logs-noise-toggle"
               aria-pressed={!hideNoise}
               onClick={() => setHideNoise((prev) => !prev)}
-              className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition ${
-                !hideNoise
-                  ? isLight
-                    ? "border-sky-300 bg-sky-50 text-sky-800"
-                    : "border-sky-500/40 bg-sky-500/15 text-sky-200"
-                  : isLight
-                    ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                    : "border-slate-800 bg-[#05080f] text-slate-400 hover:border-slate-700 hover:text-slate-200"
+              className={`inline-flex h-6 items-center gap-1 border px-1.5 font-mono text-[10.5px] transition ${styleCfg.controlRadiusClass} ${
+                !hideNoise ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
               }`}
               title={
                 hideNoise
@@ -841,7 +827,7 @@ export function LiveTerminalConsole({
           <label className="relative flex items-center">
             <Search
               aria-hidden="true"
-              className="pointer-events-none absolute left-2 size-3 text-slate-400"
+              className={`pointer-events-none absolute left-2 size-3 ${styleCfg.subtleTextClass}`}
             />
             <input
               type="search"
@@ -849,11 +835,7 @@ export function LiveTerminalConsole({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("grep…", "lọc log…")}
-              className={`h-6 w-28 rounded-md border pl-6 pr-2 font-mono text-[11px] focus:border-sky-500 focus:outline-none sm:w-36 ${
-                isLight
-                  ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"
-                  : "border-slate-800 bg-[#05080f] text-slate-200 placeholder:text-slate-500"
-              }`}
+              className={`h-6 w-28 pl-6 pr-2 font-mono text-[11px] focus:outline-none sm:w-36 ${styleCfg.inputClass}`}
             />
           </label>
 
@@ -862,14 +844,8 @@ export function LiveTerminalConsole({
               type="button"
               aria-pressed={wrap}
               onClick={() => setWrap((prev) => !prev)}
-              className={`h-6 rounded-md border px-1.5 font-mono text-[10.5px] transition ${
-                wrap
-                  ? isLight
-                    ? "border-slate-300 bg-slate-100 text-slate-900"
-                    : "border-slate-700 bg-slate-800/80 text-slate-200"
-                  : isLight
-                    ? "border-slate-200 bg-white text-slate-600 hover:text-slate-900"
-                    : "border-slate-800 bg-[#05080f] text-slate-400 hover:text-slate-200"
+              className={`h-6 border px-1.5 font-mono text-[10.5px] transition ${styleCfg.controlRadiusClass} ${
+                wrap ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
               }`}
               title={t("Toggle line wrap", "Bật/tắt xuống dòng")}
             >
@@ -883,11 +859,7 @@ export function LiveTerminalConsole({
               view === "console" ? filteredEntries.length === 0 : filteredSpans.length === 0
             }
             onClick={() => void copyVisibleOutput()}
-            className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition disabled:opacity-40 ${
-              isLight
-                ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                : "border-slate-800 bg-[#05080f] text-slate-300 hover:border-slate-700 hover:text-slate-100"
-            }`}
+            className={`inline-flex h-6 items-center gap-1 border px-1.5 font-mono text-[10.5px] transition disabled:opacity-40 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
             title={t("Copy visible terminal output", "Sao chép log đang hiển thị")}
           >
             {copied ? (

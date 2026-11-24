@@ -1653,3 +1653,64 @@ test("Studio Live serializes visual saves (zero 409), supports text/plain 3D DnD
     assert.ok(fs.existsSync(p) && fs.statSync(p).size > 5000, `Missing or empty homepage asset: ${file}`);
   }
 });
+
+test("Studio Live UI panels, rail, drawer, terminal, and 3D controls synchronize cohesively across all 4 Studio themes", () => {
+  const { STUDIO_STYLES, STUDIO_STYLE_LIST } = require("../src/features/runtime/studio-styles.ts");
+  assert.equal(STUDIO_STYLE_LIST.length, 4);
+
+  const requiredTokens = [
+    "panelHeaderClass",
+    "subSurfaceClass",
+    "tabTrackClass",
+    "tabActiveClass",
+    "tabIdleClass",
+    "controlActiveClass",
+    "controlActiveMutedClass",
+    "controlIdleClass",
+    "inputClass",
+    "topControlClass",
+    "railActiveClass",
+    "railIdleClass",
+    "railBadgeClass",
+    "drawerTabBarClass",
+    "subtleTextClass",
+    "dividerClass",
+    "controlRadiusClass",
+    "checkboxAccentClass",
+  ];
+  for (const styleId of STUDIO_STYLE_LIST) {
+    const cfg = STUDIO_STYLES[styleId];
+    for (const token of requiredTokens) {
+      assert.ok(typeof cfg[token] === "string" && cfg[token].trim().length > 0, `Missing ${token} on ${styleId}`);
+    }
+  }
+  // All 4 themes produce distinct inner control signatures (no stuck monochrome clone across themes)
+  assert.equal(new Set(STUDIO_STYLE_LIST.map((id) => STUDIO_STYLES[id].controlActiveClass)).size, 4);
+  assert.equal(new Set(STUDIO_STYLE_LIST.map((id) => STUDIO_STYLES[id].railActiveClass)).size, 4);
+  assert.equal(new Set(STUDIO_STYLE_LIST.map((id) => STUDIO_STYLES[id].drawerTabBarClass)).size, 4);
+  assert.equal(STUDIO_STYLES.blueprint.controlRadiusClass, "rounded-sm");
+  assert.ok(STUDIO_STYLES.pop.controlActiveClass.includes("border-slate-900"));
+  assert.ok(STUDIO_STYLES.pop.controlActiveClass.includes("shadow-[2px_2px_0_#0F172A]"));
+
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const terminalSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-terminal-console.tsx"),
+    "utf8",
+  );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+
+  assert.ok(workbenchSrc.includes("styleCfg.panelHeaderClass"));
+  assert.ok(workbenchSrc.includes("styleCfg.subSurfaceClass"));
+  assert.ok(workbenchSrc.includes("styleCfg.controlActiveClass"));
+  assert.ok(workbenchSrc.includes("styleCfg.railActiveClass"));
+  assert.ok(workbenchSrc.includes("styleCfg.drawerTabBarClass"));
+  assert.ok(workbenchSrc.includes("studioStyle={studioStyle}"));
+  assert.ok(terminalSrc.includes("STUDIO_STYLES[resolvedStyle]"));
+  assert.ok(obsSrc.includes("styleCfg.controlActiveClass"));
+});
