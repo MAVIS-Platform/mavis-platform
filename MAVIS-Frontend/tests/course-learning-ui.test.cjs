@@ -2376,3 +2376,18 @@ test("Quiz Module owns the full Quiz Builder and Lab Creation no longer owns Qui
   assert.match(builder, /quiz-assets\/generate/);
   assert.match(backendPath, /quiz-assets\\\/generate/);
 });
+
+test("Commit #04: single-row bottom lesson nav removes clutter note and deduplicates Quiz Next buttons", () => {
+  const screens = read("src/features/courses/screens.tsx");
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const runner = read("src/features/courses/chapter-quiz-runner.tsx");
+  const courseQuiz = read("src/features/courses/course-quiz.tsx");
+
+  assert.doesNotMatch(screens, /Progress is saved directly in this Lab workspace\.|Tiến độ được lưu trực tiếp trong không gian Lab này\.|Clock3/);
+  assert.match(screens, /flex items-center justify-between gap-4 rounded-xl border bg-card/);
+  assert.match(screens, /max-w-\[46%\]/);
+  assert.doesNotMatch(syllabus, /onNextLesson=/);
+  assert.match(syllabus, /flex items-center justify-between gap-4 border-t pt-4/);
+  assert.doesNotMatch(runner, /Go to next lesson|Sang bài tiếp theo/);
+  assert.match(courseQuiz, /showNextCta = false/);
+});

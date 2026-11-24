@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock3,
   Code2,
   List,
   Network,
@@ -2645,37 +2644,45 @@ function StepContent({
         </div>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 shadow-xs sm:p-4">
-        <Button asChild size="sm" variant="outline">
+      <div className="mt-6 flex items-center justify-between gap-4 rounded-xl border bg-card p-3 shadow-xs sm:p-4">
+        <Button asChild size="sm" variant="outline" className="min-w-0 max-w-[46%]">
           <Link href={modulePrevNav.href}>
             <ChevronLeft className="mr-1 h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="max-w-[240px] truncate">
+            <span className="truncate">
               {t(`Prev: ${modulePrevNav.label}`, `Trước: ${modulePrevNav.label}`)}
             </span>
           </Link>
         </Button>
-        <span className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Clock3 className="size-3.5" />{" "}
-          {t(
-            "Progress is saved directly in this Lab workspace.",
-            "Tiến độ được lưu trực tiếp trong không gian Lab này.",
-          )}
-        </span>
         {step === 3 ? (
           !hasSubmittedLab && !preview ? (
-            <Button size="sm" variant="outline" onClick={jumpToSubmissionBox}>
-              {t("Jump to Submission Box", "Đi tới Khung Nộp bài")} <ArrowRight />
+            <Button
+              size="sm"
+              variant="outline"
+              className="min-w-0 max-w-[46%] shrink-0"
+              onClick={jumpToSubmissionBox}
+            >
+              <span className="truncate">
+                {t("Jump to Submission Box", "Đi tới Khung Nộp bài")}
+              </span>
+              <ArrowRight className="ml-1 h-4 w-4 shrink-0" />
             </Button>
           ) : (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="min-w-0 max-w-[46%]">
               <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-                {t("Next: Course Syllabus", "Tiếp theo: Lộ trình khóa học")}{" "}
+                <span className="truncate">
+                  {t("Next: Course Syllabus", "Tiếp theo: Lộ trình khóa học")}
+                </span>
                 <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
               </Link>
             </Button>
           )
         ) : (
-          <Button asChild={nextAvailable} size="sm" disabled={!nextAvailable}>
+          <Button
+            asChild={nextAvailable}
+            size="sm"
+            className="min-w-0 max-w-[46%]"
+            disabled={!nextAvailable}
+          >
             {nextAvailable ? (
               <Link
                 href={
@@ -2683,7 +2690,7 @@ function StepContent({
                   `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`
                 }
               >
-                <span className="max-w-[260px] truncate">
+                <span className="truncate">
                   {t(
                     `Next: ${moduleNextNav?.label ?? (step === 1 && requiresRuntime ? "MAVIS Studio" : "Summary & Submit")}`,
                     `Tiếp theo: ${moduleNextNav?.label ?? (step === 1 && requiresRuntime ? "MAVIS Studio" : "Tổng hợp & Nộp bài")}`,
@@ -2692,7 +2699,9 @@ function StepContent({
                 <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
               </Link>
             ) : (
-              <span>{t("Finish Studio to continue", "Hoàn tất Studio để tiếp tục")}</span>
+              <span className="truncate">
+                {t("Finish Studio to continue", "Hoàn tất Studio để tiếp tục")}
+              </span>
             )}
           </Button>
         )}

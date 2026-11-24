@@ -402,7 +402,7 @@ export function ChapterQuizRunner({
         questions={displayedQuestions}
         answers={currentAttempt.answers}
         questionResults={currentAttempt.questionResults}
-        nextLessonTitle={nextLessonTitle}
+        nextLessonTitle={undefined}
         onToggleFeedback={() => setShowFeedback((current) => !current)}
         onRetry={() => {
           setShowFeedback(false);
@@ -415,7 +415,6 @@ export function ChapterQuizRunner({
             durationSeconds,
           });
         }}
-        onNextLesson={onNextLesson}
       />
     );
   }
@@ -721,7 +720,6 @@ function QuizResult({
   nextLessonTitle,
   onToggleFeedback,
   onRetry,
-  onNextLesson,
 }: {
   title: string;
   scorePercent: number;
@@ -761,11 +759,6 @@ function QuizResult({
           {t("Your result is ready.", "Kết quả của bạn đã sẵn sàng.")}
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
-          {onNextLesson && (
-            <Button type="button" onClick={onNextLesson}>
-              {t("Go to next lesson", "Sang bài tiếp theo")}
-            </Button>
-          )}
           <Button type="button" variant="outline" onClick={onRetry}>
             <RotateCcw className="mr-2 size-4" aria-hidden="true" />
             {t("Try again", "Làm lại")}

@@ -57,12 +57,14 @@ export function CourseQuiz({
   canSubmit,
   runtimeStepHref,
   submissionHref,
+  showNextCta = false,
 }: {
   workspaceId: string;
   labId: string;
   canSubmit: boolean;
   runtimeStepHref?: string;
   submissionHref?: string | undefined;
+  showNextCta?: boolean;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
@@ -95,6 +97,7 @@ export function CourseQuiz({
           canSubmit={canSubmit}
           runtimeStepHref={resolvedRuntimeHref}
           submissionHref={submissionHref}
+          showNextCta={showNextCta}
           refreshReadiness={() => {
             void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, labId] });
             void cache.invalidateQueries({
@@ -121,6 +124,7 @@ function AttemptForm({
   canSubmit,
   runtimeStepHref,
   submissionHref,
+  showNextCta = false,
   refreshReadiness,
 }: {
   quiz: Quiz;
@@ -130,6 +134,7 @@ function AttemptForm({
   runtimeStepHref: string;
   refreshReadiness: () => void;
   submissionHref?: string | undefined;
+  showNextCta?: boolean;
 }) {
   const { t } = useLocale();
   const session = useSession();
@@ -304,20 +309,22 @@ function AttemptForm({
                 {t("Quiz passed · Next step unlocked!", "Đã đạt Quiz · Đã mở khóa bước tiếp theo!")}
               </p>
             </div>
-            <Button
-              asChild
-              className="w-full bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
-            >
-              <Link href={submissionHref ?? runtimeStepHref}>
-                {submissionHref
-                  ? t("Proceed to Lab Submission", "Chuyển sang Nộp bài Lab")
-                  : t(
-                      "Proceed to Runtime Studio & Submit",
-                      "Tiếp tục Runtime Studio & Nộp bài",
-                    )}
-                <ArrowRight />
-              </Link>
-            </Button>
+            {showNextCta && (
+              <Button
+                asChild
+                className="w-full bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
+              >
+                <Link href={submissionHref ?? runtimeStepHref}>
+                  {submissionHref
+                    ? t("Proceed to Lab Submission", "Chuyển sang Nộp bài Lab")
+                    : t(
+                        "Proceed to Runtime Studio & Submit",
+                        "Tiếp tục Runtime Studio & Nộp bài",
+                      )}
+                  <ArrowRight />
+                </Link>
+              </Button>
+            )}
           </div>
           {submit.data?.questionResults && submit.data.questionResults.length > 0 && (
             <details className="rounded-xl border border-emerald-200 bg-white/90 p-3 text-foreground dark:bg-background/90">

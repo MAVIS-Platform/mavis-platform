@@ -1062,10 +1062,6 @@ export function StudentCourseSyllabus({
                       canManage={false}
                       workspaceId={workspaceId}
                       assignmentId={activeItem.assignmentId}
-                      nextLessonTitle={nextEntry?.item.title}
-                      onNextLesson={
-                        nextEntry ? () => selectCurriculumItem(nextEntry.item) : undefined
-                      }
                     />
                   )}
 
@@ -1085,16 +1081,17 @@ export function StudentCourseSyllabus({
                       />
                     )}
 
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+                  <div className="flex items-center justify-between gap-4 border-t pt-4">
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
+                      className="min-w-0 max-w-[46%]"
                       disabled={!prevEntry}
                       onClick={() => prevEntry && selectCurriculumItem(prevEntry.item)}
                     >
                       <ChevronLeft className="mr-1 h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span className="max-w-[240px] truncate">
+                      <span className="truncate">
                         {prevEntry
                           ? t(`Prev: ${prevEntry.item.title}`, `Trước: ${prevEntry.item.title}`)
                           : t("Prev", "Trước")}
@@ -1104,10 +1101,11 @@ export function StudentCourseSyllabus({
                       <Button
                         type="button"
                         size="sm"
+                        className="min-w-0 max-w-[46%]"
                         disabled={!nextEntry || isItemLocked(nextEntry.item)}
                         onClick={() => selectCurriculumItem(nextEntry.item)}
                       >
-                        <span className="max-w-[260px] truncate">
+                        <span className="truncate">
                           {isItemLocked(nextEntry.item)
                             ? t(
                                 "Locked · Pass previous Lab to unlock Quiz",
