@@ -2147,8 +2147,114 @@ function StepContent({
       {step === 3 && (
         <div
           className="space-y-4"
-          aria-label={t("Evidence review and submission", "Kiểm tra evidence và nộp bài")}
+          aria-label={t("Summary and submission", "Tổng hợp và nộp bài")}
         >
+          {!preview && labMode !== "LEGACY" && (
+            <DetailPanel
+              title={t("4-Step Module Summary", "Tổng hợp kết quả 4 Bước trước khi nộp bài")}
+            >
+              <div className="grid gap-3 text-sm md:grid-cols-2">
+                <RuntimeEvidenceStatus
+                  complete={(moduleTheoryItems?.length ?? 0) > 0}
+                  label={t("Step 1 · Module Theory", "Bước 1 · Lý thuyết Module")}
+                  detail={
+                    (moduleTheoryItems?.length ?? 0) > 0
+                      ? t(
+                          `${moduleTheoryItems?.length ?? 0} theory lesson(s) attached to this Module.`,
+                          `Gồm ${moduleTheoryItems?.length ?? 0} bài lý thuyết trong Module.`,
+                        )
+                      : t("Included in Module syllabus.", "Xem lại bài đọc trong Lộ trình khóa học.")
+                  }
+                />
+                <RuntimeEvidenceStatus
+                  complete={!hasReferenceArch || Boolean(modelId || activeModel)}
+                  label={t(
+                    "Step 2 · Static Diagrams (C1–C3 & Dependency Graph)",
+                    "Bước 2 · Khám phá Sơ đồ Tĩnh (C1–C3 & Dependency Graph)",
+                  )}
+                  detail={
+                    hasReferenceArch
+                      ? t(
+                          "Reference architecture diagrams inspected and ready.",
+                          "Sơ đồ kiến trúc tham chiếu đã sẵn sàng để đối chiếu khi viết giải trình.",
+                        )
+                      : t(
+                          "Theory-focused Module — no static diagram required.",
+                          "Module tập trung lý thuyết — không yêu cầu sơ đồ tĩnh.",
+                        )
+                  }
+                />
+                {!isTheoryOnlyLab && (
+                  <RuntimeEvidenceStatus
+                    complete={
+                      studentContext?.quiz == null ||
+                      studentContext.quiz.passed === true ||
+                      studentContext.quiz.latestStatus === "PASSED"
+                    }
+                    label={t("Step 3 · Knowledge Check", "Bước 3 · Quiz Module")}
+                    detail={
+                      studentContext?.quiz
+                        ? studentContext.quiz.passed || studentContext.quiz.latestStatus === "PASSED"
+                          ? t(
+                              `Passed (passing score ${studentContext.quiz.passPercent ?? 70}%).`,
+                              `Đã đạt bài kiểm tra (điểm đạt: ${studentContext.quiz.passPercent ?? 70}%).`,
+                            )
+                          : t(
+                              `Pass score: ${studentContext.quiz.passPercent ?? 70}%. Open Quiz in your syllabus to complete.`,
+                              `Điểm đạt: ${studentContext.quiz.passPercent ?? 70}%. Hãy làm bài Quiz trong lộ trình để mở khóa Bước 4.`,
+                            )
+                        : t("No Quiz required for this Module.", "Module này không yêu cầu Quiz.")
+                    }
+                  />
+                )}
+                {requiresRuntime && (
+                  <RuntimeEvidenceStatus
+                    complete={liveStudioVerified && (runtimeEvidence?.snapshots?.length ?? 0) > 0}
+                    label={t(
+                      "Step 4 · MAVIS Studio Live & Snapshots",
+                      "Bước 4 · Thực hành MAVIS Studio & Snapshot",
+                    )}
+                    detail={
+                      liveStudioVerified
+                        ? t(
+                            `Verified session · ${runtimeEvidence?.snapshots?.length ?? 0} snapshot(s) captured.`,
+                            `Phiên đã xác minh · đã chụp ${runtimeEvidence?.snapshots?.length ?? 0} snapshot.`,
+                          )
+                        : t(
+                            "Complete the MAVIS Studio run and capture at least one Snapshot.",
+                            "Hoàn thành chạy MAVIS Studio và chụp ít nhất 1 Snapshot.",
+                          )
+                    }
+                  />
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {hasReferenceArch && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
+                    >
+                      {t("Review Static Diagrams", "Xem lại Sơ đồ tĩnh")}
+                    </Link>
+                  </Button>
+                )}
+                {!isTheoryOnlyLab && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={moduleQuizHref}>
+                      {t("Open Quiz", "Mở bài Quiz")}
+                    </Link>
+                  </Button>
+                )}
+                {requiresRuntime && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={runtimeEvidenceHref}>
+                      {t("Open MAVIS Studio", "Mở MAVIS Studio")}
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            </DetailPanel>
+          )}
           {requiresRuntime && !liveStudioVerified && !preview ? (
             <DetailPanel title={t("Runtime evidence required", "Cần evidence Runtime Studio")}>
               <p className="text-sm leading-6 text-muted-foreground">

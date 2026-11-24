@@ -36,31 +36,48 @@ import {
   type OutlineItemData,
   type OutlineModuleData,
 } from "./java-coursera-curriculum-data";
+import {
+  expandModuleFlowItems,
+  resolveLabStepForItem,
+  resolveModuleFlowKind,
+} from "./module-steps";
 import { CurriculumLibrary } from "./curriculum";
 import type { Response } from "@/lib/api/contracts";
 
-function itemBadgeMeta(type: string, t: (en: string, vi: string) => string) {
-  switch (type) {
+function itemBadgeMeta(
+  item: Pick<OutlineItemData, "id" | "type">,
+  t: (en: string, vi: string) => string,
+) {
+  switch (resolveModuleFlowKind(item)) {
     case "THEORY":
       return {
-        label: t("Theory", "Lý thuyết"),
-        emoji: "📖",
+        label: t("Step 1 · Theory", "Bước 1 · Lý thuyết"),
         pillClass:
           "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800",
       };
+    case "STATIC_DIAGRAM":
+      return {
+        label: t("Step 2 · Static Diagrams & AI", "Bước 2 · Sơ đồ tĩnh C1–C3 & AI"),
+        pillClass:
+          "bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800",
+      };
     case "QUIZ":
       return {
-        label: t("Quiz", "Kiểm tra kiến thức"),
-        emoji: "❓",
+        label: t("Step 3 · Knowledge Check", "Bước 3 · Quiz kiểm tra"),
         pillClass:
           "bg-sky-50 text-sky-800 border-sky-200 dark:bg-teal-950/40 dark:text-sky-300 dark:border-sky-800",
       };
-    default:
+    case "STUDIO_RUNTIME":
       return {
-        label: t("MAVIS Studio Lab", "Lab MAVIS Studio"),
-        emoji: "🔬",
+        label: t("Step 4 · MAVIS Studio", "Bước 4 · Thực hành MAVIS Studio"),
         pillClass:
           "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
+      };
+    default:
+      return {
+        label: t("Summary & Submit", "Tổng hợp & Nộp bài"),
+        pillClass:
+          "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
       };
   }
 }
@@ -70,7 +87,7 @@ export function StudentCourseSyllabus({
 }: {
   workspace: Response<"workspaces">[number];
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const client = useApi();
@@ -163,36 +180,16 @@ export function StudentCourseSyllabus({
                 : undefined;
             })(),
           }));
-        const hasQuizItem = mappedItems.some((item) => item.type === "QUIZ");
         const labItem = mappedItems.find(
           (item) =>
             item.assignmentId &&
             ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type),
         );
-        const linkedAssignment = labItem?.assignmentId
-          ? assignmentsQuery.data?.find((a) => a.id === labItem.assignmentId)
-          : undefined;
-        const aiPolicy =
-          linkedAssignment?.aiPolicy && typeof linkedAssignment.aiPolicy === "object"
-            ? (linkedAssignment.aiPolicy as Record<string, unknown>)
-            : null;
-        const skipsQuiz =
-          linkedAssignment?.labMode === "THEORY_ONLY" ||
-          aiPolicy?.["skipQuiz"] === true ||
-          aiPolicy?.["labTier"] === "THEORY_ONLY";
-        if (!hasQuizItem && labItem?.assignmentId && !skipsQuiz) {
-          const insertAt = mappedItems.indexOf(labItem);
-          mappedItems.splice(Math.max(0, insertAt), 0, {
-            id: `lab-quiz:${labItem.assignmentId}`,
-            type: "QUIZ",
-            title: `Quiz · ${linkedAssignment?.title ?? labItem.title}`,
-            description: null,
-            position: labItem.position,
-            assignmentId: labItem.assignmentId,
-            required: true,
-            quizQuestions: [],
-          });
-        }
+        const expandedItems = expandModuleFlowItems(
+          mappedItems,
+          assignmentsQuery.data ?? [],
+          locale,
+        );
         return {
           id: mod.id,
           title: formatCoursePlainText(mod.title),
@@ -200,7 +197,7 @@ export function StudentCourseSyllabus({
           position: mod.position,
           prerequisiteModuleId: mod.prerequisiteModuleId ?? null,
           labTitle: formatCoursePlainText(labItem?.title ?? mod.title),
-          items: mappedItems,
+          items: expandedItems,
         };
       });
     }
@@ -212,9 +209,9 @@ export function StudentCourseSyllabus({
     }
     return buildCourseraModulesWithLabLinks(assignmentsQuery.data ?? [], labs).map((mod) => ({
       ...mod,
-      items: mod.items.filter((item) => item.type !== "ESSAY"),
+      items: expandModuleFlowItems(mod.items, assignmentsQuery.data ?? [], locale),
     }));
-  }, [publishedCourse.data?.snapshot?.modules, publishedCourse.isPending, isJavaCourseraWorkspace, assignmentsQuery.data, labs]);
+  }, [publishedCourse.data?.snapshot?.modules, publishedCourse.isPending, isJavaCourseraWorkspace, assignmentsQuery.data, labs, locale]);
 
   const flattenedItems = useMemo(
     () => syllabusModules.flatMap((mod) => mod.items.map((item) => ({ module: mod, item }))),
@@ -310,8 +307,16 @@ export function StudentCourseSyllabus({
       return;
     }
     if (item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
+      const linkedAssignment = (assignmentsQuery.data ?? []).find(
+        (candidate) => candidate.id === item.assignmentId,
+      );
+      const itemRequiresRuntime = linkedAssignment
+        ? linkedAssignment.requireRuntimeTrace === true ||
+          linkedAssignment.labMode === "THEORY_QUIZ_STUDIO"
+        : item.type === "RUNTIME_LAB";
+      const targetStep = resolveLabStepForItem(item, itemRequiresRuntime);
       router.push(
-        `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}&step=1`,
+        `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}&step=${targetStep}`,
       );
       return;
     }
@@ -413,7 +418,7 @@ export function StudentCourseSyllabus({
                       )}
                     </span>
                     <span className="mt-0.5 flex items-center gap-1 text-[10px] font-normal opacity-80">
-                      <span>{itemBadgeMeta(item.type, t).label}</span>
+                      <span>{itemBadgeMeta(item, t).label}</span>
                       {locked && (
                         <>
                           <Lock className="h-2.5 w-2.5 text-amber-600" aria-hidden="true" />
@@ -679,7 +684,7 @@ export function StudentCourseSyllabus({
                 </div>
                 <div className="mt-3 divide-y divide-border overflow-hidden rounded-xl border bg-background">
                   {courseContentModule.items.map((item) => {
-                    const badgeMeta = itemBadgeMeta(item.type, t);
+                    const badgeMeta = itemBadgeMeta(item, t);
                     const isLabItem = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(
                       item.type,
                     );
@@ -771,9 +776,9 @@ export function StudentCourseSyllabus({
                         </Badge>
                         <Badge
                           variant="outline"
-                          className={itemBadgeMeta(activeItem.type, t).pillClass}
+                          className={itemBadgeMeta(activeItem, t).pillClass}
                         >
-                          {itemBadgeMeta(activeItem.type, t).label}
+                          {itemBadgeMeta(activeItem, t).label}
                         </Badge>
                         {activeItem.estimatedMinutes && (
                           <span className="text-xs text-muted-foreground">
@@ -1119,7 +1124,7 @@ export function StudentCourseSyllabus({
                           <ul className="divide-y border-t">
                             {mod.items.map((item) => {
                               const selected = item.id === activeItem.id;
-                              const badgeMeta = itemBadgeMeta(item.type, t);
+                              const badgeMeta = itemBadgeMeta(item, t);
                               const linkedLab = item.assignmentId
                                 ? labs.find((l) => l.assignmentId === item.assignmentId)
                                 : undefined;

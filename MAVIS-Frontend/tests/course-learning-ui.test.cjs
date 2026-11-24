@@ -2282,3 +2282,49 @@ test("CourseOutline header renders course description and step-by-step learning 
   assert.ok(outline.includes("syllabusSummary"));
   assert.ok(outline.includes("published?.snapshot.description"));
 });
+
+
+test("Workflow V2 Item #01: expandModuleFlowItems enforces 4-Step Module order (Theory -> Static Diagram -> Quiz -> Studio -> Summary & Submit)", () => {
+  const {
+    expandModuleFlowItems,
+    resolveModuleFlowKind,
+    resolveLabStepForItem,
+  } = require("../src/features/courses/module-steps.ts");
+
+  const baseItems = [
+    { id: "th-1", type: "THEORY", title: "Chapter 1", position: 1 },
+    { id: "th-2", type: "THEORY", title: "Chapter 2", position: 2 },
+    { id: "quiz-1", type: "QUIZ", title: "Module 1 Quiz", position: 3, assignmentId: "lab-1" },
+    { id: "lab-1-item", type: "RUNTIME_LAB", title: "Studio Lab 1", position: 4, assignmentId: "lab-1" },
+  ];
+  const assignmentsRuntime = [
+    {
+      id: "lab-1",
+      title: "Studio Lab 1",
+      labMode: "THEORY_QUIZ_STUDIO",
+      requireRuntimeTrace: true,
+      referenceSource: { modelId: "m-1", snapshotId: "s-1" },
+    },
+  ];
+  const runtimeExpanded = expandModuleFlowItems(baseItems, assignmentsRuntime, "vi");
+  assert.deepEqual(
+    runtimeExpanded.map((i) => resolveModuleFlowKind(i)),
+    ["THEORY", "THEORY", "STATIC_DIAGRAM", "QUIZ", "STUDIO_RUNTIME", "MODULE_SUBMIT"],
+  );
+  assert.equal(resolveLabStepForItem(runtimeExpanded[2], true), 1);
+  assert.equal(resolveLabStepForItem(runtimeExpanded[4], true), 2);
+  assert.equal(resolveLabStepForItem(runtimeExpanded[5], true), 3);
+
+  const nonRuntimeExpanded = expandModuleFlowItems(
+    [
+      { id: "th-1", type: "THEORY", title: "Chapter 1", position: 1 },
+      { id: "lab-2-item", type: "STATIC_LAB", title: "Static Lab 2", position: 2, assignmentId: "lab-2" },
+    ],
+    [{ id: "lab-2", title: "Static Lab 2", labMode: "THEORY_QUIZ", requireRuntimeTrace: false }],
+    "vi",
+  );
+  assert.deepEqual(
+    nonRuntimeExpanded.map((i) => resolveModuleFlowKind(i)),
+    ["THEORY", "STATIC_DIAGRAM", "QUIZ", "MODULE_SUBMIT"],
+  );
+});
