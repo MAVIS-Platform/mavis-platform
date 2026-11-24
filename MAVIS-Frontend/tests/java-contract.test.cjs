@@ -58,6 +58,47 @@ test("backend proxy returns 401 for revoked refresh sessions and clears both coo
  for(const name of ["mavis_session","mavis_refresh"]) assert.equal(response.cookies.get(name).value,"");
 });
 
+test("mavis BFF auto-refreshes missing mavis_session with 60m Max-Age and deduplicates concurrent refreshes", async t => {
+ environment(t);
+ let refreshCalls = 0;
+ t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+  if (url.endsWith("/auth/refresh")) {
+   refreshCalls++;
+   await new Promise((resolve) => setTimeout(resolve, 25));
+   return Response.json({ code: 200, data: { token: "fresh-60m-jwt", refreshToken: "rotated-refresh" } });
+  }
+  if (url.endsWith("/auth/me") && options.headers?.get?.("Authorization") === "Bearer fresh-60m-jwt") {
+   return Response.json({ code: 200, data: { id: project, email: "gv@mavis.edu.vn", fullName: "Lecturer", role: "LECTURER" } });
+  }
+  return Response.json({ message: "unauthorized" }, { status: 401 });
+ });
+ const makeReq = () => new NextRequest("http://127.0.0.1:3000/api/mavis/session?input=%7B%7D", {
+  headers: { host: "127.0.0.1:3000", cookie: "mavis_refresh=shared-refresh-token" },
+ });
+ const makeWrite = () => new NextRequest("http://127.0.0.1:3000/api/mavis/updateProfile", {
+  method: "POST",
+  headers: {
+   host: "127.0.0.1:3000",
+   origin: "http://127.0.0.1:3000",
+   cookie: "mavis_refresh=shared-refresh-token",
+   "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ fullName: "Lecturer" }),
+ });
+ const [r1, r2, r3] = await Promise.all([
+  route.GET(makeReq(), { params: Promise.resolve({ operation: "session" }) }),
+  route.GET(makeReq(), { params: Promise.resolve({ operation: "session" }) }),
+  route.POST(makeWrite(), { params: Promise.resolve({ operation: "updateProfile" }) }),
+ ]);
+ assert.equal(refreshCalls, 1, "Concurrent requests with the same refresh token must share one /auth/refresh call");
+ assert.equal(r1.status, 200);
+ assert.equal(r2.status, 200);
+ assert.equal(r3.status, 200);
+ assert.equal(r1.cookies.get("mavis_session").value, "fresh-60m-jwt");
+ assert.match(r1.headers.get("set-cookie") ?? "", /Max-Age=3600/);
+ assert.equal(r3.cookies.get("mavis_refresh").value, "rotated-refresh");
+});
+
 test("profile response preserves actual email and strips private account fields", async t => {
  environment(t);
  t.mock.method(globalThis,"fetch",async()=>Response.json({code:200,data:{id:project,email:"learner@example.org",fullName:"Real Learner",role:"STUDENT",passwordHash:"private",token:"private-token"}}));

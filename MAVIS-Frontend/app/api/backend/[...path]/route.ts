@@ -5,10 +5,16 @@ import { githubImportRequest } from "@/lib/mainflow-api";
 import { cookies } from "next/headers";
 import { allowedBackendPath } from "@/lib/api/backend-path";
 import { ApiError } from "@/lib/errors/api-error";
+import {
+  applySessionCookies,
+  REFRESH_COOKIE_NAME,
+  refreshSessionToken,
+  SESSION_COOKIE_NAME,
+} from "@/lib/auth/session-refresh";
 
 export const runtime = "nodejs";
-const cookieName = "mavis_session";
-const refreshCookieName = "mavis_refresh";
+const cookieName = SESSION_COOKIE_NAME;
+const refreshCookieName = REFRESH_COOKIE_NAME;
 async function handler(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join("/");
   const jar = await cookies();
@@ -39,12 +45,43 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
   }
   if (path === "session" && request.method === "GET") {
     try {
-      const value = await currentSession(jar.get(cookieName)?.value, request.signal);
+      const secure = request.nextUrl.protocol === "https:";
+      let activeToken = jar.get(cookieName)?.value;
+      const refreshToken = jar.get(refreshCookieName)?.value;
+      let rotatedRefresh: string | undefined;
+      let refreshRevoked = false;
+      if (!activeToken && refreshToken) {
+        try {
+          const refreshed = await refreshSessionToken(refreshToken);
+          activeToken = refreshed.token;
+          rotatedRefresh = refreshed.refreshToken;
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) refreshRevoked = true;
+          else throw err;
+        }
+      }
+      let value = activeToken ? await currentSession(activeToken, request.signal) : { user: null };
+      if (!value.user && refreshToken && !rotatedRefresh && !refreshRevoked) {
+        try {
+          const refreshed = await refreshSessionToken(refreshToken);
+          activeToken = refreshed.token;
+          rotatedRefresh = refreshed.refreshToken;
+          value = await currentSession(activeToken, request.signal);
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) refreshRevoked = true;
+          else throw err;
+        }
+      }
       const response = NextResponse.json(
         { data: { authenticated: !!value.user } },
         { headers: { "Cache-Control": "no-store" } },
       );
-      if (!value.user) response.cookies.delete(cookieName);
+      if (!value.user) {
+        response.cookies.delete(cookieName);
+        if (refreshRevoked) response.cookies.delete(refreshCookieName);
+      } else if (rotatedRefresh && activeToken) {
+        applySessionCookies(response, activeToken, rotatedRefresh, secure);
+      }
       return response;
     } catch {
       return NextResponse.json({ message: "Session service unavailable" }, { status: 503 });
@@ -53,9 +90,18 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
   if (!allowedBackendPath(path))
     return NextResponse.json({ message: "Unsupported API path" }, { status: 404 });
   const login = path === "auth/login" && request.method === "POST";
+  const secure = request.nextUrl.protocol === "https:";
   let token = jar.get(cookieName)?.value;
-  if (!login && !token) return NextResponse.json({ message: "Please sign in" }, { status: 401 });
+  const refreshToken = jar.get(refreshCookieName)?.value;
+  if (!login && !token && !refreshToken)
+    return NextResponse.json({ message: "Please sign in" }, { status: 401 });
   try {
+    let rotatedRefresh: string | undefined;
+    if (!login && !token && refreshToken) {
+      const refreshed = await refreshSessionToken(refreshToken);
+      token = refreshed.token;
+      rotatedRefresh = refreshed.refreshToken;
+    }
     const headers = new Headers();
     for (const key of ["content-type", "idempotency-key"]) {
       const value = request.headers.get(key);
@@ -98,7 +144,6 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
     const base = process.env["MAVIS_JAVA_URL"] ?? "http://127.0.0.1:8081";
     const isSseStream = request.method === "GET" && path.endsWith("/studio/stream");
     if (isSseStream) headers.set("Accept", "text/event-stream");
-    let rotatedRefresh: string | undefined;
     let upstream = await fetch(
       `${base.replace(/\/$/, "")}/api/v1/${path}${request.nextUrl.search}`,
       {
@@ -110,12 +155,8 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
         signal: isSseStream ? request.signal : AbortSignal.timeout(120000),
       },
     );
-    if (upstream.status === 401 && !login && jar.get(refreshCookieName)?.value) {
-      const refreshed = (await javaRequest("auth/refresh", undefined, {
-        method: "POST",
-        body: JSON.stringify({ refreshToken: jar.get(refreshCookieName)!.value }),
-        signal: request.signal,
-      })) as { token: string; refreshToken: string };
+    if (upstream.status === 401 && !login && refreshToken && !rotatedRefresh) {
+      const refreshed = await refreshSessionToken(refreshToken);
       token = refreshed.token;
       rotatedRefresh = refreshed.refreshToken;
       headers.set("Authorization", `Bearer ${token}`);
@@ -138,43 +179,16 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
         },
       });
       if (rotatedRefresh && token) {
-        streamResponse.cookies.set(cookieName, token, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: request.nextUrl.protocol === "https:",
-          path: "/",
-          maxAge: 900,
-        });
-        streamResponse.cookies.set(refreshCookieName, rotatedRefresh, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: request.nextUrl.protocol === "https:",
-          path: "/",
-          maxAge: 604800,
-        });
+        applySessionCookies(streamResponse, token, rotatedRefresh, secure);
       }
       return streamResponse;
     }
     if (login && upstream.ok) {
       const result = await upstream.json();
-      const { token: jwt, refreshToken, ...user } = result.data ?? {};
+      const { token: jwt, refreshToken: issuedRefresh, ...user } = result.data ?? {};
       if (!jwt) return NextResponse.json({ message: "Invalid login response" }, { status: 502 });
       const response = NextResponse.json({ ...result, data: user });
-      response.cookies.set(cookieName, jwt, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: request.nextUrl.protocol === "https:",
-        path: "/",
-        maxAge: 900,
-      });
-      if (refreshToken)
-        response.cookies.set(refreshCookieName, refreshToken, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: request.nextUrl.protocol === "https:",
-          path: "/",
-          maxAge: 604800,
-        });
+      applySessionCookies(response, jwt, issuedRefresh, secure);
       return response;
     }
     const isAvatarAsset = request.method === "GET" && path.startsWith("auth/avatars/");
@@ -190,20 +204,7 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
       },
     });
     if (rotatedRefresh && token && upstream.status !== 401) {
-      response.cookies.set(cookieName, token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: request.nextUrl.protocol === "https:",
-        path: "/",
-        maxAge: 900,
-      });
-      response.cookies.set(refreshCookieName, rotatedRefresh, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: request.nextUrl.protocol === "https:",
-        path: "/",
-        maxAge: 604800,
-      });
+      applySessionCookies(response, token, rotatedRefresh, secure);
     }
     if (upstream.status === 401) {
       response.cookies.delete(cookieName);

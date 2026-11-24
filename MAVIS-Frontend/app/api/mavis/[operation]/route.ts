@@ -6,9 +6,15 @@ import { validateResponse } from "@/lib/api/validate-response";
 import { currentSession, signIn, executeJava } from "@/lib/api/java-operations";
 import { javaRequest } from "@/lib/api/java-client";
 import { ApiError } from "@/lib/errors/api-error";
+import {
+  applySessionCookies,
+  REFRESH_COOKIE_NAME,
+  refreshSessionToken,
+  SESSION_COOKIE_NAME,
+} from "@/lib/auth/session-refresh";
 export const dynamic = "force-dynamic";
-const cookieName = "mavis_session";
-const refreshCookieName = "mavis_refresh";
+const cookieName = SESSION_COOKIE_NAME;
+const refreshCookieName = REFRESH_COOKIE_NAME;
 async function handle(request: NextRequest, context: { params: Promise<{ operation: string }> }) {
   const { operation } = await context.params;
   const fail = (status: number) =>
@@ -30,8 +36,11 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
   )
     return fail(403);
   const token = request.cookies.get(cookieName)?.value;
+  const refreshToken = request.cookies.get(refreshCookieName)?.value;
+  const secure = request.nextUrl.protocol === "https:";
   if (
     !token &&
+    !refreshToken &&
     ![
       "session",
       "signIn",
@@ -72,44 +81,36 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
     if (operation === "session") {
       let activeToken = token;
       let rotatedRefresh: string | undefined;
-      if (!activeToken && request.cookies.get(refreshCookieName)?.value) {
-        const refreshed = (await javaRequest("auth/refresh", undefined, {
-          method: "POST",
-          body: JSON.stringify({ refreshToken: request.cookies.get(refreshCookieName)!.value }),
-          signal: request.signal,
-        })) as { token: string; refreshToken: string };
-        activeToken = refreshed.token;
-        rotatedRefresh = refreshed.refreshToken;
+      let refreshRevoked = false;
+      if (!activeToken && refreshToken) {
+        try {
+          const refreshed = await refreshSessionToken(refreshToken);
+          activeToken = refreshed.token;
+          rotatedRefresh = refreshed.refreshToken;
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) refreshRevoked = true;
+          else throw err;
+        }
       }
-      let session = await currentSession(activeToken, request.signal);
-      if (!session.user && request.cookies.get(refreshCookieName)?.value) {
-        const refreshed = (await javaRequest("auth/refresh", undefined, {
-          method: "POST",
-          body: JSON.stringify({ refreshToken: request.cookies.get(refreshCookieName)!.value }),
-          signal: request.signal,
-        })) as { token: string; refreshToken: string };
-        activeToken = refreshed.token;
-        rotatedRefresh = refreshed.refreshToken;
-        session = await currentSession(activeToken, request.signal);
+      let session = activeToken ? await currentSession(activeToken, request.signal) : { user: null };
+      if (!session.user && refreshToken && !rotatedRefresh && !refreshRevoked) {
+        try {
+          const refreshed = await refreshSessionToken(refreshToken);
+          activeToken = refreshed.token;
+          rotatedRefresh = refreshed.refreshToken;
+          session = await currentSession(activeToken, request.signal);
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) refreshRevoked = true;
+          else throw err;
+        }
       }
       const response = NextResponse.json(session, { headers: { "Cache-Control": "no-store" } });
-      if (!session.user) response.cookies.delete(cookieName);
-      if (activeToken && activeToken !== token)
-        response.cookies.set(cookieName, activeToken, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: request.nextUrl.protocol === "https:",
-          path: "/",
-          maxAge: 900,
-        });
-      if (rotatedRefresh)
-        response.cookies.set(refreshCookieName, rotatedRefresh, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: request.nextUrl.protocol === "https:",
-          path: "/",
-          maxAge: 604800,
-        });
+      if (!session.user) {
+        response.cookies.delete(cookieName);
+        if (refreshRevoked) response.cookies.delete(refreshCookieName);
+      } else if (activeToken && activeToken !== token) {
+        applySessionCookies(response, activeToken, rotatedRefresh, secure);
+      }
       return response;
     }
     const authPaths: Record<string, string> = {
@@ -136,28 +137,14 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
       const response = NextResponse.json(auth.session, {
         headers: { "Cache-Control": "no-store" },
       });
-      response.cookies.set(cookieName, auth.token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: request.nextUrl.protocol === "https:",
-        path: "/",
-        maxAge: 900,
-      });
-      if (auth.refreshToken)
-        response.cookies.set(refreshCookieName, auth.refreshToken, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: request.nextUrl.protocol === "https:",
-          path: "/",
-          maxAge: 604800,
-        });
+      applySessionCookies(response, auth.token, auth.refreshToken, secure);
       return response;
     }
     if (operation === "signOut") {
       if (token)
         await javaRequest("auth/logout", token, {
           method: "POST",
-          headers: { "X-Refresh-Token": request.cookies.get(refreshCookieName)?.value ?? "" },
+          headers: { "X-Refresh-Token": refreshToken ?? "" },
           signal: request.signal,
         });
       const response = NextResponse.json(
@@ -168,16 +155,64 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
       response.cookies.delete(refreshCookieName);
       return response;
     }
-    if (!token) return fail(401);
-    const result = await executeJava(
-      operation,
-      parsed.data as Record<string, unknown>,
-      token,
-      request.signal,
-    );
-    return NextResponse.json(validateResponse(operation, parsed.data, result), {
+    let activeToken = token;
+    let rotatedRefresh: string | undefined;
+    if (!activeToken && refreshToken) {
+      try {
+        const refreshed = await refreshSessionToken(refreshToken);
+        activeToken = refreshed.token;
+        rotatedRefresh = refreshed.refreshToken;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          const response = fail(401);
+          response.cookies.delete(cookieName);
+          response.cookies.delete(refreshCookieName);
+          return response;
+        }
+        throw err;
+      }
+    }
+    if (!activeToken) return fail(401);
+    let result: unknown;
+    try {
+      result = await executeJava(
+        operation,
+        parsed.data as Record<string, unknown>,
+        activeToken,
+        request.signal,
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401 && refreshToken && !rotatedRefresh) {
+        try {
+          const refreshed = await refreshSessionToken(refreshToken);
+          activeToken = refreshed.token;
+          rotatedRefresh = refreshed.refreshToken;
+        } catch (refreshErr) {
+          if (refreshErr instanceof ApiError && refreshErr.status === 401) {
+            const response = fail(401);
+            response.cookies.delete(cookieName);
+            response.cookies.delete(refreshCookieName);
+            return response;
+          }
+          throw refreshErr;
+        }
+        result = await executeJava(
+          operation,
+          parsed.data as Record<string, unknown>,
+          activeToken,
+          request.signal,
+        );
+      } else {
+        throw err;
+      }
+    }
+    const response = NextResponse.json(validateResponse(operation, parsed.data, result), {
       headers: { "Cache-Control": "no-store" },
     });
+    if (rotatedRefresh && activeToken) {
+      applySessionCookies(response, activeToken, rotatedRefresh, secure);
+    }
+    return response;
   } catch (error) {
     if (error instanceof z.ZodError) return fail(502);
     if (error instanceof SyntaxError) return fail(400);

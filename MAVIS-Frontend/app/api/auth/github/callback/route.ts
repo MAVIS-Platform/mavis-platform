@@ -6,11 +6,9 @@ import { defaultLoginDestination } from "@/lib/auth/login-destination";
 import { safeLoginRedirect } from "@/lib/auth/safe-login-redirect";
 import { ApiError } from "@/lib/errors/api-error";
 import { githubStateCookieName, publicOrigin } from "@/lib/auth/oauth-origin";
+import { applySessionCookies } from "@/lib/auth/session-refresh";
 
 export const dynamic = "force-dynamic";
-
-const cookieName = "mavis_session";
-const refreshCookieName = "mavis_refresh";
 
 function statesMatch(expected: string, actual: string) {
   const a = Buffer.from(expected, "utf8");
@@ -72,22 +70,7 @@ export async function GET(request: NextRequest) {
     });
     const secure = origin.startsWith("https://");
     response.cookies.delete(githubStateCookieName);
-    response.cookies.set(cookieName, auth.token, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure,
-      path: "/",
-      maxAge: 900,
-    });
-    if (auth.refreshToken) {
-      response.cookies.set(refreshCookieName, auth.refreshToken, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure,
-        path: "/",
-        maxAge: 604800,
-      });
-    }
+    applySessionCookies(response, auth.token, auth.refreshToken, secure);
     return response;
   } catch (error) {
     const code = error instanceof ApiError && error.code ? error.code : "AUTH_OAUTH_FAILED";
