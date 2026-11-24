@@ -420,7 +420,7 @@ export function LiveStudioWorkbench({
     verified?: boolean | undefined;
   } | undefined;
 }) {
-  const { t } = useLocale();
+  const { locale, setLocale, t } = useLocale();
   const startHref = projectId
     ? `/sessions?${new URLSearchParams({ project: projectId, studio: "1" })}`
     : "/sessions?studio=1";
@@ -553,12 +553,18 @@ export function LiveStudioWorkbench({
   }, [sessionId]);
   // Original MAVIS Studio Live defaults: Daylight Cloud bright canvas, 90%+ open canvas, floating tool rail & bottom dock.
   const [studioStyle, setStudioStyle] = useState<StudioStyleId>("daylight");
+  const [showNodeTags, setShowNodeTags] = useState(true);
+  const [showEdgeTags, setShowEdgeTags] = useState(true);
   const styleCfg = STUDIO_STYLES[studioStyle];
   const isLight = !styleCfg.isDark;
   useEffect(() => {
     try {
       const saved = localStorage.getItem("mavis.studio-style") ?? localStorage.getItem("mavis.studio-theme");
       if (saved) setStudioStyle(resolveStudioStyle(saved));
+      const savedNodeTags = localStorage.getItem("mavis.studio.show-node-tags");
+      if (savedNodeTags === "0" || savedNodeTags === "false") setShowNodeTags(false);
+      const savedEdgeTags = localStorage.getItem("mavis.studio.show-edge-tags");
+      if (savedEdgeTags === "0" || savedEdgeTags === "false") setShowEdgeTags(false);
     } catch {
       // ignore storage restrictions
     }
@@ -570,6 +576,28 @@ export function LiveStudioWorkbench({
     } catch {
       // ignore storage restrictions
     }
+  };
+  const toggleNodeTagsPersisted = () => {
+    setShowNodeTags((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("mavis.studio.show-node-tags", next ? "1" : "0");
+      } catch {
+        // ignore storage restrictions
+      }
+      return next;
+    });
+  };
+  const toggleEdgeTagsPersisted = () => {
+    setShowEdgeTags((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("mavis.studio.show-edge-tags", next ? "1" : "0");
+      } catch {
+        // ignore storage restrictions
+      }
+      return next;
+    });
   };
   const [showLeft, setShowLeft] = useState(false);
   const [showRight, setShowRight] = useState(() => Boolean(authoring));
@@ -1370,7 +1398,7 @@ export function LiveStudioWorkbench({
   const referenceModel = useApiQuery(
     "model",
     { modelId: data.modelVersionId ?? "", projectId: data.projectId ?? "" },
-    { enabled: Boolean(authoring && data.modelVersionId && data.projectId) },
+    { enabled: Boolean(data.modelVersionId && data.projectId) },
   );
 
   const staticEdgesForBlast = useMemo(() => {
@@ -1534,9 +1562,9 @@ export function LiveStudioWorkbench({
   const liveDemoDerived = useMemo(
     () =>
       authoring && !isPreviewMode
-        ? deriveExerciseFromLiveActions(data.actions, stoppedServiceNames)
+        ? deriveExerciseFromLiveActions(data.actions, stoppedServiceNames, locale)
         : null,
-    [authoring, isPreviewMode, data.actions, stoppedServiceNames],
+    [authoring, isPreviewMode, data.actions, stoppedServiceNames, locale],
   );
   const pausedServiceNames = services.filter((svc) => servicePhase(data, svc) === "paused");
   const faultedServices = [...stoppedServiceNames, ...pausedServiceNames];
@@ -1677,7 +1705,7 @@ export function LiveStudioWorkbench({
             </Button>
           )}
 
-          {/* Studio Live Guided Tour (?) Trigger */}
+          {/* Studio Live Guided Tour (?) Trigger + Comprehensive SE EN/VI Switcher */}
           <ScreenHelpTrigger
             screenId="studio-live"
             surfaceTheme={isLight ? "light" : "dark"}
@@ -1693,6 +1721,44 @@ export function LiveStudioWorkbench({
             }`}
             iconClassName="size-4"
           />
+          <div
+            role="group"
+            data-testid="studio-locale-toggle"
+            aria-label={t("Studio language", "Ngôn ngữ Studio")}
+            className={`inline-flex h-8 shrink-0 items-center rounded-lg border p-0.5 text-[11.5px] font-semibold ${
+              isLight
+                ? "border-slate-200 bg-slate-100/90 text-slate-600"
+                : "border-slate-700 bg-slate-900 text-slate-300"
+            }`}
+          >
+            {(["en", "vi"] as const).map((lang) => {
+              const active = locale === lang;
+              return (
+                <button
+                  key={lang}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setLocale(lang)}
+                  title={
+                    lang === "vi"
+                      ? "Tiếng Việt chuẩn SE (giữ nguyên tên service & thuật ngữ kỹ thuật)"
+                      : "Switch Studio UI to English"
+                  }
+                  className={`rounded-md px-2 py-0.5 font-mono text-[11px] font-bold uppercase transition ${
+                    active
+                      ? isLight
+                        ? "bg-white text-slate-900 shadow-2xs"
+                        : "bg-slate-700 text-white shadow-2xs"
+                      : isLight
+                        ? "text-slate-500 hover:text-slate-900"
+                        : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {lang.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
 
           {/* Compact Live Metrics Summary & Session Switcher Popover */}
           <div data-tour="studio-telemetry-hud" className="relative hidden shrink-0 lg:block">
@@ -1999,11 +2065,11 @@ export function LiveStudioWorkbench({
 
             {settingsPopoverOpen && (
               <div
-                className={`absolute right-0 top-full z-40 mt-2 w-64 space-y-2 p-3.5 ${styleCfg.floatingCardClass}`}
+                className={`absolute right-0 top-full z-40 mt-2 w-72 space-y-2.5 p-3.5 ${styleCfg.floatingCardClass}`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    {t("Workspace Panels", "Bảng công cụ")}
+                    {t("Workspace Panels", "Hiển thị & Bảng điều khiển")}
                   </span>
                   <button
                     type="button"
@@ -2031,8 +2097,8 @@ export function LiveStudioWorkbench({
                     <span className="inline-flex items-center gap-2">
                       <PanelRight className="size-3.5" aria-hidden="true" />
                       {authoring
-                        ? t("Scenario & Block Panel", "Bảng thiết lập Lab")
-                        : t("Service Controls Card", "Thẻ điều khiển Service")}
+                        ? t("Visual Builder Panel", "Bảng soạn bài 3D")
+                        : t("Service Controls Card", "Bảng điều khiển service")}
                     </span>
                     <span className="font-mono text-xs text-primary">{showRight ? "ON" : "OFF"}</span>
                   </button>
@@ -2049,7 +2115,7 @@ export function LiveStudioWorkbench({
                   >
                     <span className="inline-flex items-center gap-2">
                       <PanelLeft className="size-3.5" aria-hidden="true" />
-                      {t("Service List Sidebar", "Danh sách Service")}
+                      {t("Service List Sidebar", "Thanh danh sách service")}
                     </span>
                     <span className="font-mono text-xs text-primary">{showLeft ? "ON" : "OFF"}</span>
                   </button>
@@ -2067,11 +2133,65 @@ export function LiveStudioWorkbench({
                     >
                       <span className="inline-flex items-center gap-2">
                         <Target className="size-3.5 text-primary" aria-hidden="true" />
-                        {t("Show Mission Card", "Hiện thẻ Mục tiêu")}
+                        {t("Show Mission Card", "Hiện thẻ đề bài")}
                       </span>
                     </button>
                   )}
-                  {showLiveSessionControls && (data.executionStatus === "RUNNING" || isBooting) && (
+                </div>
+
+                {/* 3D Floating Tag Toggles (stay open so lecturer/student can toggle both cleanly) */}
+                <div
+                  className={`space-y-1 border-t pt-2 text-xs ${
+                    isLight ? "border-slate-200" : "border-slate-800"
+                  }`}
+                >
+                  <p className="px-2.5 pb-0.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {t("3D Canvas Tags", "Nhãn nổi trên sơ đồ 3D")}
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="toggle-3d-node-tags"
+                    aria-pressed={showNodeTags}
+                    onClick={toggleNodeTagsPersisted}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left transition ${
+                      isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+                    }`}
+                  >
+                    <span>{t("Service tags (3D)", "Nhãn tên service (3D)")}</span>
+                    <span
+                      className={`font-mono text-xs font-semibold ${
+                        showNodeTags ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      {showNodeTags ? "ON" : "OFF"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="toggle-3d-edge-tags"
+                    aria-pressed={showEdgeTags}
+                    onClick={toggleEdgeTagsPersisted}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left transition ${
+                      isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+                    }`}
+                  >
+                    <span>{t("Path & impact tags", "Nhãn đường gọi & Impact")}</span>
+                    <span
+                      className={`font-mono text-xs font-semibold ${
+                        showEdgeTags ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      {showEdgeTags ? "ON" : "OFF"}
+                    </span>
+                  </button>
+                </div>
+
+                {showLiveSessionControls && (data.executionStatus === "RUNNING" || isBooting) && (
+                  <div
+                    className={`border-t pt-2 text-xs ${
+                      isLight ? "border-slate-200" : "border-slate-800"
+                    }`}
+                  >
                     <button
                       type="button"
                       disabled={cancel.isPending}
@@ -2083,8 +2203,8 @@ export function LiveStudioWorkbench({
                     >
                       <span>{t("Stop & Cancel Session", "Dừng & Hủy phiên Docker")}</span>
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2233,6 +2353,8 @@ export function LiveStudioWorkbench({
                 defaultView="3D"
                 studioStyle={studioStyle}
                 surfaceTheme={isLight ? "light" : "dark"}
+                showNodeTags={showNodeTags}
+                showEdgeTags={showEdgeTags}
                 nodeNames={nodeNames}
                 {...(configuredEdges && configuredEdges.length > 0 ? { configuredEdges } : {})}
                 {...(authorHighlights ? { authorHighlights } : {})}
@@ -2737,7 +2859,13 @@ export function LiveStudioWorkbench({
                       ) : (
                         <Play aria-hidden="true" className="mr-1.5 size-3.5 fill-current" />
                       )}
-                      {isQueued ? `Queued${data.queuePosition ? ` #${data.queuePosition}` : "…"}` : isBooting ? "Booting…" : "Run"}
+                      {locale === "vi"
+                        ? isQueued
+                          ? `Đang chờ${data.queuePosition ? ` #${data.queuePosition}` : "…"}`
+                          : isBooting ? "Đang khởi động…" : "Chạy Docker"
+                        : isQueued
+                          ? `Queued${data.queuePosition ? ` #${data.queuePosition}` : "…"}`
+                          : isBooting ? "Booting…" : "Run"}
                     </Button>
                   ) : (
                     <Button asChild size="sm" className="h-8 rounded-full px-3.5 text-[13px]">
@@ -2866,7 +2994,7 @@ export function LiveStudioWorkbench({
                   }`}
                 >
                   <Terminal className="size-3.5 text-primary" aria-hidden="true" />
-                  <span>Logs &amp; Traces</span>
+                  <span>{t("Logs & Traces", "Log & Trace")}</span>
                   {logsAndTracesCount > 0 && (
                     <span className="rounded-full bg-primary/15 px-1.5 font-mono text-[11px] font-bold text-primary">
                       {logsAndTracesCount}
@@ -2938,21 +3066,21 @@ export function LiveStudioWorkbench({
               <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {(
                 [
-                  ["stats", "Stats", "Stats"],
+                  ["stats", t("Stats", "Tổng quan"), t("Stats", "Tổng quan hệ thống")],
                   [
                     "telemetry",
-                    `Telemetry (${observedData.services.length})`,
-                    `Service Telemetry & Impact (${observedData.services.length})`,
+                    `${t("Telemetry", "Thông số")} (${observedData.services.length})`,
+                    `${t("Service Telemetry & Impact", "Thông số service & Tác động")} (${observedData.services.length})`,
                   ],
                   [
                     "logs",
-                    `Logs & Traces (${logsAndTracesCount})`,
-                    `Logs & Traces (${logsAndTracesCount})`,
+                    `${t("Logs & Traces", "Log & Trace")} (${logsAndTracesCount})`,
+                    `${t("Logs & Traces", "Log & Trace")} (${logsAndTracesCount})`,
                   ],
                   [
                     "snapshots",
-                    `Snapshots & Replay (${(data.snapshots?.length ?? 0) + liveReplays.length})`,
-                    `Snapshots & Replay (${(data.snapshots?.length ?? 0) + liveReplays.length})`,
+                    `${t("Snapshots & Replay", "Snapshot & Phát lại")} (${(data.snapshots?.length ?? 0) + liveReplays.length})`,
+                    `${t("Snapshots & Replay", "Snapshot & Phát lại")} (${(data.snapshots?.length ?? 0) + liveReplays.length})`,
                   ],
                 ] as const
               ).map(([id, label, ariaLabel]) => (
@@ -3193,12 +3321,63 @@ export function LiveStudioWorkbench({
               ? Math.min(100, Math.max(2, totalCpuPct / Math.max(1, totalVcpuAllocated)))
               : Math.min(100, (totalVcpuAllocated / maxPoolVcpu) * 100);
             const ramBarPct = Math.min(100, (totalRamUsedMiB / ramPoolMiB) * 100);
-
             const latestAction = observedData.actions[observedData.actions.length - 1];
+            const leaseSeconds =
+              observedData.limits?.sessionTimeoutSeconds ?? observedData.limits?.timeoutSeconds;
+            const leaseLabel =
+              typeof leaseSeconds === "number" && leaseSeconds > 0
+                ? leaseSeconds >= 3600
+                  ? `${Math.round(leaseSeconds / 60)}m`
+                  : leaseSeconds >= 60
+                    ? `${Math.round(leaseSeconds / 60)}m`
+                    : `${leaseSeconds}s`
+                : null;
+            const overviewEdges =
+              runtimeFlows.length > 0
+                ? runtimeFlows.map((flow) => ({
+                    from: flow.from,
+                    to: flow.to,
+                    label: flow.label,
+                    observed: flow.observed,
+                    hasError: flow.hasError,
+                  }))
+                : staticEdgesForBlast.map((edge) => ({
+                    from: edge.from,
+                    to: edge.to,
+                    label: t("static", "tĩnh"),
+                    observed: false,
+                    hasError: false,
+                  }));
+            const inCountBySvc = new Map<string, number>();
+            const outCountBySvc = new Map<string, number>();
+            for (const edge of overviewEdges) {
+              outCountBySvc.set(edge.from, (outCountBySvc.get(edge.from) ?? 0) + 1);
+              inCountBySvc.set(edge.to, (inCountBySvc.get(edge.to) ?? 0) + 1);
+            }
+            const spansBySvc = new Map<string, { total: number; errors: number }>();
+            for (const sp of observedData.telemetry?.spans ?? []) {
+              const cur = spansBySvc.get(sp.runtimeService) ?? { total: 0, errors: 0 };
+              cur.total += 1;
+              if (
+                sp.spanStatus?.toUpperCase() === "ERROR" ||
+                (sp.httpStatusCode ?? 0) >= 500 ||
+                sp.circuitOpen === true
+              ) {
+                cur.errors += 1;
+              }
+              spansBySvc.set(sp.runtimeService, cur);
+            }
+            const activeGoalOption = AUTHOR_GOALS.find((g) => g.id === activeGoalId) ?? null;
+            const criteriaTargetAction =
+              authoring?.targetChangeAction ??
+              ((observedData.exerciseCriteria as { targetChangeAction?: TargetChangeAction | null } | null | undefined)
+                ?.targetChangeAction ??
+                null);
+            const activeProbePath = authoring?.baselinePath || baselineDraft || "/health";
 
             return (
               <section
-                className="mavis-tabular mx-auto max-w-6xl space-y-2 px-1 py-0.5"
+                className="mavis-tabular mx-auto max-w-7xl space-y-2.5 px-1 py-0.5"
                 aria-labelledby="live-cluster-overview"
               >
                 {/* Row 1: Compact Single-Line Header */}
@@ -3207,18 +3386,25 @@ export function LiveStudioWorkbench({
                     isLight ? "border-slate-200" : "border-slate-800"
                   }`}
                 >
-                  <h2
-                    id="live-cluster-overview"
-                    className={`text-sm font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
-                  >
-                    Cluster Overview
-                  </h2>
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <h2
+                      id="live-cluster-overview"
+                      className={`text-sm font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
+                    >
+                      {locale === "vi" ? "Tổng quan hệ thống" : "Cluster Overview"}
+                    </h2>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {cpusPerPod} vCPU · {memPerPodMiB.toLocaleString()} MiB/pod
+                      {leaseLabel ? ` · ${t("Lease", "Thời lượng")} ${leaseLabel}` : ""}
+                    </span>
+                  </div>
 
                   <dl className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                     {[
+                      [t("Services", "Service"), blocks.length.toLocaleString()],
                       ["Pods", hasAnyReplicaSample ? observedRunningReplicas.toLocaleString() : "—"],
-                      ["Down", downServicesCount.toLocaleString()],
-                      ["Actions", observedConfirmed.length.toLocaleString()],
+                      [t("Down", "Đang tắt"), downServicesCount.toLocaleString()],
+                      [t("Actions", "Thao tác"), observedConfirmed.length.toLocaleString()],
                     ].map(([kLabel, kValue]) => (
                       <div key={kLabel} className="flex items-baseline gap-1.5">
                         <dt className={isLight ? "text-slate-500" : "text-slate-400"}>{kLabel}</dt>
@@ -3230,9 +3416,9 @@ export function LiveStudioWorkbench({
                   </dl>
                 </header>
 
-                {/* Row 2: Full-Width Unified KPI + Capacity Strip (always fits cleanly above the fold) */}
+                {/* Row 2: Full-Width Unified KPI + Capacity Strip */}
                 <div
-                  className={`grid gap-2.5 rounded-xl border px-3 py-2 lg:grid-cols-[minmax(0,1.45fr)_minmax(260px,1fr)] lg:items-center ${
+                  className={`grid gap-2.5 rounded-xl border px-3 py-2 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,1fr)] lg:items-center ${
                     isLight
                       ? "border-slate-200 bg-slate-50/70"
                       : "border-slate-800 bg-slate-900/75"
@@ -3241,20 +3427,26 @@ export function LiveStudioWorkbench({
                   <section aria-label="Traffic & reliability">
                     <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
                       <h3 className={`text-[10.5px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                        Traffic &amp; reliability
+                        {locale === "vi" ? "Lưu lượng & Độ ổn định" : <>Traffic &amp; reliability</>}
                       </h3>
                       {reqNum === null && (
                         <span className="text-[10.5px] text-muted-foreground">
                           {observedData.executionStatus === "RUNNING"
-                            ? "Live Docker running — awaiting probe traffic"
+                            ? t("Live Docker running — awaiting probe traffic", "Docker đang chạy — chờ lưu lượng probe")
                             : isBooting
-                              ? "Booting Live Docker…"
-                              : "Start Live Docker to measure"}
+                              ? t("Booting Live Docker…", "Đang khởi động Docker…")
+                              : t("Start Live Docker to measure", "Bấm Chạy Docker để đo thông số thật")}
                         </span>
                       )}
                     </div>
-                    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                       {[
+                        {
+                          label: t("Throughput", "Lưu lượng"),
+                          value: liveRps !== null ? metric(liveRps) : "—",
+                          unit: liveRps !== null ? "rps" : "",
+                          warning: false,
+                        },
                         {
                           label: "Requests",
                           value: reqNum !== null ? reqNum.toLocaleString() : "—",
@@ -3268,7 +3460,7 @@ export function LiveStudioWorkbench({
                           warning: p95Num !== null && p95Num > 500,
                         },
                         {
-                          label: "Error rate",
+                          label: t("Error rate", "Tỉ lệ lỗi"),
                           value: errNum !== null ? metric(errNum) : "—",
                           unit: errNum !== null ? "%" : "",
                           warning: errNum !== null && errNum > 0,
@@ -3282,7 +3474,7 @@ export function LiveStudioWorkbench({
                       ].map(({ label, value, unit, warning }) => (
                         <div
                           key={label}
-                          className={`rounded-lg border px-2.5 py-1 ${
+                          className={`rounded-lg border px-2.5 py-1.5 ${
                             isLight
                               ? "border-slate-200/80 bg-white"
                               : "border-slate-800 bg-slate-950/60"
@@ -3318,11 +3510,12 @@ export function LiveStudioWorkbench({
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       <h3 className={`text-[10.5px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                        Resource capacity
+                        {locale === "vi" ? "Tài nguyên cấp phát" : "Resource capacity"}
                       </h3>
                       {peakCpuService && cpuSamples > 0 && (
                         <span className={`text-[10px] ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                          Peak: <span className="font-mono font-medium">{peakCpuService}</span>
+                          {t("Peak:", "Cao nhất:")}{" "}
+                          <span className="font-mono font-medium">{peakCpuService}</span>
                         </span>
                       )}
                     </div>
@@ -3363,6 +3556,271 @@ export function LiveStudioWorkbench({
                   </section>
                 </div>
 
+                {/* Row 2.5: Rich Service Health Matrix + Lab Scope & Dependency Paths */}
+                <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1.45fr)_minmax(290px,1fr)]">
+                  <section
+                    aria-label={t("Service Health & Topology", "Trạng thái các Service")}
+                    className={`overflow-hidden rounded-xl border ${
+                      isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-900/65"
+                    }`}
+                  >
+                    <div
+                      className={`flex items-center justify-between gap-2 border-b px-3 py-1.5 ${
+                        isLight ? "border-slate-200 bg-slate-50/80" : "border-slate-800 bg-slate-950/60"
+                      }`}
+                    >
+                      <h3 className={`text-[11px] font-bold uppercase tracking-wide ${isLight ? "text-slate-600" : "text-slate-300"}`}>
+                        {t("Service Health & Topology", "Trạng thái các Service")} ({blocks.length})
+                      </h3>
+                      <span className="text-[10.5px] text-muted-foreground">
+                        {t("Click a service to inspect on 3D", "Bấm tên service để chọn trên 3D")}
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="mavis-tabular w-full whitespace-nowrap text-left text-[11.5px]">
+                        <thead
+                          className={`border-b text-[10px] uppercase tracking-wide ${
+                            isLight
+                              ? "border-slate-200 bg-slate-50/60 text-slate-500"
+                              : "border-slate-800 text-slate-400"
+                          }`}
+                        >
+                          <tr>
+                            <th className="px-3 py-1.5 font-semibold">Service</th>
+                            <th className="px-2.5 py-1.5 font-semibold">{t("State", "Trạng thái")}</th>
+                            <th className="px-2.5 py-1.5 font-semibold">Pods</th>
+                            <th className="px-2.5 py-1.5 font-semibold">CPU / RAM</th>
+                            <th className="px-2.5 py-1.5 font-semibold">{t("Edges", "Kết nối")}</th>
+                            <th className="px-2.5 py-1.5 font-semibold">Spans</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${isLight ? "divide-slate-100" : "divide-slate-800/70"}`}>
+                          {blocks.map((block) => {
+                            const rep = runningFor(observedData, block.service);
+                            const phase = servicePhase(observedData, block.service);
+                            const obsSvc = observedData.telemetry?.services.find(
+                              (s) => s.service === block.service,
+                            );
+                            const agg = summarizeServiceStats(obsSvc?.stats);
+                            const isTarget = criteriaTargetAction?.service === block.service;
+                            const isStartsDown = Boolean(
+                              authoring?.initialStoppedServices.includes(block.service),
+                            );
+                            const isScalable =
+                              block.canScale || Boolean(authoring?.scalableServices.includes(block.service));
+                            const spInfo = spansBySvc.get(block.service);
+                            const inCnt = inCountBySvc.get(block.service) ?? 0;
+                            const outCnt = outCountBySvc.get(block.service) ?? 0;
+                            const isRowSel = canvasSelected === block.service;
+                            const isLiveRow = observedData.executionStatus === "RUNNING";
+                            const stateText = isLiveRow
+                              ? phase === "paused"
+                                ? "Paused"
+                                : rep === 0
+                                  ? t("Down", "Đã tắt")
+                                  : t("Running", "Đang chạy")
+                              : isStartsDown
+                                ? t("Starts Down", "Tắt sẵn")
+                                : t("Ready", "Sẵn sàng");
+                            const stateTone =
+                              (isLiveRow && rep === 0) || (!isLiveRow && isStartsDown)
+                                ? isLight
+                                  ? "text-rose-700"
+                                  : "text-rose-300"
+                                : isLiveRow && phase === "paused"
+                                  ? isLight
+                                    ? "text-amber-700"
+                                    : "text-amber-300"
+                                  : isLiveRow
+                                    ? isLight
+                                      ? "text-emerald-700"
+                                      : "text-emerald-300"
+                                    : isLight
+                                      ? "text-sky-700"
+                                      : "text-sky-300";
+                            return (
+                              <tr
+                                key={block.service}
+                                className={
+                                  isRowSel
+                                    ? isLight
+                                      ? "bg-sky-50/90"
+                                      : "bg-sky-950/35"
+                                    : isLight
+                                      ? "hover:bg-slate-50"
+                                      : "hover:bg-slate-800/40"
+                                }
+                              >
+                                <td className="px-3 py-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      studio.setService(block.service);
+                                      setRightCardMode("service");
+                                      setShowRight(true);
+                                    }}
+                                    className="inline-flex items-center gap-1.5 font-mono font-semibold hover:underline"
+                                  >
+                                    <span className={isLight ? "text-slate-900" : "text-slate-100"}>
+                                      {block.service}
+                                    </span>
+                                    {isTarget && (
+                                      <span
+                                        className={`rounded px-1 py-px font-sans text-[9.5px] font-semibold ${
+                                          isLight
+                                            ? "bg-amber-100 text-amber-800"
+                                            : "bg-amber-500/20 text-amber-300"
+                                        }`}
+                                      >
+                                        {t("Target", "Mục tiêu")}
+                                      </span>
+                                    )}
+                                    {isScalable && (
+                                      <span
+                                        className={`rounded px-1 py-px font-sans text-[9.5px] font-semibold ${
+                                          isLight
+                                            ? "bg-sky-100 text-sky-800"
+                                            : "bg-sky-500/20 text-sky-300"
+                                        }`}
+                                      >
+                                        Scale
+                                      </span>
+                                    )}
+                                  </button>
+                                </td>
+                                <td className={`px-2.5 py-1.5 font-semibold ${stateTone}`}>{stateText}</td>
+                                <td className="px-2.5 py-1.5 font-mono">
+                                  {rep !== undefined ? `${rep}x` : isStartsDown ? "0x" : "1x"}
+                                </td>
+                                <td className="px-2.5 py-1.5 font-mono text-muted-foreground">
+                                  {agg.cpu !== "—" || agg.memory !== "—"
+                                    ? `${agg.cpu} · ${agg.memory}`
+                                    : `${cpusPerPod} vCPU · ${memPerPodMiB} MiB`}
+                                </td>
+                                <td className="px-2.5 py-1.5 font-mono text-muted-foreground">
+                                  {inCnt} in · {outCnt} out
+                                </td>
+                                <td className="px-2.5 py-1.5 font-mono">
+                                  {spInfo ? (
+                                    <span className={spInfo.errors > 0 ? "font-semibold text-rose-500" : ""}>
+                                      {spInfo.total}
+                                      {spInfo.errors > 0 ? ` (${spInfo.errors} err)` : ""}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section
+                    aria-label={t("Lab Scope & Dependency Paths", "Phạm vi bài Lab & Đường gọi")}
+                    className={`flex flex-col justify-between gap-2.5 rounded-xl border p-3 text-xs ${
+                      isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-900/65"
+                    }`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className={`text-[11px] font-bold uppercase tracking-wide ${isLight ? "text-slate-600" : "text-slate-300"}`}>
+                          {t("Lab Scope & Dependency Paths", "Phạm vi bài Lab & Đường gọi")}
+                        </h3>
+                        {activeGoalOption && (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              isLight
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-emerald-500/20 text-emerald-300"
+                            }`}
+                          >
+                            {t(activeGoalOption.titleEn, activeGoalOption.titleVi)}
+                          </span>
+                        )}
+                      </div>
+
+                      <dl className="grid grid-cols-2 gap-1.5 text-[11px]">
+                        <div className={`rounded-lg border px-2 py-1.5 ${isLight ? "border-slate-200/80 bg-slate-50/70" : "border-slate-800 bg-slate-950/60"}`}>
+                          <dt className="text-[10px] text-muted-foreground">
+                            {t("Baseline Endpoint", "Endpoint kiểm thử")}
+                          </dt>
+                          <dd className="mt-0.5 truncate font-mono font-semibold">
+                            GET {activeProbePath}
+                          </dd>
+                        </div>
+                        <div className={`rounded-lg border px-2 py-1.5 ${isLight ? "border-slate-200/80 bg-slate-50/70" : "border-slate-800 bg-slate-950/60"}`}>
+                          <dt className="text-[10px] text-muted-foreground">
+                            {t("Target Action", "Thao tác mục tiêu")}
+                          </dt>
+                          <dd className="mt-0.5 truncate font-mono font-semibold">
+                            {criteriaTargetAction?.service
+                              ? `${criteriaTargetAction.action} ${criteriaTargetAction.service}`
+                              : t("Free exploration", "Tự do quan sát")}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      {staticBlastRadius.target && (
+                        <div
+                          className={`rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                            isLight
+                              ? "border-amber-200 bg-amber-50/70 text-amber-950"
+                              : "border-amber-500/35 bg-amber-950/30 text-amber-100"
+                          }`}
+                        >
+                          <span className="font-semibold">
+                            {t("Blast radius (Reverse BFS):", "Phạm vi lan truyền (Reverse BFS):")}
+                          </span>{" "}
+                          <code className="font-mono">
+                            {staticBlastRadius.upstreamImpacted.length > 0
+                              ? staticBlastRadius.upstreamImpacted.join(", ")
+                              : t("None upstream", "Không có service gọi lên")}
+                          </code>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                          {t("Dependency Paths", "Đường gọi giữa các service")} ({overviewEdges.length})
+                        </p>
+                        {overviewEdges.length > 0 ? (
+                          <ul className="flex flex-wrap gap-1 font-mono text-[10.5px]">
+                            {overviewEdges.slice(0, 8).map((edge) => (
+                              <li
+                                key={`${edge.from}->${edge.to}`}
+                                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${
+                                  edge.hasError
+                                    ? isLight
+                                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                                      : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                                    : edge.observed
+                                      ? isLight
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                        : "border-emerald-500/35 bg-emerald-500/15 text-emerald-200"
+                                      : isLight
+                                        ? "border-slate-200 bg-slate-50 text-slate-700"
+                                        : "border-slate-800 bg-slate-950/70 text-slate-300"
+                                }`}
+                              >
+                                <span>{edge.from}</span>
+                                <span className="opacity-50">→</span>
+                                <span>{edge.to}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground">
+                            {t("No call paths detected yet.", "Chưa phát hiện đường gọi nào.")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
                 {/* Row 3: Live RED Charts + Collapsible Service Edges & Action History */}
                 <StudioRedCharts
                   history={observedData.telemetryHistory}
@@ -3388,7 +3846,7 @@ export function LiveStudioWorkbench({
                     <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-1.5 font-medium select-none">
                       <span className="inline-flex flex-wrap items-center gap-1.5 font-mono">
                         <span className={isLight ? "font-sans font-semibold text-slate-800" : "font-sans font-semibold text-slate-100"}>
-                          Action history ({observedData.actions.length})
+                          {t("Action history", "Lịch sử thao tác")} ({observedData.actions.length})
                         </span>
                         {latestAction && (
                           <>
@@ -3407,7 +3865,7 @@ export function LiveStudioWorkbench({
                           </>
                         )}
                       </span>
-                      <span className="text-[11px] text-muted-foreground">History ▾</span>
+                      <span className="text-[11px] text-muted-foreground">{t("History", "Chi tiết")} ▾</span>
                     </summary>
                     <ol
                       className={`divide-y border-t px-3 ${
@@ -3446,20 +3904,24 @@ export function LiveStudioWorkbench({
               : null;
             const observedLabel =
               observedDate && Number.isFinite(observedDate.getTime())
-                ? `Observed ${observedDate.toLocaleTimeString()}${
-                    lastSessionFailed ? (isTimedOut ? " · Timed out" : " · Failed") : ""
+                ? `${t("Observed", "Ghi nhận lúc")} ${observedDate.toLocaleTimeString()}${
+                    lastSessionFailed
+                      ? isTimedOut
+                        ? ` · ${t("Timed out", "Hết thời gian")}`
+                        : ` · ${t("Failed", "Lỗi")}`
+                      : ""
                   }`
                 : lastSessionFailed
                   ? isTimedOut
-                    ? "Session timed out · Check Logs & Traces"
-                    : "Session failed · Check Logs & Traces"
+                    ? t("Session timed out · Check Logs & Traces", "Phiên hết thời gian · Xem Log & Trace")
+                    : t("Session failed · Check Logs & Traces", "Phiên gặp lỗi · Xem Log & Trace")
                   : observedData.executionStatus.toUpperCase() === "CANCELLED"
-                    ? "Session cancelled"
+                    ? t("Session cancelled", "Phiên đã hủy")
                     : isTelemetryPreview
                       ? mutationError
-                        ? "Preview · Start failed — check Logs & Traces"
-                        : "Preview · Live metrics populate when Docker runs"
-                      : "Waiting for container telemetry";
+                        ? t("Preview · Start failed — check Logs & Traces", "Xem trước · Khởi chạy lỗi — xem Log & Trace")
+                        : t("Preview · Live metrics populate when Docker runs", "Xem trước · Thông số thật sẽ hiện khi chạy Docker")
+                      : t("Waiting for container telemetry", "Đang chờ telemetry từ container");
 
             const rows = observedData.services.map((service) => {
               const telemetry = observedData.telemetry?.services.find(
@@ -3584,14 +4046,14 @@ export function LiveStudioWorkbench({
                     <thead className={isLight ? "bg-slate-50 text-[11px] text-slate-600" : "bg-slate-900 text-[11px] text-slate-400"}>
                       <tr>
                         {[
-                          t("Service", "Dịch vụ"),
+                          t("Service", "Service"),
                           t("Status", "Trạng thái"),
-                          t("Replicas", "Bản sao"),
+                          t("Replicas", "Replica"),
                           "CPU",
                           "RAM",
-                          t("Net I/O", "Mạng I/O"),
+                          t("Net I/O", "Net I/O"),
                           "p95",
-                          t("Req / Err%", "Yêu cầu / Lỗi%"),
+                          t("Req / Err%", "Req / Lỗi%"),
                           "Spans",
                         ].map((heading) => (
                           <th key={heading} scope="col" className="px-2.5 py-2 font-semibold">
@@ -3926,7 +4388,7 @@ export function LiveStudioWorkbench({
                   className="h-9 bg-[#0056D2] px-3.5 text-xs font-semibold text-white hover:bg-[#00419E] disabled:opacity-45"
                 >
                   <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
-                  Capture evidence snapshot
+                  {t("Capture evidence snapshot", "Chụp Snapshot minh chứng")}
                 </Button>
 
                 <div
@@ -3948,7 +4410,7 @@ export function LiveStudioWorkbench({
                     }`}
                   >
                     <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
-                    {capturingScreen ? "Capturing…" : "Screenshot PNG"}
+                    {capturingScreen ? t("Capturing…", "Đang chụp…") : t("Screenshot PNG", "Chụp ảnh PNG")}
                   </Button>
 
                   {recordingSteps === 0 ? (
@@ -3959,8 +4421,14 @@ export function LiveStudioWorkbench({
                       disabled={isPreviewMode || data.executionStatus !== "RUNNING" || savingReplay}
                       title={
                         isPreviewMode || data.executionStatus !== "RUNNING"
-                          ? "Start Live Docker first to record live runtime service-to-service traffic"
-                          : "Record live canvas video + traffic flow timeline"
+                          ? t(
+                              "Start Live Docker first to record live runtime service-to-service traffic",
+                              "Hãy chạy Docker thật trước để quay lại luồng gọi giữa các service",
+                            )
+                          : t(
+                              "Record live canvas video + traffic flow timeline",
+                              "Quay video sơ đồ trực tiếp + dòng thời gian lưu lượng",
+                            )
                       }
                       onClick={startLiveReplayRecording}
                       className={`h-8 px-2.5 text-xs font-medium disabled:opacity-40 ${
@@ -3970,7 +4438,7 @@ export function LiveStudioWorkbench({
                       }`}
                     >
                       <Video aria-hidden="true" className="mr-1.5 size-3.5" />
-                      Record runtime replay
+                      {t("Record runtime replay", "Quay replay trực tiếp")}
                     </Button>
                   ) : (
                     <>

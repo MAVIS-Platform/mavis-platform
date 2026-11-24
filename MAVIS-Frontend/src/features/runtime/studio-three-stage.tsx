@@ -58,6 +58,8 @@ export type StudioThreeStageProps = {
   pan: { x: number; y: number };
   styleId: StudioStyleId;
   busy?: boolean;
+  showNodeTags?: boolean;
+  showEdgeTags?: boolean;
   onCameraChange: (next: { yaw: number; pitch: number }) => void;
   onZoomChange: (next: number) => void;
   onPanChange: (next: { x: number; y: number }) => void;
@@ -1413,6 +1415,8 @@ export function StudioThreeStage({
   pan,
   styleId,
   busy = false,
+  showNodeTags = true,
+  showEdgeTags = true,
   onCameraChange,
   onZoomChange,
   onPanChange,
@@ -1454,6 +1458,10 @@ export function StudioThreeStage({
   const viewportSizeRef = useRef({ w: 1, h: 1 });
   const wheelActiveUntilRef = useRef(0);
   const zoomSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNodeTagsRef = useRef(showNodeTags);
+  const showEdgeTagsRef = useRef(showEdgeTags);
+  showNodeTagsRef.current = showNodeTags;
+  showEdgeTagsRef.current = showEdgeTags;
 
   // Smooth target vs current camera state (mutated inside RAF with zero React re-renders)
   const targetCamRef = useRef({ yaw: camera.yaw, pitch: camera.pitch, zoom, panX: pan.x, panY: pan.y });
@@ -1901,6 +1909,7 @@ export function StudioThreeStage({
           ? { ...node, isDropTarget: true }
           : node;
       const rig = buildServiceRig(T, effectiveNode, styleId);
+      rig.labelSprite.visible = showNodeTagsRef.current;
       contentGroup.add(rig.group);
       nodeRigsRef.current.push(rig);
     }
@@ -2064,6 +2073,7 @@ export function StudioThreeStage({
       let badgeSprite: THREE.Sprite | undefined;
       if (edge.label) {
         badgeSprite = createEdgeBadgeSprite(T, edge.label, edge, isLight);
+        badgeSprite.visible = showEdgeTagsRef.current;
         const apex = curve.getPoint(0.5);
         badgeSprite.position.set(apex.x, apex.y + 0.21, apex.z);
         contentGroup.add(badgeSprite);
@@ -2092,6 +2102,17 @@ export function StudioThreeStage({
     }
   }, [engineReady, nodes, edges, deckBounds, styleId, dropHoverService]);
 
+  useEffect(() => {
+    for (const rig of nodeRigsRef.current) {
+      rig.labelSprite.visible = showNodeTags;
+    }
+    for (const edge of edgeRigsRef.current) {
+      if (edge.badgeSprite) {
+        edge.badgeSprite.visible = showEdgeTags;
+      }
+    }
+  }, [engineReady, showNodeTags, showEdgeTags]);
+
   function raycastServiceAt(clientX: number, clientY: number): string | null {
     const T = threeRef.current;
     const canvas = canvasRef.current;
@@ -2112,6 +2133,7 @@ export function StudioThreeStage({
       true,
     );
     for (const hit of hits) {
+      if (!hit.object.visible) continue;
       let cur: THREE.Object3D | null = hit.object;
       while (cur) {
         const sid = cur.userData?.["serviceId"];
@@ -2325,6 +2347,8 @@ export function StudioThreeStage({
         data-studio-webgl-canvas
         data-studio-engine="three-webgl"
         data-studio-style={styleId}
+        data-show-node-tags={String(showNodeTags)}
+        data-show-edge-tags={String(showEdgeTags)}
         data-camera-yaw={String(Math.round(((((camera.yaw * 180) / Math.PI) % 360) + 360) % 360))}
         data-camera-pitch={String(Math.round((Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, camera.pitch)) * 180) / Math.PI))}
         aria-label="Live 3D WebGL runtime topology"

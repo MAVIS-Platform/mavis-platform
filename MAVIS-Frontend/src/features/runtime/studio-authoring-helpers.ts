@@ -317,6 +317,7 @@ type StudioActionItem = Response<"studioState">["actions"][number];
 export function deriveExerciseFromLiveActions(
   actions: readonly StudioActionItem[],
   currentStoppedServices: readonly string[],
+  locale: "en" | "vi" = "en",
 ): DerivedExerciseFromDemo | null {
   const confirmed = actions.filter((item) => item.status === "CONFIRMED");
   if (confirmed.length === 0 && currentStoppedServices.length === 0) return null;
@@ -347,8 +348,14 @@ export function deriveExerciseFromLiveActions(
       scalableServices: [target],
       allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
       maxErrorRatePercent: "5",
-      instructions: `Raise probe load to ${rps} RPS, observe latency on ${target}, then scale ${target} to at least ${count} replicas while keeping error rate <= 5%.`,
-      summary: `Scale-Out: ${target} >= ${count}x (load ${rps} RPS)`,
+      instructions:
+        locale === "vi"
+          ? `Tăng tải probe lên ${rps} RPS, quan sát độ trễ p95 trên ${target}, sau đó scale ${target} lên tối thiểu ${count} replica trong khi giữ tỉ lệ lỗi <= 5%.`
+          : `Raise probe load to ${rps} RPS, observe latency on ${target}, then scale ${target} to at least ${count} replicas while keeping error rate <= 5%.`,
+      summary:
+        locale === "vi"
+          ? `Scale-Out: ${target} >= ${count}x (tải ${rps} RPS)`
+          : `Scale-Out: ${target} >= ${count}x (load ${rps} RPS)`,
     };
   }
 
@@ -365,8 +372,14 @@ export function deriveExerciseFromLiveActions(
       scalableServices: [target],
       allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
       maxErrorRatePercent: "5",
-      instructions: `Throttle ${target} CPU to ${pct}%, capture latency degradation evidence, and explain the bottleneck across upstream callers.`,
-      summary: `CPU Degradation: ${target} at ${pct}% CPU`,
+      instructions:
+        locale === "vi"
+          ? `Bóp CPU của ${target} xuống ${pct}%, chụp snapshot ghi nhận mức tăng độ trễ p95 và giải thích điểm nghẽn tới các service upstream.`
+          : `Throttle ${target} CPU to ${pct}%, capture latency degradation evidence, and explain the bottleneck across upstream callers.`,
+      summary:
+        locale === "vi"
+          ? `Tắc nghẽn CPU: ${target} mức ${pct}% CPU`
+          : `CPU Degradation: ${target} at ${pct}% CPU`,
     };
   }
 
@@ -383,8 +396,14 @@ export function deriveExerciseFromLiveActions(
       scalableServices: [],
       allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
       maxErrorRatePercent: "",
-      instructions: `Inspect the live service graph, predict every service affected when ${target} is ${act === "PAUSE" ? "paused" : "stopped"}, lock your prediction, then execute ${act} on ${target} and capture Before/After evidence.`,
-      summary: `Change Impact: ${act} ${target} (Auto-Graded F1 >= 70%)`,
+      instructions:
+        locale === "vi"
+          ? `Quan sát sơ đồ phụ thuộc, dự đoán tất cả service bị ảnh hưởng khi ${act} ${target}, khóa dự đoán, sau đó thực hiện ${act} trên ${target} và chụp snapshot Before/After.`
+          : `Inspect the live service graph, predict every service affected when ${target} is ${act === "PAUSE" ? "paused" : "stopped"}, lock your prediction, then execute ${act} on ${target} and capture Before/After evidence.`,
+      summary:
+        locale === "vi"
+          ? `Change Impact: ${act} ${target} (chấm tự động F1 >= 70%)`
+          : `Change Impact: ${act} ${target} (Auto-Graded F1 >= 70%)`,
     };
   }
 
@@ -400,8 +419,14 @@ export function deriveExerciseFromLiveActions(
       scalableServices: [],
       allowedActions: ["START", "STOP", "PAUSE", "RESUME", "CONNECT", "DISCONNECT"],
       maxErrorRatePercent: "0",
-      instructions: `Diagnose the stopped ${recoverTarget} service, observe error propagation across upstream callers, start ${recoverTarget} to recover 0% errors, and capture Before/After evidence.`,
-      summary: `Outage Recovery: starts ${recoverTarget} Down -> 0% err`,
+      instructions:
+        locale === "vi"
+          ? `Chẩn đoán service ${recoverTarget} đang tắt, quan sát lỗi lan truyền lên các service upstream, khởi động lại ${recoverTarget} để khôi phục 0% lỗi và chụp snapshot Before/After.`
+          : `Diagnose the stopped ${recoverTarget} service, observe error propagation across upstream callers, start ${recoverTarget} to recover 0% errors, and capture Before/After evidence.`,
+      summary:
+        locale === "vi"
+          ? `Khôi phục sự cố: tắt sẵn ${recoverTarget} -> khôi phục 0% lỗi`
+          : `Outage Recovery: starts ${recoverTarget} Down -> 0% err`,
     };
   }
 

@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Response } from "@/lib/api/contracts";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { TraceWaterfallPanel } from "./studio-red-charts";
 
 type Studio = Response<"studioState">;
@@ -381,6 +382,7 @@ export function LiveTerminalConsole({
   onSelectTrace,
   isLight = false,
 }: LiveTerminalConsoleProps) {
+  const { t } = useLocale();
   const [view, setView] = useState<"console" | "traces">("console");
   const [localTraceId, setLocalTraceId] = useState<string | null>(null);
   const activeTraceId = selectedTraceId !== undefined ? selectedTraceId : localTraceId;
@@ -745,7 +747,7 @@ export function LiveTerminalConsole({
                   : "focus:bg-slate-800 focus:text-slate-100"
               }`}
             >
-              All services ({serviceList.length})
+              {t("All services", "Tất cả service")} ({serviceList.length})
             </SelectItem>
             {serviceList.map((svc) => {
               const color = serviceColorFor(svc, serviceList, isLight);
@@ -830,7 +832,9 @@ export function LiveTerminalConsole({
               }
             >
               <Filter aria-hidden="true" className="size-3" />
-              {hideNoise ? `Clean (+${hiddenNoiseCount} boot)` : "Raw logs"}
+              {hideNoise
+                ? `${t("Clean", "Gọn")} (+${hiddenNoiseCount} boot)`
+                : t("Raw logs", "Log gốc")}
             </button>
           )}
 
@@ -844,7 +848,7 @@ export function LiveTerminalConsole({
               aria-label="Filter terminal output"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="grep…"
+              placeholder={t("grep…", "lọc log…")}
               className={`h-6 w-28 rounded-md border pl-6 pr-2 font-mono text-[11px] focus:border-sky-500 focus:outline-none sm:w-36 ${
                 isLight
                   ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400"
@@ -867,9 +871,9 @@ export function LiveTerminalConsole({
                     ? "border-slate-200 bg-white text-slate-600 hover:text-slate-900"
                     : "border-slate-800 bg-[#05080f] text-slate-400 hover:text-slate-200"
               }`}
-              title="Toggle line wrap"
+              title={t("Toggle line wrap", "Bật/tắt xuống dòng")}
             >
-              wrap
+              {t("wrap", "xuống dòng")}
             </button>
           )}
 
@@ -884,17 +888,17 @@ export function LiveTerminalConsole({
                 ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                 : "border-slate-800 bg-[#05080f] text-slate-300 hover:border-slate-700 hover:text-slate-100"
             }`}
-            title="Copy visible terminal output"
+            title={t("Copy visible terminal output", "Sao chép log đang hiển thị")}
           >
             {copied ? (
               <>
                 <Check aria-hidden="true" className="size-3 text-emerald-500" />
-                copied
+                {t("copied", "đã chép")}
               </>
             ) : (
               <>
                 <Copy aria-hidden="true" className="size-3" />
-                copy
+                {t("copy", "chép")}
               </>
             )}
           </button>
@@ -1036,8 +1040,11 @@ export function LiveTerminalConsole({
             <div className="flex flex-wrap items-center justify-between gap-2 py-3 text-slate-500">
               <span>
                 {hideNoise && hiddenNoiseCount > 0 && levelFilter === "ALL" && !normalizedQuery
-                  ? `${hiddenNoiseCount} repetitive JVM/OTel startup lines are hidden in Clean view.`
-                  : "No terminal lines match the active filter."}
+                  ? t(
+                      `${hiddenNoiseCount} repetitive JVM/OTel startup lines are hidden in Clean view.`,
+                      `Đã ẩn ${hiddenNoiseCount} dòng log khởi động JVM/OTel lặp lại ở chế độ Gọn.`,
+                    )
+                  : t("No terminal lines match the active filter.", "Không có dòng log nào khớp bộ lọc.")}
               </span>
               <div className="flex items-center gap-2">
                 {hideNoise && hiddenNoiseCount > 0 && (
@@ -1046,7 +1053,7 @@ export function LiveTerminalConsole({
                     onClick={() => setHideNoise(false)}
                     className={isLight ? "font-medium text-sky-700 hover:underline" : "font-medium text-sky-300 hover:underline"}
                   >
-                    Show raw boot logs ({hiddenNoiseCount})
+                    {t("Show raw boot logs", "Hiện log khởi động gốc")} ({hiddenNoiseCount})
                   </button>
                 )}
                 {(activeServiceFilter !== "ALL" || levelFilter !== "ALL" || normalizedQuery) && (
@@ -1059,7 +1066,7 @@ export function LiveTerminalConsole({
                     }}
                     className={isLight ? "text-sky-700 hover:underline" : "text-sky-300 hover:underline"}
                   >
-                    Reset filters
+                    {t("Reset filters", "Đặt lại bộ lọc")}
                   </button>
                 )}
               </div>
@@ -1069,28 +1076,40 @@ export function LiveTerminalConsole({
               <div className="px-1">
                 <span className={isLight ? "text-slate-700" : "text-slate-300"}>
                   {isPreviewMode
-                    ? "Compose stack is in Lab Setup preview (containers not booted)."
+                    ? t(
+                        "Compose stack is in Lab Setup preview (containers not booted).",
+                        "Đang ở chế độ xem trước cấu hình (chưa khởi chạy container Docker).",
+                      )
                     : waiting
-                      ? `Session ${statusLabel} — booting Docker Compose containers and attaching stdout/stderr…`
-                      : `Session ${statusLabel} — attached to container logs; waiting for stdout/stderr output.`}
+                      ? t(
+                          `Session ${statusLabel} — booting Docker Compose containers and attaching stdout/stderr…`,
+                          `Phiên ${statusLabel} — đang khởi động Docker Compose và kết nối stdout/stderr…`,
+                        )
+                      : t(
+                          `Session ${statusLabel} — attached to container logs; waiting for stdout/stderr output.`,
+                          `Phiên ${statusLabel} — đã kết nối log container, đang chờ dữ liệu stdout/stderr.`,
+                        )}
                 </span>
               </div>
               <div className="px-1">
                 <span className={isLight ? "text-slate-600" : "text-slate-400"}>
-                  Services ({serviceList.length}):{" "}
+                  {t("Services", "Danh sách service")} ({serviceList.length}):{" "}
                   <span className={isLight ? "font-medium text-slate-900" : "text-slate-200"}>
-                    {serviceList.length > 0 ? serviceList.join(", ") : "none configured"}
+                    {serviceList.length > 0 ? serviceList.join(", ") : t("none configured", "chưa cấu hình")}
                   </span>
                 </span>
               </div>
               {isPreviewMode && (
                 <div className="px-1">
                   <span className={isLight ? "text-slate-600" : "text-slate-400"}>
-                    Click{" "}
+                    {t("Click", "Bấm")}{" "}
                     <span className={isLight ? "font-semibold text-emerald-700" : "text-emerald-300"}>
-                      Run
+                      {t("Run", "Chạy Docker")}
                     </span>{" "}
-                    in the command dock to boot containers and stream real service stdout/stderr + OpenTelemetry traces.
+                    {t(
+                      "in the command dock to boot containers and stream real service stdout/stderr + OpenTelemetry traces.",
+                      "ở thanh điều khiển bên dưới để chạy container thật và xem log + OpenTelemetry trace trực tiếp.",
+                    )}
                   </span>
                 </div>
               )}
@@ -1138,10 +1157,10 @@ export function LiveTerminalConsole({
                 <tr>
                   <th className="px-2.5 py-1.5 font-semibold">Trace</th>
                   <th className="px-2.5 py-1.5 font-semibold">Service</th>
-                  <th className="px-2.5 py-1.5 font-semibold">Operation</th>
+                  <th className="px-2.5 py-1.5 font-semibold">{t("Operation", "Tác vụ")}</th>
                   <th className="px-2.5 py-1.5 font-semibold">HTTP</th>
-                  <th className="px-2.5 py-1.5 font-semibold">Status</th>
-                  <th className="px-2.5 py-1.5 font-semibold">Duration</th>
+                  <th className="px-2.5 py-1.5 font-semibold">{t("Status", "Trạng thái")}</th>
+                  <th className="px-2.5 py-1.5 font-semibold">{t("Duration", "Thời gian")}</th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${isLight ? "divide-slate-200/80" : "divide-slate-800/70"}`}>
@@ -1241,10 +1260,19 @@ export function LiveTerminalConsole({
           ) : (
             <div className="px-3 py-4 text-slate-500">
               {spans.length > 0
-                ? "No OpenTelemetry spans match the active filter."
+                ? t(
+                    "No OpenTelemetry spans match the active filter.",
+                    "Không có OpenTelemetry span nào khớp bộ lọc.",
+                  )
                 : isPreviewMode
-                  ? "No OpenTelemetry spans yet — run Live Docker to capture distributed traces."
-                  : "Waiting for OpenTelemetry spans from the running services…"}
+                  ? t(
+                      "No OpenTelemetry spans yet — run Live Docker to capture distributed traces.",
+                      "Chưa có OpenTelemetry span — hãy bấm Chạy Docker để thu thập trace phân tán.",
+                    )
+                  : t(
+                      "Waiting for OpenTelemetry spans from the running services…",
+                      "Đang chờ OpenTelemetry span từ các service đang chạy…",
+                    )}
             </div>
           )}
         </div>

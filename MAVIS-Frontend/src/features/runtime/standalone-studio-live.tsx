@@ -139,7 +139,7 @@ function safeRelativeHref(raw: string | null, fallback: string) {
 }
 
 function StandaloneStudioContent() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const params = useSearchParams();
   const client = useApi();
   const cache = useQueryClient();
@@ -855,7 +855,10 @@ function StandaloneStudioContent() {
                 maxErrorRatePercent: "",
                 baselinePath: defaultBaselinePath,
                 allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
-                instructions: `Inspect the live dependency graph, predict every service impacted when ${faultTarget} is paused, lock your prediction, then PAUSE ${faultTarget} and capture Before/After evidence.`,
+                instructions:
+                  locale === "vi"
+                    ? `Quan sát sơ đồ phụ thuộc, dự đoán tất cả service bị ảnh hưởng khi PAUSE ${faultTarget}, khóa dự đoán, sau đó thực hiện PAUSE ${faultTarget} và chụp snapshot Before/After.`
+                    : `Inspect the live dependency graph, predict every service impacted when ${faultTarget} is paused, lock your prediction, then PAUSE ${faultTarget} and capture Before/After evidence.`,
                 ...(nextTopology ? { nextTopology } : {}),
               });
               return;
@@ -878,7 +881,10 @@ function StandaloneStudioContent() {
                 maxErrorRatePercent: "5",
                 baselinePath: defaultBaselinePath,
                 allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
-                instructions: `Capture baseline metrics, raise load, scale ${primaryScale} to at least 2 replicas while keeping error rate <= 5%, and compare Before vs After latency.`,
+                instructions:
+                  locale === "vi"
+                    ? `Thu thập baseline metrics, tăng tải probe, scale ${primaryScale} lên tối thiểu 2 replica với tỉ lệ lỗi <= 5%, rồi so sánh độ trễ p95 Before vs After.`
+                    : `Capture baseline metrics, raise load, scale ${primaryScale} to at least 2 replicas while keeping error rate <= 5%, and compare Before vs After latency.`,
                 ...(nextTopology ? { nextTopology } : {}),
               });
               return;
@@ -900,7 +906,10 @@ function StandaloneStudioContent() {
                 maxErrorRatePercent: "0",
                 baselinePath: defaultBaselinePath,
                 allowedActions: ["START", "STOP", "PAUSE", "RESUME", "CONNECT", "DISCONNECT"],
-                instructions: `Diagnose the initially stopped ${faultTarget} service, observe error propagation across upstream callers, start ${faultTarget} to restore 0% errors, and capture Before/After evidence.`,
+                instructions:
+                  locale === "vi"
+                    ? `Chẩn đoán service ${faultTarget} đang tắt sẵn, quan sát lỗi lan truyền lên các service upstream, bật lại ${faultTarget} để khôi phục 0% lỗi và chụp snapshot Before/After.`
+                    : `Diagnose the initially stopped ${faultTarget} service, observe error propagation across upstream callers, start ${faultTarget} to restore 0% errors, and capture Before/After evidence.`,
                 ...(nextTopology ? { nextTopology } : {}),
               });
               return;
@@ -923,7 +932,10 @@ function StandaloneStudioContent() {
               maxErrorRatePercent: "5",
               baselinePath: defaultBaselinePath,
               allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
-              instructions: `Throttle ${faultTarget} CPU to 25%, measure p95 latency jump across upstream callers, and capture Before/After evidence.`,
+              instructions:
+                locale === "vi"
+                  ? `Bóp CPU của ${faultTarget} xuống 25%, đo mức tăng độ trễ p95 trên các service upstream và chụp snapshot Before/After.`
+                  : `Throttle ${faultTarget} CPU to 25%, measure p95 latency jump across upstream callers, and capture Before/After evidence.`,
               ...(nextTopology ? { nextTopology } : {}),
             });
           },
@@ -977,7 +989,10 @@ function StandaloneStudioContent() {
                 targetChangeAction: { action: "PAUSE", service },
                 baselinePath: defaultBaselinePath,
                 allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
-                instructions: `Inspect the service graph, predict every upstream service impacted when ${service} is paused, lock your prediction, then PAUSE ${service} and capture Before/After evidence.`,
+                instructions:
+                  locale === "vi"
+                    ? `Quan sát sơ đồ phụ thuộc, dự đoán tất cả service upstream bị ảnh hưởng khi PAUSE ${service}, khóa dự đoán, sau đó thực hiện PAUSE ${service} và chụp snapshot Before/After.`
+                    : `Inspect the service graph, predict every upstream service impacted when ${service} is paused, lock your prediction, then PAUSE ${service} and capture Before/After evidence.`,
               });
               return;
             }
@@ -1000,7 +1015,10 @@ function StandaloneStudioContent() {
                 maxErrorRatePercent: "5",
                 baselinePath: defaultBaselinePath,
                 allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
-                instructions: `Scale ${service} to at least 2 replicas under load while keeping error rate <= 5%, and capture Before/After latency evidence.`,
+                instructions:
+                  locale === "vi"
+                    ? `Scale ${service} lên tối thiểu 2 replica dưới tải probe với tỉ lệ lỗi <= 5%, và chụp snapshot so sánh độ trễ p95 Before/After.`
+                    : `Scale ${service} to at least 2 replicas under load while keeping error rate <= 5%, and capture Before/After latency evidence.`,
                 ...(nextTopology ? { nextTopology } : {}),
               });
               return;
@@ -1022,7 +1040,10 @@ function StandaloneStudioContent() {
                 maxErrorRatePercent: "5",
                 baselinePath: defaultBaselinePath,
                 allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
-                instructions: `Throttle ${service} CPU to 25%, observe p95 latency jump across callers, and capture Before/After evidence.`,
+                instructions:
+                  locale === "vi"
+                    ? `Bóp CPU của ${service} xuống 25%, quan sát mức tăng độ trễ p95 trên các service gọi vào và chụp snapshot Before/After.`
+                    : `Throttle ${service} CPU to 25%, observe p95 latency jump across callers, and capture Before/After evidence.`,
               });
             }
           },

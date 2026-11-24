@@ -2172,12 +2172,12 @@ export const SCREEN_TOUR_CATALOG = {
         id: "studio-style-settings",
         selectors: ['[data-tour="studio-top-right-tools"]', '[data-tour="studio-style-picker"]'],
         title: {
-          en: "7. Theme & Studio Settings",
-          vi: "7. Đổi giao diện & Cài đặt",
+          en: "7. Theme, 3D Tags & EN/VI",
+          vi: "7. Giao diện, Nhãn 3D & Đổi EN/VI",
         },
         description: {
-          en: "Pick from 4 Light/Dark themes and open Settings next to it to toggle the service sidebar or sounds. Click '?' anytime to replay.",
-          vi: "Chọn 4 giao diện Sáng/Tối và mở nút Cài đặt bên cạnh để ẩn/hiện danh sách service hoặc âm thanh. Bấm '?' bất cứ lúc nào để xem lại.",
+          en: "Pick from 4 Light/Dark themes, toggle floating 3D service/path tags in Settings, or switch EN/VI right beside '?'.",
+          vi: "Chọn 4 giao diện Sáng/Tối, bật/tắt nhãn nổi 3D trong Cài đặt, hoặc chuyển nhanh EN/VI chuẩn SE ngay kế bên nút '?'.",
         },
       },
     ],

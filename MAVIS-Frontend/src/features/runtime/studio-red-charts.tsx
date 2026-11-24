@@ -1,6 +1,7 @@
 "use client";
 
 import type { Response } from "@/lib/api/contracts";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 type Studio = Response<"studioState">;
 type HistoryFrame = NonNullable<Studio["telemetryHistory"]>[number];
@@ -367,6 +368,7 @@ export function StudioRedCharts({
   onSelectTrace?: ((traceId: string) => void) | undefined;
   isLight?: boolean | undefined;
 }) {
+  const { t } = useLocale();
   const { points, markers } = buildRedSeries(history, actions);
   const beforeAfter = computeBeforeAfterWindow(history, actions);
   const probePoints = points.filter((p) => p.rps !== null);
@@ -394,12 +396,15 @@ export function StudioRedCharts({
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className={`font-semibold ${isLight ? "text-slate-900" : "text-slate-200"}`}>
-              Live RED Time-Series ({probePoints.length} frames)
+              {t("Live RED Time-Series", "Biểu đồ RED trực tiếp")} ({probePoints.length} {t("frames", "mẫu")})
             </span>
             <div className="flex items-center gap-2">
               {markers.length > 0 && (
                 <span className={`text-[11px] ${isLight ? "text-slate-600" : "text-slate-400"}`}>
-                  Dashed lines = {markers.length} action{markers.length > 1 ? "s" : ""}
+                  {t(
+                    `Dashed lines = ${markers.length} action${markers.length > 1 ? "s" : ""}`,
+                    `Vạch đứt = ${markers.length} thao tác`,
+                  )}
                 </span>
               )}
               {exemplarTraceId && onSelectTrace && (
@@ -412,14 +417,14 @@ export function StudioRedCharts({
                       : "border-sky-500/40 bg-sky-950/50 text-sky-200 hover:bg-sky-900/60"
                   }`}
                 >
-                  Inspect slowest trace ({fmt(exemplarMs, 1)} ms)
+                  {t("Inspect slowest trace", "Xem trace chậm nhất")} ({fmt(exemplarMs, 1)} ms)
                 </button>
               )}
             </div>
           </div>
           <div className="grid gap-2 md:grid-cols-3">
             <SvgSeriesCard
-              title="Throughput"
+              title={t("Throughput", "Lưu lượng (RPS)")}
               latestLabel={fmt(latest?.rps, 1)}
               unit="rps"
               markers={markers}
@@ -428,7 +433,7 @@ export function StudioRedCharts({
               series={[{ name: "RPS", color: "#059669", values: points.map((p) => p.rps) }]}
             />
             <SvgSeriesCard
-              title="Latency"
+              title={t("Latency", "Độ trễ (ms)")}
               latestLabel={fmt(latest?.p95Ms, 1)}
               unit="ms"
               markers={markers}
@@ -441,7 +446,7 @@ export function StudioRedCharts({
               ]}
             />
             <SvgSeriesCard
-              title="Error Rate"
+              title={t("Error Rate", "Tỉ lệ lỗi (%)")}
               latestLabel={fmt(latest?.errorRatePercent, 1)}
               unit="%"
               markers={markers}
@@ -460,7 +465,7 @@ export function StudioRedCharts({
           }`}
         >
           <span className="font-semibold">
-            30s Before / After ·{" "}
+            {t("30s Before / After", "So sánh 30s Trước / Sau")} ·{" "}
             <span className={`font-mono ${isLight ? "text-sky-700" : "text-sky-300"}`}>
               {beforeAfter.actionLabel}
             </span>
@@ -498,18 +503,20 @@ export function StudioRedCharts({
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-1.5 font-medium select-none">
               <span className="inline-flex items-center gap-2">
-                <span>Service-to-service edges ({serviceGraph.length})</span>
+                <span>
+                  {t("Service-to-service edges", "Đường gọi giữa các service")} ({serviceGraph.length})
+                </span>
                 {failingEdges > 0 && (
                   <span
                     className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
                       isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/20 text-rose-300"
                     }`}
                   >
-                    {failingEdges} error{failingEdges > 1 ? "s" : ""}
+                    {failingEdges} {t(failingEdges > 1 ? "errors" : "error", "lỗi")}
                   </span>
                 )}
               </span>
-              <span className="text-[11px] text-muted-foreground">Details ▾</span>
+              <span className="text-[11px] text-muted-foreground">{t("Details", "Chi tiết")} ▾</span>
             </summary>
             <div className={`overflow-x-auto border-t ${isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-950/50"}`}>
               <table className="mavis-tabular w-full text-left font-mono text-xs">
@@ -521,10 +528,12 @@ export function StudioRedCharts({
                   }`}
                 >
                   <tr>
-                    <th className="px-3 py-1.5 font-semibold">Live Edge (OTel servicegraph)</th>
+                    <th className="px-3 py-1.5 font-semibold">
+                      {t("Live Edge (OTel servicegraph)", "Đường gọi thực tế (OTel)")}
+                    </th>
                     <th className="px-3 py-1.5 font-semibold">RPS</th>
                     <th className="px-3 py-1.5 font-semibold">p95</th>
-                    <th className="px-3 py-1.5 font-semibold">Error %</th>
+                    <th className="px-3 py-1.5 font-semibold">{t("Error %", "Lỗi %")}</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${isLight ? "divide-slate-200/80" : "divide-slate-800/70"}`}>
@@ -571,6 +580,7 @@ export function TraceWaterfallPanel({
   onClose: () => void;
   isLight?: boolean | undefined;
 }) {
+  const { t } = useLocale();
   const { rows, totalMs } = buildTraceWaterfall(spans, traceId);
   if (rows.length === 0) return null;
 
@@ -607,7 +617,7 @@ export function TraceWaterfallPanel({
             isLight ? "text-slate-600 hover:text-slate-900" : "text-slate-400 hover:text-slate-100"
           }`}
         >
-          Close
+          {t("Close", "Đóng")}
         </button>
       </div>
       <div className="space-y-1">

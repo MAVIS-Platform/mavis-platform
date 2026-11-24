@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, Lock, Play, Target, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 
 type Studio = Response<"studioState">;
@@ -43,6 +44,7 @@ export function StudioExercisePanel({
   ) => Promise<void> | void;
   isLight?: boolean | undefined;
 }) {
+  const { t } = useLocale();
   const [selectedPredicted, setSelectedPredicted] = useState<string[]>([]);
   const [rationale, setRationale] = useState("");
 
@@ -103,7 +105,7 @@ export function StudioExercisePanel({
           }`}
         >
           <Target className={`size-3.5 ${isLight ? "text-indigo-600" : "text-indigo-400"}`} aria-hidden="true" />
-          Change Impact &amp; Auto-Grade
+          {t("Change Impact & Auto-Grade", "Change Impact & Chấm tự động")}
         </span>
         {evaluation && evaluation.totalRules > 0 && (
           <span
@@ -138,7 +140,7 @@ export function StudioExercisePanel({
               }`}
             >
               <Lock className={`size-3 ${isLight ? "text-indigo-600" : "text-indigo-400"}`} aria-hidden="true" />
-              Prediction locked
+              {t("Prediction locked", "Đã khóa dự đoán")}
             </span>
             {evaluation?.impact && (
               <span className={`font-mono font-bold ${isLight ? "text-emerald-700" : "text-emerald-300"}`}>
@@ -181,7 +183,7 @@ export function StudioExercisePanel({
                     : "border-rose-500/40 bg-rose-500/15 text-rose-200"
                 }`}
               >
-                {svc} (Missed)
+                {svc} ({t("Missed", "Thiếu")})
               </span>
             ))}
           </div>
@@ -207,8 +209,14 @@ export function StudioExercisePanel({
         >
           <p className={`text-[11px] ${isLight ? "text-slate-600" : "text-slate-300"}`}>
             {hasConfirmedAction
-              ? "A change was already applied before locking a prediction."
-              : "1. Predict which services will degrade before applying a fault/change:"}
+              ? t(
+                  "A change was already applied before locking a prediction.",
+                  "Bạn đã chạy thao tác trước khi khóa dự đoán.",
+                )
+              : t(
+                  "1. Predict which services will degrade before applying a fault/change:",
+                  "1. Chọn các service dự kiến bị ảnh hưởng trước khi thao tác:",
+                )}
           </p>
           {!hasConfirmedAction && (
             <>
@@ -239,7 +247,7 @@ export function StudioExercisePanel({
               <Input
                 value={rationale}
                 onChange={(e) => setRationale(e.target.value)}
-                placeholder="Short hypothesis (optional)…"
+                placeholder={t("Short hypothesis (optional)…", "Giả thuyết ngắn gọn (tùy chọn)…")}
                 className={`h-7 text-[11px] ${
                   isLight
                     ? "border-slate-300 bg-white text-slate-900"
@@ -254,7 +262,9 @@ export function StudioExercisePanel({
                 className="h-7 w-full bg-indigo-600 text-[11px] text-white hover:bg-indigo-500"
               >
                 <Lock className="mr-1 size-3" aria-hidden="true" />
-                {submittingPrediction ? "Locking…" : `Lock Prediction (${selectedPredicted.length})`}
+                {submittingPrediction
+                  ? t("Locking…", "Đang khóa…")
+                  : `${t("Lock Prediction", "Khóa dự đoán")} (${selectedPredicted.length})`}
               </Button>
             </>
           )}
@@ -276,7 +286,7 @@ export function StudioExercisePanel({
           }`}
         >
           <Play className="mr-1 size-3" aria-hidden="true" />
-          Apply {prescribed.action} on {prescribed.service}
+          {t("Apply", "Chạy")} {prescribed.action} {t("on", "trên")} {prescribed.service}
           {prescribed.cpuPercent ? ` (${prescribed.cpuPercent}%)` : ""}
           {prescribed.targetRps ? ` (${prescribed.targetRps} RPS)` : ""}
           {prescribed.replicas ? ` (×${prescribed.replicas})` : ""}
@@ -291,7 +301,7 @@ export function StudioExercisePanel({
               isLight ? "text-slate-600" : "text-slate-400"
             }`}
           >
-            Pass Criteria ({evaluation.passedRules}/{evaluation.totalRules})
+            {t("Pass Criteria", "Tiêu chí đạt")} ({evaluation.passedRules}/{evaluation.totalRules})
           </div>
           <ul className="space-y-1">
             {evaluation.rules.map((rule) => (

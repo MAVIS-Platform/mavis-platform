@@ -1141,6 +1141,8 @@ export function StudioObservability({
   defaultView = "2D",
   surfaceTheme = "dark",
   studioStyle,
+  showNodeTags = true,
+  showEdgeTags = true,
 }: {
   data: Studio;
   selected: string;
@@ -1162,6 +1164,8 @@ export function StudioObservability({
   defaultView?: "2D" | "3D";
   surfaceTheme?: "light" | "dark";
   studioStyle?: StudioStyleId | undefined;
+  showNodeTags?: boolean | undefined;
+  showEdgeTags?: boolean | undefined;
 }) {
   const activeStyleId: StudioStyleId = resolveStudioStyle(
     studioStyle ?? (surfaceTheme === "light" ? "daylight" : "control"),
@@ -1719,7 +1723,11 @@ export function StudioObservability({
         dashed: !isRequiredEdge && !isImpactBlastEdge,
         protocol: edge.protocol,
         isAsync: isAsyncProtocol(edge.protocol),
-        label: isRequiredEdge ? "Required edge" : isImpactBlastEdge ? "Impact path" : null,
+        label: isRequiredEdge
+          ? t("Required edge", "Đường kiểm chứng")
+          : isImpactBlastEdge
+            ? t("Impact path", "Nhánh ảnh hưởng")
+            : null,
         isSevered: targetStopped,
         isDegraded: isImpactBlastEdge && !targetStopped,
       });
@@ -1805,6 +1813,7 @@ export function StudioObservability({
     spansByTraceAndId,
     simulated,
     authorHighlights,
+    t,
   ]);
 
   function nodeAt(clientX: number, clientY: number) {
@@ -2039,9 +2048,9 @@ export function StudioObservability({
                   <div className="grid grid-cols-3 gap-1">
                     {(
                       [
-                        ["Isometric", "Iso", DEFAULT_3D_CAMERA.yaw, DEFAULT_3D_CAMERA.pitch],
-                        ["Top-down", "Trên", TOP_DOWN_3D_CAMERA.yaw, TOP_DOWN_3D_CAMERA.pitch],
-                        ["Elevation", "Ngang", ELEVATION_3D_CAMERA.yaw, ELEVATION_3D_CAMERA.pitch],
+                        ["Isometric", "Góc 3D", DEFAULT_3D_CAMERA.yaw, DEFAULT_3D_CAMERA.pitch],
+                        ["Top-down", "Từ trên", TOP_DOWN_3D_CAMERA.yaw, TOP_DOWN_3D_CAMERA.pitch],
+                        ["Elevation", "Mặt đứng", ELEVATION_3D_CAMERA.yaw, ELEVATION_3D_CAMERA.pitch],
                       ] as const
                     ).map(([labelEn, labelVi, presetYaw, presetPitch]) => {
                       const active =
@@ -2441,6 +2450,8 @@ export function StudioObservability({
             pan={pan}
             styleId={activeStyleId}
             busy={busy}
+            showNodeTags={showNodeTags}
+            showEdgeTags={showEdgeTags}
             onCameraChange={setCamera}
             onZoomChange={setZoom}
             onPanChange={setPan}
@@ -3057,7 +3068,7 @@ export function StudioObservability({
                     opacity={wireSelected || edgeSevered || (sg && sg.rps > 0) ? "0.95" : "0.6"}
                   />
                   {renderWireArrow(arcCtrl ?? from, to, getNodeLabel(nodeNames?.[edge.toService] ?? edge.toService, view), wireSelected || edgeSevered || edgeDegraded || (sg && sg.rps > 0) ? edgeColor : "#94a3b8", true, view === "3D" ? sculptureScale(targetReplicas) * Math.max(0.86, Math.min(1.12, to.persp)) : 1)}
-                  {wireLabel && (
+                  {showEdgeTags && wireLabel && (
                     <g data-studio-wire-metric>
                       <rect
                         x={mx - badgeWidth / 2}

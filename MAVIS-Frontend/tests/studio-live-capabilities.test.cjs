@@ -455,7 +455,7 @@ test("LiveTerminalConsole renders service filter as a compact dropdown instead o
     "utf8",
   );
   assert.match(src, /<Select\s+value=\{activeServiceFilter\}\s+onValueChange=\{setServiceFilter\}>[\s\S]*<SelectTrigger[\s\S]*aria-label="Filter by service"/);
-  assert.match(src, /All services \(\{serviceList\.length\}\)/);
+  assert.match(src, /All services[\s\S]{0,40}\{serviceList\.length\}/);
   assert.doesNotMatch(src, /\{\/\* Service filter pills \*\/\}/);
 });
 
@@ -1348,4 +1348,58 @@ test("Studio 3D WYSIWYG authoring: Reverse BFS blast radius (incl. cycles), repo
   );
   assert.doesNotMatch(helpersSrc, /[\u26A1\u{1F3AF}\u{1F525}\u{1F680}\u2705\u274C\u{1F527}]/u);
   assert.doesNotMatch(labStudioSrc, /[\u26A1\u{1F3AF}\u{1F525}\u{1F680}\u2705\u274C\u{1F527}]/u);
+});
+
+test("Studio Settings toggles 3D node & edge tags, Stats shows rich Service Health & Lab Scope overview, and SE EN/VI switcher sits next to ?", () => {
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const threeSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const chartsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-red-charts.tsx"),
+    "utf8",
+  );
+  const exerciseSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-exercise-panel.tsx"),
+    "utf8",
+  );
+
+  // Task 1: 3D tag toggles in Settings + Three.js instant visibility + raycast skip
+  assert.match(workbenchSrc, /data-testid="toggle-3d-node-tags"/);
+  assert.match(workbenchSrc, /data-testid="toggle-3d-edge-tags"/);
+  assert.match(workbenchSrc, /mavis\.studio\.show-node-tags/);
+  assert.match(workbenchSrc, /mavis\.studio\.show-edge-tags/);
+  assert.match(threeSrc, /showNodeTags\s*=\s*true/);
+  assert.match(threeSrc, /showEdgeTags\s*=\s*true/);
+  assert.match(threeSrc, /if \(!hit\.object\.visible\) continue;/);
+  assert.match(threeSrc, /data-show-node-tags=\{String\(showNodeTags\)\}/);
+  assert.match(obsSrc, /showEdgeTags && wireLabel/);
+
+  // Task 2: Rich Cluster Overview (Stats tab) with Service Health matrix & Lab Scope / Dependency Paths
+  assert.match(workbenchSrc, /Service Health & Topology/);
+  assert.match(workbenchSrc, /Lab Scope & Dependency Paths/);
+  assert.match(workbenchSrc, /Dependency Paths/);
+
+  // Task 3: EN/VI toggle right beside ? (ScreenHelpTrigger) + natural SE Vietnamese without translating service identifiers
+  assert.match(workbenchSrc, /<ScreenHelpTrigger[\s\S]{0,1200}data-testid="studio-locale-toggle"/);
+  assert.match(chartsSrc, /useLocale/);
+  assert.match(exerciseSrc, /useLocale/);
+
+  const { deriveExerciseFromLiveActions } = require("../src/features/runtime/studio-authoring-helpers.ts");
+  const viImpact = deriveExerciseFromLiveActions(
+    [{ action: "PAUSE", service: "payment-service", status: "CONFIRMED" }],
+    [],
+    "vi",
+  );
+  assert.ok(viImpact.instructions.includes("payment-service"), "VI draft must preserve service identifiers");
+  assert.ok(viImpact.instructions.includes("PAUSE"), "VI draft must preserve SE action keyword");
+  assert.ok(viImpact.summary.includes("Change Impact"), "VI summary must keep natural SE terminology");
 });
