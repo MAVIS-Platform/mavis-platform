@@ -1746,3 +1746,60 @@ test("Studio Live 3D Diorama uses studio PBR RoomEnvironment IBL, 5 distinct scu
   assert.ok(stageSrc.includes('!spriteMat.map.userData?.["__shared"]'));
   assert.ok(stageSrc.includes("envTargetRef.current?.dispose()"));
 });
+
+test("LabStudioSection Launchpad renders theme-synced Exercise Spec, 3-step checklist, Sync Docker tooltip, and scalable Mini Topology SVG", () => {
+  const { computeMiniTopologyLayout } = require("../src/features/runtime/studio-authoring-helpers.ts");
+
+  // 1. Standard 5-service DAG layers gateway -> core -> downstream cleanly left-to-right
+  const dag = computeMiniTopologyLayout(
+    ["api-gateway", "order-service", "payment-service", "catalog-service", "notification-worker"],
+    [
+      { from: "api-gateway", to: "order-service" },
+      { from: "order-service", to: "payment-service" },
+      { from: "order-service", to: "catalog-service" },
+      { from: "order-service", to: "notification-worker" },
+    ],
+  );
+  assert.equal(dag.nodes.length, 5);
+  assert.equal(dag.edges.length, 4);
+  assert.equal(dag.hiddenCount, 0);
+  const byName = new Map(dag.nodes.map((n) => [n.service, n]));
+  assert.equal(byName.get("api-gateway").col, 0);
+  assert.equal(byName.get("order-service").col, 1);
+  assert.equal(byName.get("payment-service").col, 2);
+  assert.ok(dag.edges.every((e) => e.path.startsWith("M ")));
+
+  // 2. Cyclic graph never infinite-loops and preserves all edges
+  const cyclic = computeMiniTopologyLayout(
+    ["svc-a", "svc-b", "svc-c"],
+    [
+      { from: "svc-a", to: "svc-b" },
+      { from: "svc-b", to: "svc-c" },
+      { from: "svc-c", to: "svc-a" },
+    ],
+  );
+  assert.equal(cyclic.nodes.length, 3);
+  assert.equal(cyclic.edges.length, 3);
+
+  // 3. Large 20-service repo caps SVG to 12 nodes while always retaining priority targets
+  const largeServices = Array.from({ length: 20 }, (_, i) => `svc-${i + 1}`);
+  const capped = computeMiniTopologyLayout(largeServices, [], {
+    priorityServices: ["svc-19", "svc-20"],
+    maxNodes: 12,
+  });
+  assert.equal(capped.nodes.length, 12);
+  assert.equal(capped.hiddenCount, 8);
+  assert.ok(capped.nodes.some((n) => n.service === "svc-19"));
+  assert.ok(capped.nodes.some((n) => n.service === "svc-20"));
+
+  // 4. LabStudioSection uses theme-synced Launchpad surface (no hardcoded #070b12 slab), checklist, tooltip & Mini Topology
+  const labStudioSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/assignments/lab-studio-section.tsx"),
+    "utf8",
+  );
+  assert.ok(labStudioSrc.includes('data-testid="lab-studio-launchpad"'));
+  assert.ok(labStudioSrc.includes('data-testid="lab-studio-mini-topology"'));
+  assert.ok(labStudioSrc.includes("computeMiniTopologyLayout"));
+  assert.ok(labStudioSrc.includes("TooltipContent"));
+  assert.ok(!labStudioSrc.includes("bg-[#070b12]"));
+});

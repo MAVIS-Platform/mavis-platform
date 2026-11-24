@@ -432,3 +432,224 @@ export function deriveExerciseFromLiveActions(
 
   return null;
 }
+
+export interface MiniTopologyNode {
+  service: string;
+  col: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface MiniTopologyEdge {
+  from: string;
+  to: string;
+  key: string;
+  path: string;
+}
+
+export interface MiniTopologyLayout {
+  nodes: MiniTopologyNode[];
+  edges: MiniTopologyEdge[];
+  width: number;
+  height: number;
+  hiddenCount: number;
+}
+
+const MINI_GATEWAY_RE = /(gateway|ingress|edge|proxy|bff|router)/i;
+const MINI_SINK_RE = /(worker|consumer|processor|notifier|cron|job|db|database|postgres|mysql|mongo|redis|kafka|rabbit|queue|broker|mq)/i;
+
+/**
+ * Computes a compact left-to-right architectural SVG layout for the Lab Studio Launchpad.
+ * Caps large repositories (15-25+ services) to `maxNodes` while keeping highlighted targets visible.
+ */
+export function computeMiniTopologyLayout(
+  services: readonly string[],
+  rawEdges: ReadonlyArray<{ from: string; to: string }>,
+  options?: { priorityServices?: readonly string[]; maxNodes?: number },
+): MiniTopologyLayout {
+  const unique = Array.from(
+    new Set(services.map((svc) => svc.trim()).filter(Boolean)),
+  );
+  if (unique.length === 0) {
+    return { nodes: [], edges: [], width: 320, height: 120, hiddenCount: 0 };
+  }
+
+  const maxNodes = Math.max(1, options?.maxNodes ?? 12);
+  const prioritySet = new Set(options?.priorityServices ?? []);
+  const degree = new Map<string, number>();
+  for (const edge of rawEdges) {
+    if (!edge.from || !edge.to || edge.from === edge.to) continue;
+    degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
+    degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
+  }
+
+  let shown = unique;
+  if (unique.length > maxNodes) {
+    const ranked = unique
+      .map((svc, index) => ({
+        svc,
+        index,
+        score:
+          (prioritySet.has(svc) ? 100 : 0) +
+          (MINI_GATEWAY_RE.test(svc) ? 40 : 0) +
+          (degree.get(svc) ?? 0) * 3,
+      }))
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .slice(0, maxNodes);
+    const keep = new Set(ranked.map((r) => r.svc));
+    shown = unique.filter((svc) => keep.has(svc));
+  }
+  const hiddenCount = unique.length - shown.length;
+  const shownSet = new Set(shown);
+
+  const edgeSeen = new Set<string>();
+  const validEdges: Array<{ from: string; to: string }> = [];
+  for (const edge of rawEdges) {
+    if (
+      !edge.from ||
+      !edge.to ||
+      edge.from === edge.to ||
+      !shownSet.has(edge.from) ||
+      !shownSet.has(edge.to)
+    ) {
+      continue;
+    }
+    const key = `${edge.from}->${edge.to}`;
+    if (edgeSeen.has(key)) continue;
+    edgeSeen.add(key);
+    validEdges.push({ from: edge.from, to: edge.to });
+  }
+
+  const colByService = new Map<string, number>();
+  if (validEdges.length > 0) {
+    const outAdj = new Map<string, string[]>();
+    const inDeg = new Map<string, number>();
+    for (const svc of shown) {
+      outAdj.set(svc, []);
+      inDeg.set(svc, 0);
+    }
+    for (const e of validEdges) {
+      outAdj.get(e.from)!.push(e.to);
+      inDeg.set(e.to, (inDeg.get(e.to) ?? 0) + 1);
+    }
+
+    const roots = shown.filter(
+      (svc) => (inDeg.get(svc) ?? 0) === 0 || MINI_GATEWAY_RE.test(svc),
+    );
+    if (roots.length === 0) {
+      const seed = shown.slice().sort(
+        (a, b) => (outAdj.get(b)?.length ?? 0) - (outAdj.get(a)?.length ?? 0),
+      )[0]!;
+      roots.push(seed);
+    }
+
+    const queue: Array<{ svc: string; depth: number; trail: Set<string> }> = [];
+    for (const root of roots) {
+      colByService.set(root, 0);
+      queue.push({ svc: root, depth: 0, trail: new Set([root]) });
+    }
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head++]!;
+      for (const next of outAdj.get(cur.svc) ?? []) {
+        if (cur.trail.has(next)) continue; // Cycle guard
+        const nextDepth = Math.min(3, cur.depth + 1);
+        if ((colByService.get(next) ?? -1) < nextDepth) {
+          colByService.set(next, nextDepth);
+          const nextTrail = new Set(cur.trail);
+          nextTrail.add(next);
+          queue.push({ svc: next, depth: nextDepth, trail: nextTrail });
+        }
+      }
+    }
+    const maxAssigned = Math.max(1, ...Array.from(colByService.values(), (c) => c));
+    for (const svc of shown) {
+      if (!colByService.has(svc)) {
+        colByService.set(
+          svc,
+          MINI_GATEWAY_RE.test(svc) ? 0 : MINI_SINK_RE.test(svc) ? maxAssigned : 1,
+        );
+      }
+    }
+  } else {
+    // No static edges yet: group by role into balanced columns (max 4 rows per column)
+    for (const svc of shown) {
+      colByService.set(
+        svc,
+        MINI_GATEWAY_RE.test(svc) ? 0 : MINI_SINK_RE.test(svc) ? 2 : 1,
+      );
+    }
+  }
+
+  // Group into contiguous columns and cap rows per column at 4 so tall flat lists wrap cleanly
+  const rawCols = Array.from(new Set(colByService.values())).sort((a, b) => a - b);
+  const columns: string[][] = [];
+  for (const colIdx of rawCols) {
+    const members = shown
+      .filter((svc) => colByService.get(svc) === colIdx)
+      .sort((a, b) => a.localeCompare(b));
+    for (let i = 0; i < members.length; i += 4) {
+      columns.push(members.slice(i, i + 4));
+    }
+  }
+
+  const nodeW = 142;
+  const nodeH = 34;
+  const colGap = 48;
+  const rowGap = 14;
+  const padX = 16;
+  const padY = 18;
+  const colCount = Math.max(1, columns.length);
+  const maxRows = Math.max(1, ...columns.map((c) => c.length));
+  const width = padX * 2 + colCount * nodeW + Math.max(0, colCount - 1) * colGap;
+  const height = Math.max(156, padY * 2 + maxRows * nodeH + Math.max(0, maxRows - 1) * rowGap);
+
+  const nodes: MiniTopologyNode[] = [];
+  const nodeByService = new Map<string, MiniTopologyNode>();
+  columns.forEach((colServices, colIndex) => {
+    const x = padX + colIndex * (nodeW + colGap);
+    const colH = colServices.length * nodeH + Math.max(0, colServices.length - 1) * rowGap;
+    const startY = Math.round((height - colH) / 2);
+    colServices.forEach((svc, rowIndex) => {
+      const node: MiniTopologyNode = {
+        service: svc,
+        col: colIndex,
+        x,
+        y: startY + rowIndex * (nodeH + rowGap),
+        w: nodeW,
+        h: nodeH,
+      };
+      nodes.push(node);
+      nodeByService.set(svc, node);
+    });
+  });
+
+  const edges: MiniTopologyEdge[] = validEdges.flatMap((e) => {
+    const a = nodeByService.get(e.from);
+    const b = nodeByService.get(e.to);
+    if (!a || !b) return [];
+    const ay = a.y + a.h / 2;
+    const by = b.y + b.h / 2;
+    let path: string;
+    if (a.col < b.col) {
+      const x1 = a.x + a.w;
+      const x2 = b.x;
+      const c = Math.max(20, (x2 - x1) * 0.5);
+      path = `M ${x1} ${ay} C ${x1 + c} ${ay}, ${x2 - c} ${by}, ${x2} ${by}`;
+    } else if (a.col === b.col) {
+      const x1 = a.x + a.w;
+      const bow = x1 + 22;
+      path = `M ${x1} ${ay} C ${bow} ${ay}, ${bow} ${by}, ${x1} ${by}`;
+    } else {
+      const x1 = a.x;
+      const x2 = b.x + b.w;
+      const archY = Math.max(8, Math.min(a.y, b.y) - 16);
+      path = `M ${x1} ${ay} C ${x1 - 22} ${archY}, ${x2 + 22} ${archY}, ${x2} ${by}`;
+    }
+    return [{ from: e.from, to: e.to, key: `${e.from}->${e.to}`, path }];
+  });
+
+  return { nodes, edges, width, height, hiddenCount };
+}
