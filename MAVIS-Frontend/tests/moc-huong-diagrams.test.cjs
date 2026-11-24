@@ -37,31 +37,45 @@ const { generateDrawio } = require("../src/lib/drawio/server.ts");
 function buildMocHuongModel() {
   const rawNodes = [
     {
+      id: "admin",
+      name: "Admin",
+      elementType: "PERSON",
+      technology: "Admin Portal",
+      description: "Quản trị viên quản lý tài khoản, phân quyền (ADMIN) & danh mục sản phẩm",
+      parentId: null,
+      status: "VALIDATED",
+      properties: {
+        contextReviewState: "CONFIRMED",
+        contextFactOrigin: "USER_CONFIRMED",
+        contextActionLabel: "Quản trị tài khoản, phân quyền & danh mục [HTTPS]",
+      },
+    },
+    {
+      id: "staff",
+      name: "Staff",
+      elementType: "PERSON",
+      technology: "Staff Portal",
+      description: "Nhân viên xử lý đơn hàng & quản lý tồn kho (STAFF)",
+      parentId: null,
+      status: "VALIDATED",
+      properties: {
+        contextReviewState: "CONFIRMED",
+        contextFactOrigin: "USER_CONFIRMED",
+        contextActionLabel: "Xử lý đơn hàng & quản lý tồn kho [HTTPS]",
+      },
+    },
+    {
       id: "customer",
       name: "Customer",
       elementType: "PERSON",
       technology: "Web / Mobile Client",
-      description: "Khách hàng duyệt sản phẩm, đặt hàng & nhận thông báo đơn hàng",
+      description: "Khách hàng duyệt sản phẩm, đặt hàng & theo dõi đơn (CUSTOMER)",
       parentId: null,
       status: "VALIDATED",
       properties: {
         contextReviewState: "CONFIRMED",
         contextFactOrigin: "USER_CONFIRMED",
-        contextActionLabel: "Browse & place orders (HTTPS)",
-      },
-    },
-    {
-      id: "admin-staff",
-      name: "Admin / Staff",
-      elementType: "PERSON",
-      technology: "Admin / Portal",
-      description: "Quản trị viên quản lý danh mục, sản phẩm & tồn kho",
-      parentId: null,
-      status: "VALIDATED",
-      properties: {
-        contextReviewState: "CONFIRMED",
-        contextFactOrigin: "USER_CONFIRMED",
-        contextActionLabel: "Manage catalog & stock (JWT)",
+        contextActionLabel: "Duyệt sản phẩm, đặt hàng & theo dõi đơn [HTTPS]",
       },
     },
     {
@@ -75,7 +89,7 @@ function buildMocHuongModel() {
       properties: {
         contextReviewState: "CONFIRMED",
         contextFactOrigin: "USER_CONFIRMED",
-        contextActionLabel: "Export OTLP spans & metrics",
+        contextActionLabel: "Xuất OTLP traces & metrics [HTTP/OTLP]",
       },
     },
     {
@@ -271,8 +285,9 @@ function buildMocHuongModel() {
     });
 
   // C1 & C2 edges
+  edge("admin-gw", "admin", "api-gateway", "SERVICE_HTTP_CALL", { label: "HTTPS Admin" });
+  edge("staff-gw", "staff", "api-gateway", "SERVICE_HTTP_CALL", { label: "HTTPS Staff" });
   edge("cust-gw", "customer", "api-gateway", "SERVICE_HTTP_CALL", { label: "HTTPS Client" });
-  edge("admin-gw", "admin-staff", "api-gateway", "SERVICE_HTTP_CALL", { label: "HTTPS Admin" });
   edge("gw-identity", "api-gateway", "identity-service", "GATEWAY_ROUTE", { route: "/api/v1/auth/**,/users/**" });
   edge("gw-catalog", "api-gateway", "catalog-service", "GATEWAY_ROUTE", { route: "/api/v1/products/**,/categories/**" });
   edge("gw-order", "api-gateway", "order-service", "GATEWAY_ROUTE", { route: "/api/v1/orders/**" });
@@ -362,21 +377,22 @@ function buildMocHuongModel() {
   };
 }
 
-test("Moc Huong v3 C1 Context uses confirmed actors and custom action labels", async () => {
+test("Moc Huong v4 C1 Context uses 3 confirmed roles and Vietnamese business action labels", async () => {
   const model = buildMocHuongModel();
   const ctx = deriveC4ContextModel(model, "Mộc Hương Shop Platform");
 
-  assert.equal(ctx.persons.length, 2);
+  assert.equal(ctx.persons.length, 3);
   assert.deepEqual(
     ctx.persons.map((p) => [p.name, p.actionLabel]),
     [
-      ["Customer", "Browse & place orders (HTTPS)"],
-      ["Admin / Staff", "Manage catalog & stock (JWT)"],
+      ["Admin", "Quản trị tài khoản, phân quyền & danh mục [HTTPS]"],
+      ["Staff", "Xử lý đơn hàng & quản lý tồn kho [HTTPS]"],
+      ["Customer", "Duyệt sản phẩm, đặt hàng & theo dõi đơn [HTTPS]"],
     ],
   );
   assert.deepEqual(
     ctx.externals.map((e) => [e.name, e.actionLabel]),
-    [["OpenTelemetry & MAVIS Observability", "Export OTLP spans & metrics"]],
+    [["OpenTelemetry & MAVIS Observability", "Xuất OTLP traces & metrics [HTTP/OTLP]"]],
   );
   assert.ok(ctx.systemDescription.includes("explicit user-confirmed assertions"));
 
@@ -386,19 +402,25 @@ test("Moc Huong v3 C1 Context uses confirmed actors and custom action labels", a
   assert.ok(selection.document);
   const xml = await generateDrawio(selection.document);
   assert.ok(xml.includes("Mộc Hương Shop Platform"));
-  assert.ok(xml.includes("Browse &amp; place orders (HTTPS)"));
-  assert.ok(xml.includes("Manage catalog &amp; stock (JWT)"));
-  assert.ok(xml.includes("Export OTLP spans &amp; metrics"));
+  assert.ok(
+    xml.includes(
+      "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices",
+    ),
+  );
+  assert.ok(xml.includes("Quản trị tài khoản, phân quyền &amp; danh mục [HTTPS]"));
+  assert.ok(xml.includes("Xử lý đơn hàng &amp; quản lý tồn kho [HTTPS]"));
+  assert.ok(xml.includes("Duyệt sản phẩm, đặt hàng &amp; theo dõi đơn [HTTPS]"));
+  assert.ok(xml.includes("Xuất OTLP traces &amp; metrics [HTTP/OTLP]"));
 });
 
-test("Moc Huong v3 C2 Container includes all 6 microservices & infrastructure with zero ELK collisions", async () => {
+test("Moc Huong v4 C2 Container includes 3 Person roles, 6 microservices & infrastructure with [Person] labels", async () => {
   const model = buildMocHuongModel();
   const selection = selectDiagram(model, "CONTAINER", undefined, {
     systemName: "Mộc Hương Shop Platform",
   });
   assert.ok(selection.document);
   const doc = selection.document;
-  assert.ok(doc.layoutJson.nodes.length >= 15);
+  assert.ok(doc.layoutJson.nodes.length >= 16);
 
   const xml = await generateDrawio(doc);
   for (const expected of [
@@ -414,12 +436,17 @@ test("Moc Huong v3 C2 Container includes all 6 microservices & infrastructure wi
     "notification-db",
     "redis",
     "kafka",
+    "Admin",
+    "Staff",
     "Customer",
-    "Admin / Staff",
+    "[Person · Admin Portal]",
+    "[Person · Staff Portal]",
+    "[Person · Web / Mobile Client]",
     "OpenTelemetry &amp; MAVIS Observability",
   ]) {
     assert.ok(xml.includes(expected), `C2 Container SVG/DrawIO missing ${expected}`);
   }
+  assert.ok(!xml.includes("Unknown element"));
   assert.ok(!xml.includes("payment-service"));
   assert.ok(!xml.includes("inventory-service"));
   assert.ok(!xml.includes("Curated E-Commerce Reference"));
@@ -473,11 +500,11 @@ test("Moc Huong v3 C3 Component (ALL and every single service) generates DrawIO 
   }
 });
 
-test("Moc Huong v3 Dependency Graph projects all 15 architecture nodes and directed shortLabel edges", () => {
+test("Moc Huong v4 Dependency Graph projects all 16 architecture nodes and directed shortLabel edges", () => {
   const model = buildMocHuongModel();
   const projection = projectGraphModel(model, false, "all");
 
-  assert.equal(projection.model.elements.length, 15);
+  assert.equal(projection.model.elements.length, 16);
   assert.equal(projection.filteredRelationships, 0);
   assert.equal(projection.unassignedElements, 0);
   assert.equal(projection.unassignedRelationships, 0);
