@@ -27,8 +27,10 @@ test("styles.css exposes MAVIS design polish utilities and reduced-motion safegu
   assert.match(css, /@keyframes mavis-packet-flow\s*\{/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.doesNotMatch(css, /#F7F8FC|#E8EDFF|#53638F/, "Light mode must avoid glaring lavender-tinted fatigue tokens");
-  assert.match(css, /:root,\s*\[data-theme="light"\]\s*\{[\s\S]*--background:\s*#EEF2F6;/);
-  assert.match(css, /:root,\s*\[data-theme="light"\]\s*\{[\s\S]*--border:\s*#CBD5E1;/);
+  assert.match(css, /:root,\s*\[data-theme="light"\]\s*\{[\s\S]*--background:\s*#E4EAF2;/);
+  assert.match(css, /:root,\s*\[data-theme="light"\]\s*\{[\s\S]*--border:\s*#9FB0C4;/);
+  assert.match(css, /:root,\s*\[data-theme="light"\]\s*\{[\s\S]*--foreground:\s*#0B1220;/);
+  assert.match(css, /:root,\s*\[data-theme="light"\]\s*\{[\s\S]*--muted-foreground:\s*#334155;/);
 });
 
 test("locale-context.tsx defines Vietnamese translations for Student sidebar, Login, 4-stage Lab, and BR-10 grading", () => {
