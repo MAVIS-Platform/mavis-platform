@@ -42,8 +42,8 @@ export function StudentCoursesHero({
           </h1>
           <p className="text-sm leading-6 text-sky-100/90">
             {t(
-              "Track sequential Labs, pass Quiz Gates, practice on MAVIS Studio Live, and view your graded feedback.",
-              "Theo dõi lộ trình bài Lab tuần tự, vượt qua Quiz Gate, thực hành MAVIS Studio Live và xem nhận xét từ Giảng viên.",
+              "Track sequential Labs, complete module quizzes, practice on MAVIS Studio Live, and view your graded feedback.",
+              "Theo dõi lộ trình bài Lab tuần tự, hoàn thành các bài trắc nghiệm, thực hành MAVIS Studio Live và xem nhận xét từ Giảng viên.",
             )}
           </p>
         </div>

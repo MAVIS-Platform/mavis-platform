@@ -36,7 +36,7 @@ const steps: Array<{
   { id: "quiz", en: "Quiz", vi: "Quiz", icon: FileQuestion },
   { id: "lab", en: "MAVIS Studio Lab", vi: "Lab MAVIS Studio", icon: Boxes },
   { id: "arrange", en: "Arrange Modules", vi: "Sắp xếp Module", icon: ListTree },
-  { id: "publish", en: "Publish Changes", vi: "Publish Changes", icon: Send },
+  { id: "publish", en: "Publish Changes", vi: "Công bố khóa học", icon: Send },
 ];
 
 export function courseSetupStepHref(workspaceId: string, step: CourseSetupStep) {
@@ -70,7 +70,7 @@ export function CourseSetupFlowFrame({
           {t("First Course setup", "Thiết lập khóa học lần đầu")}
         </p>
         <h2 className="mt-1 text-2xl font-bold tracking-tight">
-          {t("Build the first learning flow", "Xây dựng learning flow đầu tiên")}
+          {t("Set up your course learning flow", "Thiết lập lộ trình khóa học")}
         </h2>
       </div>
 

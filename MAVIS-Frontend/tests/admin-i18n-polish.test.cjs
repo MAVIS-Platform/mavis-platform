@@ -390,3 +390,26 @@ test("Task #13 Studio Snapshot Sync, Zero-Snapshot Submit Guard, Live Stats & Co
   assert.match(workbench, /Live Docker running — awaiting probe traffic/);
 });
 
+test("Commit #04 i18n copy polish simplifies roles, hides unclassified layer and removes internal spec codes", () => {
+  const { roleLabels } = require("../src/lib/navigation.ts");
+  const archComp = read("src/features/architecture/components.tsx");
+  const grading = read("src/features/submissions/grading.tsx");
+  const step2 = read("src/features/courses/step2-static-impact.tsx");
+  const courseBuilder = read("src/features/courses/course-builder.tsx");
+  const flowNav = read("src/features/courses/course-setup-flow-navigation.tsx");
+
+  assert.deepEqual(roleLabels, {
+    student: "Student",
+    lecturer: "Lecturer",
+    admin: "Admin",
+  });
+  assert.match(archComp, /if \(key === "unclassified"\) return null/);
+  assert.match(archComp, /domain:\s*\{\s*en:\s*"Domain",\s*vi:\s*"Nghiệp vụ"\s*\}/);
+  assert.match(archComp, /edge:\s*\{\s*en:\s*"Edge",\s*vi:\s*"Cổng biên"\s*\}/);
+  assert.match(archComp, /formatArchitectureLayerLabel\(element\.layer, t\)/);
+  assert.match(courseBuilder, /Công bố khóa học/);
+  assert.match(flowNav, /Công bố khóa học/);
+  assert.doesNotMatch(grading, /5\.01|BR-10/);
+  assert.doesNotMatch(step2, /DS-03b/);
+});
+

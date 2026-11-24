@@ -142,8 +142,8 @@ export function LabPublishSection({
       detail: hasQuiz
         ? t(`Version ${setupLab?.quizVersion}`, `Phiên bản ${setupLab?.quizVersion}`)
         : hasStudio
-          ? t("Required for BR-06 Quiz Gate before students launch Docker Studio.", "Bắt buộc cho cổng Quiz (BR-06) trước khi sinh viên mở Docker Studio.")
-          : t("Optional — skip if no Quiz Gate.", "Tùy chọn — bỏ qua nếu không dùng Quiz."),
+          ? t("Required Quiz before students launch Docker Studio.", "Bắt buộc có Quiz trước khi sinh viên mở Docker Studio.")
+          : t("Optional — skip if no Quiz is needed.", "Tùy chọn — bỏ qua nếu không dùng Quiz."),
       tab: "quiz",
     },
     {
@@ -279,8 +279,8 @@ export function LabPublishSection({
         {hasStudio && !hasQuiz && (
           <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
             {t(
-              "BR-06 Quiz Gate: Studio Live is configured, so publish a Quiz in Step 4 so students can unlock Docker Studio.",
-              "Cổng Quiz (BR-06): Lab có cấu hình Studio Live — hãy công bố Quiz ở Bước 4 để sinh viên vượt qua trước khi mở Docker Studio.",
+              "Studio Live is configured — publish a Quiz so students can complete it before launching Docker Studio.",
+              "Lab có cấu hình Studio Live — hãy chuẩn bị bài Quiz để sinh viên hoàn thành trước khi mở Docker Studio.",
             )}
           </p>
         )}

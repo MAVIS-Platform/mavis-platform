@@ -48,7 +48,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
       <DetailPanel title={t("Submission Dossier", "Hồ sơ bài nộp")}>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge
-            status={t("Frozen submitted dossier · read-only", "Hồ sơ đã khóa · chỉ đọc")}
+            status={t("Submitted", "Bài đã nộp")}
             variant="source"
           />
           {isTheoryOnly ? (
@@ -103,10 +103,10 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
   }
 
   return (
-    <DetailPanel title={t("Submitted snapshot", "Hồ sơ bài nộp đã khóa")}>
+    <DetailPanel title={t("Submitted snapshot", "Bài đã nộp")}>
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge
-          status={t("Frozen submitted results · read-only", "Kết quả nộp đã khóa · chỉ đọc")}
+          status={t("Submitted", "Bài đã nộp")}
           variant="source"
         />
         {isTheoryOnly ? (

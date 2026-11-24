@@ -233,7 +233,7 @@ export const JAVA_COURSERA_MODULES: OutlineModuleData[] = [
         type: "QUIZ",
         position: 4,
         title: "Quiz Chương 1 · Kiểm tra Trắc nghiệm (10 câu)",
-        description: "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+        description: "Đạt từ 70% trở lên để mở khóa phần thực hành MAVIS Studio.",
         required: true,
         quizQuestions: [
           {
@@ -559,7 +559,7 @@ export const JAVA_COURSERA_MODULES: OutlineModuleData[] = [
         type: "QUIZ",
         position: 4,
         title: "Quiz Chương 2 · Kiểm tra Trắc nghiệm (10 câu)",
-        description: "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+        description: "Đạt từ 70% trở lên để mở khóa phần thực hành MAVIS Studio.",
         required: true,
         quizQuestions: [
           {
@@ -830,7 +830,7 @@ export const JAVA_COURSERA_MODULES: OutlineModuleData[] = [
         type: "QUIZ",
         position: 4,
         title: "Quiz Chương 3 · Kiểm tra Trắc nghiệm (10 câu)",
-        description: "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+        description: "Đạt từ 70% trở lên để mở khóa phần thực hành MAVIS Studio.",
         required: true,
         quizQuestions: [
           {
@@ -1081,7 +1081,7 @@ export const JAVA_COURSERA_MODULES: OutlineModuleData[] = [
         type: "QUIZ",
         position: 4,
         title: "Quiz Chương 4 · Kiểm tra Trắc nghiệm (10 câu)",
-        description: "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+        description: "Đạt từ 70% trở lên để mở khóa phần thực hành MAVIS Studio.",
         required: true,
         quizQuestions: [
           {
@@ -1305,7 +1305,7 @@ export const JAVA_COURSERA_MODULES: OutlineModuleData[] = [
         type: "QUIZ",
         position: 4,
         title: "Quiz Chương 5 · Kiểm tra Trắc nghiệm (10 câu)",
-        description: "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+        description: "Đạt từ 70% trở lên để mở khóa phần thực hành MAVIS Studio.",
         required: true,
         quizQuestions: [
           {
@@ -1536,7 +1536,7 @@ export const JAVA_COURSERA_MODULES: OutlineModuleData[] = [
         type: "QUIZ",
         position: 4,
         title: "Quiz Chương 6 · Kiểm tra Trắc nghiệm (10 câu)",
-        description: "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+        description: "Đạt từ 70% trở lên để mở khóa phần thực hành MAVIS Studio.",
         required: true,
         quizQuestions: [
           {

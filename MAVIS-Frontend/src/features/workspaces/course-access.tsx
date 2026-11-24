@@ -952,8 +952,8 @@ export function CourseEnrollment({
               )
             : status === 400 || status === 422 || status === 404
               ? t(
-                  "BR-02 (DS-01b): Passkey is invalid, expired, or revoked — enrollment status remains NOT_ENROLLED.",
-                  "BR-02 (DS-01b): Mã ghi danh không hợp lệ, đã hết hạn hoặc bị thu hồi — Trạng thái giữ nguyên NOT_ENROLLED.",
+                  "Passkey is invalid, expired, or revoked — enrollment status remains NOT_ENROLLED.",
+                  "Mã ghi danh không hợp lệ, đã hết hạn hoặc bị thu hồi — Trạng thái giữ nguyên NOT_ENROLLED.",
                 )
               : t(
                   "Could not join the class. Please retry.",
@@ -1072,7 +1072,7 @@ export function CourseRoadmap({
                         )
                       : lab.state === "UNLOCKED"
                         ? t(
-                            "Unlocked — complete Theory, Reverse BFS, Quiz Gate & Submit inside Lab.",
+                            "Unlocked — complete Theory, Reverse BFS, Quiz & Submit inside Lab.",
                             "Đã mở — hoàn thành Lý thuyết, Lan truyền ngược, Quiz và Nộp bài trong Lab.",
                           )
                         : lab.reason === "COURSE_ARCHIVED"

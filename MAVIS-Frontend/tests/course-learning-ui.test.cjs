@@ -586,7 +586,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
     "Step 2: Test Scenarios",
     "Step 3: Run & Trace",
     "Captured Snapshots & Written Theoretical Explanations",
-    "Every required snapshot must score > 5.0 / 10 (5.01 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
+    "Every required snapshot must score above 5.0 / 10 with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
   ]) {
     assert.ok(dict.includes(key), `Missing Vietnamese dictionary entry for: ${key}`);
   }
@@ -915,7 +915,7 @@ test("Lab v2 info removes diagram submission and theory is lesson + repo + C1-C3
   assert.doesNotMatch(info, /Required architecture views/);
   assert.doesNotMatch(info, /DIAGRAM_REQUIREMENTS/);
   assert.doesNotMatch(info, /Lab learning flow/);
-  assert.ok(read("src/features/assignments/lab-publish-section.tsx").includes("BR-06 Quiz Gate"));
+  assert.ok(read("src/features/assignments/lab-publish-section.tsx").includes("Required Quiz before students launch Docker Studio."));
   assert.ok(info.includes("Students do not submit diagrams"));
   assert.ok(theory.includes("MarkdownEditor"));
   assert.ok(theory.includes("MarkdownPreview"));
@@ -1491,7 +1491,7 @@ test("Round 4 guards isolate each Lab entry, adapt Theory Only labs, prevent sig
   assert.match(screens, /Lab objective/);
   assert.match(screens, /title: "Static Studio"/);
   assert.match(screens, /title: "MAVIS Runtime Studio"/);
-  assert.match(screens, /title: "Evidence Review"/);
+  assert.match(screens, /title: "Summary & Submit"/);
   assert.doesNotMatch(screens, /<CourseQuiz/);
   assert.match(appShell, /const canQueryAuth =\s*!signingOut/);
   assert.match(

@@ -231,16 +231,16 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Kết quả chấm từng Snapshot (bắt buộc > 5.0 / 10)",
   "Apply the requested changes in your working project, save the new model/diagram revisions and submit again from the assignment. This submission remains unchanged.":
     "Thực hiện các chỉnh sửa theo yêu cầu trên dự án làm việc, lưu phiên bản mô hình/sơ đồ mới rồi nộp lại từ bài tập. Bản nộp này được giữ nguyên bất biến.",
-  "Every required snapshot must score > 5.0 / 10 (5.01 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.":
-    "Mọi Snapshot bắt buộc phải đạt > 5.0 / 10 (từ 5.01 trở lên) kèm nhận xét tổng thể bắt buộc mới đạt ĐẠT và mở khóa Lab tiếp theo; bất kỳ Snapshot nào <= 5.0 sẽ là CẦN CHỈNH SỬA.",
+  "Every required snapshot must score above 5.0 / 10 with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.":
+    "Mọi Snapshot bắt buộc phải đạt trên 5.0 / 10 kèm nhận xét tổng thể mới đạt ĐẠT và mở khóa Lab tiếp theo; bất kỳ Snapshot nào từ 5.0 trở xuống sẽ là CẦN CHỈNH SỬA.",
   "Per-snapshot grading (0–10)": "Chấm điểm từng Snapshot (thang 0–10)",
   "PASS (> 5.0)": "ĐẠT (> 5.0)",
   "NEEDS REVISION (<= 5.0)": "CẦN SỬA (<= 5.0)",
   "Snapshot comment (optional)": "Nhận xét cho Snapshot (tùy chọn)",
   "Computed overall equivalent": "Điểm tổng quy đổi tự động",
-  "Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.01 to pass).":
-    "Nhập điểm từ 0.0 đến 10.0 cho từng Snapshot (ví dụ 5.01 để đạt).",
-  "Calculated outcome": "Kết quả tính toán",
+  "Enter a score between 0.0 and 10.0 for every snapshot (above 5.0 to pass).":
+    "Nhập điểm từ 0.0 đến 10.0 cho từng Snapshot (trên 5.0 để đạt).",
+  "Calculated outcome": "Kết quả dự kiến",
   "At least one snapshot scored <= 5.0 / 10 — publishing or returning this review will set Lab Outcome to NEEDS REVISION.":
     "Ít nhất một Snapshot <= 5.0 / 10 — công bố điểm hoặc trả lại sẽ gán Kết quả Lab là CẦN SỬA (NEEDS REVISION).",
   "Add an overall review before publishing or returning this snapshot.":
@@ -825,7 +825,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Foundation sections": "Các phần nền tảng",
   "Freeze artifacts": "Đóng băng hồ sơ bài nộp",
   "Frozen model": "Mô hình đã chốt",
-  "Frozen submitted diagrams": "Sơ đồ đã nộp (đã đóng băng)",
+  "Frozen submitted diagrams": "Sơ đồ đã nộp",
   "Full 40-character SHA": "Mã SHA đầy đủ 40 ký tự",
   "Full Architecture (Source + Messaging + Deployment)":
     "Toàn bộ Kiến trúc (Code + Messaging + Docker Compose)",
@@ -1544,7 +1544,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Strict Confirmed HTTP Calls": "Chỉ kết nối HTTP đã xác nhận",
   "Strict Confirmed HTTP Policy (Worker Only)": "Chỉ các kết nối HTTP đã xác nhận (Strict Worker)",
   Student: "Sinh viên",
-  "Student / Individual Learner": "Sinh viên / Người học cá nhân",
+  "Student / Individual Learner": "Sinh viên",
   "Student email list": "Danh sách email sinh viên",
   "Student project": "Dự án của sinh viên",
   "Students enrolled": "Số sinh viên tham gia",
@@ -1568,7 +1568,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Submitted result versions": "Danh sách phiên bản bài nộp",
   "Submitted snapshot": "Bản chụp đã nộp",
   "Submitted snapshot · read-only": "Bản chụp đã nộp · chỉ đọc",
-  "Submitted · read-only": "Đã nộp · chỉ đọc",
+  "Submitted · read-only": "Bài đã nộp",
   Success: "Thành công",
   "Successfully deleted!": "Đã xóa thành công!",
   "Successfully saved!": "Đã lưu thành công!",
@@ -1581,9 +1581,9 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   System: "Theo hệ sinh thái",
   "System Admin": "Quản trị viên",
   "System Administration": "Quản trị hệ thống",
-  "System Administrator": "Quản trị viên hệ thống",
+  "System Administrator": "Quản trị viên",
   "System Health": "Sức khỏe hệ thống",
-  "System administrator": "Quản trị viên hệ thống",
+  "System administrator": "Quản trị viên",
   "System alerts": "Cảnh báo hệ thống",
   "System · Macro": "Hệ thống · Macro",
   Target: "Mục tiêu",

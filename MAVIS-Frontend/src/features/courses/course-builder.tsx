@@ -989,8 +989,8 @@ export function CourseBuilder({
             >
               <Send className="mr-1.5 size-3.5" aria-hidden="true" />
               {activateCourse.isPending
-                ? t("Publishing…", "Đang publish…")
-                : t("Publish Changes", "Publish Changes")}
+                ? t("Publishing…", "Đang công bố…")
+                : t("Publish Changes", "Công bố khóa học")}
             </Button>
           )}
         </div>

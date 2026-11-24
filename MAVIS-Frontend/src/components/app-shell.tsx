@@ -510,7 +510,7 @@ function ShellChrome({
                   <p className="mt-1 break-words text-xs font-medium">{context}</p>
                   {scope === "review" && (
                     <Badge variant="outline" className="mt-2">
-                      {t("Submitted · read-only", "Đã nộp · chỉ đọc")}
+                      {t("Submitted", "Bài đã nộp")}
                     </Badge>
                   )}
                 </div>

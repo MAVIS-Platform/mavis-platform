@@ -45,9 +45,9 @@ export type NavigationGroup = {
 };
 
 export const roleLabels: Record<AppRole, string> = {
-  student: "Student / Individual Learner",
+  student: "Student",
   lecturer: "Lecturer",
-  admin: "System Administrator",
+  admin: "Admin",
 };
 
 export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {

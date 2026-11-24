@@ -367,7 +367,7 @@ export function GradeForm({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {t(
-            "Every required snapshot must score > 5.0 / 10 (5.01 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
+            "Every required snapshot must score above 5.0 / 10 with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
           )}
         </p>
         {!guidedLab && (
@@ -613,7 +613,7 @@ export function GradeForm({
       {!valid && (!usePerSnapshot || parsedSnapshots.invalid) && (
         <p role="alert" className="text-sm text-destructive">
           {usePerSnapshot
-            ? t("Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.01 to pass).")
+            ? t("Enter a score between 0.0 and 10.0 for every snapshot (above 5.0 to pass).")
             : t(
                 "Enter a score between 0 and 10 with at most two decimal places.",
                 "Nhập điểm từ 0 đến 10 với tối đa hai chữ số thập phân.",
@@ -638,7 +638,7 @@ export function GradeForm({
         >
           <div className="space-y-0.5">
             <span className="font-semibold">
-              {t("Calculated outcome", "Kết quả dự kiến (BR-10)")}:{" "}
+              {t("Calculated outcome", "Kết quả dự kiến")}:{" "}
               {outcome === "PASS"
                 ? t("PASS — unlocks the next Lab", "ĐẠT — tự động mở khóa Lab kế tiếp")
                 : t(

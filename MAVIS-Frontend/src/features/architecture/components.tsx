@@ -12,6 +12,25 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { projectGraphModel } from "./graph-projection";
 import { DependencyNetwork } from "./dependency-network";
 
+const LAYER_LABELS: Record<string, { en: string; vi: string }> = {
+  edge: { en: "Edge", vi: "Cổng biên" },
+  domain: { en: "Domain", vi: "Nghiệp vụ" },
+  data: { en: "Data", vi: "Dữ liệu" },
+  platform: { en: "Platform", vi: "Hạ tầng" },
+};
+
+export function formatArchitectureLayerLabel(
+  layer: string | null | undefined,
+  t: (en: string, vi?: string) => string,
+): string | null {
+  const trimmed = layer?.trim();
+  if (!trimmed) return null;
+  const key = trimmed.toLowerCase();
+  if (key === "unclassified") return null;
+  const mapped = LAYER_LABELS[key];
+  return mapped ? t(mapped.en, mapped.vi) : trimmed;
+}
+
 export function ModelVersionSelector({
   models,
   value,
@@ -608,11 +627,14 @@ export function ElementDetailsPanel({
                   {element.elementType}
                 </Badge>
               )}
-              {element.layer && (
-                <Badge variant="secondary" className="text-[11px]">
-                  {t("Layer", "Tầng")}: {element.layer}
-                </Badge>
-              )}
+              {(() => {
+                const layerLabel = formatArchitectureLayerLabel(element.layer, t);
+                return layerLabel ? (
+                  <Badge variant="secondary" className="text-[11px]">
+                    {t("Layer", "Tầng")}: {layerLabel}
+                  </Badge>
+                ) : null;
+              })()}
               {element.technology && (
                 <Badge variant="outline" className="text-[11px]">
                   {element.technology}

@@ -75,7 +75,7 @@ test("Active Lecturer courses lock authoring while Inactive courses expose modul
   assert.match(labs, /courseAccess\.canCreateLabs &&/);
   assert.match(authoring, /!assignment && !courseAccess\.canCreateLabs/);
   assert.match(courseBuilder, /if \(!canCreateModules\) return/);
-  assert.match(courseBuilder, /t\("Publish Changes", "Publish Changes"\)/);
+  assert.match(courseBuilder, /t\("Publish Changes", "Công bố khóa học"\)/);
   assert.match(courseBuilder, /status: "ACTIVE"/);
 });
 

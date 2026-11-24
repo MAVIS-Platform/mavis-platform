@@ -240,7 +240,7 @@ function AttemptForm({
             {t("Gatekeeper Quiz", "Bài kiểm tra mở khóa Lab")}
           </span>
           <span className="text-xs text-muted-foreground">
-            {t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}% ·{" "}
+            {t("Passing score", "Điểm đạt")} {quiz.passPercent}% ·{" "}
             {t(
               `${answeredCount}/${quiz.questions.length} answered`,
               `Đã trả lời ${answeredCount}/${quiz.questions.length} câu`,
@@ -295,8 +295,8 @@ function AttemptForm({
             <div className="space-y-1">
               <p className="text-base font-bold">
                 {t(
-                  "CONGRATULATIONS! YOU PASSED THE QUIZ GATE",
-                  "CHÚC MỪNG! BẠN ĐÃ VƯỢT QUA QUIZ GATE",
+                  "Congratulations! You passed the quiz",
+                  "Chúc mừng! Bạn đã hoàn thành bài kiểm tra",
                 )}
               </p>
               <p role="status" className="text-sm font-medium opacity-90">
@@ -434,7 +434,7 @@ function AttemptForm({
             <div className="space-y-4 rounded-2xl border border-rose-300 bg-rose-50/90 p-5 text-rose-950 shadow-sm dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-100">
               <div className="space-y-1">
                 <p className="text-base font-bold">
-                  {t("QUIZ NEEDS ANOTHER ATTEMPT", "CHƯA ĐẠT QUIZ GATE — HÃY THỬ LẠI")}
+                  {t("Quiz needs another attempt", "Chưa đạt điểm yêu cầu — hãy thử lại")}
                 </p>
                 <p role="status" className="text-sm font-medium opacity-90">
                   {submit.data.status} · {submit.data.correctCount}/{submit.data.totalQuestions} (

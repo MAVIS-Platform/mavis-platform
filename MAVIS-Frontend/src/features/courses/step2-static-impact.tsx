@@ -418,8 +418,8 @@ export function Step2StaticImpact({
                   >
                     🧪{" "}
                     {t(
-                      "Test Isolated 0-Upstream Node (DS-03b)",
-                      "Test Node Cô lập 0 Upstream (Demo DS-03b)",
+                      "Test Isolated 0-Upstream Node",
+                      "Thử Node cô lập (0 Upstream)",
                     )}
                   </Button>
                 </div>
@@ -437,7 +437,7 @@ export function Step2StaticImpact({
                 />
                 <div>
                   <p className="font-bold">
-                    DS-03b (Zero Upstream Impact) ·{" "}
+                    {t("Zero Upstream Impact", "Không ảnh hưởng Upstream")} ·{" "}
                     {demoLeafActive ? "audit-archiver-cron (Leaf Node)" : impact.targetName}
                   </p>
                   <p>

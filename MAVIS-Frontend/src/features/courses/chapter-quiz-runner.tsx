@@ -509,7 +509,7 @@ function QuizLanding({
             <dd className="font-semibold">{questionCount}</dd>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <dt className="text-muted-foreground">{t("Passing score", "Ngưỡng đạt")}</dt>
+            <dt className="text-muted-foreground">{t("Passing score", "Điểm đạt")}</dt>
             <dd className="font-semibold">{passPercent}%</dd>
           </div>
           <div className="flex items-center justify-between gap-3">
@@ -573,7 +573,7 @@ function QuizTaking({
               )}
             </span>
             <span aria-hidden="true">·</span>
-            <span>{t(`Passing score ${passPercent}%`, `Ngưỡng đạt ${passPercent}%`)}</span>
+            <span>{t(`Passing score ${passPercent}%`, `Điểm đạt ${passPercent}%`)}</span>
           </div>
         </div>
         {durationSeconds && durationSeconds > 0 && (

@@ -134,13 +134,13 @@ const learningSteps: LearningStep[] = [
   },
   {
     id: 3,
-    title: "Evidence Review",
-    shortTitle: "Evidence Review",
+    title: "Summary & Submit",
+    shortTitle: "Summary & Submit",
     description:
-      "Review the Studio evidence and receipt before submitting the completed Lab for grading.",
-    titleVi: "Kiểm tra Evidence",
-    shortTitleVi: "Kiểm tra Evidence",
-    descriptionVi: "Kiểm tra evidence và receipt của Studio trước khi nộp Lab hoàn tất để chấm.",
+      "Review your Studio practice results and receipt, then submit the completed Lab for grading.",
+    titleVi: "Tổng hợp & Nộp bài",
+    shortTitleVi: "Tổng hợp & Nộp bài",
+    descriptionVi: "Tổng hợp kết quả thực hành Studio và nộp bài hoàn tất để giảng viên chấm điểm.",
     icon: ShieldCheck,
   },
 ];
@@ -2351,7 +2351,7 @@ function StepContent({
             </DetailPanel>
           )}
           {requiresRuntime && !liveStudioVerified && !preview ? (
-            <DetailPanel title={t("Runtime evidence required", "Cần evidence Runtime Studio")}>
+            <DetailPanel title={t("Runtime evidence required", "Cần hoàn thành phiên thực hành MAVIS Studio")}>
               <p className="text-sm leading-6 text-muted-foreground">
                 {t(
                   "Finish the MAVIS Runtime Studio exercise to seal a verified receipt before submission.",
@@ -2367,7 +2367,7 @@ function StepContent({
           ) : !preview && labMode !== "LEGACY" ? (
             <>
               {requiresRuntime && (
-                <DetailPanel title={t("Runtime Evidence Review", "Kiểm tra Evidence Runtime")}>
+                <DetailPanel title={t("Runtime Evidence Review", "Tổng hợp & kiểm tra minh chứng Runtime")}>
                   <p className="text-sm leading-6 text-muted-foreground">
                     {t(
                       "Review the sealed Runtime Studio evidence before submitting this Lab for grading. The final submission keeps this receipt linked to your explanation.",
@@ -2385,7 +2385,7 @@ function StepContent({
                     <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
                       <RuntimeEvidenceStatus
                         complete={Boolean(runtimeEvidence?.receiptDigest)}
-                        label={t("Signed runtime receipt", "Receipt Runtime đã ký")}
+                        label={t("Signed runtime receipt", "Biên nhận thực hành đã xác thực")}
                         detail={
                           runtimeEvidence?.receiptDigest
                             ? t(
@@ -2400,10 +2400,10 @@ function StepContent({
                       />
                       <RuntimeEvidenceStatus
                         complete={(runtimeEvidence?.snapshots?.length ?? 0) > 0}
-                        label={t("Snapshot evidence", "Snapshot evidence")}
+                        label={t("Snapshot evidence", "Ảnh chụp minh chứng Studio")}
                         detail={t(
                           `${runtimeEvidence?.snapshots?.length ?? 0} captured runtime snapshot(s).`,
-                          `Đã chụp ${runtimeEvidence?.snapshots?.length ?? 0} snapshot runtime.`,
+                          `Đã chụp ${runtimeEvidence?.snapshots?.length ?? 0} ảnh minh chứng thực hành.`,
                         )}
                       />
                       <RuntimeEvidenceStatus
@@ -2418,7 +2418,7 @@ function StepContent({
                         complete={hasBeforeAfterEvidence}
                         label={t(
                           "Before / After action evidence",
-                          "Evidence hành động Before / After",
+                          "Minh chứng thao tác Trước / Sau",
                         )}
                         detail={t(
                           `${confirmedRuntimeActions.length} confirmed Stop / Start / Scale action(s).`,
@@ -2460,7 +2460,7 @@ function StepContent({
               />
             </>
           ) : (
-            <DetailPanel title={t("Evidence Review", "Kiểm tra Evidence")}>
+            <DetailPanel title={t("Summary & Submit", "Tổng hợp & Nộp bài")}>
               <p className="text-sm text-muted-foreground">
                 {t(
                   "Preview mode does not create submissions.",
@@ -2520,12 +2520,12 @@ function StepContent({
                         </div>
                         <div className="rounded-lg bg-background/80 px-3 py-2">
                           <span className="font-semibold">
-                            2.3 {t("Capture runtime evidence", "Lưu evidence runtime")}
+                            2.3 {t("Capture runtime evidence", "Lưu minh chứng thực hành")}
                           </span>
                           <p className="mt-0.5 text-muted-foreground">
                             {t(
-                              "Continue to Evidence Review after finishing Studio",
-                              "Sang Kiểm tra Evidence sau khi hoàn tất Studio",
+                              "Continue to Summary & Submit after finishing Studio",
+                              "Sang Tổng hợp & Nộp bài sau khi hoàn tất Studio",
                             )}
                           </p>
                         </div>
