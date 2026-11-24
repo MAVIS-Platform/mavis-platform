@@ -16,6 +16,7 @@ import { diagramKinds, guidedDiagramOptions, resolveDiagramKind, resolveGuidedDi
 import {
   applyC4AiEnrichmentToDocument,
   buildC4CompactContext,
+  selectDefaultGuidedC3Service,
   type C4AiDiagramEnrichment,
 } from "./diagram-projections";
 import { generateDrawio } from "@/lib/drawio/generate";
@@ -103,6 +104,10 @@ export function ArchitectureDiagrams({
     "order-service",
     "notification-service",
     "service-discovery",
+    "ApiGateway",
+    "FruitCatalog.API",
+    "FruitBasket.API",
+    "FruitOrdering.API",
   ];
   const allContainers = model.elements
     .filter((node) => node.elementType === "SERVICE_CONTAINER")
@@ -122,8 +127,7 @@ export function ArchitectureDiagrams({
     });
   const populatedContainers = allContainers.filter((node) => node.count > 0);
   const containers = populatedContainers.length > 0 ? populatedContainers : allContainers;
-  const defaultGuidedService =
-    containers.find((node) => node.name === "order-service")?.id ?? containers[0]?.id ?? "ALL";
+  const defaultGuidedService = selectDefaultGuidedC3Service(containers);
   const activeService = controlledService !== undefined ? controlledService : service;
   const resolvedService = activeService || (guidedStatic ? defaultGuidedService : "");
   const updateService = (nextService: string) => {
