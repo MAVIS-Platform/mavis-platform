@@ -415,6 +415,20 @@ class CourseSetupServiceTest {
                 lab.getStudioExerciseSnapshot().path("baselineRequests").get(0).path("path").asText());
     }
 
+    @Test void pickSmartDefaultBaselinePathPrefersLiveFlowGatewayOverGraphqlAndLegacyFallback() {
+        ObjectNode profile = mapper.createObjectNode();
+        var detected = profile.putArray("detectedEndpoints");
+        detected.addObject().put("method", "GET").put("service", "api-gateway").put("path", "/api/v1/graphql/storefront");
+        detected.addObject().put("method", "GET").put("service", "api-gateway").put("path", "/api/v1/storefront/live-flow");
+        detected.addObject().put("method", "GET").put("service", "api-gateway").put("path", "/api/v1/orders");
+        detected.addObject().put("method", "GET").put("service", "order-service").put("path", "/api/orders/{id}");
+        detected.addObject().put("method", "GET").put("service", "api-gateway").put("path", "/version");
+
+        String picked = CourseSetupService.pickSmartDefaultBaselinePath(
+                profile, java.util.Set.of("api-gateway", "order-service", "payment-service"));
+        assertEquals("/api/v1/storefront/live-flow", picked);
+    }
+
     private RuntimeConfiguration configuration(boolean withTopology) {
         ObjectNode profile = mapper.createObjectNode();
         var applications = profile.putObject("applications");

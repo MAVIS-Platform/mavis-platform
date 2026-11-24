@@ -216,16 +216,27 @@ export interface EndpointOption {
   path: string;
   label: string;
   service?: string | undefined;
+  /** True when scanned from repo detectedEndpoints or scenario steps (not a fallback/stale custom string). */
+  verified?: boolean | undefined;
 }
+
+const LEGACY_PLACEHOLDER_PATHS = new Set(["", "/", "/health", "/api/gateway/orders", "/orders"]);
 
 function scoreEndpointPath(path: string, service?: string): number {
   const lower = path.toLowerCase();
   let score = 0;
   if (service && /gateway|edge|proxy|bff/.test(service.toLowerCase())) score += 40;
-  if (lower.includes("live-flow") || lower.includes("storefront") || lower.includes("checkout")) score += 50;
+  if (lower.includes("live-flow") || lower.includes("checkout") || lower.includes("end-to-end")) {
+    score += 65;
+  } else if (lower.includes("storefront") || lower.includes("overview")) {
+    score += 40;
+  }
+  if (lower.includes("graphql")) score -= 15;
   if (lower.includes("/api/") && !lower.includes("{")) score += 25;
   if (lower.includes("order")) score += 15;
-  if (lower === "/" || lower === "/health" || lower.includes("actuator")) score -= 30;
+  if (lower === "/" || lower === "/health" || lower === "/version" || lower.includes("actuator")) {
+    score -= 30;
+  }
   if (lower.includes("{") || lower.includes(":")) score -= 20;
   return score;
 }
@@ -239,19 +250,22 @@ export function extractRepoEndpointOptions(
   currentPath?: string | null,
 ): EndpointOption[] {
   const candidates = new Map<string, EndpointOption & { score: number }>();
-  const add = (rawPath: unknown, service?: string, bonus = 0) => {
+  const add = (rawPath: unknown, service?: string, bonus = 0, verified = false) => {
     if (typeof rawPath !== "string") return;
     const cleaned = rawPath.trim();
     if (!cleaned.startsWith("/") || cleaned.length > 200) return;
     if (cleaned.includes("{") || cleaned.includes("*")) return;
     const score = scoreEndpointPath(cleaned, service) + bonus;
     const existing = candidates.get(cleaned);
-    if (!existing || score > existing.score) {
+    if (!existing || score > existing.score || (verified && !existing.verified)) {
       candidates.set(cleaned, {
         path: cleaned,
-        service,
-        label: service ? `GET ${cleaned} (${service})` : `GET ${cleaned}`,
-        score,
+        service: service ?? existing?.service,
+        label: (service ?? existing?.service)
+          ? `GET ${cleaned} (${service ?? existing?.service})`
+          : `GET ${cleaned}`,
+        score: existing ? Math.max(score, existing.score) : score,
+        verified: verified || existing?.verified,
       });
     }
   };
@@ -267,7 +281,7 @@ export function extractRepoEndpointOptions(
           const method = String(rec["method"] ?? "GET").toUpperCase();
           if (method !== "GET" && method !== "HEAD") continue;
           const svc = typeof rec["service"] === "string" ? rec["service"] : undefined;
-          add(rec["path"], svc, 60);
+          add(rec["path"], svc, 60, true);
         }
       }
     }
@@ -279,20 +293,301 @@ export function extractRepoEndpointOptions(
         const method = String(rec["method"] ?? "GET").toUpperCase();
         if (method !== "GET" && method !== "HEAD") continue;
         const svc = typeof rec["service"] === "string" ? rec["service"] : undefined;
-        add(rec["path"], svc, 10);
+        add(rec["path"], svc, 10, true);
       }
     }
   }
 
   if (currentPath && currentPath.trim().startsWith("/") && currentPath.trim() !== "/") {
-    add(currentPath, undefined, 5);
+    add(currentPath, undefined, 5, false);
   }
-  add("/health", undefined, -40);
+  add("/health", undefined, -40, false);
 
   return [...candidates.values()]
     .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
     .slice(0, 12)
-    .map(({ path, label, service }) => ({ path, label, ...(service ? { service } : {}) }));
+    .map(({ path, label, service, verified }) => ({
+      path,
+      label,
+      ...(service ? { service } : {}),
+      ...(verified ? { verified: true } : {}),
+    }));
+}
+
+export interface SmartEndpointPick {
+  path: string;
+  service?: string | undefined;
+  /** True when the saved path was stale/unverified and replaced by a real scanned route. */
+  autoUpgraded: boolean;
+  /** True when currentPath is not among the repo's scanned endpoints (e.g., stale `/api/gateway/orders`). */
+  isCurrentStale: boolean;
+  /** Highest-ranked real endpoint scanned from the repo, even if user kept a custom path. */
+  recommendedPath: string;
+  recommendedService?: string | undefined;
+  reasonEn: string;
+  reasonVi: string;
+}
+
+function targetDomainTokens(service: string): string[] {
+  const tokens = service
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((tok) => tok.length >= 3 && !["service", "svc", "api", "app", "worker", "server"].includes(tok));
+  const expanded = new Set(tokens);
+  if (expanded.has("catalog")) expanded.add("product");
+  if (expanded.has("payment") || expanded.has("billing")) {
+    expanded.add("order");
+    expanded.add("checkout");
+  }
+  if (expanded.has("notification")) expanded.add("event");
+  return Array.from(expanded);
+}
+
+/**
+ * Graph-aware smart endpoint selector: uses Reverse BFS on static service edges + AST-scanned
+ * repo routes to pick a verified upstream gateway/entry GET endpoint that exercises `targetService`.
+ */
+export function smartPickBaselineEndpoint(params: {
+  endpointOptions: readonly EndpointOption[];
+  currentPath?: string | null | undefined;
+  targetService?: string | null | undefined;
+  edges?: ReadonlyArray<{ from: string; to: string }> | undefined;
+  forceRecommend?: boolean | undefined;
+}): SmartEndpointPick {
+  const { endpointOptions, currentPath, targetService, edges = [], forceRecommend = false } = params;
+  const cleanedCurrent = currentPath?.trim() ?? "";
+  const verifiedOptions = endpointOptions.filter((ep) => ep.verified);
+  const pool = verifiedOptions.length > 0 ? verifiedOptions : endpointOptions;
+
+  if (pool.length === 0) {
+    const fallback = cleanedCurrent && cleanedCurrent !== "/" ? cleanedCurrent : "/health";
+    return {
+      path: fallback,
+      autoUpgraded: false,
+      isCurrentStale: false,
+      recommendedPath: fallback,
+      reasonEn: "Default health check (no GET routes scanned from repository yet).",
+      reasonVi: "Dùng mặc định /health (chưa quét được route GET từ repository).",
+    };
+  }
+
+  const blast = targetService ? computeStaticBlastRadius(targetService, edges) : null;
+  const upstreamSet = new Set(blast?.upstreamImpacted ?? []);
+  const domainTokens = targetService ? targetDomainTokens(targetService) : [];
+
+  const ranked = pool
+    .map((ep, idx) => {
+      let score = scoreEndpointPath(ep.path, ep.service);
+      const lowerPath = ep.path.toLowerCase();
+      const epSvc = ep.service ?? "";
+      const isGateway = /gateway|edge|proxy|bff/i.test(epSvc);
+      const isUpstreamEntry = Boolean(epSvc && upstreamSet.has(epSvc));
+
+      if (targetService) {
+        if (isUpstreamEntry && isGateway) score += 55;
+        else if (isUpstreamEntry) score += 35;
+        else if (epSvc === targetService && upstreamSet.size === 0) score += 30;
+        else if (isGateway && upstreamSet.size === 0) score += 20;
+
+        if (lowerPath.includes("live-flow") || lowerPath.includes("checkout")) {
+          score += 35;
+        } else if (domainTokens.some((tok) => lowerPath.includes(tok))) {
+          score += 22;
+        }
+      }
+      return { ep, score, idx };
+    })
+    .sort((a, b) => b.score - a.score || a.idx - b.idx);
+
+  const best = ranked[0]!.ep;
+  const verifiedPathSet = new Set(verifiedOptions.map((ep) => ep.path));
+  const isCurrentVerified = Boolean(cleanedCurrent && verifiedPathSet.has(cleanedCurrent));
+  const isCurrentLegacy = LEGACY_PLACEHOLDER_PATHS.has(cleanedCurrent);
+  const isCurrentStale =
+    verifiedOptions.length > 0 && (!cleanedCurrent || (!isCurrentVerified && isCurrentLegacy));
+  const shouldUseBest =
+    forceRecommend ||
+    isCurrentStale ||
+    !cleanedCurrent ||
+    cleanedCurrent === "/" ||
+    (cleanedCurrent === "/health" && verifiedOptions.length > 0);
+
+  const chosenPath = shouldUseBest ? best.path : cleanedCurrent;
+  const chosenOption = endpointOptions.find((ep) => ep.path === chosenPath) ?? best;
+  const reachesTargetViaUpstream = Boolean(
+    targetService && chosenOption.service && upstreamSet.has(chosenOption.service),
+  );
+
+  const reasonEn = targetService
+    ? reachesTargetViaUpstream
+      ? `Smart-picked upstream entry (${chosenOption.service}) to trace impact into ${targetService}.`
+      : `Smart-picked verified repository route for ${targetService}.`
+    : `Smart-picked highest-coverage GET route scanned from repository.`;
+  const reasonVi = targetService
+    ? reachesTargetViaUpstream
+      ? `Tự chọn cổng vào upstream (${chosenOption.service}) để luồng trace đi xuyên qua ${targetService}.`
+      : `Tự chọn route thật từ repo phù hợp cho ${targetService}.`
+    : `Tự chọn route GET toàn luồng tốt nhất quét từ mã nguồn repo.`;
+
+  return {
+    path: chosenPath,
+    service: chosenOption.service,
+    autoUpgraded: shouldUseBest && chosenPath !== cleanedCurrent,
+    isCurrentStale: verifiedOptions.length > 0 && Boolean(cleanedCurrent) && !isCurrentVerified,
+    recommendedPath: best.path,
+    recommendedService: best.service,
+    reasonEn,
+    reasonVi,
+  };
+}
+
+export interface StudentInstructionsParams {
+  exerciseType?: ExerciseTypeKey | null | undefined;
+  targetAction?: TargetChangeAction | null | undefined;
+  stoppedServices?: readonly string[] | undefined;
+  minReplicas?: ReadonlyArray<{ service: string; count: number }> | undefined;
+  predictionRequired?: boolean | null | undefined;
+  minImpactF1?: number | null | undefined;
+  maxErrorRatePercent?: number | null | undefined;
+  maxP95Ms?: number | null | undefined;
+  targetRps?: number | null | undefined;
+  locale?: "en" | "vi" | undefined;
+}
+
+/**
+ * Generates clear, scannable, step-by-step student instructions synchronized with the exercise's
+ * automated grading criteria (zero LLM hallucination risk, preserves exact service/action tokens).
+ */
+export function buildStudentExerciseInstructions(params: StudentInstructionsParams): string {
+  const {
+    exerciseType,
+    targetAction,
+    stoppedServices = [],
+    minReplicas = [],
+    predictionRequired = false,
+    minImpactF1 = 0.7,
+    maxErrorRatePercent,
+    maxP95Ms,
+    targetRps,
+    locale = "vi",
+  } = params;
+
+  const isVi = locale === "vi";
+  const resolvedType: ExerciseTypeKey | null =
+    exerciseType ??
+    (targetAction?.action === "PAUSE" || targetAction?.action === "STOP"
+      ? "CHANGE_IMPACT"
+      : targetAction?.action === "THROTTLE_CPU"
+        ? "CONFIG_REGRESSION"
+        : minReplicas.length > 0 || targetAction?.action === "SCALE"
+          ? "SCALE_UNDER_LOAD"
+          : stoppedServices.length > 0
+            ? "CIRCUIT_BREAKER"
+            : null);
+
+  if (resolvedType === "CHANGE_IMPACT") {
+    const svc = targetAction?.service || "target-service";
+    const act = targetAction?.action === "STOP" ? "STOP" : "PAUSE";
+    const f1Pct = Math.round((minImpactF1 ?? 0.7) * 100);
+    if (isVi) {
+      const actLabel = act === "STOP" ? "dừng hẳn (STOP)" : "tạm dừng (PAUSE)";
+      const step1 = predictionRequired
+        ? `1. Quan sát sơ đồ phụ thuộc 3D, chọn các service gọi ngược vào ${svc} sẽ bị kéo lỗi và bấm Khóa dự đoán.`
+        : `1. Quan sát sơ đồ phụ thuộc 3D để nắm các nhánh đang gọi vào ${svc} ở trạng thái bình thường.`;
+      const step3 = predictionRequired
+        ? `3. Chụp snapshot Trước/Sau (Before/After) làm bằng chứng rồi bấm Hoàn thành để hệ thống tự chấm độ chính xác (F1 >= ${f1Pct}%).`
+        : `3. Chụp snapshot Trước/Sau (Before/After) làm bằng chứng và giải thích phạm vi ảnh hưởng rồi bấm Hoàn thành.`;
+      return [
+        `Mục tiêu: Kiểm chứng phạm vi lan truyền sự cố khi ${actLabel} service ${svc}.`,
+        step1,
+        `2. Thực hiện ${act} trên ${svc}, sau đó theo dõi tỉ lệ lỗi và luồng trace đổi màu trên các service upstream.`,
+        step3,
+      ].join("\n");
+    }
+    const actVerb = act === "STOP" ? "stopped (STOP)" : "paused (PAUSE)";
+    const step1 = predictionRequired
+      ? `1. Inspect the 3D dependency graph, select every upstream service affected if ${svc} fails, and lock your prediction.`
+      : `1. Inspect the 3D dependency graph to identify callers depending on ${svc} under healthy traffic.`;
+    const step3 = predictionRequired
+      ? `3. Capture Before/After snapshots as evidence and click Finish for automated F1 grading (>= ${f1Pct}%).`
+      : `3. Capture Before/After snapshots as evidence and summarize the observed blast radius before finishing.`;
+    return [
+      `Goal: Verify the blast radius when ${svc} is ${actVerb}.`,
+      step1,
+      `2. Execute ${act} on ${svc} and observe error propagation across upstream traces and service health.`,
+      step3,
+    ].join("\n");
+  }
+
+  if (resolvedType === "SCALE_UNDER_LOAD") {
+    const svc = minReplicas[0]?.service || targetAction?.service || "target-service";
+    const count = Math.max(2, minReplicas[0]?.count ?? targetAction?.replicas ?? 2);
+    const errLimit = maxErrorRatePercent != null ? maxErrorRatePercent : 5;
+    const rpsText = targetRps && targetRps > 0 ? ` ${targetRps} RPS` : "";
+    const p95ClauseVi = maxP95Ms ? ` và giữ độ trễ p95 <= ${maxP95Ms} ms` : "";
+    const p95ClauseEn = maxP95Ms ? ` and p95 <= ${maxP95Ms} ms` : "";
+    if (isVi) {
+      return [
+        `Mục tiêu: Xử lý tăng tải đột biến bằng cách mở rộng bản sao (Scale-Out) cho ${svc}.`,
+        `1. Ghi nhận chỉ số p95/tỉ lệ lỗi ban đầu, sau đó tăng tải probe${rpsText ? ` lên${rpsText}` : ""} (Set Load) để mô phỏng cao điểm.`,
+        `2. Tăng số replica của ${svc} lên tối thiểu ${count}x và theo dõi hệ thống ổn định (tỉ lệ lỗi <= ${errLimit}%${p95ClauseVi}).`,
+        `3. Chụp snapshot Trước/Sau khi scale (Before/After) để so sánh hiệu năng rồi bấm Hoàn thành.`,
+      ].join("\n");
+    }
+    return [
+      `Goal: Handle a traffic spike by scaling out ${svc} to at least ${count} replicas.`,
+      `1. Record baseline metrics, then raise probe load${rpsText ? ` to${rpsText}` : ""} to simulate peak traffic.`,
+      `2. Scale ${svc} to at least ${count}x replicas while keeping error rate <= ${errLimit}%${p95ClauseEn}.`,
+      `3. Capture Before/After snapshots comparing p95 latency and click Finish.`,
+    ].join("\n");
+  }
+
+  if (resolvedType === "CIRCUIT_BREAKER") {
+    const downList =
+      stoppedServices.length > 0
+        ? stoppedServices.join(", ")
+        : targetAction?.service || "target-service";
+    const errLimit = maxErrorRatePercent != null ? maxErrorRatePercent : 0;
+    if (isVi) {
+      return [
+        `Mục tiêu: Chẩn đoán sự cố khởi phát sẵn và khôi phục hệ thống về trạng thái ổn định (tỉ lệ lỗi <= ${errLimit}%).`,
+        `1. Quan sát các khối 3D, tỉ lệ lỗi và Log & Trace để xác định service đang tắt sẵn (${downList}) cùng các nhánh upstream bị ảnh hưởng.`,
+        `2. Khởi động lại (START) service gặp sự cố và kiểm tra traffic phục hồi về mức lỗi <= ${errLimit}%.`,
+        `3. Chụp snapshot Trước/Sau khi khôi phục (Before/After) làm bằng chứng rồi bấm Hoàn thành.`,
+      ].join("\n");
+    }
+    return [
+      `Goal: Diagnose the pre-existing outage and restore healthy traffic (error rate <= ${errLimit}%).`,
+      `1. Inspect 3D block health, error charts, and Logs & Traces to pinpoint the stopped service (${downList}) and impacted callers.`,
+      `2. START the failed service and verify live traces recover to <= ${errLimit}% error rate.`,
+      `3. Capture Before/After recovery snapshots as evidence and click Finish.`,
+    ].join("\n");
+  }
+
+  if (resolvedType === "CONFIG_REGRESSION") {
+    const svc = targetAction?.service || "target-service";
+    const pct = Math.max(5, Math.min(90, targetAction?.cpuPercent ?? 25));
+    const p95NoteVi = maxP95Ms ? ` (ngưỡng tham chiếu p95 <= ${maxP95Ms} ms)` : "";
+    const p95NoteEn = maxP95Ms ? ` (reference threshold p95 <= ${maxP95Ms} ms)` : "";
+    if (isVi) {
+      return [
+        `Mục tiêu: Phân tích suy giảm hiệu năng khi giới hạn tài nguyên CPU của ${svc} xuống ${pct}%.`,
+        `1. Quan sát độ trễ p95 ban đầu ở trạng thái bình thường để làm mốc so sánh.`,
+        `2. Bóp CPU của ${svc} xuống ${pct}%, theo dõi độ trễ p95 tăng vọt${p95NoteVi} và hiệu ứng nghẽn cổ chai lan sang các service gọi vào.`,
+        `3. Chụp snapshot Trước/Sau (Before/After) kèm giải thích nguyên nhân điểm nghẽn rồi bấm Hoàn thành.`,
+      ].join("\n");
+    }
+    return [
+      `Goal: Diagnose performance degradation when ${svc} CPU is throttled to ${pct}%.`,
+      `1. Record healthy baseline p95 latency before injecting CPU pressure.`,
+      `2. Throttle ${svc} CPU to ${pct}% and observe the p95 latency jump${p95NoteEn} across upstream callers.`,
+      `3. Capture Before/After snapshots explaining the bottleneck and click Finish.`,
+    ].join("\n");
+  }
+
+  return isVi
+    ? "Quan sát sơ đồ 3D và số liệu chạy thật, thực hiện thao tác kiến trúc được yêu cầu, chụp snapshot Trước/Sau (Before/After) rồi bấm Hoàn thành."
+    : "Observe the live 3D graph and telemetry, execute the required architectural action, capture Before/After snapshots, and click Finish.";
 }
 
 export interface DerivedExerciseFromDemo {
@@ -348,10 +643,14 @@ export function deriveExerciseFromLiveActions(
       scalableServices: [target],
       allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
       maxErrorRatePercent: "5",
-      instructions:
-        locale === "vi"
-          ? `Tăng tải probe lên ${rps} RPS, quan sát độ trễ p95 trên ${target}, sau đó scale ${target} lên tối thiểu ${count} replica trong khi giữ tỉ lệ lỗi <= 5%.`
-          : `Raise probe load to ${rps} RPS, observe latency on ${target}, then scale ${target} to at least ${count} replicas while keeping error rate <= 5%.`,
+      instructions: buildStudentExerciseInstructions({
+        exerciseType: "SCALE_UNDER_LOAD",
+        targetAction: { action: "SCALE", service: target, replicas: count },
+        minReplicas: [{ service: target, count }],
+        maxErrorRatePercent: 5,
+        targetRps: rps,
+        locale,
+      }),
       summary:
         locale === "vi"
           ? `Scale-Out: ${target} >= ${count}x (tải ${rps} RPS)`
@@ -371,11 +670,12 @@ export function deriveExerciseFromLiveActions(
       minReplicas: [],
       scalableServices: [target],
       allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
-      maxErrorRatePercent: "5",
-      instructions:
-        locale === "vi"
-          ? `Bóp CPU của ${target} xuống ${pct}%, chụp snapshot ghi nhận mức tăng độ trễ p95 và giải thích điểm nghẽn tới các service upstream.`
-          : `Throttle ${target} CPU to ${pct}%, capture latency degradation evidence, and explain the bottleneck across upstream callers.`,
+      maxErrorRatePercent: "",
+      instructions: buildStudentExerciseInstructions({
+        exerciseType: "CONFIG_REGRESSION",
+        targetAction: { action: "THROTTLE_CPU", service: target, cpuPercent: pct },
+        locale,
+      }),
       summary:
         locale === "vi"
           ? `Tắc nghẽn CPU: ${target} mức ${pct}% CPU`
@@ -396,10 +696,13 @@ export function deriveExerciseFromLiveActions(
       scalableServices: [],
       allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
       maxErrorRatePercent: "",
-      instructions:
-        locale === "vi"
-          ? `Quan sát sơ đồ phụ thuộc, dự đoán tất cả service bị ảnh hưởng khi ${act} ${target}, khóa dự đoán, sau đó thực hiện ${act} trên ${target} và chụp snapshot Before/After.`
-          : `Inspect the live service graph, predict every service affected when ${target} is ${act === "PAUSE" ? "paused" : "stopped"}, lock your prediction, then execute ${act} on ${target} and capture Before/After evidence.`,
+      instructions: buildStudentExerciseInstructions({
+        exerciseType: "CHANGE_IMPACT",
+        targetAction: { action: act, service: target },
+        predictionRequired: true,
+        minImpactF1: 0.7,
+        locale,
+      }),
       summary:
         locale === "vi"
           ? `Change Impact: ${act} ${target} (chấm tự động F1 >= 70%)`
@@ -419,10 +722,13 @@ export function deriveExerciseFromLiveActions(
       scalableServices: [],
       allowedActions: ["START", "STOP", "PAUSE", "RESUME", "CONNECT", "DISCONNECT"],
       maxErrorRatePercent: "0",
-      instructions:
-        locale === "vi"
-          ? `Chẩn đoán service ${recoverTarget} đang tắt, quan sát lỗi lan truyền lên các service upstream, khởi động lại ${recoverTarget} để khôi phục 0% lỗi và chụp snapshot Before/After.`
-          : `Diagnose the stopped ${recoverTarget} service, observe error propagation across upstream callers, start ${recoverTarget} to recover 0% errors, and capture Before/After evidence.`,
+      instructions: buildStudentExerciseInstructions({
+        exerciseType: "CIRCUIT_BREAKER",
+        targetAction: { action: "START", service: recoverTarget },
+        stoppedServices: [recoverTarget],
+        maxErrorRatePercent: 0,
+        locale,
+      }),
       summary:
         locale === "vi"
           ? `Khôi phục sự cố: tắt sẵn ${recoverTarget} -> khôi phục 0% lỗi`

@@ -1803,3 +1803,110 @@ test("LabStudioSection Launchpad renders theme-synced Exercise Spec, 3-step chec
   assert.ok(labStudioSrc.includes("TooltipContent"));
   assert.ok(!labStudioSrc.includes("bg-[#070b12]"));
 });
+
+test("Smart endpoint auto-picker, structured 3-step student instructions, and goal-specific Advanced Settings work across all 4 exercise types", () => {
+  const {
+    extractRepoEndpointOptions,
+    smartPickBaselineEndpoint,
+    buildStudentExerciseInstructions,
+  } = require("../src/features/runtime/studio-authoring-helpers.ts");
+
+  // 1. Live-flow REST gateway route ranks strictly above GraphQL storefront & /version
+  const omniProfile = {
+    detectedEndpoints: [
+      { method: "GET", service: "api-gateway", path: "/api/v1/graphql/storefront" },
+      { method: "GET", service: "api-gateway", path: "/api/v1/storefront/live-flow" },
+      { method: "GET", service: "api-gateway", path: "/api/v1/orders" },
+      { method: "GET", service: "order-service", path: "/api/orders/live-flow" },
+      { method: "GET", service: "api-gateway", path: "/version" },
+    ],
+  };
+  const opts = extractRepoEndpointOptions(omniProfile, "/api/gateway/orders");
+  assert.equal(opts[0].path, "/api/v1/storefront/live-flow");
+  assert.equal(opts[0].verified, true);
+
+  // 2. Smart picker uses Reverse BFS to auto-upgrade stale /api/gateway/orders -> /api/v1/storefront/live-flow
+  const edges = [
+    { from: "api-gateway", to: "order-service" },
+    { from: "order-service", to: "payment-service" },
+    { from: "order-service", to: "catalog-service" },
+  ];
+  const upgraded = smartPickBaselineEndpoint({
+    endpointOptions: opts,
+    currentPath: "/api/gateway/orders",
+    targetService: "payment-service",
+    edges,
+  });
+  assert.equal(upgraded.path, "/api/v1/storefront/live-flow");
+  assert.equal(upgraded.autoUpgraded, true);
+  assert.equal(upgraded.isCurrentStale, true);
+  assert.ok(upgraded.reasonVi.includes("api-gateway"));
+
+  // Preserves intentional verified route when already selected
+  const kept = smartPickBaselineEndpoint({
+    endpointOptions: opts,
+    currentPath: "/api/v1/orders",
+    targetService: "payment-service",
+    edges,
+  });
+  assert.equal(kept.path, "/api/v1/orders");
+  assert.equal(kept.autoUpgraded, false);
+  assert.equal(kept.isCurrentStale, false);
+
+  // 3. Structured 3-step instructions cover all 4 types in VI & EN without leaking prediction answers
+  const ciVi = buildStudentExerciseInstructions({
+    exerciseType: "CHANGE_IMPACT",
+    targetAction: { action: "PAUSE", service: "payment-service" },
+    predictionRequired: true,
+    minImpactF1: 0.7,
+    locale: "vi",
+  });
+  assert.ok(ciVi.includes("1.") && ciVi.includes("2.") && ciVi.includes("3."));
+  assert.ok(ciVi.includes("payment-service") && ciVi.includes("PAUSE") && ciVi.includes("70%"));
+  assert.ok(!ciVi.includes("api-gateway") && !ciVi.includes("order-service"), "Must not spoil prediction answers");
+
+  const scaleEn = buildStudentExerciseInstructions({
+    exerciseType: "SCALE_UNDER_LOAD",
+    targetAction: { action: "SCALE", service: "order-service", replicas: 3 },
+    minReplicas: [{ service: "order-service", count: 3 }],
+    maxErrorRatePercent: 5,
+    maxP95Ms: 500,
+    locale: "en",
+  });
+  assert.ok(scaleEn.includes("1.") && scaleEn.includes("3x") && scaleEn.includes("500 ms"));
+
+  const recVi = buildStudentExerciseInstructions({
+    exerciseType: "CIRCUIT_BREAKER",
+    stoppedServices: ["payment-service"],
+    maxErrorRatePercent: 0,
+    locale: "vi",
+  });
+  assert.ok(recVi.includes("1.") && recVi.includes("START") && recVi.includes("payment-service"));
+
+  const cpuVi = buildStudentExerciseInstructions({
+    exerciseType: "CONFIG_REGRESSION",
+    targetAction: { action: "THROTTLE_CPU", service: "catalog-service", cpuPercent: 15 },
+    locale: "vi",
+  });
+  assert.ok(cpuVi.includes("1.") && cpuVi.includes("15%") && cpuVi.includes("catalog-service"));
+
+  // 4. Workbench mounts goal-specific Advanced Settings & themed Radix endpoint Select + regenerate
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const standaloneSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  assert.ok(workbenchSrc.includes('data-testid="goal-specific-advanced"'));
+  assert.ok(workbenchSrc.includes('data-testid="advanced-change-impact"'));
+  assert.ok(workbenchSrc.includes('data-testid="advanced-scale"'));
+  assert.ok(workbenchSrc.includes('data-testid="advanced-recovery"'));
+  assert.ok(workbenchSrc.includes('data-testid="advanced-cpu"'));
+  assert.ok(workbenchSrc.includes('data-testid="studio-baseline-endpoint-select"'));
+  assert.ok(workbenchSrc.includes('data-testid="apply-smart-endpoint-btn"'));
+  assert.ok(workbenchSrc.includes('data-testid="regenerate-instructions-btn"'));
+  assert.ok(standaloneSrc.includes("smartPickBaselineEndpoint"));
+  assert.ok(standaloneSrc.includes("buildStudentExerciseInstructions"));
+});

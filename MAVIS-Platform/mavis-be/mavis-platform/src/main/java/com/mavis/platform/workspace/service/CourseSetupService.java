@@ -628,6 +628,7 @@ public class CourseSetupService {
                     .put("initiallyStopped", initialStoppedControllers.contains("order-inventory-route"));
         }
 
+        ObjectNode resolvedProfile = null;
         if (refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
             UUID refProjectId = refModel.getProject().getId();
             RuntimeConfiguration cfg = configurations.findById(refProjectId).orElse(null);
@@ -635,6 +636,7 @@ public class CourseSetupService {
                     && cfg.getProfile() != null && cfg.getProfile().isObject()
                     ? ((ObjectNode) cfg.getProfile()).deepCopy()
                     : json.createObjectNode();
+            resolvedProfile = profile;
             JsonNode prevApps = profile.get("applications");
             ObjectNode apps = profile.putObject("applications");
             Set<String> applicationNames = new LinkedHashSet<>();
@@ -707,7 +709,7 @@ public class CourseSetupService {
         lab.setStudioTopologyRevision(nextTopoRev);
         if (exercise == null && labStudioExercises != null
                 && refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
-            exercise = seedDefaultExercise(json, lab, refModel, blocks);
+            exercise = seedDefaultExercise(json, lab, refModel, blocks, resolvedProfile);
         }
         if (exercise != null) {
             ObjectNode exerciseSnapshot = json.createObjectNode();
@@ -766,16 +768,84 @@ public class CourseSetupService {
                 || lower.equals("db");
     }
 
+    static String pickSmartDefaultBaselinePath(JsonNode profile, Set<String> svcNames) {
+        String bestPath = null;
+        int bestScore = Integer.MIN_VALUE;
+        if (profile != null && profile.isObject()) {
+            JsonNode steps = profile.path("scenario").path("steps");
+            if (steps.isArray()) {
+                for (JsonNode step : steps) {
+                    if (!step.isObject()) continue;
+                    String method = step.path("method").asText("GET").trim().toUpperCase();
+                    if (!"GET".equals(method) && !"HEAD".equals(method)) continue;
+                    String path = step.path("path").asText("").trim();
+                    String svc = step.path("service").asText("").trim();
+                    int score = scoreBaselineCandidate(path, svc, 60);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestPath = path;
+                    }
+                }
+            }
+            JsonNode detected = profile.path("detectedEndpoints");
+            if (detected.isArray()) {
+                for (JsonNode ep : detected) {
+                    if (!ep.isObject()) continue;
+                    String method = ep.path("method").asText("GET").trim().toUpperCase();
+                    if (!"GET".equals(method) && !"HEAD".equals(method)) continue;
+                    String path = ep.path("path").asText("").trim();
+                    String svc = ep.path("service").asText("").trim();
+                    int score = scoreBaselineCandidate(path, svc, 10);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestPath = path;
+                    }
+                }
+            }
+        }
+        if (bestPath != null && bestScore > 0) {
+            return bestPath;
+        }
+        return svcNames.contains("api-gateway")
+                ? "/api/gateway/orders"
+                : svcNames.contains("orders") ? "/orders" : "/health";
+    }
+
+    private static int scoreBaselineCandidate(String path, String service, int bonus) {
+        if (path == null || !path.startsWith("/") || path.length() > 200
+                || path.contains("{") || path.contains("*")) {
+            return Integer.MIN_VALUE;
+        }
+        String lower = path.toLowerCase();
+        String svcLower = service == null ? "" : service.toLowerCase();
+        int score = bonus;
+        if (svcLower.contains("gateway") || svcLower.contains("edge")
+                || svcLower.contains("proxy") || svcLower.contains("bff")) {
+            score += 40;
+        }
+        if (lower.contains("live-flow") || lower.contains("checkout") || lower.contains("end-to-end")) {
+            score += 65;
+        } else if (lower.contains("storefront") || lower.contains("overview")) {
+            score += 40;
+        }
+        if (lower.contains("graphql")) score -= 15;
+        if (lower.contains("/api/")) score += 25;
+        if (lower.contains("order")) score += 15;
+        if ("/".equals(lower) || "/health".equals(lower) || lower.contains("actuator")
+                || "/version".equals(lower)) {
+            score -= 30;
+        }
+        return score;
+    }
+
     private com.mavis.common.entity.LabStudioExercise seedDefaultExercise(
-            ObjectMapper json, Assignment lab, ModelVersion refModel, ArrayNode blocks) {
+            ObjectMapper json, Assignment lab, ModelVersion refModel, ArrayNode blocks, JsonNode profile) {
         Set<String> svcNames = new LinkedHashSet<>();
         for (JsonNode b : blocks) {
             String s = b.path("service").asText("");
             if (!s.isBlank()) svcNames.add(s);
         }
-        String baselinePath = svcNames.contains("api-gateway")
-                ? "/api/gateway/orders"
-                : svcNames.contains("orders") ? "/orders" : "/health";
+        String baselinePath = pickSmartDefaultBaselinePath(profile, svcNames);
         ArrayNode baseline = json.createArrayNode();
         baseline.addObject()
                 .put("method", "GET")

@@ -69,9 +69,11 @@ import {
 import {
   AUTHOR_DRAG_CHIPS,
   AUTHOR_GOALS,
+  buildStudentExerciseInstructions,
   computeStaticBlastRadius,
   deriveExerciseFromLiveActions,
   resolveModelServiceEdges,
+  smartPickBaselineEndpoint,
   type AuthorBlockChipId,
   type DerivedExerciseFromDemo,
   type EndpointOption,
@@ -5242,6 +5244,74 @@ export function LiveStudioWorkbench({
                   ? authoring.endpointOptions
                   : [{ path: baselineDraft || "/health", label: `GET ${baselineDraft || "/health"}` }];
                 const hasSelectedEndpoint = endpointList.some((ep) => ep.path === baselineDraft);
+                const activeGoalTargetSvc =
+                  authoring.targetChangeAction?.service ||
+                  (activeGoalId === "scale" ? replicaSvcDraft || authoring.replicaService : "") ||
+                  (activeGoalId === "recovery" ? authoring.initialStoppedServices[0] ?? "" : "") ||
+                  null;
+                const smartPick = smartPickBaselineEndpoint({
+                  endpointOptions: endpointList,
+                  currentPath: baselineDraft,
+                  targetService: activeGoalTargetSvc,
+                  edges: staticEdgesForBlast,
+                });
+                const hasVerifiedRoutes = endpointList.some((ep) => ep.verified);
+                const themeRadius = styleCfg.controlRadiusClass;
+                const selectPopoverClass =
+                  studioStyle === "pop"
+                    ? "border-2 border-slate-900 bg-white text-slate-950 shadow-[3px_3px_0_#0F172A]"
+                    : studioStyle === "blueprint"
+                      ? "border border-blue-300 bg-[#FAFDFE] text-slate-900 shadow-md"
+                      : isLight
+                        ? "border border-sky-200/90 bg-white text-slate-900 shadow-lg"
+                        : "border border-slate-700 bg-[#0C1324] text-slate-100 shadow-xl";
+                const selectItemFocusClass =
+                  studioStyle === "pop"
+                    ? "focus:bg-[#DBEAFE] focus:text-slate-950"
+                    : studioStyle === "blueprint"
+                      ? "focus:bg-[#E6F0FF] focus:text-blue-950"
+                      : isLight
+                        ? "focus:bg-sky-50 focus:text-sky-950"
+                        : "focus:bg-sky-500/20 focus:text-sky-100";
+                const advancedGoalBadge =
+                  activeGoalId === "change-impact"
+                    ? t("Change Impact", "Phân tích ảnh hưởng")
+                    : activeGoalId === "scale"
+                      ? t("Scale-Out", "Chịu tải & Scale")
+                      : activeGoalId === "recovery"
+                        ? t("Outage Recovery", "Khôi phục sự cố")
+                        : activeGoalId === "cpu"
+                          ? t("CPU Degradation", "Tắc nghẽn CPU")
+                          : t("General", "Tổng quát");
+                const regenerateInstructions = () => {
+                  const parsedF1 = minImpactF1Draft.trim() ? Number(minImpactF1Draft) : 0.7;
+                  const parsedErr = maxErrDraft.trim() ? Number(maxErrDraft) : null;
+                  const parsedP95 = maxP95Draft.trim() ? Number(maxP95Draft) : null;
+                  const nextText = buildStudentExerciseInstructions({
+                    exerciseType:
+                      activeGoalId === "change-impact"
+                        ? "CHANGE_IMPACT"
+                        : activeGoalId === "scale"
+                          ? "SCALE_UNDER_LOAD"
+                          : activeGoalId === "recovery"
+                            ? "CIRCUIT_BREAKER"
+                            : activeGoalId === "cpu"
+                              ? "CONFIG_REGRESSION"
+                              : authoring.exerciseType,
+                    targetAction: authoring.targetChangeAction,
+                    stoppedServices: authoring.initialStoppedServices,
+                    minReplicas:
+                      replicaSvcDraft && Number(replicaCountDraft) >= 2
+                        ? [{ service: replicaSvcDraft, count: Number(replicaCountDraft) }]
+                        : [],
+                    predictionRequired: predictionRequiredDraft,
+                    minImpactF1: Number.isFinite(parsedF1) ? parsedF1 : 0.7,
+                    maxErrorRatePercent: parsedErr != null && Number.isFinite(parsedErr) ? parsedErr : null,
+                    maxP95Ms: parsedP95 != null && Number.isFinite(parsedP95) ? parsedP95 : null,
+                    locale,
+                  });
+                  setMissionDraft(nextText);
+                };
                 const ALL_ACTIONS = [
                   "START",
                   "STOP",
@@ -5262,67 +5332,192 @@ export function LiveStudioWorkbench({
                       : [...prev, act],
                   );
                 };
+                const presetBtn = (active: boolean) =>
+                  `h-7 border px-2 font-mono text-[11px] font-semibold transition ${themeRadius} ${
+                    active ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
+                  }`;
+                const gradingSummary = (() => {
+                  if (activeGoalId === "change-impact") {
+                    const pct = Math.round((Number(minImpactF1Draft) || 0.7) * 100);
+                    return predictionRequiredDraft
+                      ? t(`Auto-graded prediction F1 >= ${pct}%`, `Chấm tự động dự đoán F1 >= ${pct}%`)
+                      : t("Evidence-based impact report", "Đánh giá qua bằng chứng Snapshot");
+                  }
+                  if (activeGoalId === "scale") {
+                    const rep = Number(replicaCountDraft) || 2;
+                    const parts = [
+                      replicaSvcDraft ? `${replicaSvcDraft} >= ${rep}x` : `>= ${rep}x`,
+                      maxErrDraft.trim() ? `${t("Error", "Lỗi")} <= ${maxErrDraft}%` : null,
+                      maxP95Draft.trim() ? `p95 <= ${maxP95Draft}ms` : null,
+                    ].filter(Boolean);
+                    return parts.join(" · ");
+                  }
+                  if (activeGoalId === "recovery") {
+                    const err = maxErrDraft.trim() || "0";
+                    return [
+                      t(`Recover to <= ${err}% errors`, `Khôi phục về <= ${err}% lỗi`),
+                      maxP95Draft.trim() ? `p95 <= ${maxP95Draft}ms` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                  }
+                  if (activeGoalId === "cpu") {
+                    const parts = [
+                      maxP95Draft.trim() ? `p95 <= ${maxP95Draft}ms` : t("Observe p95 latency jump", "Quan sát độ trễ p95 tăng"),
+                      maxErrDraft.trim() ? `${t("Error", "Lỗi")} <= ${maxErrDraft}%` : null,
+                    ].filter(Boolean);
+                    return parts.join(" · ");
+                  }
+                  return null;
+                })();
+
                 return (
                   <section aria-label="Mission setup" className="space-y-3 text-xs">
-                    <label
-                      className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-700" : "text-slate-300"}`}
-                    >
-                      <span>{t("Baseline Endpoint (auto-detected)", "Endpoint kiểm thử (tự quét từ repo)")}</span>
-                      <select
-                        aria-label={t("Baseline Endpoint", "Endpoint kiểm thử")}
+                    {/* Baseline Endpoint (Themed Radix Select + Smart Auto-Pick Indicator) */}
+                    <div className="space-y-1.5">
+                      <span
+                        className={`block text-[11.5px] font-medium ${isLight ? "text-slate-700" : "text-slate-300"}`}
+                      >
+                        {t("Baseline Endpoint (auto-detected)", "Endpoint kiểm thử (tự quét từ repo)")}
+                      </span>
+                      <Select
                         value={hasSelectedEndpoint ? baselineDraft : "__custom__"}
-                        onChange={(e) => {
-                          if (e.target.value !== "__custom__") {
-                            setBaselineDraft(e.target.value);
+                        onValueChange={(nextVal) => {
+                          if (nextVal !== "__custom__") {
+                            setBaselineDraft(nextVal);
                           }
                         }}
-                        className={`h-8 w-full px-2 font-mono text-xs ${styleCfg.inputClass}`}
                       >
-                        {endpointList.map((ep) => (
-                          <option key={ep.path} value={ep.path}>
-                            {ep.label}
-                          </option>
-                        ))}
-                        {!hasSelectedEndpoint && baselineDraft && (
-                          <option value="__custom__">GET {baselineDraft}</option>
-                        )}
-                      </select>
-                    </label>
+                        <SelectTrigger
+                          aria-label={t("Baseline Endpoint", "Endpoint kiểm thử")}
+                          data-testid="studio-baseline-endpoint-select"
+                          style={{ fontSize: 12.5, lineHeight: "1.25" }}
+                          className={`h-9 w-full px-2.5 py-0 font-mono font-medium shadow-none focus:ring-1 focus:ring-offset-0 ${styleCfg.inputClass}`}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent
+                          align="start"
+                          className={`max-h-64 p-1 ${themeRadius} ${selectPopoverClass}`}
+                        >
+                          {endpointList.map((ep) => (
+                            <SelectItem
+                              key={ep.path}
+                              value={ep.path}
+                              style={{ fontSize: 12.5 }}
+                              className={`min-h-8 py-1.5 font-mono ${themeRadius} ${selectItemFocusClass}`}
+                            >
+                              {ep.label}
+                            </SelectItem>
+                          ))}
+                          {!hasSelectedEndpoint && baselineDraft && (
+                            <SelectItem
+                              value="__custom__"
+                              style={{ fontSize: 12.5 }}
+                              className={`min-h-8 py-1.5 font-mono ${themeRadius} ${selectItemFocusClass}`}
+                            >
+                              GET {baselineDraft}
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
 
-                    <label
-                      className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-700" : "text-slate-300"}`}
-                    >
-                      <span>{t("Student Mission", "Đề bài cho sinh viên")}</span>
+                      {hasVerifiedRoutes && (
+                        <div data-testid="smart-endpoint-hint">
+                          {smartPick.isCurrentStale && smartPick.recommendedPath !== baselineDraft ? (
+                            <div
+                              className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[11px] ${
+                                isLight
+                                  ? "border-amber-300 bg-amber-50/90 text-amber-900"
+                                  : "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                              }`}
+                            >
+                              <span className="min-w-0 leading-snug">
+                                {t(
+                                  `Not in scanned routes — recommended:`,
+                                  `Chưa có trong route quét từ repo — gợi ý:`,
+                                )}{" "}
+                                <code className="font-mono font-semibold">
+                                  GET {smartPick.recommendedPath}
+                                </code>
+                              </span>
+                              <button
+                                type="button"
+                                data-testid="apply-smart-endpoint-btn"
+                                onClick={() => setBaselineDraft(smartPick.recommendedPath)}
+                                className={`shrink-0 border px-2 py-0.5 text-[11px] font-semibold transition ${themeRadius} ${styleCfg.controlActiveClass}`}
+                              >
+                                {t("Use smart pick", "Áp dụng ngay")}
+                              </button>
+                            </div>
+                          ) : smartPick.recommendedPath === baselineDraft ? (
+                            <p
+                              className={`text-[11px] leading-snug ${styleCfg.subtleTextClass}`}
+                            >
+                              {locale === "vi" ? smartPick.reasonVi : smartPick.reasonEn}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Structured Student Instructions + 1-Click Regenerate */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-[11.5px] font-medium ${isLight ? "text-slate-700" : "text-slate-300"}`}
+                        >
+                          {t("Student Mission", "Đề bài cho sinh viên")}
+                        </span>
+                        <button
+                          type="button"
+                          data-testid="regenerate-instructions-btn"
+                          onClick={regenerateInstructions}
+                          className={`text-[11px] font-medium underline underline-offset-2 transition hover:opacity-100 ${styleCfg.subtleTextClass}`}
+                        >
+                          {t("Regenerate from setup", "Viết lại mẫu chuẩn")}
+                        </button>
+                      </div>
                       <Textarea
                         value={missionDraft}
                         onChange={(e) => setMissionDraft(e.target.value)}
                         placeholder={t(
-                          "Pick a goal or click a 3D block to auto-draft instructions.",
-                          "Chọn dạng bài hoặc bấm vào khối 3D để tự sinh đề bài.",
+                          "Pick a goal or click a 3D block to auto-draft step-by-step instructions.",
+                          "Chọn dạng bài hoặc bấm vào khối 3D để tự sinh hướng dẫn từng bước cho sinh viên.",
                         )}
-                        className={`min-h-20 text-xs ${styleCfg.inputClass}`}
+                        className={`min-h-28 text-xs leading-relaxed ${styleCfg.inputClass}`}
                       />
-                    </label>
+                    </div>
 
                     {/* Live Student Preview */}
-                    <div
-                      className={`space-y-1 p-2.5 text-[11px] ${styleCfg.subSurfaceClass}`}
-                    >
+                    <div className={`space-y-1 p-2.5 text-[11px] ${styleCfg.subSurfaceClass}`}>
                       <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                         {t("Student Will Receive", "Tóm tắt đề bài")}
                       </p>
                       <p className={isLight ? "text-slate-700" : "text-slate-300"}>
-                        {t("Initial Faults:", "Sự cố ban đầu:")}{" "}
-                        <code className={`font-mono font-semibold ${isLight ? "text-rose-700" : "text-rose-300"}`}>
+                        {t("Initial State:", "Trạng thái ban đầu:")}{" "}
+                        <code
+                          className={`font-mono font-semibold ${
+                            authoring.initialStoppedServices.length > 0
+                              ? isLight
+                                ? "text-rose-700"
+                                : "text-rose-300"
+                              : isLight
+                                ? "text-emerald-700"
+                                : "text-emerald-300"
+                          }`}
+                        >
                           {authoring.initialStoppedServices.length > 0
-                            ? authoring.initialStoppedServices.join(", ")
-                            : t("None (all start Up)", "Không (tất cả chạy)")}
+                            ? `${t("Starts down (0x)", "Tắt sẵn (0x)")}: ${authoring.initialStoppedServices.join(", ")}`
+                            : t("All services running", "Tất cả chạy bình thường")}
                         </code>
                       </p>
                       {authoring.targetChangeAction?.service && (
                         <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                           {t("Target Action:", "Thao tác mục tiêu:")}{" "}
-                          <code className={`font-mono font-semibold ${isLight ? "text-amber-700" : "text-amber-300"}`}>
+                          <code
+                            className={`font-mono font-semibold ${isLight ? "text-amber-700" : "text-amber-300"}`}
+                          >
                             {authoring.targetChangeAction.action} {authoring.targetChangeAction.service}
                             {authoring.targetChangeAction.replicas
                               ? ` (${authoring.targetChangeAction.replicas}x)`
@@ -5332,175 +5527,431 @@ export function LiveStudioWorkbench({
                           </code>
                         </p>
                       )}
+                      {gradingSummary && (
+                        <p className={isLight ? "text-slate-700" : "text-slate-300"}>
+                          {t("Grading Rule:", "Tiêu chí chấm:")}{" "}
+                          <span className="font-semibold text-foreground">{gradingSummary}</span>
+                        </p>
+                      )}
                       {authoring.requiredTraceEdge && (
                         <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                           {t("Required Path:", "Đường gọi kiểm chứng:")}{" "}
-                          <code className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+                          <code
+                            className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}
+                          >
                             {authoring.requiredTraceEdge.from} -&gt; {authoring.requiredTraceEdge.to}
                           </code>
                         </p>
                       )}
                       <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                         Probe:{" "}
-                        <code className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+                        <code
+                          className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}
+                        >
                           GET {baselineDraft || "/health"}
                         </code>
                       </p>
                     </div>
 
-                    {/* Collapsible Advanced Settings (closed by default for simplicity) */}
+                    {/* Goal-Specific Collapsible Advanced Settings */}
                     <details
-                      className={`rounded-xl border p-2.5 ${
-                        isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-950/60"
-                      }`}
+                      data-testid="goal-specific-advanced"
+                      data-advanced-goal={activeGoalId ?? "none"}
+                      className={`p-2.5 ${styleCfg.subSurfaceClass}`}
                     >
                       <summary
-                        className={`cursor-pointer select-none text-[11.5px] font-semibold ${
-                          isLight ? "text-slate-700 hover:text-slate-900" : "text-slate-300 hover:text-white"
+                        className={`flex cursor-pointer select-none items-center justify-between gap-2 text-[11.5px] font-semibold ${
+                          isLight ? "text-slate-800 hover:text-slate-950" : "text-slate-200 hover:text-white"
                         }`}
                       >
-                        {t("Advanced settings", "Tùy chỉnh nâng cao")}
+                        <span>{t("Advanced settings", "Tùy chỉnh nâng cao")}</span>
+                        <span
+                          className={`border px-1.5 py-0.5 text-[10px] font-semibold ${themeRadius} ${styleCfg.controlActiveMutedClass}`}
+                        >
+                          {advancedGoalBadge}
+                        </span>
                       </summary>
-                      <div className="mt-3 space-y-2.5">
-                        <div className="grid grid-cols-3 gap-2">
-                          <label className="block space-y-1 text-[11px] text-muted-foreground">
-                            <span>Max Error %</span>
-                            <Input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={maxErrDraft}
-                              onChange={(e) => setMaxErrDraft(e.target.value)}
-                              placeholder="—"
-                              className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                            />
-                          </label>
-                          <label className="block space-y-1 text-[11px] text-muted-foreground">
-                            <span>Max p95 (ms)</span>
-                            <Input
-                              type="number"
-                              min={1}
-                              value={maxP95Draft}
-                              onChange={(e) => setMaxP95Draft(e.target.value)}
-                              placeholder="—"
-                              className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                            />
-                          </label>
-                          <label className="block space-y-1 text-[11px] text-muted-foreground">
-                            <span>Min F1 (0-1)</span>
-                            <Input
-                              type="number"
-                              step="0.05"
-                              min={0}
-                              max={1}
-                              value={minImpactF1Draft}
-                              onChange={(e) => setMinImpactF1Draft(e.target.value)}
-                              placeholder="0.7"
-                              className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                            />
-                          </label>
-                        </div>
 
-                        <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            checked={predictionRequiredDraft}
-                            onChange={(e) => setPredictionRequiredDraft(e.target.checked)}
-                            className="size-3.5 rounded border-slate-400"
-                          />
-                          <span>
-                            {t(
-                              "Require student impact prediction before action",
-                              "Yêu cầu sinh viên dự đoán ảnh hưởng trước khi chạy thao tác",
-                            )}
-                          </span>
-                        </label>
+                      <div className="mt-3 space-y-3">
+                        {/* 1. Change Impact Specialized Advanced Controls */}
+                        {activeGoalId === "change-impact" && (
+                          <div data-testid="advanced-change-impact" className="space-y-2.5">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
+                                  {t("Minimum Prediction Accuracy (F1)", "Ngưỡng chấm dự đoán (Min F1)")}
+                                </span>
+                                <span className="font-mono text-[11px] font-semibold text-foreground">
+                                  {Math.round((Number(minImpactF1Draft) || 0.7) * 100)}%
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {(
+                                  [
+                                    ["0.6", t("60% Basic", "60% Cơ bản")],
+                                    ["0.7", t("70% Std", "70% Chuẩn")],
+                                    ["0.85", t("85% Strict", "85% Chặt")],
+                                  ] as const
+                                ).map(([val, lbl]) => (
+                                  <button
+                                    key={val}
+                                    type="button"
+                                    onClick={() => setMinImpactF1Draft(val)}
+                                    className={presetBtn(Number(minImpactF1Draft) === Number(val))}
+                                  >
+                                    {lbl}
+                                  </button>
+                                ))}
+                                <Input
+                                  type="number"
+                                  aria-label="Min F1 (0-1)"
+                                  step="0.05"
+                                  min={0}
+                                  max={1}
+                                  value={minImpactF1Draft}
+                                  onChange={(e) => setMinImpactF1Draft(e.target.value)}
+                                  placeholder="0.7"
+                                  className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                />
+                              </div>
+                              <p className={`text-[10.5px] leading-snug ${styleCfg.subtleTextClass}`}>
+                                {t(
+                                  "Auto-grades student predictions against real impacted services from OpenTelemetry traces.",
+                                  "Tự chấm F1 giữa danh sách sinh viên dự đoán và các nhánh lỗi thực tế từ trace.",
+                                )}
+                              </p>
+                            </div>
 
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="block space-y-1 text-[11px] text-muted-foreground">
-                            <span>{t("Scale target", "Service cần Scale")}</span>
-                            <select
-                              value={replicaSvcDraft}
-                              onChange={(e) => setReplicaSvcDraft(e.target.value)}
-                              className={`h-7 w-full rounded-md border px-2 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                            >
-                              <option value="">{t("None", "Không")}</option>
-                              {blocks.map((b) => (
-                                <option key={b.service} value={b.service}>
-                                  {b.service}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="block space-y-1 text-[11px] text-muted-foreground">
-                            <span>{t("Min replicas", "Số replica tối thiểu")}</span>
-                            <Input
-                              type="number"
-                              min={1}
-                              max={3}
-                              value={replicaCountDraft}
-                              onChange={(e) => setReplicaCountDraft(e.target.value)}
-                              placeholder="2"
-                              className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                            />
-                          </label>
-                        </div>
-
-                        <label className="block space-y-1 text-[11px] text-muted-foreground">
-                          <span>{t("Custom GET path", "Đường dẫn GET tùy chỉnh")}</span>
-                          <Input
-                            value={baselineDraft}
-                            onChange={(e) => setBaselineDraft(e.target.value)}
-                            placeholder="/api/v1/storefront/live-flow"
-                            className={`h-7 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
-                          />
-                        </label>
-
-                        <div className="space-y-1">
-                          <p className="text-[11px] text-muted-foreground">
-                            {t("Allowed student actions", "Thao tác cho phép sinh viên")}
-                          </p>
-                          <div className="flex flex-wrap gap-1">
-                            {ALL_ACTIONS.map((act) => {
-                              const on = allowedActionsDraft.includes(act);
-                              return (
-                                <button
-                                  key={act}
-                                  type="button"
-                                  onClick={() => toggleAllowedAction(act)}
-                                  className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium transition ${
-                                    on
-                                      ? isLight
-                                        ? "border-sky-400 bg-sky-50 text-sky-800"
-                                        : "border-sky-500/60 bg-sky-500/20 text-sky-200"
-                                      : isLight
-                                        ? "border-slate-200 bg-slate-50 text-slate-400"
-                                        : "border-slate-800 bg-slate-900 text-slate-500"
-                                  }`}
-                                >
-                                  {act}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {authoring.onSyncDocker && (
-                          <div className="border-t border-border/60 pt-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={authoring.syncingDocker}
-                              onClick={authoring.onSyncDocker}
-                              className="h-7 w-full text-[11px]"
-                            >
-                              {authoring.syncingDocker
-                                ? t("Syncing Docker topology…", "Đang đồng bộ Docker…")
-                                : t("Re-sync Docker Compose from repo", "Đồng bộ lại Docker Compose từ repo")}
-                            </Button>
+                            <label className="flex cursor-pointer items-center justify-between gap-2 pt-0.5 text-[11px]">
+                              <span className={isLight ? "text-slate-700" : "text-slate-300"}>
+                                {t(
+                                  "Require student impact prediction before action",
+                                  "Yêu cầu sinh viên khóa dự đoán trước khi gây lỗi",
+                                )}
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={predictionRequiredDraft}
+                                onChange={(e) => setPredictionRequiredDraft(e.target.checked)}
+                                className={`size-4 rounded ${styleCfg.checkboxAccentClass}`}
+                              />
+                            </label>
                           </div>
                         )}
+
+                        {/* 2. Scale-Out Specialized Advanced Controls */}
+                        {activeGoalId === "scale" && (
+                          <div data-testid="advanced-scale" className="space-y-2.5">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                                  {t("Scale target", "Service cần Scale")}
+                                </span>
+                                <Select
+                                  value={replicaSvcDraft || "__none__"}
+                                  onValueChange={(nextVal) =>
+                                    setReplicaSvcDraft(nextVal === "__none__" ? "" : nextVal)
+                                  }
+                                >
+                                  <SelectTrigger
+                                    aria-label={t("Scale target", "Service cần Scale")}
+                                    style={{ fontSize: 12 }}
+                                    className={`h-8 w-full px-2 py-0 font-mono shadow-none ${styleCfg.inputClass}`}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent
+                                    align="start"
+                                    className={`max-h-56 p-1 ${themeRadius} ${selectPopoverClass}`}
+                                  >
+                                    <SelectItem
+                                      value="__none__"
+                                      style={{ fontSize: 12 }}
+                                      className={`min-h-7 py-1 ${themeRadius} ${selectItemFocusClass}`}
+                                    >
+                                      {t("None", "Không")}
+                                    </SelectItem>
+                                    {blocks.map((b) => (
+                                      <SelectItem
+                                        key={b.service}
+                                        value={b.service}
+                                        style={{ fontSize: 12 }}
+                                        className={`min-h-7 py-1 font-mono ${themeRadius} ${selectItemFocusClass}`}
+                                      >
+                                        {b.service}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="space-y-1">
+                                <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                                  {t("Min replicas", "Số replica tối thiểu")}
+                                </span>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {(["1", "2", "3"] as const).map((cnt) => (
+                                    <button
+                                      key={cnt}
+                                      type="button"
+                                      onClick={() => setReplicaCountDraft(cnt)}
+                                      className={`h-8 border font-mono text-xs font-semibold transition ${themeRadius} ${
+                                        (replicaCountDraft || "2") === cnt
+                                          ? styleCfg.controlActiveClass
+                                          : styleCfg.controlIdleClass
+                                      }`}
+                                    >
+                                      {cnt}x
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                                  {t("Max Error % under load", "Lỗi tối đa khi chịu tải (%)")}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  {(["0", "5"] as const).map((val) => (
+                                    <button
+                                      key={val}
+                                      type="button"
+                                      onClick={() => setMaxErrDraft(val)}
+                                      className={presetBtn(maxErrDraft === val)}
+                                    >
+                                      {val}%
+                                    </button>
+                                  ))}
+                                  <Input
+                                    type="number"
+                                    aria-label="Max Error %"
+                                    min={0}
+                                    max={100}
+                                    value={maxErrDraft}
+                                    onChange={(e) => setMaxErrDraft(e.target.value)}
+                                    placeholder="5"
+                                    className={`h-7 flex-1 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                                  {t("Max p95 latency (ms)", "Độ trễ p95 tối đa (ms)")}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  {(["", "500"] as const).map((val) => (
+                                    <button
+                                      key={val || "none"}
+                                      type="button"
+                                      onClick={() => setMaxP95Draft(val)}
+                                      className={presetBtn(maxP95Draft === val)}
+                                    >
+                                      {val ? `${val}` : "—"}
+                                    </button>
+                                  ))}
+                                  <Input
+                                    type="number"
+                                    aria-label="Max p95 (ms)"
+                                    min={1}
+                                    value={maxP95Draft}
+                                    onChange={(e) => setMaxP95Draft(e.target.value)}
+                                    placeholder="—"
+                                    className={`h-7 flex-1 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3. Outage Recovery Specialized Advanced Controls */}
+                        {activeGoalId === "recovery" && (
+                          <div data-testid="advanced-recovery" className="space-y-2.5">
+                            <div className="space-y-1.5">
+                              <span className={`block text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
+                                {t("Recovery Error Threshold (Max Error %)", "Ngưỡng lỗi xác nhận hồi phục (%)")}
+                              </span>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setMaxErrDraft("0")}
+                                  className={presetBtn(maxErrDraft === "0")}
+                                >
+                                  {t("0% Strict", "0% Tuyệt đối")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMaxErrDraft("5")}
+                                  className={presetBtn(maxErrDraft === "5")}
+                                >
+                                  {t("<= 5% Mild", "<= 5% Nhẹ")}
+                                </button>
+                                <Input
+                                  type="number"
+                                  aria-label="Max Error %"
+                                  min={0}
+                                  max={100}
+                                  value={maxErrDraft}
+                                  onChange={(e) => setMaxErrDraft(e.target.value)}
+                                  placeholder="0"
+                                  className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                                {t("Optional Max p95 after recovery (ms)", "Ngưỡng độ trễ p95 sau khôi phục (tùy chọn)")}
+                              </span>
+                              <Input
+                                type="number"
+                                aria-label="Max p95 (ms)"
+                                min={1}
+                                value={maxP95Draft}
+                                onChange={(e) => setMaxP95Draft(e.target.value)}
+                                placeholder={t("Leave empty to skip latency gate", "Để trống nếu không ràng buộc độ trễ")}
+                                className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 4. CPU Degradation Specialized Advanced Controls */}
+                        {activeGoalId === "cpu" && (
+                          <div data-testid="advanced-cpu" className="space-y-2.5">
+                            <div className="space-y-1.5">
+                              <span className={`block text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
+                                {t("Reference p95 Latency Threshold (ms)", "Ngưỡng độ trễ p95 tham chiếu (ms)")}
+                              </span>
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {(
+                                  [
+                                    ["", t("None", "Không")],
+                                    ["500", "500ms"],
+                                    ["1000", "1000ms"],
+                                  ] as const
+                                ).map(([val, lbl]) => (
+                                  <button
+                                    key={val || "none"}
+                                    type="button"
+                                    onClick={() => setMaxP95Draft(val)}
+                                    className={presetBtn(maxP95Draft === val)}
+                                  >
+                                    {lbl}
+                                  </button>
+                                ))}
+                                <Input
+                                  type="number"
+                                  aria-label="Max p95 (ms)"
+                                  min={1}
+                                  value={maxP95Draft}
+                                  onChange={(e) => setMaxP95Draft(e.target.value)}
+                                  placeholder="—"
+                                  className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                                {t("Optional Max Error %", "Giới hạn lỗi tối đa (tùy chọn)")}
+                              </span>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setMaxErrDraft("")}
+                                  className={presetBtn(maxErrDraft === "")}
+                                >
+                                  {t("No limit", "Không ép")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMaxErrDraft("5")}
+                                  className={presetBtn(maxErrDraft === "5")}
+                                >
+                                  &lt;= 5%
+                                </button>
+                                <Input
+                                  type="number"
+                                  aria-label="Max Error %"
+                                  min={0}
+                                  max={100}
+                                  value={maxErrDraft}
+                                  onChange={(e) => setMaxErrDraft(e.target.value)}
+                                  placeholder="—"
+                                  className={`h-7 px-2 font-mono text-xs ${styleCfg.inputClass}`}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {!activeGoalId && (
+                          <p className={`text-[11px] leading-snug ${styleCfg.subtleTextClass}`}>
+                            {t(
+                              "Pick one of the 4 Exercise Goals in Visual Builder to unlock specialized grading settings.",
+                              "Chọn 1 trong 4 dạng bài ở tab Thiết kế 3D để mở bộ tùy chỉnh chấm điểm chuyên biệt.",
+                            )}
+                          </p>
+                        )}
+
+                        {/* Shared Technical Controls (Custom GET path, Allowed Actions, Sync Docker) */}
+                        <div className={`space-y-2.5 border-t pt-2.5 ${styleCfg.dividerClass}`}>
+                          <label className="block space-y-1 text-[11px]">
+                            <span className={styleCfg.subtleTextClass}>
+                              {t("Custom GET path", "Đường dẫn GET tùy chỉnh")}
+                            </span>
+                            <Input
+                              value={baselineDraft}
+                              onChange={(e) => setBaselineDraft(e.target.value)}
+                              placeholder="/api/v1/storefront/live-flow"
+                              className={`h-7 font-mono text-xs ${styleCfg.inputClass}`}
+                            />
+                          </label>
+
+                          <div className="space-y-1">
+                            <p className={`text-[11px] ${styleCfg.subtleTextClass}`}>
+                              {t("Allowed student actions", "Thao tác cho phép sinh viên")}
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {ALL_ACTIONS.map((act) => {
+                                const on = allowedActionsDraft.includes(act);
+                                return (
+                                  <button
+                                    key={act}
+                                    type="button"
+                                    onClick={() => toggleAllowedAction(act)}
+                                    className={`border px-1.5 py-0.5 font-mono text-[10px] font-semibold transition ${themeRadius} ${
+                                      on ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
+                                    }`}
+                                  >
+                                    {act}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {authoring.onSyncDocker && (
+                            <div className={`border-t pt-2 ${styleCfg.dividerClass}`}>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={authoring.syncingDocker}
+                                onClick={authoring.onSyncDocker}
+                                className={`h-7 w-full text-[11px] ${themeRadius} ${styleCfg.controlIdleClass}`}
+                              >
+                                {authoring.syncingDocker
+                                  ? t("Syncing Docker topology…", "Đang đồng bộ Docker…")
+                                  : t("Re-sync Docker Compose from repo", "Đồng bộ lại Docker Compose từ repo")}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </details>
 
@@ -5528,19 +5979,22 @@ export function LiveStudioWorkbench({
                           authoring.onSaveMission({
                             instructions: missionDraft,
                             baselinePath: baselineDraft,
-                            maxErrorRatePercent: maxErrDraft,
-                            maxP95Ms: maxP95Draft,
-                            minImpactF1: minImpactF1Draft,
-                            predictionRequired: predictionRequiredDraft,
+                            maxErrorRatePercent:
+                              activeGoalId === "change-impact" ? "" : maxErrDraft,
+                            maxP95Ms: activeGoalId === "change-impact" ? "" : maxP95Draft,
+                            minImpactF1:
+                              activeGoalId === "change-impact" ? minImpactF1Draft : "",
+                            predictionRequired:
+                              activeGoalId === "change-impact" ? predictionRequiredDraft : false,
                             allowedActions: allowedActionsDraft,
-                            replicaService: replicaSvcDraft,
-                            replicaCount: replicaCountDraft,
+                            replicaService: activeGoalId === "scale" ? replicaSvcDraft : "",
+                            replicaCount: activeGoalId === "scale" ? replicaCountDraft : "",
                           })
                         }
-                        className={`h-8 px-3 text-xs text-white ${
+                        className={`h-8 px-3 text-xs font-semibold ${themeRadius} ${
                           missionDirty
-                            ? "bg-amber-600 hover:bg-amber-500"
-                            : "bg-teal-600 hover:bg-teal-500"
+                            ? "bg-amber-600 text-white hover:bg-amber-500"
+                            : "bg-teal-600 text-white hover:bg-teal-500"
                         }`}
                       >
                         {authoring.saving

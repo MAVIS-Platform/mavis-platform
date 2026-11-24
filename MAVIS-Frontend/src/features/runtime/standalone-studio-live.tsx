@@ -25,7 +25,10 @@ import {
 } from "@/features/workspaces/course-access";
 import { LiveStudioWorkbench, type LiveStudioAuthoringProps } from "./live-studio-workbench";
 import {
+  buildStudentExerciseInstructions,
   extractRepoEndpointOptions,
+  resolveModelServiceEdges,
+  smartPickBaselineEndpoint,
   type AuthorBlockChipId,
   type DerivedExerciseFromDemo,
   type ExerciseTypeKey,
@@ -282,6 +285,11 @@ function StandaloneStudioContent() {
     );
     return entries.length > 0 ? Object.fromEntries(entries) : undefined;
   }, [runtimeConfig.data?.profile]);
+  const authorReferenceModel = useApiQuery(
+    "model",
+    { modelId: previewModelId ?? "", projectId: projectId ?? "" },
+    { enabled: Boolean(isAuthorMode && previewModelId && projectId) },
+  );
 
   const availableApplications = readiness.data?.applications?.length
     ? readiness.data.applications
@@ -428,6 +436,41 @@ function StandaloneStudioContent() {
       ),
     [runtimeConfig.data?.profile, exercise.data?.baselineRequests],
   );
+  const authorStaticEdges = useMemo(() => {
+    const seen = new Set<string>();
+    const edges: Array<{ from: string; to: string }> = [];
+    const add = (from: string, to: string) => {
+      if (!from || !to || from === to) return;
+      const key = `${from}->${to}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      edges.push({ from, to });
+    };
+    for (const c of previewTopology?.connections ?? []) add(c.from, c.to);
+    const servicePool = previewTopology?.blocks.length
+      ? previewTopology.blocks.map((b) => b.service)
+      : composePoolServices;
+    for (const m of resolveModelServiceEdges(
+      authorReferenceModel.data,
+      previewServiceMappings,
+      servicePool,
+    )) {
+      add(m.from, m.to);
+    }
+    return edges;
+  }, [
+    previewTopology,
+    authorReferenceModel.data,
+    previewServiceMappings,
+    composePoolServices,
+  ]);
+  const pickSmartPath = (targetService?: string | null) =>
+    smartPickBaselineEndpoint({
+      endpointOptions,
+      currentPath: exercise.data?.baselineRequests?.[0]?.path,
+      targetService,
+      edges: authorStaticEdges,
+    }).path;
   const defaultBaselinePath = useMemo(() => {
     const saved = exercise.data?.baselineRequests?.[0]?.path?.trim();
     if (saved && saved !== "/") return saved;
@@ -954,12 +997,16 @@ function StandaloneStudioContent() {
                 stoppedControllers: [],
                 minReplicas: [],
                 maxErrorRatePercent: "",
-                baselinePath: defaultBaselinePath,
+                maxP95Ms: "",
+                baselinePath: pickSmartPath(faultTarget),
                 allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
-                instructions:
-                  locale === "vi"
-                    ? `Quan sát sơ đồ phụ thuộc, dự đoán tất cả service bị ảnh hưởng khi PAUSE ${faultTarget}, khóa dự đoán, sau đó thực hiện PAUSE ${faultTarget} và chụp snapshot Before/After.`
-                    : `Inspect the live dependency graph, predict every service impacted when ${faultTarget} is paused, lock your prediction, then PAUSE ${faultTarget} and capture Before/After evidence.`,
+                instructions: buildStudentExerciseInstructions({
+                  exerciseType: "CHANGE_IMPACT",
+                  targetAction: { action: "PAUSE", service: faultTarget },
+                  predictionRequired: true,
+                  minImpactF1: 0.7,
+                  locale,
+                }),
                 ...(nextTopology ? { nextTopology } : {}),
               });
               return;
@@ -980,12 +1027,15 @@ function StandaloneStudioContent() {
                 stoppedControllers: [],
                 minReplicas: [{ service: primaryScale, count: 2 }],
                 maxErrorRatePercent: "5",
-                baselinePath: defaultBaselinePath,
+                baselinePath: pickSmartPath(primaryScale),
                 allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
-                instructions:
-                  locale === "vi"
-                    ? `Thu thập baseline metrics, tăng tải probe, scale ${primaryScale} lên tối thiểu 2 replica với tỉ lệ lỗi <= 5%, rồi so sánh độ trễ p95 Before vs After.`
-                    : `Capture baseline metrics, raise load, scale ${primaryScale} to at least 2 replicas while keeping error rate <= 5%, and compare Before vs After latency.`,
+                instructions: buildStudentExerciseInstructions({
+                  exerciseType: "SCALE_UNDER_LOAD",
+                  targetAction: { action: "SCALE", service: primaryScale, replicas: 2 },
+                  minReplicas: [{ service: primaryScale, count: 2 }],
+                  maxErrorRatePercent: 5,
+                  locale,
+                }),
                 ...(nextTopology ? { nextTopology } : {}),
               });
               return;
@@ -1005,12 +1055,15 @@ function StandaloneStudioContent() {
                 stoppedControllers: [],
                 minReplicas: [],
                 maxErrorRatePercent: "0",
-                baselinePath: defaultBaselinePath,
+                baselinePath: pickSmartPath(faultTarget),
                 allowedActions: ["START", "STOP", "PAUSE", "RESUME", "CONNECT", "DISCONNECT"],
-                instructions:
-                  locale === "vi"
-                    ? `Chẩn đoán service ${faultTarget} đang tắt sẵn, quan sát lỗi lan truyền lên các service upstream, bật lại ${faultTarget} để khôi phục 0% lỗi và chụp snapshot Before/After.`
-                    : `Diagnose the initially stopped ${faultTarget} service, observe error propagation across upstream callers, start ${faultTarget} to restore 0% errors, and capture Before/After evidence.`,
+                instructions: buildStudentExerciseInstructions({
+                  exerciseType: "CIRCUIT_BREAKER",
+                  targetAction: { action: "START", service: faultTarget },
+                  stoppedServices: [faultTarget],
+                  maxErrorRatePercent: 0,
+                  locale,
+                }),
                 ...(nextTopology ? { nextTopology } : {}),
               });
               return;
@@ -1030,13 +1083,14 @@ function StandaloneStudioContent() {
               stoppedServices: [],
               stoppedControllers: [],
               minReplicas: [],
-              maxErrorRatePercent: "5",
-              baselinePath: defaultBaselinePath,
+              maxErrorRatePercent: "",
+              baselinePath: pickSmartPath(faultTarget),
               allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
-              instructions:
-                locale === "vi"
-                  ? `Bóp CPU của ${faultTarget} xuống 25%, đo mức tăng độ trễ p95 trên các service upstream và chụp snapshot Before/After.`
-                  : `Throttle ${faultTarget} CPU to 25%, measure p95 latency jump across upstream callers, and capture Before/After evidence.`,
+              instructions: buildStudentExerciseInstructions({
+                exerciseType: "CONFIG_REGRESSION",
+                targetAction: { action: "THROTTLE_CPU", service: faultTarget, cpuPercent: 25 },
+                locale,
+              }),
               ...(nextTopology ? { nextTopology } : {}),
             });
           },
@@ -1058,12 +1112,22 @@ function StandaloneStudioContent() {
                 : undefined;
               saveVisualExercise.mutate({
                 stoppedServices: nextStopped,
-                ...(!isDown && !currentTargetAction
+                ...(!isDown
                   ? {
                       exerciseType: "CIRCUIT_BREAKER" as const,
-                      targetChangeAction: { action: "START" as const, service },
+                      predictionRequired: false,
+                      minImpactF1: "",
+                      minReplicas: [],
+                      targetChangeAction: { action: "START" as const, service: nextStopped[0] ?? service },
                       maxErrorRatePercent: "0",
-                      baselinePath: defaultBaselinePath,
+                      baselinePath: pickSmartPath(nextStopped[0] ?? service),
+                      instructions: buildStudentExerciseInstructions({
+                        exerciseType: "CIRCUIT_BREAKER",
+                        targetAction: { action: "START", service: nextStopped[0] ?? service },
+                        stoppedServices: nextStopped,
+                        maxErrorRatePercent: 0,
+                        locale,
+                      }),
                     }
                   : {}),
                 ...(nextTopology ? { nextTopology } : {}),
@@ -1083,17 +1147,25 @@ function StandaloneStudioContent() {
                 });
                 return;
               }
+              const act = currentTargetAction?.action === "STOP" ? "STOP" : "PAUSE";
               saveVisualExercise.mutate({
                 exerciseType: "CHANGE_IMPACT",
                 predictionRequired: true,
                 minImpactF1: "0.7",
-                targetChangeAction: { action: "PAUSE", service },
-                baselinePath: defaultBaselinePath,
+                targetChangeAction: { action: act, service },
+                stoppedServices: [],
+                minReplicas: [],
+                maxErrorRatePercent: "",
+                maxP95Ms: "",
+                baselinePath: pickSmartPath(service),
                 allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
-                instructions:
-                  locale === "vi"
-                    ? `Quan sát sơ đồ phụ thuộc, dự đoán tất cả service upstream bị ảnh hưởng khi PAUSE ${service}, khóa dự đoán, sau đó thực hiện PAUSE ${service} và chụp snapshot Before/After.`
-                    : `Inspect the service graph, predict every upstream service impacted when ${service} is paused, lock your prediction, then PAUSE ${service} and capture Before/After evidence.`,
+                instructions: buildStudentExerciseInstructions({
+                  exerciseType: "CHANGE_IMPACT",
+                  targetAction: { action: act, service },
+                  predictionRequired: true,
+                  minImpactF1: 0.7,
+                  locale,
+                }),
               });
               return;
             }
@@ -1112,14 +1184,18 @@ function StandaloneStudioContent() {
                 predictionRequired: false,
                 minImpactF1: "",
                 targetChangeAction: { action: "SCALE", service, replicas: 2 },
+                stoppedServices: [],
                 minReplicas: [{ service, count: 2 }],
                 maxErrorRatePercent: "5",
-                baselinePath: defaultBaselinePath,
+                baselinePath: pickSmartPath(service),
                 allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
-                instructions:
-                  locale === "vi"
-                    ? `Scale ${service} lên tối thiểu 2 replica dưới tải probe với tỉ lệ lỗi <= 5%, và chụp snapshot so sánh độ trễ p95 Before/After.`
-                    : `Scale ${service} to at least 2 replicas under load while keeping error rate <= 5%, and capture Before/After latency evidence.`,
+                instructions: buildStudentExerciseInstructions({
+                  exerciseType: "SCALE_UNDER_LOAD",
+                  targetAction: { action: "SCALE", service, replicas: 2 },
+                  minReplicas: [{ service, count: 2 }],
+                  maxErrorRatePercent: 5,
+                  locale,
+                }),
                 ...(nextTopology ? { nextTopology } : {}),
               });
               return;
@@ -1133,18 +1209,22 @@ function StandaloneStudioContent() {
                 saveVisualExercise.mutate({ targetChangeAction: null });
                 return;
               }
+              const pct = currentTargetAction?.cpuPercent ?? 25;
               saveVisualExercise.mutate({
                 exerciseType: "CONFIG_REGRESSION",
                 predictionRequired: false,
                 minImpactF1: "",
-                targetChangeAction: { action: "THROTTLE_CPU", service, cpuPercent: 25 },
-                maxErrorRatePercent: "5",
-                baselinePath: defaultBaselinePath,
+                targetChangeAction: { action: "THROTTLE_CPU", service, cpuPercent: pct },
+                stoppedServices: [],
+                minReplicas: [],
+                maxErrorRatePercent: "",
+                baselinePath: pickSmartPath(service),
                 allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
-                instructions:
-                  locale === "vi"
-                    ? `Bóp CPU của ${service} xuống 25%, quan sát mức tăng độ trễ p95 trên các service gọi vào và chụp snapshot Before/After.`
-                    : `Throttle ${service} CPU to 25%, observe p95 latency jump across callers, and capture Before/After evidence.`,
+                instructions: buildStudentExerciseInstructions({
+                  exerciseType: "CONFIG_REGRESSION",
+                  targetAction: { action: "THROTTLE_CPU", service, cpuPercent: pct },
+                  locale,
+                }),
               });
             }
           },
@@ -1178,7 +1258,9 @@ function StandaloneStudioContent() {
               minReplicas: derived.minReplicas,
               allowedActions: derived.allowedActions,
               maxErrorRatePercent: derived.maxErrorRatePercent,
-              baselinePath: defaultBaselinePath,
+              baselinePath: pickSmartPath(
+                derived.targetChangeAction?.service ?? derived.stoppedServices[0] ?? null,
+              ),
               instructions: derived.instructions,
               ...(nextTopology ? { nextTopology } : {}),
             });
