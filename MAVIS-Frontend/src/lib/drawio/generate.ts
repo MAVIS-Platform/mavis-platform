@@ -122,9 +122,15 @@ export async function generateDrawio(
   // S2e: one shared label formatter for both the ELK label sizing and the exported label cell,
   // so measured width and rendered text can never diverge. Protocol augmentation is enabled
   // only for the C4 Container view and only for MESSAGE_PUBLISH/MESSAGE_SUBSCRIBE edges.
+  const contextCustomLabel = (edge: (typeof edges)[number]) =>
+    doc.level === "CONTEXT" && typeof edge["label"] === "string" && edge["label"].trim()
+      ? edge["label"].trim()
+      : null;
   const labelText = (edge: (typeof edges)[number]) =>
     wrapText(
-      (systemBoundary ? (containerMessagingLabel(edge, nodesById) ?? containerDatabaseLabel(edge, nodesById)) : null) ?? relationLabel(edge),
+      contextCustomLabel(edge) ??
+        (systemBoundary ? (containerMessagingLabel(edge, nodesById) ?? containerDatabaseLabel(edge, nodesById)) : null) ??
+        relationLabel(edge),
       24,
     ).join("\n");
   const elkEdges: ElkExtendedEdge[] = edges.map((edge) => {

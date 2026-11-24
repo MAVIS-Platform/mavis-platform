@@ -33,7 +33,10 @@ const {
   deriveC4ContextModel,
   buildContextDiagramDrawioXml,
 } = require("../src/features/architecture/diagram-projections.ts");
-const { projectGraphModel } = require("../src/features/architecture/graph-projection.ts");
+const {
+  projectGraphModel,
+  filterGraphCategories,
+} = require("../src/features/architecture/graph-projection.ts");
 const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
 const { generateDrawio } = require("../src/lib/drawio/server.ts");
 
@@ -403,13 +406,30 @@ test("Moc Huong v4 C1 Context uses 3 confirmed roles and Vietnamese business act
     systemName: "Mộc Hương Shop Platform",
   });
   assert.ok(selection.document);
+  assert.equal(selection.document.layoutJson.nodes.length, 5);
+  assert.equal(selection.document.layoutJson.edges.length, 4);
+
   const xml = await generateDrawio(selection.document);
-  const flatXml = xml.replace(/&#xa;|\s+/g, " ");
-  assert.ok(flatXml.includes("Mộc Hương Shop Platform"));
-  assert.ok(flatXml.includes("Quản trị tài khoản, phân quyền &amp; danh mục [HTTPS]"));
-  assert.ok(flatXml.includes("Xử lý đơn hàng &amp; quản lý tồn kho [HTTPS]"));
-  assert.ok(flatXml.includes("Duyệt sản phẩm, đặt hàng &amp; theo dõi đơn [HTTPS]"));
-  assert.ok(flatXml.includes("Xuất OTLP traces &amp; metrics [HTTP/OTLP]"));
+  const visibleCellValues = [...xml.matchAll(/<mxCell\b[^>]*\bvalue="([^"]*)"/g)]
+    .map((m) => m[1].replace(/&#xa;|&lt;br\s*\/?&gt;|\s+/g, " "))
+    .join(" || ");
+
+  assert.ok(visibleCellValues.includes("Mộc Hương Shop Platform"));
+  assert.ok(
+    visibleCellValues.includes(
+      "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices",
+    ),
+  );
+  assert.ok(visibleCellValues.includes("[Person · Admin Portal]"));
+  assert.ok(visibleCellValues.includes("[Person · Staff Portal]"));
+  assert.ok(visibleCellValues.includes("[Person · Web / Mobile Client]"));
+  assert.ok(visibleCellValues.includes("Quản trị tài khoản, phân quyền &amp; danh mục [HTTPS]"));
+  assert.ok(visibleCellValues.includes("Xử lý đơn hàng &amp; quản lý tồn kho [HTTPS]"));
+  assert.ok(visibleCellValues.includes("Duyệt sản phẩm, đặt hàng &amp; theo dõi đơn [HTTPS]"));
+  assert.ok(visibleCellValues.includes("Xuất OTLP traces &amp; metrics [HTTP/OTLP]"));
+  assert.ok(!visibleCellValues.includes("HTTP call (declared)"));
+  assert.ok(!visibleCellValues.includes("Exports traces (configured)"));
+  assert.ok(!visibleCellValues.includes("Unknown element"));
 
   const contextDrawio = buildContextDiagramDrawioXml(model, "Mộc Hương Shop Platform").replace(
     /&#xa;|\s+/g,
@@ -429,7 +449,8 @@ test("Moc Huong v4 C2 Container includes 3 Person roles, 6 microservices & infra
   });
   assert.ok(selection.document);
   const doc = selection.document;
-  assert.ok(doc.layoutJson.nodes.length >= 16);
+  assert.equal(doc.layoutJson.nodes.length, 17);
+  assert.equal(doc.layoutJson.edges.length, 21);
 
   const xml = await generateDrawio(doc);
   for (const expected of [
@@ -531,4 +552,24 @@ test("Moc Huong v4 Dependency Graph projects all 16 architecture nodes and direc
   for (const expectedLabel of ["Route", "HTTP / Feign", "DB / Cache", "Publish", "Subscribe", "Eureka", "OTLP"]) {
     assert.ok(labels.has(expectedLabel), `Missing shortLabel ${expectedLabel}`);
   }
+
+  const serviceOnlyModel = filterGraphCategories(projection.model, [
+    "database",
+    "messaging",
+    "component",
+    "external",
+    "unknown",
+  ]);
+  assert.deepEqual(
+    serviceOnlyModel.elements.map((e) => e.name).sort(),
+    [
+      "api-gateway",
+      "catalog-service",
+      "identity-service",
+      "notification-service",
+      "order-service",
+      "service-discovery",
+    ],
+  );
+  assert.equal(serviceOnlyModel.edges.length, 10);
 });

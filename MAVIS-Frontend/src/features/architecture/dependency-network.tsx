@@ -97,7 +97,9 @@ export function DependencyNetwork({
     [model.edges],
   );
 
-  const [internalHiddenCategories, setInternalHiddenCategories] = useState<GraphCategory[]>([]);
+  const [internalHiddenCategories, setInternalHiddenCategories] = useState<GraphCategory[]>(() =>
+    guidedStatic ? ["database", "messaging", "component", "external", "unknown"] : [],
+  );
   const hiddenCategories = controlledHiddenCategories ?? internalHiddenCategories;
   const changeHiddenCategories = onHiddenCategoriesChange ?? setInternalHiddenCategories;
   const [query, setQuery] = useState("");

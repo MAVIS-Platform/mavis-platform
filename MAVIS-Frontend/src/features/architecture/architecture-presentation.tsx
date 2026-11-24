@@ -31,6 +31,14 @@ type Props = {
   hideKindSelector?: boolean | undefined;
 };
 
+const DEFAULT_GUIDED_HIDDEN_CATEGORIES: GraphCategory[] = [
+  "database",
+  "messaging",
+  "component",
+  "external",
+  "unknown",
+];
+
 export function ArchitecturePresentation({
   model,
   selectedId,
@@ -44,14 +52,18 @@ export function ArchitecturePresentation({
   onKindChange,
   hideKindSelector = false,
 }: Props) {
+  const defaultHiddenCategories = useMemo<GraphCategory[]>(
+    () => (guidedStatic ? DEFAULT_GUIDED_HIDDEN_CATEGORIES : []),
+    [guidedStatic],
+  );
   const [highlight, setHighlight] = useState<{ modelId: string; ids: string[] } | null>(null);
   const [typeFilter, setTypeFilter] = useState<{ modelId: string; hidden: GraphCategory[] }>({
     modelId: model.id,
-    hidden: [],
+    hidden: defaultHiddenCategories,
   });
   const hiddenCategories = useMemo(
-    () => (typeFilter.modelId === model.id ? typeFilter.hidden : []),
-    [typeFilter, model.id],
+    () => (typeFilter.modelId === model.id ? typeFilter.hidden : defaultHiddenCategories),
+    [typeFilter, model.id, defaultHiddenCategories],
   );
   const [expanded, setExpanded] = useState(false);
   const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("all");
