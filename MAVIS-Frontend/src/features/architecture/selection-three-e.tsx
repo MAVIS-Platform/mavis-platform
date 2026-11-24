@@ -426,9 +426,7 @@ export function SelectionThreeE({
                   className="w-full"
                   onClick={() => onInspectServiceC3(node.id)}
                 >
-                  {locale === "vi"
-                    ? "Xem sơ đồ C3 của service này →"
-                    : "View C3 diagram for this service →"}
+                  View C3 diagram for this service →
                 </Button>
               )}
             <h3 className="text-base font-semibold">Understand this selection</h3>

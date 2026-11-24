@@ -29,7 +29,10 @@ require.extensions[".ts"] = compileTypeScript;
 require.extensions[".tsx"] = compileTypeScript;
 
 const { selectDiagram } = require("../src/features/architecture/diagram-catalog.ts");
-const { deriveC4ContextModel } = require("../src/features/architecture/diagram-projections.ts");
+const {
+  deriveC4ContextModel,
+  buildContextDiagramDrawioXml,
+} = require("../src/features/architecture/diagram-projections.ts");
 const { projectGraphModel } = require("../src/features/architecture/graph-projection.ts");
 const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
 const { generateDrawio } = require("../src/lib/drawio/server.ts");
@@ -401,16 +404,22 @@ test("Moc Huong v4 C1 Context uses 3 confirmed roles and Vietnamese business act
   });
   assert.ok(selection.document);
   const xml = await generateDrawio(selection.document);
-  assert.ok(xml.includes("Mộc Hương Shop Platform"));
+  const flatXml = xml.replace(/&#xa;|\s+/g, " ");
+  assert.ok(flatXml.includes("Mộc Hương Shop Platform"));
+  assert.ok(flatXml.includes("Quản trị tài khoản, phân quyền &amp; danh mục [HTTPS]"));
+  assert.ok(flatXml.includes("Xử lý đơn hàng &amp; quản lý tồn kho [HTTPS]"));
+  assert.ok(flatXml.includes("Duyệt sản phẩm, đặt hàng &amp; theo dõi đơn [HTTPS]"));
+  assert.ok(flatXml.includes("Xuất OTLP traces &amp; metrics [HTTP/OTLP]"));
+
+  const contextDrawio = buildContextDiagramDrawioXml(model, "Mộc Hương Shop Platform").replace(
+    /&#xa;|\s+/g,
+    " ",
+  );
   assert.ok(
-    xml.includes(
+    contextDrawio.includes(
       "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices",
     ),
   );
-  assert.ok(xml.includes("Quản trị tài khoản, phân quyền &amp; danh mục [HTTPS]"));
-  assert.ok(xml.includes("Xử lý đơn hàng &amp; quản lý tồn kho [HTTPS]"));
-  assert.ok(xml.includes("Duyệt sản phẩm, đặt hàng &amp; theo dõi đơn [HTTPS]"));
-  assert.ok(xml.includes("Xuất OTLP traces &amp; metrics [HTTP/OTLP]"));
 });
 
 test("Moc Huong v4 C2 Container includes 3 Person roles, 6 microservices & infrastructure with [Person] labels", async () => {
