@@ -537,6 +537,7 @@ export function CourseBuilder({
   const { t } = useLocale();
   const params = useSearchParams();
   const intent = params?.get("intent") ?? null;
+  const isPublishStep = params?.get("flowStep") === "publish";
   const course = useCourseAuthoring(workspaceId);
   const activateCourse = useApiMutation("updateWorkspace");
   const assignments = useApiQuery(
@@ -974,7 +975,10 @@ export function CourseBuilder({
               {t("Active · published", "Đang hoạt động · đã xuất bản")}
             </Badge>
           )}
-          {isDraft && workspaceName && data?.modules.some((module) => module.items.length > 0) && (
+          {isDraft &&
+            isPublishStep &&
+            workspaceName &&
+            data?.modules.some((module) => module.items.length > 0) && (
             <Button
               type="button"
               size="sm"
@@ -984,6 +988,12 @@ export function CourseBuilder({
                   workspaceId,
                   name: workspaceName,
                   status: "ACTIVE",
+                }, {
+                  onSuccess: () => {
+                    window.location.assign(
+                      `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`,
+                    );
+                  },
                 })
               }
             >

@@ -27,7 +27,11 @@ import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/course
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseContentHub } from "@/features/courses/course-content-hub";
-import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
+import {
+  CourseSetupFlowFrame,
+  courseSetupStepHref,
+  type CourseContentStep,
+} from "@/features/courses/course-setup-flow-navigation";
 import { QuizLibrary } from "@/features/courses/quiz-library";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -478,6 +482,14 @@ export function WorkspaceOverview() {
   );
   const requestedView = params.get("view");
   const requestedFlowStep = params.get("flowStep") === "publish" ? "publish" : "arrange";
+  const requestedContentStep = params.get("contentStep");
+  const contentStep: CourseContentStep =
+    requestedContentStep === "repository" ||
+    requestedContentStep === "lesson" ||
+    requestedContentStep === "quiz" ||
+    requestedContentStep === "lab"
+      ? requestedContentStep
+      : "lesson";
   const activeTab =
     canManage && requestedView === "course-authoring"
       ? "authoring"
@@ -497,36 +509,18 @@ export function WorkspaceOverview() {
           workspace={workspace}
           active={activeTab === "authoring" ? "authoring" : "content"}
           actions={
-            canManage ? (
-              <>
-                {canEdit && !hasLearningContent && (
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
-                  >
-                    <Link href={`/references?workspace=${encodeURIComponent(workspace.id)}&from=first-setup`}>
-                      <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                      {t("Start course setup", "Bắt đầu thiết lập khóa học")}
-                    </Link>
-                  </Button>
-                )}
-                {canEdit && hasLearningContent && (
-                  <Button asChild size="sm">
-                    <Link
-                      href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=course-authoring`}
-                    >
-                      {t("Update Course", "Cập nhật khóa học")}
-                    </Link>
-                  </Button>
-                )}
-                <Button asChild size="sm">
-                  <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                    {t("Review submissions", "Chấm bài nộp")}
-                  </Link>
-                </Button>
-              </>
+            canEdit && !hasLearningContent ? (
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
+              >
+                <Link href={courseSetupStepHref(workspace.id, "repository")}>
+                  <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                  {t("Start course setup", "Bắt đầu thiết lập khóa học")}
+                </Link>
+              </Button>
             ) : undefined
           }
         >
@@ -557,6 +551,7 @@ export function WorkspaceOverview() {
               <CourseSetupFlowFrame
                 workspaceId={workspace.id}
                 currentStep={requestedFlowStep}
+                contentStep={contentStep}
               >
                 <CourseBuilder
                   workspaceId={workspace.id}

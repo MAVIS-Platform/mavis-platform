@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, FolderGit2, GitBranch, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -21,8 +21,6 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const allowed = usePermission("workspace:manage");
   const { t } = useLocale();
   const router = useRouter();
-  const params = useSearchParams();
-  const firstSetup = params.get("from") === "first-setup";
   const [importOpen, setImportOpen] = useState(false);
   const [prefilledRepoUrl, setPrefilledRepoUrl] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -216,11 +214,7 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                     ),
                   );
                   redirectTimer.current = setTimeout(() => {
-                    router.push(
-                      firstSetup
-                        ? courseSetupStepHref(workspaceId, "lesson")
-                        : `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=content-actions`,
-                    );
+                    router.push(courseSetupStepHref(workspaceId, "arrange", "repository"));
                   }, 900);
                 }}
               />
@@ -253,11 +247,9 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
     </section>
   );
 
-  return firstSetup ? (
+  return (
     <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="repository">
       {content}
     </CourseSetupFlowFrame>
-  ) : (
-    content
   );
 }

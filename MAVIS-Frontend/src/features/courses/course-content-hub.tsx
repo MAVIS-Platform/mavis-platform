@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { BookOpen, Boxes, FileQuestion, GitBranch, Plus, Settings2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { BookOpen, Boxes, FileQuestion, GitBranch, Plus } from "lucide-react";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { courseSetupStepHref } from "./course-setup-flow-navigation";
 
 const actions = [
   {
@@ -13,7 +13,7 @@ const actions = [
     vi: "Thêm Repository",
     detailEn: "Import a repository or ZIP and generate C1–C3 architecture evidence.",
     detailVi: "Nhập repository hoặc ZIP và tạo dữ liệu kiến trúc C1–C3.",
-    href: (workspaceId: string) => `/references?workspace=${encodeURIComponent(workspaceId)}`,
+    href: (workspaceId: string) => courseSetupStepHref(workspaceId, "repository"),
   },
   {
     id: "lesson",
@@ -22,7 +22,7 @@ const actions = [
     vi: "Thêm bài lý thuyết",
     detailEn: "Write, import, or reuse a lesson from the Theory Library.",
     detailVi: "Tự soạn, nhập hoặc tái sử dụng bài học từ Thư viện lý thuyết.",
-    href: (workspaceId: string) => `/theory-library?workspace=${encodeURIComponent(workspaceId)}`,
+    href: (workspaceId: string) => courseSetupStepHref(workspaceId, "lesson"),
   },
   {
     id: "quiz",
@@ -31,8 +31,7 @@ const actions = [
     vi: "Thêm Quiz",
     detailEn: "Create an independent knowledge check for the Course.",
     detailVi: "Tạo bài kiểm tra kiến thức độc lập cho khóa học.",
-    href: (workspaceId: string) =>
-      `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=quiz-library`,
+    href: (workspaceId: string) => courseSetupStepHref(workspaceId, "quiz"),
   },
   {
     id: "lab",
@@ -41,7 +40,7 @@ const actions = [
     vi: "Thêm Lab",
     detailEn: "Configure a Docker/runtime exercise in MAVIS Studio.",
     detailVi: "Cấu hình bài thực hành Docker/runtime trong MAVIS Studio.",
-    href: (workspaceId: string) => `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`,
+    href: (workspaceId: string) => courseSetupStepHref(workspaceId, "lab"),
   },
 ] as const;
 
@@ -49,7 +48,7 @@ export function CourseContentHub({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
   return (
     <section className="space-y-5" aria-labelledby="content-hub-title">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-primary">
             {t("Course authoring", "Biên soạn khóa học")}
@@ -64,14 +63,6 @@ export function CourseContentHub({ workspaceId }: { workspaceId: string }) {
             )}
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link
-            href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
-          >
-            <Settings2 className="mr-1.5 size-4" aria-hidden="true" />
-            {t("Update Course", "Cập nhật khóa học")}
-          </Link>
-        </Button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">

@@ -28,6 +28,10 @@ test("Course Lecturer workspace consumes the shared lifecycle policy", () => {
 
 test("Lecturer Course navigation centralizes authoring in Overview", () => {
   const workspace = read("src/features/workspaces/screens.tsx");
+  const workspaceOverview = workspace.slice(
+    workspace.indexOf("export function WorkspaceOverview"),
+    workspace.indexOf("export function WorkspaceMembers"),
+  );
   const shell = read("src/features/courses/course-workspace-shell.tsx");
   const navigation = read("src/lib/navigation.ts");
   const hub = read("src/features/courses/course-content-hub.tsx");
@@ -36,25 +40,27 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   const lesson = read("src/features/workspaces/theory-library.tsx");
   const quiz = read("src/features/courses/quiz-library.tsx");
   const lab = read("src/features/assignments/lab-authoring.tsx");
+  const courseBuilder = read("src/features/courses/course-builder.tsx");
   assert.doesNotMatch(shell, /en: "Modules"|en: "Labs"/);
   assert.doesNotMatch(navigation, /label: "Modules"|label: "Labs"/);
   assert.match(hub, /Add Repository/);
   assert.match(hub, /Add Lesson/);
   assert.match(hub, /Add Quiz/);
   assert.match(hub, /Add Lab/);
-  assert.match(hub, /Update Course/);
+  assert.doesNotMatch(hub, /Update Course/);
   assert.match(flowNavigation, /Repository/);
   assert.match(flowNavigation, /Lesson/);
   assert.match(flowNavigation, /Quiz/);
   assert.match(flowNavigation, /MAVIS Studio Lab/);
-  assert.match(flowNavigation, /Arrange Modules/);
+  assert.match(flowNavigation, /Update Course/);
   assert.match(flowNavigation, /Publish Changes/);
-  assert.match(flowNavigation, /Back to Overview/);
+  assert.match(flowNavigation, /Back to Add content/);
   assert.match(flowNavigation, /Next:/);
-  assert.match(flowNavigation, /from=first-setup/);
+  assert.match(flowNavigation, /from=content/);
+  assert.match(flowNavigation, /step\.id === entryStep \|\| step\.id === "arrange" \|\| step\.id === "publish"/);
   assert.match(referenceManager, /onAnalysisComplete/);
   assert.match(referenceManager, /toast\.success/);
-  assert.match(referenceManager, /courseSetupStepHref\(workspaceId, "lesson"\)/);
+  assert.match(referenceManager, /courseSetupStepHref\(workspaceId, "arrange", "repository"\)/);
   assert.match(referenceManager, /currentStep="repository"/);
   assert.match(lesson, /currentStep="lesson"/);
   assert.match(lesson, /!embedded \?/);
@@ -66,8 +72,13 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   assert.match(lesson, /theory-assets\/import-url/);
   assert.match(lesson, /Smart Format/);
   assert.match(workspace, /currentStep=\{requestedFlowStep\}/);
+  assert.match(workspace, /contentStep=\{contentStep\}/);
   assert.doesNotMatch(workspace, /CourseFirstSetupFlow/);
-  assert.match(workspace, /\/references\?workspace=\$\{encodeURIComponent\(workspace\.id\)\}&from=first-setup/);
+  assert.match(workspace, /courseSetupStepHref\(workspace\.id, "repository"\)/);
+  assert.doesNotMatch(workspaceOverview, /Review submissions|Update Course/);
+  assert.match(courseBuilder, /isPublishStep/);
+  assert.match(courseBuilder, /window\.location\.assign/);
+  assert.match(courseBuilder, /workspace-overview\?workspace=/);
 });
 
 test("Active Lecturer courses lock Overview authoring but keep Grades, Students and Settings operational", () => {
