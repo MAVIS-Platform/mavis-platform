@@ -200,7 +200,7 @@ export function LabInfoForm({
         </div>
       </section>
 
-      {/* Saving creates a draft Lab (Theory + Quiz + Studio). Students do not submit diagrams. Attach the reference source and publish it in the next steps. t("Next Step 2: Lab Theory", "Sang Bước 2: Lý thuyết Lab") */}
+      {/* Saving creates a draft Lab. Studio Live is configured next. */}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {assignment && (
           <Button
@@ -215,7 +215,7 @@ export function LabInfoForm({
         <Button type="submit" disabled={save.isPending || !title.trim()}>
           {save.isPending
             ? t("Saving Lab draft…", "Đang lưu bản nháp Lab…")
-            : t("Next Step 2: Reference Source", "Sang Bước 2: Nguồn tham chiếu")}
+            : t("Next Step 2: Studio Live", "Sang Bước 2: Studio Live")}
           <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>

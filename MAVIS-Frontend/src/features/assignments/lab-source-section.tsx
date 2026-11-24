@@ -217,7 +217,7 @@ export function LabSourceSection({
 }: {
   workspaceId: string;
   assignment: Assignment;
-  onNavigate?: ((tab: "theory" | "quiz" | "publish") => void) | undefined;
+  onNavigate?: ((tab: "studio" | "publish") => void) | undefined;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
@@ -1387,7 +1387,7 @@ export function LabSourceSection({
             type="button"
             size="sm"
             variant="default"
-            onClick={() => onNavigate("theory")}
+            onClick={() => onNavigate("studio")}
           >
             {t("Next", "Tiếp theo")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />

@@ -13,6 +13,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CourseQuizAssetController {
     private final CourseQuizAssetService assets;
+    private final com.mavis.platform.workspace.service.CourseQuizGenerationService generation;
 
     @GetMapping
     public ApiResponse<List<CourseQuizAssetService.View>> list(@PathVariable UUID workspaceId) {
@@ -23,6 +24,13 @@ public class CourseQuizAssetController {
     public ApiResponse<CourseQuizAssetService.View> create(@PathVariable UUID workspaceId,
                                                             @RequestBody CourseQuizAssetService.Upsert request) {
         return ApiResponse.success(assets.create(workspaceId, request));
+    }
+
+    @PostMapping("/generate")
+    public ApiResponse<com.mavis.platform.workspace.service.CourseQuizGenerationService.Generated> generate(
+            @PathVariable UUID workspaceId,
+            @RequestBody(required = false) com.mavis.platform.workspace.service.CourseQuizGenerationService.Request request) {
+        return ApiResponse.success(generation.generate(workspaceId, request));
     }
 
     @PutMapping("/{assetId}")

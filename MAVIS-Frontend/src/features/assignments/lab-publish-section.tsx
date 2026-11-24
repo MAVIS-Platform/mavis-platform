@@ -11,7 +11,6 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import {
   PublishCourseLab,
-  useCourseAuthoring,
   useCourseSetup,
   useRuntimeSetupReadiness,
   useStudentLabStudioSessions,
@@ -19,7 +18,7 @@ import {
 import { type Assignment } from "./requirements";
 import { ExportLabButton } from "./lab-transfer";
 
-type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
+type Tab = "info" | "source" | "studio" | "publish";
 
 export function LabPublishSection({
   workspaceId,
@@ -44,7 +43,6 @@ export function LabPublishSection({
     retry: false,
   });
   const hasSource = Boolean(assignment.referenceSource?.modelId);
-  const hasQuiz = Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0);
   const hasStudio = Boolean(
     assignment.requireRuntimeTrace ||
       assignment.labMode === "THEORY_QUIZ_STUDIO" ||
@@ -63,33 +61,15 @@ export function LabPublishSection({
   const verifiedSession = (labSessions.data ?? []).find(
     (session) => session.assignmentId === assignment.id && session.studioVerified,
   );
-  const course = useCourseAuthoring(workspaceId);
-  const modules = course.data?.modules ?? [];
-  const attachedTheory = useQuery({
-    queryKey: ["api", "lab-theory-assets", workspaceId, assignment.id],
-    queryFn: ({ signal }) =>
-      api<Array<{ assetId: string; courseItemId?: string | null }>>(
-        `workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets`,
-        { signal },
-      ),
-    retry: false,
-  });
-  const theoryReady =
-    (attachedTheory.data?.length ?? 0) > 0 ||
-    modules.some((module) =>
-      module.items.some((item) => item.type === "THEORY" && item.assignmentId === assignment.id),
-    );
-  const hasContent = hasSource || theoryReady || hasQuiz || Boolean(assignment.instructions?.trim());
+  const hasContent = hasSource || Boolean(assignment.instructions?.trim());
   const published = setupLab?.published === true || assignment.labOrder != null;
   const topologyFrozen = Boolean(setupLab?.topologyFrozen);
   const canFreeze = Boolean(hasStudio && hasSource && !topologyFrozen && (setupLab?.studioReady || Boolean(verifiedSession)));
   const detectedLabel = hasStudio
     ? t("Full Studio Live", "Full Studio Live")
-    : hasQuiz
-      ? t("Theory + Quiz", "Lý thuyết + Quiz")
-      : hasSource
-        ? t("Theory + C1–C3", "Lý thuyết + C1–C3")
-        : t("Theory Only", "Chỉ Lý thuyết");
+    : hasSource
+      ? t("C1–C3 Lab", "Lab C1–C3")
+      : t("Practice Lab", "Lab thực hành");
   const previewHref = `/lab?${new URLSearchParams({
     workspace: workspaceId,
     assignment: assignment.id,
@@ -124,27 +104,6 @@ export function LabPublishSection({
         ? t(`Pinned model ${assignment.referenceSource!.modelId!.slice(0, 8)}`, `Model đã ghim ${assignment.referenceSource!.modelId!.slice(0, 8)}`)
         : t("Optional — attach a repo to unlock C1–C3 diagrams or Studio Live.", "Tùy chọn — gắn repo nếu muốn dùng sơ đồ C1–C3 hoặc Studio Live."),
       tab: "source",
-    },
-    {
-      id: "theory",
-      label: t("Theory", "Lý thuyết"),
-      done: theoryReady,
-      detail: theoryReady
-        ? t("Lesson content saved.", "Đã có nội dung lý thuyết.")
-        : t("Optional — add a lesson in Step 3.", "Tùy chọn — thêm bài học ở Bước 3."),
-      tab: "theory",
-    },
-    {
-      id: "quiz",
-      label: t("Quiz", "Quiz"),
-      required: hasStudio,
-      done: hasQuiz,
-      detail: hasQuiz
-        ? t(`Version ${setupLab?.quizVersion}`, `Phiên bản ${setupLab?.quizVersion}`)
-        : hasStudio
-          ? t("Required Quiz before students launch Docker Studio.", "Bắt buộc có Quiz trước khi sinh viên mở Docker Studio.")
-          : t("Optional — skip if no Quiz is needed.", "Tùy chọn — bỏ qua nếu không dùng Quiz."),
-      tab: "quiz",
     },
     {
       id: "studio",
@@ -270,17 +229,8 @@ export function LabPublishSection({
         {!hasContent && (
           <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
             {t(
-              "Add at least one learning item (Description, Theory lesson, Reference source, or Quiz) before adding this Lab to the class.",
-              "Hãy thêm ít nhất 1 nội dung học (Mô tả, Bài lý thuyết, Nguồn tham chiếu hoặc Quiz) trước khi thêm Lab vào lớp.",
-            )}
-          </p>
-        )}
-
-        {hasStudio && !hasQuiz && (
-          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
-            {t(
-              "Studio Live is configured — publish a Quiz so students can complete it before launching Docker Studio.",
-              "Lab có cấu hình Studio Live — hãy chuẩn bị bài Quiz để sinh viên hoàn thành trước khi mở Docker Studio.",
+              "Add at least one Lab item (Description or Reference source) before adding this Lab to the class.",
+              "Hãy thêm ít nhất 1 nội dung Lab (Mô tả hoặc Nguồn tham chiếu) trước khi thêm Lab vào lớp.",
             )}
           </p>
         )}
@@ -293,8 +243,8 @@ export function LabPublishSection({
               className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs leading-5 text-destructive"
             >
               {t(
-                "Publish blocked (Readiness: BLOCKED). Fix Docker preflight or run Sync Docker in Step 5 before opening this Studio Lab to students.",
-                "Chặn xuất bản (Readiness: BLOCKED). Hãy sửa lỗi Docker preflight hoặc chạy Đồng bộ Docker ở Bước 5 trước khi mở Lab Studio cho sinh viên.",
+                "Publish blocked (Readiness: BLOCKED). Fix Docker preflight or run Sync Docker in Step 3 before opening this Studio Lab to students.",
+                "Chặn xuất bản (Readiness: BLOCKED). Hãy sửa lỗi Docker preflight hoặc chạy Đồng bộ Docker ở Bước 3 trước khi mở Lab Studio cho sinh viên.",
               )}
             </p>
           )}
@@ -327,16 +277,16 @@ export function LabPublishSection({
             freezeDisabledReason={
               canFreeze && !verifiedSession
                 ? t(
-                    "Run a verified Studio Playtest session in Step 5 before freezing.",
-                    "Chạy thử một phiên Studio Playtest xác minh ở Bước 5 trước khi đóng băng.",
+                    "Run a verified Studio Playtest session in Step 3 before freezing.",
+                    "Chạy thử một phiên Studio Playtest xác minh ở Bước 3 trước khi đóng băng.",
                   )
                 : undefined
             }
             publishBlockedReason={
               hasStudio && readiness.data?.readinessGrade === "BLOCKED"
                 ? t(
-                    "Studio Live readiness is BLOCKED. Run Sync Docker in Step 5 first.",
-                    "Trạng thái Studio Live đang BLOCKED. Hãy Đồng bộ Docker ở Bước 5 trước.",
+                    "Studio Live readiness is BLOCKED. Run Sync Docker in Step 3 first.",
+                    "Trạng thái Studio Live đang BLOCKED. Hãy Đồng bộ Docker ở Bước 3 trước.",
                   )
                 : undefined
             }

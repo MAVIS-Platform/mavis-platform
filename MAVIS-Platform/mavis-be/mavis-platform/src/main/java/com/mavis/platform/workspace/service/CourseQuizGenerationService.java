@@ -60,6 +60,23 @@ public class CourseQuizGenerationService {
         return new Generated(generator.providerMode(), theory.items(), List.copyOf(questions));
     }
 
+    public Generated generate(UUID workspaceId, Request request) {
+        access.requireWorkspaceLecturer(workspaceId);
+        int count = request == null || request.count() == null ? DEFAULT_COUNT : request.count();
+        if (count < 1 || count > MAX_COUNT) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "AI_QUIZ_COUNT_INVALID",
+                    "Ask for between 1 and " + MAX_COUNT + " questions");
+        }
+        boolean vietnamese = request != null && "vi".equalsIgnoreCase(request.locale());
+        Theory theory = workspaceTheory(workspaceId);
+        if (theory.text().isBlank()) {
+            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "THEORY_REQUIRED",
+                    "Add at least one Lesson before generating Quiz questions");
+        }
+        List<CourseQuizService.Question> questions = generator.generate(theory.text(), count, vietnamese);
+        return new Generated(generator.providerMode(), theory.items(), List.copyOf(questions));
+    }
+
     private Theory theoryFor(UUID workspaceId, UUID assignmentId) {
         record Row(String body, int items) {}
         Row row = jdbc.queryForObject("""
@@ -76,6 +93,21 @@ public class CourseQuizGenerationService {
                                 WHERE linked.assignment_id = ?)
                 """, (rs, ignored) -> new Row(rs.getString("body"), rs.getInt("items")),
                 workspaceId, assignmentId);
+        if (row == null) return new Theory("", 0);
+        String text = row.body() == null ? "" : row.body();
+        if (text.length() > MAX_THEORY_CHARS) text = text.substring(0, MAX_THEORY_CHARS);
+        return new Theory(text, row.items());
+    }
+
+    private Theory workspaceTheory(UUID workspaceId) {
+        record Row(String body, int items) {}
+        Row row = jdbc.queryForObject("""
+                SELECT coalesce(string_agg(title || E'\n\n' || body,
+                           E'\n\n---\n\n' ORDER BY updated_at DESC), '') AS body,
+                       count(*) AS items
+                FROM theory_assets
+                WHERE workspace_id = ?
+                """, (rs, ignored) -> new Row(rs.getString("body"), rs.getInt("items")), workspaceId);
         if (row == null) return new Theory("", 0);
         String text = row.body() == null ? "" : row.body();
         if (text.length() > MAX_THEORY_CHARS) text = text.substring(0, MAX_THEORY_CHARS);

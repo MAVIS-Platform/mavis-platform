@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
+import { FileUp, Globe, Pencil, Plus, Search, Sparkles, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,6 +19,7 @@ import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
 import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
+import { smartFormatTheoryMarkdown } from "./theory-markdown";
 
 type TheoryAsset = {
   id: string;
@@ -42,6 +43,17 @@ type Draft = {
   source: string;
   sourceUrl: string;
   licenseNote: string;
+};
+
+type ImportResponse = {
+  title: string;
+  body: string;
+  sourceType: string;
+  sourceUrl: string | null;
+  aiFormatted: boolean;
+  pageCount: number;
+  extractedPages: number;
+  warnings: string[];
 };
 
 const EMPTY_DRAFT: Draft = {
@@ -72,6 +84,10 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [editTheme, setEditTheme] = useState<MarkdownTheme>("coursera");
   const [error, setError] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importUrl, setImportUrl] = useState("");
+  const [aiFormat, setAiFormat] = useState(true);
 
   const assets = useQuery({
     queryKey: ["api", "theory-assets", workspaceId],
@@ -130,6 +146,45 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
     onSuccess: () => invalidate(),
   });
 
+  const useImportedDraft = (result: ImportResponse) => {
+    const parsed = extractMarkdownTheme(result.body);
+    setEditorId("new");
+    setEditTheme(parsed.theme);
+    setDraft({
+      ...EMPTY_DRAFT,
+      title: result.title,
+      body: parsed.body,
+      language: locale,
+      source: "IMPORT",
+      sourceUrl: result.sourceUrl ?? "",
+    });
+    setImportOpen(false);
+    setImportFile(null);
+    setImportUrl("");
+    setError(result.warnings.join(" "));
+  };
+  const importDocument = useMutation({
+    mutationFn: async () => {
+      if (importFile) {
+        if (importFile.size <= 0 || importFile.size > 20 * 1024 * 1024)
+          throw new Error(t("File must be non-empty and up to 20 MB.", "File phải có dung lượng từ 1 B đến tối đa 20 MB."));
+        const form = new FormData();
+        form.append("file", importFile);
+        form.append("aiFormat", String(aiFormat));
+        form.append("language", locale);
+        return api<ImportResponse>(`workspaces/${workspaceId}/theory-assets/import-file`, { method: "POST", body: form });
+      }
+      if (!/^https:\/\//i.test(importUrl.trim()))
+        throw new Error(t("Enter a valid https:// URL.", "Hãy nhập URL https:// hợp lệ."));
+      return api<ImportResponse>(`workspaces/${workspaceId}/theory-assets/import-url`, {
+        method: "POST",
+        body: JSON.stringify({ url: importUrl.trim(), aiFormat, language: locale }),
+      });
+    },
+    onSuccess: useImportedDraft,
+    onError: (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
+  });
+
   if (!workspaceId) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -185,8 +240,61 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
             <Plus className="mr-1 size-4" aria-hidden="true" />
             {t("New lesson", "Bài mới")}
           </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => setImportOpen((open) => !open)}>
+            <FileUp className="mr-1 size-4" aria-hidden="true" />
+            {t("Import lesson", "Nhập tài liệu")}
+          </Button>
         </div>
       </div>
+
+      {importOpen && (
+        <section className="space-y-4 rounded-xl border bg-card p-5">
+          <div>
+            <h3 className="font-semibold">{t("Prepare lesson from a document or URL", "Tạo bài học từ tài liệu hoặc URL")}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("Supports PDF, DOCX, PPTX, Markdown and text files up to 20 MB.", "Hỗ trợ PDF, DOCX, PPTX, Markdown và file text tối đa 20 MB.")}
+            </p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-4 text-center hover:border-primary/50 hover:bg-primary/[0.02]">
+              <FileUp className="mb-2 size-5 text-primary" aria-hidden="true" />
+              <span className="text-sm font-medium">{importFile?.name ?? t("Choose a document", "Chọn tài liệu")}</span>
+              <input
+                className="sr-only"
+                type="file"
+                accept=".pdf,.docx,.pptx,.md,.markdown,.txt"
+                onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label className="space-y-2 text-xs font-medium">
+              <span className="inline-flex items-center gap-1"><Globe className="size-3.5" />{t("Web / Roadmap URL", "URL Web / Roadmap")}</span>
+              <Input
+                type="url"
+                placeholder="https://..."
+                value={importUrl}
+                disabled={Boolean(importFile)}
+                onChange={(event) => setImportUrl(event.target.value)}
+              />
+              <span className="block text-muted-foreground">{t("Choose either one document or one HTTPS URL.", "Chọn một tài liệu hoặc một URL HTTPS.")}</span>
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={aiFormat} onChange={(event) => setAiFormat(event.target.checked)} />
+            <span>{t("Use AI to format the imported content", "Dùng AI để chuẩn hóa nội dung nhập")}</span>
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setImportOpen(false)}>{t("Cancel", "Hủy")}</Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={importDocument.isPending || (!importFile && !importUrl.trim())}
+              onClick={() => importDocument.mutate()}
+            >
+              {importDocument.isPending ? t("Importing…", "Đang nhập…") : t("Import & prepare lesson", "Nhập & tạo bài học")}
+            </Button>
+          </div>
+        </section>
+      )}
 
       {course.data?.status === "DRAFT" && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
@@ -244,6 +352,17 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
                   }}
                 />
               </label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 px-2.5 text-xs"
+                disabled={!draft.body.trim()}
+                onClick={() => setDraft({ ...draft, body: smartFormatTheoryMarkdown(draft.body) })}
+              >
+                <Sparkles className="mr-1 size-3.5" aria-hidden="true" />
+                {t("Smart Format", "Định dạng thông minh")}
+              </Button>
             </div>
           </div>
 

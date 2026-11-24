@@ -60,25 +60,34 @@ export function QuizBuilder({
   assignmentId,
   defaultTitle,
   footerAction,
+  asset,
+  onSaveAsset,
+  onCancel,
 }: {
   workspaceId: string;
-  assignmentId: string;
+  assignmentId?: string | undefined;
   defaultTitle?: string | undefined;
   footerAction?: React.ReactNode | undefined;
+  asset?: { id?: string; title: string; passPercent: number; questions: QuizQuestion[] } | undefined;
+  onSaveAsset?: ((draft: QuizDraft) => Promise<unknown>) | undefined;
+  onCancel?: (() => void) | undefined;
 }) {
   const { t, locale } = useLocale();
   const cache = useQueryClient();
-  const draftPath = `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/draft`;
-  const publishPath = `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/publish`;
+  const assetMode = Boolean(onSaveAsset);
+  const draftPath = `workspaces/${workspaceId}/course-labs/${assignmentId ?? "asset"}/quiz/draft`;
+  const publishPath = `workspaces/${workspaceId}/course-labs/${assignmentId ?? "asset"}/quiz/publish`;
   const bankPath = `workspaces/${workspaceId}/quiz-bank/questions`;
   const draft = useQuery({
     queryKey: ["api", "quiz-draft", workspaceId, assignmentId],
     queryFn: ({ signal }) => api<QuizDraft>(draftPath, { signal }),
+    enabled: !assetMode && Boolean(assignmentId),
     retry: false,
   });
   const versions = useQuery({
     queryKey: ["api", "quiz-versions", workspaceId, assignmentId],
     queryFn: ({ signal }) => api<Version[]>(`workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/versions`, { signal }),
+    enabled: !assetMode && Boolean(assignmentId),
     retry: false,
   });
   const bank = useQuery({
@@ -105,11 +114,16 @@ export function QuizBuilder({
 
   useEffect(() => {
     hydrated.current = false;
-  }, [assignmentId]);
+  }, [assignmentId, asset?.id]);
 
   useEffect(() => {
     if (hydrated.current) return;
-    if (draft.data) {
+    if (assetMode && asset) {
+      setLesson(asset.title);
+      setPassPercent(asset.passPercent ?? DEFAULT_PASS_PERCENT);
+      setQuestions(asset.questions?.length ? asset.questions : [emptyQuestion()]);
+      hydrated.current = true;
+    } else if (draft.data) {
       setLesson(draft.data.lesson || defaultTitle || "");
       setPassPercent(draft.data.passPercent ?? DEFAULT_PASS_PERCENT);
       setQuestions(draft.data.questions ?? []);
@@ -119,18 +133,20 @@ export function QuizBuilder({
       setQuestions([emptyQuestion()]);
       hydrated.current = true;
     }
-  }, [defaultTitle, draft.data, draft.error, draft.isError]);
+  }, [asset, assetMode, defaultTitle, draft.data, draft.error, draft.isError]);
 
   const saveDraft = useMutation({
-    mutationFn: () =>
-      api<QuizDraft>(draftPath, {
-        method: "PUT",
-        body: JSON.stringify({ lesson: lesson.trim() || defaultTitle?.trim() || "Quiz", passPercent, questions }),
-      }),
+    mutationFn: () => {
+      const payload = { lesson: lesson.trim() || defaultTitle?.trim() || "Quiz", passPercent, questions };
+      return onSaveAsset
+        ? onSaveAsset(payload)
+        : api<QuizDraft>(draftPath, { method: "PUT", body: JSON.stringify(payload) });
+    },
     onSuccess: () => {
       setShowValidation(false);
       setMessage(t("Quiz draft saved.", "Đã lưu bản nháp Quiz."));
-      void cache.invalidateQueries({ queryKey: ["api", "quiz-draft", workspaceId, assignmentId] });
+      if (assetMode) onCancel?.();
+      else void cache.invalidateQueries({ queryKey: ["api", "quiz-draft", workspaceId, assignmentId] });
     },
   });
   const publish = useMutation({
@@ -174,7 +190,9 @@ export function QuizBuilder({
   const generateFromTheory = useMutation({
     mutationFn: () =>
       api<{ providerMode: string; sourceTheoryItems: number; questions: QuizQuestion[] }>(
-        `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/generate`,
+        assetMode
+          ? `workspaces/${workspaceId}/quiz-assets/generate`
+          : `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/generate`,
         {
           method: "POST",
           body: JSON.stringify({ count: aiCount, locale }),
@@ -328,7 +346,7 @@ export function QuizBuilder({
       setImportErrors([error instanceof Error ? error.message : String(error)]);
     }
   };
-  if (draft.isPending) {
+  if (!assetMode && draft.isPending) {
     return <p className="text-sm text-muted-foreground">{t("Loading Quiz…", "Đang tải Quiz…")}</p>;
   }
 
@@ -338,8 +356,8 @@ export function QuizBuilder({
         <div className="flex items-center gap-2">
           <Library className="size-4 text-primary" aria-hidden="true" />
           <h2 className="text-base font-semibold">{t("Quiz", "Quiz")}</h2>
-          <Badge variant={versions.data?.length ? "success" : "secondary"}>
-            {versions.data?.length
+          <Badge variant={!assetMode && versions.data?.length ? "success" : "secondary"}>
+            {!assetMode && versions.data?.length
               ? `v${versions.data[0]!.version}`
               : t("Draft", "Bản nháp")}
           </Badge>
@@ -377,7 +395,7 @@ export function QuizBuilder({
           {generateFromTheory.error.message}
         </p>
       )}
-      {draft.isError && !(draft.error instanceof ApiError && draft.error.status === 404) && (
+      {!assetMode && draft.isError && !(draft.error instanceof ApiError && draft.error.status === 404) && (
         <p role="alert" className="text-xs text-destructive">
           {draft.error.message}
         </p>
@@ -415,7 +433,7 @@ export function QuizBuilder({
           ["preview", t("Preview", "Xem trước")],
           ["import", t("Import / Export", "Nhập / Xuất")],
           ["bank", t("Question bank", "Ngân hàng câu hỏi")],
-          ["versions", t("Versions", "Phiên bản")],
+          ...(!assetMode ? [["versions", t("Versions", "Phiên bản")]] : []),
         ] as Array<[Tab, string]>).map(([id, label]) => (
           <button
             key={id}
@@ -779,7 +797,7 @@ export function QuizBuilder({
               </ul>
             )}
           </div>
-          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+          {!assetMode && <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
             <h3 className="text-sm font-semibold">{t("Load a curriculum chapter", "Nạp bài giáo trình")}</h3>
             <p className="text-xs text-muted-foreground">
               {t(
@@ -810,7 +828,7 @@ export function QuizBuilder({
               </Button>
             </div>
             {importCurriculum.error && <p role="alert" className="text-xs text-destructive">{importCurriculum.error.message}</p>}
-          </div>
+          </div>}
         </div>
       )}
 
@@ -863,7 +881,7 @@ export function QuizBuilder({
         </div>
       )}
 
-      {tab === "versions" && (
+      {!assetMode && tab === "versions" && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <History className="size-4 text-primary" aria-hidden="true" />
@@ -893,16 +911,23 @@ export function QuizBuilder({
       )}
       {message && <p role="status" className="text-sm text-success">{message}</p>}
       {saveDraft.error && <p role="alert" className="text-sm text-destructive">{saveDraft.error.message}</p>}
-      {publish.error && <p role="alert" className="text-sm text-destructive">{publish.error.message}</p>}
+      {!assetMode && publish.error && <p role="alert" className="text-sm text-destructive">{publish.error.message}</p>}
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
+        {assetMode && onCancel && (
+          <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+            {t("Cancel", "Hủy")}
+          </Button>
+        )}
         <Button type="button" size="sm" variant="outline" disabled={saveDraft.isPending} onClick={saveDraftNow}>
           <Save className="mr-1 size-4" aria-hidden="true" />
           {saveDraft.isPending ? t("Saving…", "Đang lưu…") : t("Save draft", "Lưu nháp")}
         </Button>
-        <Button type="button" size="sm" disabled={publish.isPending || saveDraft.isPending} onClick={() => void publishNow()}>
-          {publish.isPending ? t("Publishing…", "Đang công bố…") : t("Publish version", "Công bố phiên bản")}
-        </Button>
+        {!assetMode && (
+          <Button type="button" size="sm" disabled={publish.isPending || saveDraft.isPending} onClick={() => void publishNow()}>
+            {publish.isPending ? t("Publishing…", "Đang công bố…") : t("Publish version", "Công bố phiên bản")}
+          </Button>
+        )}
         {footerAction}
       </div>
     </section>

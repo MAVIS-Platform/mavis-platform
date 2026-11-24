@@ -34,7 +34,7 @@ export function LabQuizSection({
                 variant="outline"
                 onClick={() => onNavigate("publish")}
               >
-                {t("Skip to Step 6: Check & add to class", "Sang thẳng Bước 6: Kiểm tra & thêm vào lớp")}
+                {t("Skip to Step 5: Check & add to class", "Sang thẳng Bước 5: Kiểm tra & thêm vào lớp")}
               </Button>
               <Button
                 type="button"
@@ -42,7 +42,7 @@ export function LabQuizSection({
                 variant="outline"
                 onClick={() => onNavigate("studio")}
               >
-                {t("Next Step 5: Studio Live", "Sang Bước 5: Studio Live")}
+                {t("Next Step 4: Studio Live", "Sang Bước 4: Studio Live")}
                 <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
               </Button>
             </div>

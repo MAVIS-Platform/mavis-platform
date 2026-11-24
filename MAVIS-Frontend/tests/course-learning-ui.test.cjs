@@ -171,27 +171,16 @@ test("guided Lab launches standalone full-screen Runtime Studio without external
   assert.ok(!stepContentSource.includes("href={`/assignments?"));
 });
 
-test("lecturer Lab authoring is a dedicated workspace with ordered authoring steps", () => {
+test("lecturer Lab authoring keeps only Lab information and Studio Live phases", () => {
   const authoring = read("src/features/assignments/lab-authoring.tsx");
   const info = read("src/features/assignments/lab-info-form.tsx");
-  const source = read("src/features/assignments/lab-source-section.tsx");
-  const publish = read("src/features/assignments/lab-publish-section.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
 
-  for (const label of [
-    "Lab information",
-    "Theory",
-    "Reference source",
-    "Quiz",
-    "Studio Live",
-    "Check & add to class",
-  ])
+  for (const label of ["Lab information", "Studio Live"])
     assert.ok(authoring.includes(label), label);
-  assert.ok(info.includes('t("Next Step 2: Lab Theory", "Sang Bước 2: Lý thuyết Lab")'));
-  assert.ok(info.includes("Attach the reference source and publish it in the next steps."));
-  assert.match(source, /referenceModelId:\s*modelId/);
-  assert.match(publish, /Preview as student/);
-  assert.match(publish, /preview: "1"/);
+  assert.doesNotMatch(authoring, /LabSourceSection|LabPublishSection|Reference source|Check & add to class/);
+  assert.ok(info.includes('t("Next Step 2: Studio Live", "Sang Bước 2: Studio Live")'));
+  assert.ok(info.includes("Studio Live is configured next."));
   assert.ok(assignments.includes('t("Create a Lab", "Tạo Lab")'));
   assert.match(assignments, /lab-authoring\?workspace=/);
   assert.doesNotMatch(assignments, /CreateAssignment/);
@@ -225,22 +214,19 @@ test("Course Builder edits structured theory items and starts a draft on the rea
   assert.match(builder, /RUNTIME_LAB/);
 });
 
-test("assignment authoring separates details, theory, source, quiz, studio and publishing", () => {
+test("assignment authoring keeps Lab details and Studio while Course owns source and publishing", () => {
   const info = read("src/features/assignments/lab-info-form.tsx");
-  const theory = read("src/features/assignments/lab-theory-section.tsx");
   const source = read("src/features/assignments/lab-source-section.tsx");
-  const quiz = read("src/features/assignments/lab-quiz-section.tsx");
   const studio = read("src/features/assignments/lab-studio-section.tsx");
   const publish = read("src/features/assignments/lab-publish-section.tsx");
 
   assert.ok(info.includes("Instructions, learning goals and completion criteria"));
-  assert.ok(theory.includes("THEORY"));
   assert.ok(source.includes("AssignmentSourcePicker"));
-  assert.ok(quiz.includes("QuizBuilder"));
   assert.ok(studio.includes("useAutoConfigureStudio"));
   assert.ok(!studio.includes("runtime-config?project="));
   assert.ok(publish.includes("CourseSetupPanel"));
-  assert.match(publish, /theoryReady/);
+  assert.doesNotMatch(publish, /theoryReady|tab: "theory"/);
+  assert.doesNotMatch(read("src/features/assignments/lab-authoring.tsx"), /LabSourceSection|LabPublishSection/);
 });
 
 test("Coursera-style Lab table of contents shows progress, module items and lock reasons", () => {
@@ -908,15 +894,15 @@ test("a missing Course draft is an empty state, not a class-content load error",
   assert.match(source, /isMissingCourseError\(publishedQuery\.error\)/);
 });
 
-test("Lab v2 info removes diagram submission and theory is lesson + repo + C1-C3", () => {
+test("Lab v2 info removes diagram submission and sends authoring directly to reference source", () => {
   const info = read("src/features/assignments/lab-info-form.tsx");
   const theory = read("src/features/assignments/lab-theory-section.tsx");
 
   assert.doesNotMatch(info, /Required architecture views/);
   assert.doesNotMatch(info, /DIAGRAM_REQUIREMENTS/);
   assert.doesNotMatch(info, /Lab learning flow/);
-  assert.ok(read("src/features/assignments/lab-publish-section.tsx").includes("Required Quiz before students launch Docker Studio."));
-  assert.ok(info.includes("Students do not submit diagrams"));
+  assert.doesNotMatch(read("src/features/assignments/lab-publish-section.tsx"), /BR-06 Quiz Gate|tab: "quiz"/);
+  assert.doesNotMatch(info, /Lab Theory|Lý thuyết Lab/);
   assert.ok(theory.includes("MarkdownEditor"));
   assert.ok(theory.includes("MarkdownPreview"));
   assert.ok(theory.includes("Sample repository"));
@@ -1070,25 +1056,22 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
   assert.equal(allowedBackendPath(`workspaces/${workspace}/theory-assets/unsafe`), false);
 });
 
-test("Lab Library is available inside Lab Creation and Quiz can be generated from Lab theory", () => {
+test("Lab Creation omits Lab Theory while Lesson owns document, URL and smart-format authoring", () => {
   const navigation = read("src/lib/navigation.ts");
   const assignments = read("src/features/assignments/screens.tsx");
   const authoring = read("src/features/assignments/lab-authoring.tsx");
   const quiz = read("src/features/assignments/quiz-builder.tsx");
   const transfer = read("src/features/assignments/lab-transfer.tsx");
   const publish = read("src/features/assignments/lab-publish-section.tsx");
-  const theory = read("src/features/assignments/lab-theory-section.tsx");
+  const lesson = read("src/features/workspaces/theory-library.tsx");
 
   assert.doesNotMatch(navigation, /label: "Lab Library"|label: "Theory Library"/);
   assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
-  assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
   assert.ok(authoring.includes("<Assignments embedded />"));
-  assert.ok(authoring.includes("<TheoryLibrary embedded />"));
+  assert.doesNotMatch(authoring, /LabTheorySection|id: "theory"|Lab theory/);
   assert.doesNotMatch(navigation, /id: "lab-authoring"[\s\S]*?label: "Labs"/);
   assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
-  assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
   assert.ok(authoring.includes("<Assignments embedded />"));
-  assert.ok(authoring.includes("<TheoryLibrary embedded />"));
   assert.doesNotMatch(navigation, /label: "Lab Authoring"/);
   assert.ok(assignments.includes("Library draft"));
   assert.ok(assignments.includes("In class"));
@@ -1101,13 +1084,12 @@ test("Lab Library is available inside Lab Creation and Quiz can be generated fro
   assert.ok(publish.includes("ExportLabButton"));
   assert.ok(transfer.includes("course-labs/${assignmentId}/export"));
   assert.ok(transfer.includes("course-labs/import"));
-  assert.ok(theory.includes("Theory library"));
-  assert.ok(theory.includes("/theory-assets"));
-  assert.ok(theory.includes("theory-assets/import-file"));
-  assert.ok(theory.includes("theory-assets/import-url"));
-  assert.ok(theory.includes(".pdf,.docx,.pptx"));
-  assert.ok(theory.includes("AI draft from evidence"));
-  assert.ok(theory.includes("Save to library & attach"));
+  assert.ok(lesson.includes("/theory-assets"));
+  assert.ok(lesson.includes("theory-assets/import-file"));
+  assert.ok(lesson.includes("theory-assets/import-url"));
+  assert.ok(lesson.includes(".pdf,.docx,.pptx"));
+  assert.ok(lesson.includes("Use AI to format"));
+  assert.ok(lesson.includes("Smart Format"));
   const prerequisites = read("src/features/assignments/lab-prerequisites-dialog.tsx");
   assert.ok(assignments.includes("LabPrerequisitesDialog"));
   assert.ok(prerequisites.includes("lab-prerequisites"));
@@ -1126,7 +1108,7 @@ test("Theory Library edits the inactive draft and delegates publishing to Course
 
   assert.match(page, /"theory-library"/);
   assert.doesNotMatch(navigation, /id: "theory-library"/);
-  assert.ok(authoring.includes("<TheoryLibrary embedded />"));
+  assert.doesNotMatch(authoring, /TheoryLibrary/);
   assert.ok(screen.includes("theory-assets"));
   assert.ok(screen.includes("New lesson"));
   assert.ok(screen.includes("Edit theory lesson"));
@@ -1509,7 +1491,7 @@ test("Round 5 guards strip Theory theme metadata, check quizVersion > 0, hydrate
 
   assert.match(theoryLib, /extractMarkdownTheme\(asset\.body\)\s*\.body/);
   assert.match(labScreens, /setupLab\?\.quizPublished && \(setupLab\?\.quizVersion \?\? 0\) > 0/);
-  assert.match(authoring, /setupLab\?\.quizPublished && \(setupLab\?\.quizVersion \?\? 0\) > 0/);
+  assert.doesNotMatch(authoring, /quizPublished|LabQuizSection|id: "quiz"/);
   assert.match(submissionV2, /const latest =\s*mine\[0\] \?\?\s*\(initialSubmission/);
   assert.match(submissionV2, /activeReview\?\.labOutcome !== "PASSED"/);
   assert.match(apiError, /STUDIO_VALIDATION_REQUIRED/);
@@ -2333,4 +2315,19 @@ test("Workflow V2 Item #01: expandModuleFlowItems enforces 4-Step Module order (
     nonRuntimeExpanded.map((i) => resolveModuleFlowKind(i)),
     ["THEORY", "STATIC_DIAGRAM", "QUIZ", "MODULE_SUBMIT"],
   );
+});
+
+test("Quiz Module owns the full Quiz Builder and Lab Creation no longer owns Quiz", () => {
+  const lab = read("src/features/assignments/lab-authoring.tsx");
+  const library = read("src/features/courses/quiz-library.tsx");
+  const builder = read("src/features/assignments/quiz-builder.tsx");
+  const backendPath = read("src/lib/api/backend-path.ts");
+
+  assert.doesNotMatch(lab, /LabQuizSection|id: "quiz"|en: "Quiz"/);
+  assert.match(library, /<QuizBuilder/);
+  assert.match(library, /quiz-assets/);
+  assert.match(library, /quizAssetId/);
+  assert.match(builder, /assetMode/);
+  assert.match(builder, /quiz-assets\/generate/);
+  assert.match(backendPath, /quiz-assets\\\/generate/);
 });

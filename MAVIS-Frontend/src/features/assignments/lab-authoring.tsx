@@ -3,19 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
-  BookOpen,
   CheckCircle2,
-  CircleHelp,
   Eye,
   FilePlus2,
-  GitBranch,
   Info,
-  Library,
   Plus,
-  Rocket,
   type LucideIcon,
 } from "lucide-react";
 import { api } from "@/lib/mainflow-api";
@@ -26,38 +20,25 @@ import { useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
-import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Assignments } from "./screens";
-import { resolveLabTier, type Assignment } from "./requirements";
+import { type Assignment } from "./requirements";
 import { lecturerCourseAccess } from "@/features/lecturer/application/course-access-policy";
 import { LabInfoForm } from "./lab-info-form";
-import { LabTheorySection } from "./lab-theory-section";
-import { LabSourceSection } from "./lab-source-section";
-import { LabQuizSection } from "./lab-quiz-section";
 import { LabStudioSection } from "./lab-studio-section";
-import { LabPublishSection } from "./lab-publish-section";
 import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 
-type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
-type LabWorkspaceSection = "create" | "library" | "theory-library";
+type Tab = "info" | "studio";
+type LabWorkspaceSection = "create" | "library";
 
 const TAB_LABELS: Record<Tab, { en: string; vi: string; icon: LucideIcon }> = {
   info: { en: "Lab information", vi: "Thông tin Lab", icon: Info },
-  theory: { en: "Lab theory", vi: "Lý thuyết Lab", icon: BookOpen },
-  source: { en: "Reference source", vi: "Nguồn tham chiếu", icon: GitBranch },
-  quiz: { en: "Quiz", vi: "Quiz", icon: CircleHelp },
   studio: { en: "Studio Live", vi: "Studio Live", icon: Activity },
-  publish: { en: "Check & add to class", vi: "Kiểm tra & thêm vào lớp", icon: Rocket },
 };
 
 function isTab(value: string | null): value is Tab {
   return (
     value === "info" ||
-    value === "theory" ||
-    value === "source" ||
-    value === "quiz" ||
-    value === "studio" ||
-    value === "publish"
+    value === "studio"
   );
 }
 
@@ -73,13 +54,9 @@ export function LabAuthoring() {
   const section: LabWorkspaceSection =
     requestedSection === "library"
       ? "library"
-      : requestedSection === "theory-library"
-        ? "theory-library"
-        : pathname === "/assignments"
+      : pathname === "/assignments"
           ? "library"
-          : pathname === "/theory-library"
-            ? "theory-library"
-            : "create";
+          : "create";
   const requestedAssignmentId = params?.get("assignment") || "";
   const [createdAssignmentId, setCreatedAssignmentId] = useState("");
   const prevRequestedAssignmentIdRef = useRef(requestedAssignmentId);
@@ -107,24 +84,6 @@ export function LabAuthoring() {
   const setup = useCourseSetup(workspaceId);
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === activeAssignmentId);
   const course = useCourseAuthoring(workspaceId, Boolean(workspace));
-  const modules = course.data?.modules ?? [];
-  const attachedTheory = useQuery({
-    queryKey: ["api", "lab-theory-assets", workspaceId, activeAssignmentId],
-    queryFn: ({ signal }) =>
-      api<Array<{ assetId: string; courseItemId?: string | null }>>(
-        `workspaces/${workspaceId}/course-labs/${activeAssignmentId}/theory-assets`,
-        { signal },
-      ),
-    enabled: Boolean(workspaceId && activeAssignmentId && workspace),
-    retry: false,
-  });
-  const theoryReady =
-    (attachedTheory.data?.length ?? 0) > 0 ||
-    modules.some((module) =>
-      module.items.some(
-        (item) => item.type === "THEORY" && item.assignmentId === activeAssignmentId,
-      ),
-    );
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const courseAccess = lecturerCourseAccess(workspace?.status);
   const isPublished = Boolean(setupLab?.published || assignment?.labOrder != null);
@@ -149,7 +108,7 @@ export function LabAuthoring() {
   };
 
   const onSaved = (saved: Assignment) => {
-    const nextTab: Tab = resolveLabTier(saved) === "THEORY_ONLY" ? "theory" : "source";
+    const nextTab: Tab = "studio";
     setCreatedAssignmentId(saved.id);
     setTab(nextTab);
     const query = new URLSearchParams(params?.toString() ?? "");
@@ -162,22 +121,10 @@ export function LabAuthoring() {
   const navItems: Array<{ id: Tab; done: boolean; enabled: boolean; skipped?: boolean }> = [
     { id: "info", done: Boolean(assignment), enabled: true },
     {
-      id: "source",
-      done: Boolean(assignment?.referenceSource?.modelId),
-      enabled: Boolean(assignment),
-    },
-    { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
-    {
-      id: "quiz",
-      done: Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0),
-      enabled: Boolean(assignment),
-    },
-    {
       id: "studio",
       done: Boolean(assignment && (setupLab?.topologyFrozen || setupLab?.studioReady)),
       enabled: Boolean(assignment),
     },
-    { id: "publish", done: isPublished, enabled: Boolean(assignment) },
   ];
 
   if (!workspaceId) {
@@ -215,8 +162,7 @@ export function LabAuthoring() {
     icon: LucideIcon;
   }> = [
     { id: "create", en: "Lab Creation", vi: "Tạo Lab", icon: FilePlus2 },
-    { id: "library", en: "Lab Library", vi: "Thư viện Lab", icon: BookOpen },
-    { id: "theory-library", en: "Theory Library", vi: "Thư viện lý thuyết", icon: Library },
+    { id: "library", en: "Lab Library", vi: "Thư viện Lab", icon: FilePlus2 },
   ];
   const changeSection = (next: LabWorkspaceSection) => {
     const query = new URLSearchParams(params?.toString() ?? "");
@@ -235,46 +181,11 @@ export function LabAuthoring() {
           onSaved={onSaved}
         />
       )}
-      {tab === "theory" && assignment && (
-        <LabTheorySection
-          key={assignment.id}
-          workspaceId={workspaceId}
-          workspaceName={workspace?.name ?? "Course"}
-          assignment={assignment}
-          onNavigate={navigate}
-        />
-      )}
-      {tab === "source" && assignment && (
-        <LabSourceSection
-          key={assignment.id}
-          workspaceId={workspaceId}
-          assignment={assignment}
-          onNavigate={navigate}
-        />
-      )}
-      {tab === "quiz" && assignment && (
-        <LabQuizSection
-          key={assignment.id}
-          workspaceId={workspaceId}
-          assignmentId={assignment.id}
-          assignment={assignment}
-          onNavigate={navigate}
-        />
-      )}
       {tab === "studio" && assignment && (
         <LabStudioSection
           key={assignment.id}
           workspaceId={workspaceId}
           assignment={assignment}
-          onNavigate={navigate}
-        />
-      )}
-      {tab === "publish" && assignment && (
-        <LabPublishSection
-          key={assignment.id}
-          workspaceId={workspaceId}
-          assignment={assignment}
-          onNavigate={navigate}
         />
       )}
       {!assignment && tab !== "info" && (
@@ -456,10 +367,8 @@ export function LabAuthoring() {
         <Assignments embedded />
       ) : section === "create" ? (
         content
-      ) : section === "library" ? (
-        <Assignments embedded />
       ) : (
-        <TheoryLibrary embedded />
+        <Assignments embedded />
       )}
     </div>
   );

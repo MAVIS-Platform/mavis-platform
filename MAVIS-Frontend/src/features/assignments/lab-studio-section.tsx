@@ -7,7 +7,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
-  ArrowRight,
   ArrowUpRight,
   CheckCircle2,
   Container,
@@ -44,11 +43,9 @@ type ConfigTab = "exercise" | "topology";
 export function LabStudioSection({
   workspaceId,
   assignment,
-  onNavigate,
 }: {
   workspaceId: string;
   assignment: Assignment;
-  onNavigate: (tab: "source" | "publish") => void;
 }) {
   const { t } = useLocale();
   const router = useRouter();
@@ -281,14 +278,11 @@ export function LabStudioSection({
               <Lock className="size-4 shrink-0" aria-hidden="true" />
               <span>
                 {t(
-                  "Import a repository with Docker Compose in Step 2 first.",
-                  "Hãy nhập kho mã nguồn có Docker Compose ở Bước 2 trước.",
+                  "Prepare a repository with Docker Compose in the Course Repository step first.",
+                  "Hãy chuẩn bị repository có Docker Compose ở bước Repository của Course trước.",
                 )}
               </span>
             </div>
-            <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
-              {t("Go to Step 2", "Về Bước 2")}
-            </Button>
           </div>
         ) : !studioReadyToLaunch ? (
           /* Minimal 1-Click Docker Runtime Preparation Stage */
@@ -461,10 +455,6 @@ export function LabStudioSection({
       </section>
 
       <div className="flex justify-end">
-        <Button type="button" size="sm" onClick={() => onNavigate("publish")}>
-          {t("Next", "Tiếp theo")}
-          <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
-        </Button>
       </div>
 
       {/* Optional Advanced Config Modal (Escape hatch for full form / JSON editing) */}
