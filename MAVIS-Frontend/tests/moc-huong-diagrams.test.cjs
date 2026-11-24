@@ -86,7 +86,7 @@ function buildMocHuongModel() {
     },
     {
       id: "otel-observability",
-      name: "OpenTelemetry & MAVIS Observability",
+      name: "Observability Platform (OpenTelemetry)",
       elementType: "EXTERNAL_SYSTEM",
       technology: "OTLP / Prometheus",
       description: "Thu thập OTLP traces (:4318/v1/traces) & Actuator Prometheus metrics",
@@ -398,7 +398,7 @@ test("Moc Huong v4 C1 Context uses 3 confirmed roles and Vietnamese business act
   );
   assert.deepEqual(
     ctx.externals.map((e) => [e.name, e.actionLabel]),
-    [["OpenTelemetry & MAVIS Observability", "Xuất OTLP traces & metrics [HTTP/OTLP]"]],
+    [["Observability Platform (OpenTelemetry)", "Xuất OTLP traces & metrics [HTTP/OTLP]"]],
   );
   assert.ok(ctx.systemDescription.includes("explicit user-confirmed assertions"));
 
@@ -430,6 +430,8 @@ test("Moc Huong v4 C1 Context uses 3 confirmed roles and Vietnamese business act
   assert.ok(!visibleCellValues.includes("HTTP call (declared)"));
   assert.ok(!visibleCellValues.includes("Exports traces (configured)"));
   assert.ok(!visibleCellValues.includes("Unknown element"));
+  assert.ok(!visibleCellValues.toLowerCase().includes("mavis"));
+  assert.ok(!visibleCellValues.toLowerCase().includes("quản trị hệ thống"));
 
   const contextDrawio = buildContextDiagramDrawioXml(model, "Mộc Hương Shop Platform").replace(
     /&#xa;|\s+/g,
@@ -472,7 +474,7 @@ test("Moc Huong v4 C2 Container includes 3 Person roles, 6 microservices & infra
     "[Person · Admin Portal]",
     "[Person · Staff Portal]",
     "[Person · Web / Mobile Client]",
-    "OpenTelemetry &amp; MAVIS Observability",
+    "Observability Platform (OpenTelemetry)",
   ]) {
     assert.ok(xml.includes(expected), `C2 Container SVG/DrawIO missing ${expected}`);
   }
@@ -480,6 +482,7 @@ test("Moc Huong v4 C2 Container includes 3 Person roles, 6 microservices & infra
   assert.ok(!xml.includes("payment-service"));
   assert.ok(!xml.includes("inventory-service"));
   assert.ok(!xml.includes("Curated E-Commerce Reference"));
+  assert.ok(!xml.toLowerCase().includes("quản trị hệ thống"));
 });
 
 test("Moc Huong v3 C3 Component (ALL and every single service) generates DrawIO with zero collisions and faithful Order edges", async () => {
