@@ -32,7 +32,7 @@ public final class MocHuongReferenceArchitectureBuilder {
     public static final String REPO_URL = "https://github.com/MAVIS-Platform/Moc-Huong-Shop";
     public static final String COMMIT_SHA = "84f8e6c5c3aee575c2464f40d6742fb847f3a3e4";
     public static final String SYSTEM_NAME = "Mộc Hương Shop Platform";
-    public static final String ADAPTER_VERSION = "moc-huong-v3";
+    public static final String ADAPTER_VERSION = "moc-huong-v4";
 
     public static final List<String> REAL_MICROSERVICES = List.of(
             "service-discovery",
@@ -110,8 +110,9 @@ public final class MocHuongReferenceArchitectureBuilder {
         }
         List<ModelElement> containerNodes = c2ContainerNodes();
         List<ModelElement> depGraphNodes = new ArrayList<>();
+        if (node("admin") != null) depGraphNodes.add(node("admin"));
+        if (node("staff") != null) depGraphNodes.add(node("staff"));
         if (node("customer") != null) depGraphNodes.add(node("customer"));
-        if (node("admin-staff") != null) depGraphNodes.add(node("admin-staff"));
         depGraphNodes.addAll(containerNodes);
         if (node("otel-observability") != null) depGraphNodes.add(node("otel-observability"));
 
@@ -121,7 +122,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         }
         componentDiagramNodes.addAll(c3ComponentNodes);
         List<DiagramVersion> diagramList = new ArrayList<>();
-        if (node("customer") != null && node("admin-staff") != null && node("otel-observability") != null) {
+        if (node("admin") != null && node("staff") != null && node("customer") != null && node("otel-observability") != null) {
             diagramList.add(buildC1ContextDiagram());
         }
         diagramList.add(buildDiagram("DEPENDENCY_GRAPH", "SERVICE", depGraphNodes, c2Edges));
@@ -141,21 +142,26 @@ public final class MocHuongReferenceArchitectureBuilder {
     }
 
     private void addC1ActorsAndExternals() {
+        addNode("admin", null, "PERSON", "Admin Portal",
+                "Admin", "Quản trị viên quản lý tài khoản, phân quyền (ADMIN) & danh mục sản phẩm",
+                props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
+                        "contextActionLabel", "Quản trị tài khoản, phân quyền & danh mục [HTTPS]",
+                        "actorRole", "System Administrator", "userRole", "ADMIN"));
+        addNode("staff", null, "PERSON", "Staff Portal",
+                "Staff", "Nhân viên xử lý đơn hàng & quản lý tồn kho (STAFF)",
+                props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
+                        "contextActionLabel", "Xử lý đơn hàng & quản lý tồn kho [HTTPS]",
+                        "actorRole", "Operations Staff", "userRole", "STAFF"));
         addNode("customer", null, "PERSON", "Web / Mobile Client",
-                "Customer", "Khách hàng duyệt sản phẩm, đặt hàng & nhận thông báo đơn hàng",
+                "Customer", "Khách hàng duyệt sản phẩm, đặt hàng & theo dõi đơn (CUSTOMER)",
                 props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
-                        "contextActionLabel", "Browse & place orders (HTTPS)",
-                        "actorRole", "End-User Shopper"));
-        addNode("admin-staff", null, "PERSON", "Admin / Portal",
-                "Admin / Staff", "Quản trị viên quản lý danh mục, sản phẩm & tồn kho",
-                props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
-                        "contextActionLabel", "Manage catalog & stock (JWT)",
-                        "actorRole", "Store Administrator"));
+                        "contextActionLabel", "Duyệt sản phẩm, đặt hàng & theo dõi đơn [HTTPS]",
+                        "actorRole", "End-User Shopper", "userRole", "CUSTOMER"));
         addNode("otel-observability", null, "EXTERNAL_SYSTEM", "OTLP / Prometheus",
                 "OpenTelemetry & MAVIS Observability",
                 "Thu thập OTLP traces (:4318/v1/traces) & Actuator Prometheus metrics",
                 props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
-                        "contextActionLabel", "Export OTLP spans & metrics",
+                        "contextActionLabel", "Xuất OTLP traces & metrics [HTTP/OTLP]",
                         "endpoint", "http://otel-collector:4318/v1/traces"));
     }
 
@@ -226,10 +232,12 @@ public final class MocHuongReferenceArchitectureBuilder {
 
     private List<ModelRelationship> addC2Relationships() {
         List<ModelRelationship> list = new ArrayList<>();
+        list.add(addEdge("admin-gw", "admin", "api-gateway", "SERVICE_HTTP_CALL", "STATIC",
+                props("transport", "HTTPS + JWT", "paths", "/api/v1/auth,/api/v1/users,/api/v1/categories,/api/v1/products")));
+        list.add(addEdge("staff-gw", "staff", "api-gateway", "SERVICE_HTTP_CALL", "STATIC",
+                props("transport", "HTTPS + JWT", "paths", "/api/v1/orders,/api/v1/products,/api/v1/categories")));
         list.add(addEdge("cust-gw", "customer", "api-gateway", "SERVICE_HTTP_CALL", "STATIC",
                 props("transport", "HTTPS", "paths", "/api/v1/auth,/api/v1/products,/api/v1/orders,/api/v1/notifications")));
-        list.add(addEdge("admin-gw", "admin-staff", "api-gateway", "SERVICE_HTTP_CALL", "STATIC",
-                props("transport", "HTTPS + JWT", "paths", "/api/v1/categories,/api/v1/products")));
 
         list.add(addEdge("gw-identity", "api-gateway", "identity-service", "GATEWAY_ROUTE", "STATIC",
                 props("route", "lb://identity-service", "predicates", "/api/v1/auth/**,/api/v1/users/**")));
@@ -658,18 +666,10 @@ public final class MocHuongReferenceArchitectureBuilder {
                 .put("modelVersionId", model.getId().toString());
         ArrayNode nodes = layout.putArray("nodes");
         String systemId = "system:moc-huong-shop";
+        ModelElement admin = node("admin");
+        ModelElement staff = node("staff");
         ModelElement customer = node("customer");
-        ModelElement admin = node("admin-staff");
         ModelElement otel = node("otel-observability");
-
-        ObjectNode custNode = nodes.addObject()
-                .put("id", customer.getId().toString())
-                .put("kind", "PERSON")
-                .put("name", customer.getName())
-                .put("description", customer.getScope())
-                .put("x", 40)
-                .put("y", 40);
-        custNode.put("languageStack", customer.getLanguageStack());
 
         ObjectNode adminNode = nodes.addObject()
                 .put("id", admin.getId().toString())
@@ -677,16 +677,34 @@ public final class MocHuongReferenceArchitectureBuilder {
                 .put("name", admin.getName())
                 .put("description", admin.getScope())
                 .put("x", 40)
-                .put("y", 220);
+                .put("y", 40);
         adminNode.put("languageStack", admin.getLanguageStack());
+
+        ObjectNode staffNode = nodes.addObject()
+                .put("id", staff.getId().toString())
+                .put("kind", "PERSON")
+                .put("name", staff.getName())
+                .put("description", staff.getScope())
+                .put("x", 40)
+                .put("y", 180);
+        staffNode.put("languageStack", staff.getLanguageStack());
+
+        ObjectNode custNode = nodes.addObject()
+                .put("id", customer.getId().toString())
+                .put("kind", "PERSON")
+                .put("name", customer.getName())
+                .put("description", customer.getScope())
+                .put("x", 40)
+                .put("y", 320);
+        custNode.put("languageStack", customer.getLanguageStack());
 
         ObjectNode sysNode = nodes.addObject()
                 .put("id", systemId)
                 .put("kind", "SYSTEM")
                 .put("name", SYSTEM_NAME)
-                .put("description", "Java 21 / Spring Boot 3 E-Commerce Microservices Platform")
-                .put("x", 360)
-                .put("y", 120);
+                .put("description", "Nền tảng thương mại điện tử nhang trầm kiến trúc Java 21 / Spring Cloud Microservices")
+                .put("x", 380)
+                .put("y", 180);
         sysNode.put("languageStack", "Java 21 / Spring Cloud");
 
         ObjectNode otelNode = nodes.addObject()
@@ -694,17 +712,19 @@ public final class MocHuongReferenceArchitectureBuilder {
                 .put("kind", "EXTERNAL_SYSTEM")
                 .put("name", otel.getName())
                 .put("description", otel.getScope())
-                .put("x", 700)
-                .put("y", 120);
+                .put("x", 740)
+                .put("y", 180);
         otelNode.put("languageStack", otel.getLanguageStack());
 
         ArrayNode edges = layout.putArray("edges");
-        addContextEdge(edges, "ctx-cust-sys", customer.getId().toString(), systemId, "SERVICE_HTTP_CALL",
-                "Browse & place orders (HTTPS)");
         addContextEdge(edges, "ctx-admin-sys", admin.getId().toString(), systemId, "SERVICE_HTTP_CALL",
-                "Manage catalog & stock (JWT)");
+                "Quản trị tài khoản, phân quyền & danh mục [HTTPS]");
+        addContextEdge(edges, "ctx-staff-sys", staff.getId().toString(), systemId, "SERVICE_HTTP_CALL",
+                "Xử lý đơn hàng & quản lý tồn kho [HTTPS]");
+        addContextEdge(edges, "ctx-cust-sys", customer.getId().toString(), systemId, "SERVICE_HTTP_CALL",
+                "Duyệt sản phẩm, đặt hàng & theo dõi đơn [HTTPS]");
         addContextEdge(edges, "ctx-sys-otel", systemId, otel.getId().toString(), "TRACING_EXPORT",
-                "Export OTLP spans & metrics");
+                "Xuất OTLP traces & metrics [HTTP/OTLP]");
 
         return DiagramVersion.builder()
                 .modelVersion(model)

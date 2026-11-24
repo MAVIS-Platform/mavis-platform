@@ -25,6 +25,9 @@ type Props = {
   mode?: "graph" | "diagram" | undefined;
   guidedStatic?: boolean;
   controlledKind?: DiagramKind | undefined;
+  controlledService?: string | undefined;
+  onServiceChange?: ((serviceId: string) => void) | undefined;
+  onKindChange?: ((kind: DiagramKind, targetServiceId?: string) => void) | undefined;
   hideKindSelector?: boolean | undefined;
 };
 
@@ -36,6 +39,9 @@ export function ArchitecturePresentation({
   mode = "graph",
   guidedStatic = false,
   controlledKind,
+  controlledService,
+  onServiceChange,
+  onKindChange,
   hideKindSelector = false,
 }: Props) {
   const [highlight, setHighlight] = useState<{ modelId: string; ids: string[] } | null>(null);
@@ -260,6 +266,9 @@ export function ArchitecturePresentation({
               systemName={systemName}
               guidedStatic={guidedStatic}
               controlledKind={controlledKind}
+              controlledService={controlledService}
+              onServiceChange={onServiceChange}
+              onKindChange={onKindChange}
               hideKindSelector={hideKindSelector}
               onSelect={handleSelect}
               onSelectSequence={(id, seqCtx) => {
@@ -312,6 +321,14 @@ export function ArchitecturePresentation({
               sequenceContext={activeSequenceContext}
               onDrilldown={setDrilledSourceEdgeId}
               onSelect={handleSelect}
+              onInspectServiceC3={
+                onKindChange
+                  ? (serviceId) => {
+                      onServiceChange?.(serviceId);
+                      onKindChange("COMPONENT", serviceId);
+                    }
+                  : undefined
+              }
               onClose={() => {
                 setHighlight(null);
                 setDrilledSourceEdgeId(null);

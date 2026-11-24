@@ -43,6 +43,9 @@ function formatC4NodeBadge(kind?: string): string {
       return "[Component]";
     case "CLASS_INTERFACE":
       return "[Class/Interface]";
+    case "PERSON":
+    case "ACTOR":
+      return "[Person]";
     case "EXTERNAL_SYSTEM":
       return "[External]";
     default:
@@ -58,6 +61,9 @@ export function ArchitectureDiagrams({
   systemName,
   guidedStatic = false,
   controlledKind,
+  controlledService,
+  onServiceChange,
+  onKindChange,
   hideKindSelector = false,
 }: {
   model: ArchitecturalModel;
@@ -68,6 +74,9 @@ export function ArchitectureDiagrams({
   systemName?: string | undefined;
   guidedStatic?: boolean;
   controlledKind?: DiagramKind | undefined;
+  controlledService?: string | undefined;
+  onServiceChange?: ((serviceId: string) => void) | undefined;
+  onKindChange?: ((kind: DiagramKind, targetServiceId?: string) => void) | undefined;
   hideKindSelector?: boolean;
 }) {
   const { locale, t } = useLocale();
@@ -76,7 +85,7 @@ export function ArchitectureDiagrams({
   const resolveKind = guidedStatic ? resolveGuidedDiagramKind : resolveDiagramKind;
   const initialKind = controlledKind ?? resolveKind(requestedKindParam);
   const [kind, setKind] = useState<DiagramKind>(initialKind),
-    [service, setService] = useState(guidedStatic ? "ALL" : ""),
+    [service, setService] = useState(""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
     [c4AiEnrichment, setC4AiEnrichment] = useState<C4AiDiagramEnrichment | null>(null),
     [generatedState, setGeneratedState] = useState<{ targetKey: string; xml: string }>({
@@ -113,12 +122,20 @@ export function ArchitectureDiagrams({
     });
   const populatedContainers = allContainers.filter((node) => node.count > 0);
   const containers = populatedContainers.length > 0 ? populatedContainers : allContainers;
+  const defaultGuidedService =
+    containers.find((node) => node.name === "order-service")?.id ?? containers[0]?.id ?? "ALL";
+  const activeService = controlledService !== undefined ? controlledService : service;
+  const resolvedService = activeService || (guidedStatic ? defaultGuidedService : "");
+  const updateService = (nextService: string) => {
+    setService(nextService);
+    onServiceChange?.(nextService);
+  };
   const container =
-    guidedStatic && service === "ALL"
+    guidedStatic && resolvedService === "ALL"
       ? undefined
-      : (containers.find((node) => node.id === service) ?? containers[0]);
+      : (containers.find((node) => node.id === resolvedService) ?? containers[0]);
   const selectedC3TargetId =
-    guidedStatic && kind === "COMPONENT" && (service === "ALL" || !service)
+    guidedStatic && kind === "COMPONENT" && resolvedService === "ALL"
       ? "ALL"
       : (container?.id ?? containers[0]?.id);
   const isUmlWorkspaceKind = [
@@ -334,14 +351,14 @@ export function ArchitectureDiagrams({
                 <Button
                   type="button"
                   size="sm"
-                  variant={service === "ALL" || !service ? "default" : "outline"}
+                  variant={resolvedService === "ALL" ? "default" : "outline"}
                   className="h-7 px-2.5 text-xs"
-                  onClick={() => setService("ALL")}
+                  onClick={() => updateService("ALL")}
                 >
                   {t(`All Services (${containers.length})`, `Tổng quan (${containers.length} Services)`)}
                 </Button>
                 {containers.map((node) => {
-                  const active = service === node.id;
+                  const active = resolvedService === node.id;
                   return (
                     <Button
                       key={node.id}
@@ -349,7 +366,7 @@ export function ArchitectureDiagrams({
                       size="sm"
                       variant={active ? "default" : "outline"}
                       className="h-7 px-2.5 text-xs"
-                      onClick={() => setService(node.id)}
+                      onClick={() => updateService(node.id)}
                     >
                       {node.name}
                       <span className="ml-1 text-[10px] opacity-75">({node.count})</span>
@@ -362,7 +379,7 @@ export function ArchitectureDiagrams({
                 <SelectField
                   label={t("Service to inspect (C3 Component)", "Chọn Service để xem C3 Component")}
                   value={container?.id ?? ""}
-                  onChange={setService}
+                  onChange={updateService}
                   options={containers.map((node) => ({
                     value: node.id,
                     label: `${node.name}${node.count === 0 ? ` · ${t("no components extracted", "chưa tách thành phần con")}` : ""}`,
@@ -374,8 +391,8 @@ export function ArchitectureDiagrams({
             <div className="w-full sm:w-80">
               <SelectField
                 label={t("Service", "Dịch vụ (Service)")}
-                value={kind === "UML_CLASS" ? service || container?.id || "ALL" : service || "ALL"}
-                onChange={setService}
+                value={kind === "UML_CLASS" ? resolvedService || container?.id || "ALL" : resolvedService || "ALL"}
+                onChange={updateService}
                 options={[
                   { value: "ALL", label: t("All services", "Tất cả Service") },
                   ...containers.map((node) => ({
@@ -492,6 +509,20 @@ export function ArchitectureDiagrams({
               xml={xml}
               selectedId={selectedId}
               onSelect={resolveCanvasSelect}
+              onDoubleClickNode={
+                kind === "CONTAINER"
+                  ? (rawId) => {
+                      const candidateId = rawId.replace(/^(?:diagram|projection|c4):/, "");
+                      const targetService = containers.find(
+                        (node) => node.id === candidateId && node.count > 0,
+                      );
+                      if (!targetService) return;
+                      updateService(targetService.id);
+                      setKind("COMPONENT");
+                      onKindChange?.("COMPONENT", targetService.id);
+                    }
+                  : undefined
+              }
             />
           ) : <DrawioEditor
             key={`${model.id}:${key}`}

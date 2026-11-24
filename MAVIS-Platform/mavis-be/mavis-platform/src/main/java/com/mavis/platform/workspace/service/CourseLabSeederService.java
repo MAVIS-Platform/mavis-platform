@@ -873,7 +873,11 @@ public class CourseLabSeederService {
         boolean hasConfirmedActor = existing.stream()
                 .filter(e -> "PERSON".equalsIgnoreCase(e.getElementType()) && e.getProperties() != null)
                 .anyMatch(e -> "USER_CONFIRMED".equals(e.getProperties().path("contextFactOrigin").asText("")));
-        if (!hasConfirmedActor || !presentNames.contains("IdentityDataSeeder")) {
+        if (!hasConfirmedActor
+                || !presentNames.contains("Admin")
+                || !presentNames.contains("Staff")
+                || !presentNames.contains("Customer")
+                || !presentNames.contains("IdentityDataSeeder")) {
             return true;
         }
         List<ModelRelationship> rels = relationships.findByModelVersionId(refModel.getId());

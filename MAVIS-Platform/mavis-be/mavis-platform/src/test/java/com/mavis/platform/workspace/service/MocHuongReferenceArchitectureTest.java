@@ -96,7 +96,7 @@ class MocHuongReferenceArchitectureTest {
                 .filter(el -> "PERSON".equals(el.getElementType()))
                 .toList();
         assertThat(actors).extracting(ModelElement::getName)
-                .containsExactlyInAnyOrder("Customer", "Admin / Staff");
+                .containsExactlyInAnyOrder("Admin", "Staff", "Customer");
         assertThat(built.elements())
                 .anyMatch(el -> "EXTERNAL_SYSTEM".equals(el.getElementType())
                         && "OpenTelemetry & MAVIS Observability".equals(el.getName()));
@@ -105,7 +105,8 @@ class MocHuongReferenceArchitectureTest {
                 .filter(d -> "C4".equals(d.getNotation()) && "CONTEXT".equals(d.getLevel()))
                 .findFirst()
                 .orElseThrow();
-        assertThat(c1Diagram.getLayoutJson().path("nodes")).hasSize(4);
+        assertThat(c1Diagram.getLayoutJson().path("nodes")).hasSize(5);
+        assertThat(c1Diagram.getLayoutJson().path("edges")).hasSize(4);
 
         assertThat(built.diagrams())
                 .anyMatch(d -> "DEPENDENCY_GRAPH".equals(d.getNotation()) && "SERVICE".equals(d.getLevel()));
@@ -264,7 +265,7 @@ class MocHuongReferenceArchitectureTest {
 
         UUID catalogId = built.serviceIds().get("catalog-service");
         Set<String> catalogUpstreamNames = bfsNames(catalogId, reverseAdj, byId);
-        assertThat(catalogUpstreamNames).contains("order-service", "api-gateway", "Customer", "Admin / Staff");
+        assertThat(catalogUpstreamNames).contains("order-service", "api-gateway", "Admin", "Staff", "Customer");
 
         UUID kafkaId = built.elements().stream()
                 .filter(el -> "kafka".equals(el.getName()))
@@ -274,7 +275,7 @@ class MocHuongReferenceArchitectureTest {
 
         UUID notificationId = built.serviceIds().get("notification-service");
         Set<String> notificationUpstreamNames = bfsNames(notificationId, reverseAdj, byId);
-        assertThat(notificationUpstreamNames).contains("api-gateway", "Customer", "Admin / Staff");
+        assertThat(notificationUpstreamNames).contains("api-gateway", "Admin", "Staff", "Customer");
     }
 
     @Test

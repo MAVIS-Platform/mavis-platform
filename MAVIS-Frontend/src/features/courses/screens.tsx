@@ -1268,6 +1268,7 @@ function StepContent({
   const { t, locale } = useLocale();
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
+  const [inlineC3Service, setInlineC3Service] = useState<string | undefined>(undefined);
   const [impactAnalysisOpen, setImpactAnalysisOpen] = useState(false);
   const [impactHighlightIds, setImpactHighlightIds] = useState<string[]>([]);
   const [tutorInput, setTutorInput] = useState("");
@@ -1963,6 +1964,18 @@ function StepContent({
                           model={activeModel}
                           guidedStatic
                           controlledKind={inlineC4View}
+                          controlledService={inlineC3Service}
+                          onServiceChange={setInlineC3Service}
+                          onKindChange={(nextKind, svcId) => {
+                            if (svcId) setInlineC3Service(svcId);
+                            if (
+                              nextKind === "CONTEXT" ||
+                              nextKind === "CONTAINER" ||
+                              nextKind === "COMPONENT"
+                            ) {
+                              onSelectInlineC4View(nextKind);
+                            }
+                          }}
                           hideKindSelector
                           systemName={referenceArchitecture?.projectName || "Mộc Hương Shop Platform"}
                           selectedId={selectedGraphId}
@@ -1975,6 +1988,14 @@ function StepContent({
                             model={activeModel}
                             selectedId={selectedGraphId}
                             onSelect={setSelectedGraphId}
+                            onInspectServiceC3={
+                              inlineC4View === "CONTAINER"
+                                ? (svcId) => {
+                                    setInlineC3Service(svcId);
+                                    onSelectInlineC4View("COMPONENT");
+                                  }
+                                : undefined
+                            }
                           />
                           <p className="text-xs leading-5 text-muted-foreground">
                             {t(

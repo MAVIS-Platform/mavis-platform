@@ -85,6 +85,7 @@ export function SelectionThreeE({
   drilledSourceEdgeId,
   onDrilldown,
   sequenceContext,
+  onInspectServiceC3,
 }: {
   projectId?: string;
   docked?: boolean;
@@ -97,6 +98,7 @@ export function SelectionThreeE({
   drilledSourceEdgeId?: string | null | undefined;
   onDrilldown?: ((subId: string | null) => void) | undefined;
   sequenceContext?: Parameters<typeof buildThreeESubjectContext>[0]["sequenceContext"];
+  onInspectServiceC3?: ((serviceId: string) => void) | undefined;
 }) {
   const api = useApi();
   const { locale } = useLocale();
@@ -414,6 +416,19 @@ export function SelectionThreeE({
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-5 text-sm leading-6 [scrollbar-gutter:stable]">
           <TabsContent value="explain" className="m-0 space-y-5">
+            {node?.elementType === "SERVICE_CONTAINER" &&
+              onInspectServiceC3 &&
+              model.elements.some((el) => el.parentId === node.id && el.elementType === "COMPONENT") && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="default"
+                  className="w-full"
+                  onClick={() => onInspectServiceC3(node.id)}
+                >
+                  View C3 diagram for this service →
+                </Button>
+              )}
             <h3 className="text-base font-semibold">Understand this selection</h3>
             <InspectorSection
               title={meaningTitle}

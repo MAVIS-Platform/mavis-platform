@@ -867,7 +867,7 @@ class CourseLabSeederServiceTest {
         assertThat(newElements).extracting(ModelElement::getName).contains(
                 "service-discovery", "api-gateway", "identity-service",
                 "catalog-service", "order-service", "notification-service",
-                "IdentityDataSeeder", "PasswordEncoderConfig", "Customer");
+                "IdentityDataSeeder", "PasswordEncoderConfig", "Admin", "Staff", "Customer");
     }
 
     @Test
