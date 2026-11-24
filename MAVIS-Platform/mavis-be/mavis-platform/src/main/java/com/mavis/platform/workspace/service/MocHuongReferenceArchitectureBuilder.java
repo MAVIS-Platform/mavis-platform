@@ -158,7 +158,7 @@ public final class MocHuongReferenceArchitectureBuilder {
                         "contextActionLabel", "Duyệt sản phẩm, đặt hàng & theo dõi đơn [HTTPS]",
                         "actorRole", "End-User Shopper", "userRole", "CUSTOMER"));
         addNode("otel-observability", null, "EXTERNAL_SYSTEM", "OTLP / Prometheus",
-                "OpenTelemetry & MAVIS Observability",
+                "Observability Platform (OpenTelemetry)",
                 "Thu thập OTLP traces (:4318/v1/traces) & Actuator Prometheus metrics",
                 props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
                         "contextActionLabel", "Xuất OTLP traces & metrics [HTTP/OTLP]",

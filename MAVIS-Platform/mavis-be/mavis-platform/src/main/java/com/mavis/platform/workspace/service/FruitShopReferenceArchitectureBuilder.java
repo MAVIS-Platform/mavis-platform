@@ -160,7 +160,7 @@ public final class FruitShopReferenceArchitectureBuilder {
                         "contextActionLabel", "Duyệt trái cây, quản lý giỏ hàng & đặt hàng [HTTPS]",
                         "actorRole", "End-User Shopper", "userRole", "Customer"));
         addNode("otel-observability", null, "EXTERNAL_SYSTEM", "OTLP / .NET OpenTelemetry 1.9",
-                "OpenTelemetry & MAVIS Observability",
+                "Observability Platform (OpenTelemetry)",
                 "Thu thập OTLP traces, W3C traceparent & .NET Runtime/AspNetCore metrics",
                 props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
                         "contextActionLabel", "Xuất OTLP traces & metrics [HTTP/OTLP]",
@@ -276,10 +276,10 @@ public final class FruitShopReferenceArchitectureBuilder {
 
         addC3Edge("c3-gw-auth-jwt", "c3-gw-auth", "c3-gw-jwt", "CODE_DEPENDENCY",
                 props("label", "Issues signed JWT for Admin/Staff/Customer"));
+        addC3Edge("c3-gw-yarp-jwt", "c3-gw-yarp", "c3-gw-jwt", "CODE_DEPENDENCY",
+                props("label", "Validates Bearer JWT & AdminOnly policy"));
         addC3Edge("c3-gw-yarp-err", "c3-gw-yarp", "c3-gw-err", "CODE_DEPENDENCY",
                 props("label", "Handles downstream proxy faults (ProblemDetails)"));
-        addC3Edge("c3-gw-yarp-otel", "c3-gw-yarp", "otel-observability", "TRACING_EXPORT",
-                props("protocol", "OTLP / .NET OpenTelemetry 1.9"));
     }
 
     private void addC3CatalogComponents() {
@@ -308,8 +308,6 @@ public final class FruitShopReferenceArchitectureBuilder {
                 props("label", "Seeds catalog items on boot"));
         addC3Edge("c3-cat-db-pg", "c3-cat-dbctx", "catalog-db", "DATABASE_ACCESS",
                 props("protocol", "Npgsql EF Core · schema catalog"));
-        addC3Edge("c3-gw-yarp-cat", "c3-gw-yarp", "c3-cat-ctrl", "GATEWAY_ROUTE",
-                props("route", "/api/v1/catalog/{**catch-all}"));
     }
 
     private void addC3BasketComponents() {
@@ -334,8 +332,6 @@ public final class FruitShopReferenceArchitectureBuilder {
                 "FruitBasket.API.Repositories.RedisProcessedEventStore",
                 "Tracks processed integration event IDs in Redis keys processed-event:* to guarantee exactly-once effect");
 
-        addC3Edge("c3-gw-yarp-bsk", "c3-gw-yarp", "c3-bsk-ctrl", "GATEWAY_ROUTE",
-                props("route", "/api/v1/basket/{**catch-all}"));
         addC3Edge("c3-bsk-ctrl-svc", "c3-bsk-ctrl", "c3-bsk-svc", "CODE_DEPENDENCY",
                 props("label", "Delegates IBasketService operations"));
         addC3Edge("c3-bsk-svc-repo", "c3-bsk-svc", "c3-bsk-repo", "CODE_DEPENDENCY",
@@ -382,8 +378,6 @@ public final class FruitShopReferenceArchitectureBuilder {
                 "FruitOrdering.API.Data.OrderingDbContext",
                 "Persists orders, order_items and integration_event_outbox in isolated PostgreSQL schema ordering");
 
-        addC3Edge("c3-gw-yarp-ord", "c3-gw-yarp", "c3-ord-ctrl", "GATEWAY_ROUTE",
-                props("route", "/api/v1/orders/{**catch-all}"));
         addC3Edge("c3-ord-ctrl-saga", "c3-ord-ctrl", "c3-ord-saga", "CODE_DEPENDENCY",
                 props("label", "Delegates PlaceOrderAsync / CancelOrderAsync"));
         addC3Edge("c3-ord-ctrl-qry", "c3-ord-ctrl", "c3-ord-qry", "CODE_DEPENDENCY",
@@ -452,7 +446,7 @@ public final class FruitShopReferenceArchitectureBuilder {
                 "src/Services/FruitCatalog/FruitCatalog.API/Services/CatalogService.cs:127",
                 "STATIC_CODE",
                 "product.ReserveStock(quantity);");
-        addRelEvidence("c3-gw-yarp-cat",
+        addRelEvidence("gw-catalog",
                 "src/Gateways/ApiGateway/Program.cs:85",
                 "STATIC_CODE",
                 "builder.Services.AddReverseProxy().LoadFromConfig(builder.Configuration.GetSection(\"ReverseProxy\"));");

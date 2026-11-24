@@ -1088,6 +1088,7 @@ export function ArchitectureSvgViewer({
           }}
           role="img"
           aria-label="Architecture diagram SVG preview"
+          data-no-translate="true"
         >
             <defs>
               <marker

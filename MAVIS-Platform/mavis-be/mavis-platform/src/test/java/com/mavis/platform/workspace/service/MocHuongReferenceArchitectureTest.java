@@ -99,7 +99,19 @@ class MocHuongReferenceArchitectureTest {
                 .containsExactlyInAnyOrder("Admin", "Staff", "Customer");
         assertThat(built.elements())
                 .anyMatch(el -> "EXTERNAL_SYSTEM".equals(el.getElementType())
-                        && "OpenTelemetry & MAVIS Observability".equals(el.getName()));
+                        && "Observability Platform (OpenTelemetry)".equals(el.getName()));
+        assertThat(built.elements())
+                .extracting(ModelElement::getName)
+                .noneMatch(name -> name != null && (name.toLowerCase().contains("mavis")
+                        || name.toLowerCase().contains("quản trị hệ thống")));
+
+        Set<String> relTriples = new HashSet<>();
+        for (ModelRelationship rel : built.relationships()) {
+            String key = rel.getSourceElement().getId() + "->" + rel.getTargetElement().getId() + "::" + rel.getRelationType();
+            assertThat(relTriples.add(key))
+                    .as("Duplicate relationship detected in Moc Huong model: %s", key)
+                    .isTrue();
+        }
 
         DiagramVersion c1Diagram = built.diagrams().stream()
                 .filter(d -> "C4".equals(d.getNotation()) && "CONTEXT".equals(d.getLevel()))

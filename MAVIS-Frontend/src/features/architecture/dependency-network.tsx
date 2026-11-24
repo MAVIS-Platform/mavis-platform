@@ -890,6 +890,7 @@ export function DependencyNetwork({
                 <button
                   key={node.id}
                   type="button"
+                  data-no-translate="true"
                   className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
                   aria-label={`Select ${node.name}`}
                   aria-pressed={selectedId === node.id}

@@ -898,6 +898,21 @@ public class CourseLabSeederService {
             if (outdated) {
                 return true;
             }
+            if (candidate.getProject() != null && candidate.getProject().getId() != null) {
+                java.util.Optional<ModelVersion> latestOpt =
+                        models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(candidate.getProject().getId());
+                if (latestOpt != null && latestOpt.isPresent()
+                        && latestOpt.get().getId() != null
+                        && !latestOpt.get().getId().equals(candidate.getId())) {
+                    List<ModelElement> latestEls = elements.findByModelVersionId(latestOpt.get().getId());
+                    boolean latestOutdated = csharpTrack
+                            ? isOutdatedFruitShopModel(latestOpt.get(), latestEls)
+                            : isOutdatedMocHuongModel(latestOpt.get(), latestEls);
+                    if (latestOutdated) {
+                        return true;
+                    }
+                }
+            }
         }
         if (!anyNonEmpty) {
             return false;
@@ -922,8 +937,7 @@ public class CourseLabSeederService {
         if (existing == null || existing.isEmpty()) {
             return false;
         }
-        String projName = refModel.getProject().getName();
-        if (!FruitShopReferenceArchitectureBuilder.SYSTEM_NAME.equals(projName)) {
+        if (!FruitShopReferenceArchitectureBuilder.SYSTEM_NAME.equals(refModel.getProject().getName())) {
             return true;
         }
         boolean hasJavaOrLegacy = existing.stream()
@@ -939,29 +953,24 @@ public class CourseLabSeederService {
         if (hasJavaOrLegacy) {
             return true;
         }
-        Set<String> presentNames = new java.util.HashSet<>();
-        for (ModelElement e : existing) {
-            if (e.getName() != null) {
-                presentNames.add(e.getName());
-            }
-        }
-        for (String svc : FruitShopReferenceArchitectureBuilder.REAL_MICROSERVICES) {
-            if (!presentNames.contains(svc)) {
-                return true;
-            }
-        }
-        boolean hasConfirmedActor = existing.stream()
-                .filter(e -> "PERSON".equalsIgnoreCase(e.getElementType()) && e.getProperties() != null)
-                .anyMatch(e -> "USER_CONFIRMED".equals(e.getProperties().path("contextFactOrigin").asText("")));
-        return !hasConfirmedActor
-                || !presentNames.contains("Admin")
-                || !presentNames.contains("Staff")
-                || !presentNames.contains("Customer")
+        Set<String> presentNames = collectElementNames(existing);
+        if (!hasRequiredServicesAndConfirmedActors(
+                presentNames, existing, FruitShopReferenceArchitectureBuilder.REAL_MICROSERVICES)
+                || hasStaleReferenceNaming(presentNames, existing)
                 || !presentNames.contains("OrdersController")
                 || !presentNames.contains("OrderSagaService")
                 || !presentNames.contains("OutboxRelayBackgroundService")
                 || !presentNames.contains("OrderCreatedConsumer")
-                || !presentNames.contains("YarpReverseProxyPipeline");
+                || !presentNames.contains("YarpReverseProxyPipeline")) {
+            return true;
+        }
+        List<ModelRelationship> rels = relationships.findByModelVersionId(refModel.getId());
+        if (hasDuplicateModelRelationships(rels)) {
+            return true;
+        }
+        return rels != null && rels.stream().anyMatch(r -> r.getSourceElement() != null
+                && "COMPONENT".equalsIgnoreCase(r.getSourceElement().getElementType())
+                && ("GATEWAY_ROUTE".equals(r.getRelationType()) || "TRACING_EXPORT".equals(r.getRelationType())));
     }
 
     private boolean isOutdatedMocHuongModel(ModelVersion refModel, List<ModelElement> existing) {
@@ -971,8 +980,7 @@ public class CourseLabSeederService {
         if (existing == null || existing.isEmpty()) {
             return false;
         }
-        String projName = refModel.getProject().getName();
-        if (!MocHuongReferenceArchitectureBuilder.SYSTEM_NAME.equals(projName)) {
+        if (!MocHuongReferenceArchitectureBuilder.SYSTEM_NAME.equals(refModel.getProject().getName())) {
             return true;
         }
         boolean hasFake = existing.stream()
@@ -981,32 +989,83 @@ public class CourseLabSeederService {
         if (hasFake) {
             return true;
         }
-        Set<String> presentNames = new java.util.HashSet<>();
+        Set<String> presentNames = collectElementNames(existing);
+        if (!hasRequiredServicesAndConfirmedActors(
+                presentNames, existing, MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES)
+                || hasStaleReferenceNaming(presentNames, existing)
+                || !presentNames.contains("IdentityDataSeeder")) {
+            return true;
+        }
+        List<ModelRelationship> rels = relationships.findByModelVersionId(refModel.getId());
+        if (hasDuplicateModelRelationships(rels)) {
+            return true;
+        }
+        return rels != null && rels.stream().anyMatch(r -> r.getSourceElement() != null
+                && r.getTargetElement() != null
+                && "OrderService".equals(r.getSourceElement().getName())
+                && "OrderSagaOrchestrator".equals(r.getTargetElement().getName()));
+    }
+
+    private Set<String> collectElementNames(List<ModelElement> existing) {
+        Set<String> names = new java.util.HashSet<>();
         for (ModelElement e : existing) {
             if (e.getName() != null) {
-                presentNames.add(e.getName());
+                names.add(e.getName());
             }
         }
-        for (String svc : MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES) {
+        return names;
+    }
+
+    private boolean hasRequiredServicesAndConfirmedActors(
+            Set<String> presentNames, List<ModelElement> existing, List<String> requiredServices) {
+        for (String svc : requiredServices) {
             if (!presentNames.contains(svc)) {
-                return true;
+                return false;
             }
         }
         boolean hasConfirmedActor = existing.stream()
                 .filter(e -> "PERSON".equalsIgnoreCase(e.getElementType()) && e.getProperties() != null)
                 .anyMatch(e -> "USER_CONFIRMED".equals(e.getProperties().path("contextFactOrigin").asText("")));
-        if (!hasConfirmedActor
-                || !presentNames.contains("Admin")
-                || !presentNames.contains("Staff")
-                || !presentNames.contains("Customer")
-                || !presentNames.contains("IdentityDataSeeder")) {
+        return hasConfirmedActor
+                && presentNames.contains("Admin")
+                && presentNames.contains("Staff")
+                && presentNames.contains("Customer");
+    }
+
+    private boolean hasStaleReferenceNaming(Set<String> presentNames, List<ModelElement> existing) {
+        if (!presentNames.contains("Observability Platform (OpenTelemetry)")) {
             return true;
         }
-        List<ModelRelationship> rels = relationships.findByModelVersionId(refModel.getId());
-        return rels != null && rels.stream().anyMatch(r -> r.getSourceElement() != null
-                && r.getTargetElement() != null
-                && "OrderService".equals(r.getSourceElement().getName())
-                && "OrderSagaOrchestrator".equals(r.getTargetElement().getName()));
+        return existing.stream().anyMatch(e -> {
+            String name = e.getName();
+            if (name == null) {
+                return false;
+            }
+            String lower = name.toLowerCase(java.util.Locale.ROOT);
+            return lower.contains("mavis") || lower.contains("quản trị hệ thống");
+        });
+    }
+
+    private boolean hasDuplicateModelRelationships(List<ModelRelationship> rels) {
+        if (rels == null || rels.isEmpty()) {
+            return false;
+        }
+        Set<String> seen = new java.util.HashSet<>();
+        for (ModelRelationship rel : rels) {
+            if (rel.getSourceElement() == null || rel.getTargetElement() == null) {
+                continue;
+            }
+            UUID srcId = rel.getSourceElement().getId();
+            UUID tgtId = rel.getTargetElement().getId();
+            if (srcId == null || tgtId == null) {
+                continue;
+            }
+            String key = srcId + "->" + tgtId + "::" + rel.getRelationType();
+            if (!seen.add(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ModelVersion upgradeJavaWorkspaceToMocHuong(UUID workspaceId, List<Assignment> existingLabs) {

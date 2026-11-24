@@ -710,8 +710,14 @@ export async function generateDrawio(
     attempt++
   ) {
     const candidateRoot = structuredClone(root);
-    const vertical = attempt === 1;
+    const vertical = attempt === 1 && !systemBoundary;
     function alignPorts(node: ElkNode) {
+      if (node.children?.length) {
+        node.layoutOptions = {
+          ...(node.layoutOptions ?? {}),
+          "elk.direction": vertical ? "DOWN" : "RIGHT",
+        };
+      }
       for (const port of node.ports ?? [])
         port.layoutOptions = {
           "elk.port.side": port.id.endsWith("_out")

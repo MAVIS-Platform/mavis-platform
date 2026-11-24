@@ -87,7 +87,7 @@ function buildFruitShopModel() {
     },
     {
       id: "otel-observability",
-      name: "OpenTelemetry & MAVIS Observability",
+      name: "Observability Platform (OpenTelemetry)",
       elementType: "EXTERNAL_SYSTEM",
       technology: "OTLP / .NET OpenTelemetry 1.9",
       description: "Thu thập OTLP traces, W3C traceparent & .NET Runtime/AspNetCore metrics",
@@ -320,7 +320,7 @@ test("Project Trái Cây C1 Context has 3 confirmed Vietnamese roles, 5 nodes, 4
   );
   assert.deepEqual(
     ctx.externals.map((e) => [e.name, e.actionLabel]),
-    [["OpenTelemetry & MAVIS Observability", "Xuất OTLP traces & metrics [HTTP/OTLP]"]],
+    [["Observability Platform (OpenTelemetry)", "Xuất OTLP traces & metrics [HTTP/OTLP]"]],
   );
 
   const selection = selectDiagram(model, "CONTEXT", undefined, {
@@ -389,14 +389,24 @@ test("Project Trái Cây C2 Container renders 4 .NET 8 services, Postgres/Redis/
     "[Person · Admin Portal]",
     "[Person · Staff Portal]",
     "[Person · Web / Mobile Client]",
-    "OpenTelemetry &amp; MAVIS Observability",
+    "Observability Platform (OpenTelemetry)",
   ]) {
     assert.ok(xml.includes(expected), `C2 Container DrawIO missing ${expected}`);
   }
   assert.ok(!xml.includes("Unknown element"));
   assert.ok(!xml.toLowerCase().includes("spring"));
   assert.ok(!xml.toLowerCase().includes("openfeign"));
+  assert.ok(!xml.toLowerCase().includes("feign"));
+  assert.ok(!xml.toLowerCase().includes("quản trị hệ thống"));
   assert.ok(!xml.includes("payment-service"));
+
+  // Enforce Left-to-Right horizontal bounding box on C2 Container layout
+  const nodeBoxes = [...xml.matchAll(/vertex="1"[^>]*><mxGeometry\s+x="([^"]+)"\s+y="([^"]+)"\s+width="([^"]+)"\s+height="([^"]+)"/g)]
+    .map((m) => ({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: Number(m[4]) }));
+  assert.ok(nodeBoxes.length >= 12);
+  const spanX = Math.max(...nodeBoxes.map((b) => b.x + b.w)) - Math.min(...nodeBoxes.map((b) => b.x));
+  const spanY = Math.max(...nodeBoxes.map((b) => b.y + b.h)) - Math.min(...nodeBoxes.map((b) => b.y));
+  assert.ok(spanX > spanY, `Expected horizontal LR C2 layout (spanX=${spanX} > spanY=${spanY})`);
 });
 
 test("Project Trái Cây C3 Component selects FruitOrdering.API by default and renders all 4 .NET 8 services", async () => {
@@ -410,6 +420,13 @@ test("Project Trái Cây C3 Component selects FruitOrdering.API by default and r
       count: model.elements.filter((child) => child.parentId === node.id).length,
     }));
   assert.equal(selectDefaultGuidedC3Service(containers), "FruitOrdering.API");
+  assert.equal(
+    selectDefaultGuidedC3Service([
+      { id: "svc-gateway", name: "api-gateway", count: 3 },
+      { id: "svc-order", name: "order-service", count: 5 },
+    ]),
+    "svc-order",
+  );
 
   // Generic fallback when neither order-service nor ordering name exists picks most-populated service
   assert.equal(
@@ -449,21 +466,74 @@ test("Project Trái Cây C3 Component selects FruitOrdering.API by default and r
   }
 });
 
-test("Project Trái Cây Dependency Graph projects 12 full nodes and filters cleanly to 4 .NET 8 services", () => {
+test("Project Trái Cây Dependency Graph deduplicates mixed CONFIG/STATIC/RUNTIME edges and labels HTTP / HttpClient without Feign leak", () => {
   const model = buildFruitShopModel();
-  const projection = projectGraphModel(model, false, "all");
+  // Inject mixed-layer duplicates (simulating r2 runtime enrichment + C3 roll-up overlap)
+  model.edges.push(
+    {
+      id: "dup-runtime-gw-cat",
+      from: "ApiGateway",
+      to: "FruitCatalog.API",
+      protocol: "GATEWAY_ROUTE",
+      originLayer: "RUNTIME",
+      direction: "DIRECTED",
+      uncertain: false,
+      evidence: [],
+      properties: {},
+    },
+    {
+      id: "dup-c3-yarp-otel",
+      from: "c3-gw-yarp",
+      to: "otel-observability",
+      protocol: "TRACING_EXPORT",
+      originLayer: "STATIC",
+      direction: "DIRECTED",
+      uncertain: false,
+      evidence: [],
+      properties: {},
+    },
+    {
+      id: "dup-runtime-ord-cat",
+      from: "FruitOrdering.API",
+      to: "FruitCatalog.API",
+      protocol: "SERVICE_HTTP_CALL",
+      originLayer: "RUNTIME",
+      direction: "DIRECTED",
+      uncertain: false,
+      evidence: [],
+      properties: { client: "CatalogApiClient", resilience: "Polly StandardResilience" },
+    },
+  );
 
+  // Verify C1 & C2 projections also deduplicate cleanly across originLayer
+  const c1 = selectDiagram(model, "CONTEXT", undefined, { systemName: "Project Trái Cây Platform" });
+  assert.equal(c1.document.layoutJson.nodes.length, 5);
+  assert.equal(c1.document.layoutJson.edges.length, 4);
+
+  const c2 = selectDiagram(model, "CONTAINER", undefined, { systemName: "Project Trái Cây Platform" });
+  assert.equal(c2.document.layoutJson.nodes.length, 13);
+  assert.equal(c2.document.layoutJson.edges.length, 14);
+  const c2Keys = c2.document.layoutJson.edges.map((e) => `${e.from}->${e.to}::${e.relationType ?? e.type}`);
+  assert.equal(new Set(c2Keys).size, c2Keys.length);
+
+  const projection = projectGraphModel(model, false, "all");
   assert.equal(projection.model.elements.length, 12);
-  assert.equal(projection.filteredRelationships, 0);
-  assert.equal(projection.unassignedElements, 0);
-  assert.equal(projection.unassignedRelationships, 0);
+  assert.equal(projection.model.edges.length, 14);
+  const gwCatEdge = projection.model.edges.find((e) => e.from === "ApiGateway" && e.to === "FruitCatalog.API");
+  assert.equal(gwCatEdge.originLayer, "STATIC_AND_RUNTIME");
 
   const elements = networkElements(projection.model, null, undefined);
   const cyEdges = elements.filter((el) => el.group === "edges");
   assert.equal(cyEdges.length, 14);
-  for (const edge of cyEdges) {
-    assert.ok(edge.classes.includes("directed-static"));
-    assert.ok(edge.data.shortLabel);
+  const labels = new Set(cyEdges.map((e) => e.data.shortLabel));
+  assert.ok(labels.has("HTTP / HttpClient"), `Expected HTTP / HttpClient label, got ${[...labels].join(", ")}`);
+  assert.ok(labels.has("Route"));
+  assert.ok(labels.has("DB / Cache"));
+  assert.ok(labels.has("Publish"));
+  assert.ok(labels.has("Subscribe"));
+  assert.ok(labels.has("OTLP"));
+  for (const label of labels) {
+    assert.ok(!/feign|spring|eureka/i.test(label), `Unexpected Java/Spring label in C# graph: ${label}`);
   }
 
   const serviceOnlyModel = filterGraphCategories(projection.model, [
@@ -478,4 +548,10 @@ test("Project Trái Cây Dependency Graph projects 12 full nodes and filters cle
     ["ApiGateway", "FruitBasket.API", "FruitCatalog.API", "FruitOrdering.API"],
   );
   assert.equal(serviceOnlyModel.edges.length, 5);
+
+  // Verify SVG preview, 3E heading and network list lock down data-no-translate so "Admin" stays "Admin"
+  const svgViewerSrc = fs.readFileSync(path.join(root, "src/features/architecture/architecture-svg-viewer.tsx"), "utf8");
+  const threeESrc = fs.readFileSync(path.join(root, "src/features/architecture/selection-three-e.tsx"), "utf8");
+  assert.ok(svgViewerSrc.includes('data-no-translate="true"'));
+  assert.ok(threeESrc.includes('data-no-translate="true"'));
 });

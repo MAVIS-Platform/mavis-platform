@@ -135,7 +135,9 @@ export function projectGraphModel(
       internalRelationships++;
       continue;
     }
-    const key = JSON.stringify([from, to, edge.protocol, edge.originLayer]);
+    const key = showComponents
+      ? JSON.stringify([from, to, edge.protocol, edge.originLayer])
+      : JSON.stringify([from, to, edge.protocol]);
     const status = normalizeResolutionStatus(edge.resolutionStatus);
 
     let underList = groupUnderlying.get(key);
@@ -150,6 +152,18 @@ export function projectGraphModel(
       previous.underlyingEdgeIds!.push(edge.id);
       previous.uncertain ||= edge.uncertain;
       if (previous.resolutionStatus !== status) previous.resolutionStatus = "UNKNOWN";
+      const prevOrig = previous.originLayer;
+      const nextOrig = edge.originLayer;
+      if (prevOrig === "STATIC_AND_RUNTIME" || nextOrig === "STATIC_AND_RUNTIME") {
+        previous.originLayer = "STATIC_AND_RUNTIME";
+      } else if (
+        (prevOrig === "RUNTIME" && (nextOrig === "STATIC" || nextOrig === "CONFIG")) ||
+        ((prevOrig === "STATIC" || prevOrig === "CONFIG") && nextOrig === "RUNTIME")
+      ) {
+        previous.originLayer = "STATIC_AND_RUNTIME";
+      } else if (nextOrig === "RUNTIME") {
+        previous.originLayer = "RUNTIME";
+      }
       if (edge.properties) {
         const merged: Record<string, unknown> = { ...(previous.properties ?? {}) };
         for (const [k, v] of Object.entries(edge.properties)) {

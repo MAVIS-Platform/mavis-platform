@@ -286,12 +286,29 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         Map<UUID, ModelRelationship> copiedByBaseRelId = new LinkedHashMap<>();
         Map<String, List<ModelRelationship>> staticRelsByPairKey = new LinkedHashMap<>();
         Map<String, ModelRelationship> runtimeRelByPairKey = new LinkedHashMap<>();
+        Map<String, ModelRelationship> clonedByTriple = new LinkedHashMap<>();
 
         for (ModelRelationship baseRel : baseRelationships) {
             ModelElement newSrc = oldToNewElementMap.get(baseRel.getSourceElement().getId());
             ModelElement newTgt = oldToNewElementMap.get(baseRel.getTargetElement().getId());
 
             if (newSrc != null && newTgt != null) {
+                String tripleKey = newSrc.getId() + "->" + newTgt.getId() + "::" + baseRel.getRelationType();
+                ModelRelationship existingCopy = clonedByTriple.get(tripleKey);
+                if (existingCopy != null) {
+                    String prevOrigin = existingCopy.getOriginLayer();
+                    String nextOrigin = baseRel.getOriginLayer() != null ? baseRel.getOriginLayer() : "STATIC";
+                    if ("STATIC_AND_RUNTIME".equals(prevOrigin) || "STATIC_AND_RUNTIME".equals(nextOrigin)
+                            || ("RUNTIME".equals(prevOrigin) && !"RUNTIME".equals(nextOrigin))
+                            || (!"RUNTIME".equals(prevOrigin) && "RUNTIME".equals(nextOrigin))) {
+                        existingCopy.setOriginLayer("STATIC_AND_RUNTIME");
+                    }
+                    if (baseRel.getId() != null) {
+                        copiedByBaseRelId.put(baseRel.getId(), existingCopy);
+                    }
+                    continue;
+                }
+
                 ModelRelationship copyRel = ModelRelationship.builder()
                         .modelVersion(enrichedVersion)
                         .sourceElement(newSrc)
@@ -302,6 +319,7 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                         .properties(baseRel.getProperties() != null ? baseRel.getProperties().deepCopy() : null)
                         .build();
 
+                clonedByTriple.put(tripleKey, copyRel);
                 newRelationships.add(copyRel);
                 if (baseRel.getId() != null) {
                     newToBaseRelIdMap.put(copyRel, baseRel.getId());
