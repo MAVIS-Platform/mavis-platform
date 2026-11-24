@@ -142,14 +142,6 @@ export function GradingPanel({
                   guidedLab={guidedLab}
                 />
               )}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={query.isFetching}
-              onClick={() => void query.refetch()}
-            >
-              {t("Refresh review")}
-            </Button>
           </div>
         )}
       </RequestState>
@@ -681,19 +673,7 @@ export function GradeForm({
           disabled={save.isPending || (usePerSnapshot ? parsedSnapshots.invalid : !valid)}
           onClick={() => submit("DRAFT")}
         >
-          {t("Save grading draft")}
-        </Button>
-        <Button
-          variant="outline"
-          disabled={
-            save.isPending ||
-            (usePerSnapshot && parsedSnapshots.invalid) ||
-            !summary.trim() ||
-            (!guidedLab && (!valid || (!usePerSnapshot && value !== null && value > PASSING_SCORE)))
-          }
-          onClick={() => submit("RETURNED")}
-        >
-          {t("Return for changes")}
+          {t("Save grading draft", "Lưu nháp")}
         </Button>
         <Button
           className="bg-emerald-600 text-white hover:bg-emerald-700"
@@ -702,12 +682,17 @@ export function GradeForm({
             !canPublish ||
             !valid ||
             value === null ||
-            (!usePerSnapshot && value <= PASSING_SCORE) ||
             !summary.trim()
           }
-          onClick={() => submit("GRADED")}
+          onClick={() =>
+            submit(
+              !usePerSnapshot && value !== null && value <= PASSING_SCORE
+                ? "RETURNED"
+                : "GRADED",
+            )
+          }
         >
-          {t("Publish grade", "Công bố điểm")}
+          {t("Complete & publish grade", "Hoàn tất & Công bố điểm")}
         </Button>
       </div>
       {save.error && <ErrorState error={save.error} />}

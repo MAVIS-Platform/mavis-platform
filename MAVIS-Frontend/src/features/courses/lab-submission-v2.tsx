@@ -130,15 +130,6 @@ export function LabSubmissionV2({
   const submit = useApiMutation("submit");
   const [answer, setAnswer] = useState("");
   const [revising, setRevising] = useState(false);
-  const [mitigations, setMitigations] = useState<{
-    circuitBreaker: boolean;
-    databasePerService: boolean;
-    idempotencyKey: boolean;
-  }>({
-    circuitBreaker: true,
-    databasePerService: true,
-    idempotencyKey: true,
-  });
 
   useEffect(() => {
     try {
@@ -356,45 +347,6 @@ export function LabSubmissionV2({
               {submit.error.message}
             </p>
           )}
-          {showArchRubric && (
-            <div className="space-y-2.5 rounded-xl border border-teal-200/80 bg-teal-50/40 p-3.5 text-xs dark:border-teal-900 dark:bg-teal-950/20">
-              <p className="font-semibold text-teal-950 dark:text-teal-200">
-                {t("Architecture mitigation checklist", "Danh mục tiêu chí kiến trúc")}
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={mitigations.circuitBreaker}
-                    onChange={(e) =>
-                      setMitigations((m) => ({ ...m, circuitBreaker: e.target.checked }))
-                    }
-                  />
-                  {rubricProfile.items[0]}
-                </label>
-                <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={mitigations.databasePerService}
-                    onChange={(e) =>
-                      setMitigations((m) => ({ ...m, databasePerService: e.target.checked }))
-                    }
-                  />
-                  {rubricProfile.items[1]}
-                </label>
-                <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={mitigations.idempotencyKey}
-                    onChange={(e) =>
-                      setMitigations((m) => ({ ...m, idempotencyKey: e.target.checked }))
-                    }
-                  />
-                  {rubricProfile.items[2]}
-                </label>
-              </div>
-            </div>
-          )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <span className="text-xs text-muted-foreground">
@@ -420,27 +372,11 @@ export function LabSubmissionV2({
                 const snapshots = showArchRubric
                   ? [
                       {
-                        snapshotId: `c1-context-${assignmentId}`,
+                        snapshotId: `lab-analysis-${assignmentId}`,
                         step: "STEP_4",
-                        title: "C1 System Context Boundary",
-                        targetViewOrService: "api-gateway",
-                        writtenExplanation: trimmed,
-                        capturedAt: nowIso,
-                      },
-                      {
-                        snapshotId: `c2-container-${assignmentId}`,
-                        step: "STEP_4",
-                        title: `C2 Containers (${mitigations.databasePerService ? rubricProfile.items[1] : "Needs Isolation"})`,
+                        title: labTitle || "Architecture & Studio Analysis",
                         targetViewOrService: rubricProfile.c2Target,
-                        writtenExplanation: `${rubricProfile.items[0]}=${mitigations.circuitBreaker}, ${rubricProfile.items[1]}=${mitigations.databasePerService}`,
-                        capturedAt: nowIso,
-                      },
-                      {
-                        snapshotId: `c3-component-${assignmentId}`,
-                        step: "STEP_4",
-                        title: `C3 Component Contracts (${mitigations.idempotencyKey ? rubricProfile.items[2] : "Needs Guard"})`,
-                        targetViewOrService: rubricProfile.c3Target,
-                        writtenExplanation: `${rubricProfile.items[2]}=${mitigations.idempotencyKey}`,
+                        writtenExplanation: trimmed,
                         capturedAt: nowIso,
                       },
                     ]
@@ -449,19 +385,10 @@ export function LabSubmissionV2({
                   {
                     assignmentId,
                     runtimeSessionId: studio ? runtimeSessionId! : null,
-                    submissionNotes: showArchRubric
-                      ? `${trimmed}\n[CB=${mitigations.circuitBreaker}; DBPerService=${mitigations.databasePerService}; Idempotency=${mitigations.idempotencyKey}]`
-                      : trimmed,
-                    theoryAnswers: showArchRubric
-                      ? [
-                          { sectionId: "THEORY", title: "Theory explanation", answer: trimmed },
-                          {
-                            sectionId: "MITIGATION",
-                            title: "Reverse BFS & Resilience Mitigations",
-                            answer: `${rubricProfile.items[0]}=${mitigations.circuitBreaker}; ${rubricProfile.items[1]}=${mitigations.databasePerService}; ${rubricProfile.items[2]}=${mitigations.idempotencyKey}`,
-                          },
-                        ]
-                      : [{ sectionId: "THEORY", title: "Theory explanation", answer: trimmed }],
+                    submissionNotes: trimmed,
+                    theoryAnswers: [
+                      { sectionId: "THEORY", title: "Theory explanation", answer: trimmed },
+                    ],
                     ...(snapshots.length > 0 ? { studentSnapshots: snapshots } : {}),
                   },
                   {

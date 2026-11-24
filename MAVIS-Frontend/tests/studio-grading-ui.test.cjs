@@ -68,3 +68,16 @@ test("Studio Live uses original MAVIS Architecture Workbench layout with 4 disti
   assert.doesNotMatch(live, /bg-\[#FEF08A\]/, "MAVIS Studio Live must not copy 200Lab's yellow Post-it sticky note");
   assert.match(standalone, /missionCard=\{missionCardProps\}/);
 });
+
+test("Commit #06 cleans student submission evidence, enables dark-mode Mermaid preview and streamlines grading footer", () => {
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
+  const grading = read("src/features/submissions/grading.tsx");
+
+  assert.match(frozen, /style=\{isDark \? "dark" : "clean"\}/);
+  assert.match(frozen, /<details[^>]*>[\s\S]*Evidence package SHA-256/);
+  assert.doesNotMatch(subV2, /\[CB=|DBPerService=|sectionId: "MITIGATION"/);
+  assert.match(grading, /t\("Save grading draft", "Lưu nháp"\)/);
+  assert.match(grading, /t\("Complete & publish grade", "Hoàn tất & Công bố điểm"\)/);
+  assert.doesNotMatch(grading, /Return for changes|Refresh review/);
+});

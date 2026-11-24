@@ -1,9 +1,31 @@
 "use client";
+import { useEffect, useState } from "react";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { DetailPanel } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Submission } from "@/types/domain";
+
+function useIsDarkTheme() {
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    const check = () =>
+      document.documentElement.classList.contains("dark") ||
+      document.documentElement.dataset["theme"] === "dark";
+    setIsDark(check());
+    const observer = new MutationObserver(() => setIsDark(check()));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
+  return isDark;
+}
+
+function stripLegacySubmissionNoise(text: string): string {
+  return text.replace(/\n\[CB=[^\]]*\]\s*$/i, "").trim();
+}
 export function downloadArtifact(name: string, content: string, type = "application/json") {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const anchor = document.createElement("a");
@@ -42,21 +64,6 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
   const quizScorePercent = quizTotal > 0 ? Math.round((quizCorrect / quizTotal) * 100) : 0;
   return (
     <>
-      {submission.evidencePackageDigest && (
-        <div className="rounded-lg border bg-muted/20 px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground break-all">
-          {t("Evidence package SHA-256", "Mã băm gói minh chứng SHA-256")}: {submission.evidencePackageDigest}
-        </div>
-      )}
-      {quizEv && (
-        <div className="rounded-lg border bg-muted/20 p-3 text-xs">
-          <p className="font-medium">{t("Course Quiz Gate Proof", "Minh chứng Quiz Gate của Lab")}</p>
-          <p className="text-muted-foreground">
-            {quizEv.status === "NOT_REQUIRED"
-              ? t("NOT_REQUIRED · Theory Only", "KHÔNG BẮT BUỘC · Chỉ lý thuyết")
-              : `${quizEv.status} · ${quizCorrect}/${quizTotal} (${quizScorePercent}%${quizEv.passPercent != null ? ` · pass ≥ ${quizEv.passPercent}%` : ""}) · Quiz v${quizEv.quizVersion ?? 1}`}
-          </p>
-        </div>
-      )}
       {submission.studentSnapshots && submission.studentSnapshots.length > 0 && (
         <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs">
           <p className="font-medium">
@@ -82,7 +89,7 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
                 )}
                 {snap.writtenExplanation && (
                   <p className="mt-1 whitespace-pre-wrap text-foreground">
-                    {snap.writtenExplanation}
+                    {stripLegacySubmissionNoise(snap.writtenExplanation)}
                   </p>
                 )}
               </div>
@@ -90,12 +97,33 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
           </div>
         </div>
       )}
+      {quizEv && (
+        <div className="rounded-lg border bg-muted/20 p-3 text-xs">
+          <p className="font-medium">{t("Course Quiz Gate Proof", "Kết quả Quiz của Lab")}</p>
+          <p className="text-muted-foreground">
+            {quizEv.status === "NOT_REQUIRED"
+              ? t("NOT_REQUIRED · Theory Only", "KHÔNG BẮT BUỘC · Chỉ lý thuyết")
+              : `${quizEv.status} · ${quizCorrect}/${quizTotal} (${quizScorePercent}%${quizEv.passPercent != null ? ` · pass ≥ ${quizEv.passPercent}%` : ""}) · Quiz v${quizEv.quizVersion ?? 1}`}
+          </p>
+        </div>
+      )}
+      {submission.evidencePackageDigest && (
+        <details className="rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer font-medium text-foreground">
+            {t("Technical details & export", "Chi tiết kỹ thuật & xuất dữ liệu")}
+          </summary>
+          <div className="mt-2 font-mono leading-relaxed break-all">
+            {t("Evidence package SHA-256", "Mã băm gói minh chứng SHA-256")}: {submission.evidencePackageDigest}
+          </div>
+        </details>
+      )}
     </>
   );
 }
 
 export function FrozenArtifacts({ submission }: { submission: Submission }) {
   const { t } = useLocale();
+  const isDark = useIsDarkTheme();
   const layout = submission.diagramLayout;
   const isV2NoDiagram =
     !submission.diagramVersionId &&
@@ -107,7 +135,7 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
       <DetailPanel
         title={
           isV2NoDiagram
-            ? t("Frozen Lab evidence", "Minh chứng Lab đã đóng băng")
+            ? t("Frozen Lab evidence", "Minh chứng bài làm Lab")
             : t("Submitted diagram", "Sơ đồ đã nộp")
         }
       >
@@ -116,7 +144,7 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
           {isV2NoDiagram
             ? t(
                 "Frozen Lab v2 evidence package · No diagram artifact required for this Lab mode.",
-                "Gói minh chứng Lab v2 đã đóng băng · Chế độ Lab này không yêu cầu hiện vật sơ đồ riêng.",
+                "Bài làm Lab v2 · Chế độ Lab này không yêu cầu nộp sơ đồ riêng.",
               )
             : t(
                 `No diagram payload was returned for this submission. The pinned ID is ${submission.diagramVersionId ?? "unavailable"}.`,
@@ -133,14 +161,8 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
       }>)
     : [{ notation: submission.diagramNotation ?? "Diagram", layoutJson: layout }];
   return (
-    <DetailPanel title={t("Frozen submitted diagrams", "Sơ đồ đã đóng băng")}>
+    <DetailPanel title={t("Frozen submitted diagrams", "Sơ đồ đã nộp")}>
       <SubmissionEvidenceHeader submission={submission} />
-      <p className="break-all text-xs text-muted-foreground">
-        {t(
-          `Pinned bundle/version: ${submission.diagramVersionId}. Later edits do not change the contents below.`,
-          `Phiên bản sơ đồ đã ghim: ${submission.diagramVersionId}. Các chỉnh sửa sau này không làm thay đổi nội dung bên dưới.`,
-        )}
-      </p>
       {artifacts.map((artifact, index) => {
         const payload = artifact.layoutJson ?? {},
           dsl = payload["mermaidDsl"] ?? payload["mermaid"] ?? projectionDsl(payload);
@@ -155,28 +177,41 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
                 title={artifact.notation}
                 content={dsl}
                 format="MERMAID"
-                style="clean"
+                style={isDark ? "dark" : "clean"}
               />
             ) : (
               <p className="text-sm text-muted-foreground">
                 {t(
                   "Frozen architecture snapshot preserved as JSON evidence. Download its exact payload below.",
-                  "Snapshot kiến trúc đã đóng băng dưới dạng JSON minh chứng. Tải tệp chi tiết bên dưới.",
+                  "Bản chụp kiến trúc được lưu dưới dạng JSON minh chứng. Tải tệp chi tiết bên dưới.",
                 )}
               </p>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                downloadArtifact(
-                  `submitted-diagram-${index + 1}.json`,
-                  JSON.stringify(payload, null, 2),
-                )
-              }
-            >
-              {t("Download diagram JSON", "Tải JSON sơ đồ")}
-            </Button>
+            <details className="rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <summary className="cursor-pointer font-medium text-foreground">
+                {t("Technical details & export", "Chi tiết kỹ thuật & xuất dữ liệu")}
+              </summary>
+              <div className="mt-2 space-y-2">
+                <p className="break-all">
+                  {t(
+                    `Pinned bundle/version: ${submission.diagramVersionId}. Later edits do not change the contents below.`,
+                    `Phiên bản sơ đồ đã ghim: ${submission.diagramVersionId}. Các chỉnh sửa sau này không làm thay đổi nội dung bên dưới.`,
+                  )}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    downloadArtifact(
+                      `submitted-diagram-${index + 1}.json`,
+                      JSON.stringify(payload, null, 2),
+                    )
+                  }
+                >
+                  {t("Download diagram JSON", "Tải JSON sơ đồ")}
+                </Button>
+              </div>
+            </details>
           </section>
         );
       })}
