@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import com.mavis.common.entity.CourseDefinition;
 import com.mavis.common.entity.CourseModule;
 import com.mavis.common.entity.CourseItem;
+import com.mavis.common.entity.CourseVersion;
 import com.mavis.common.entity.User;
 import com.mavis.common.entity.Workspace;
 import com.mavis.common.exception.BusinessException;
@@ -329,5 +330,43 @@ class CourseAuthoringServiceTest {
         verify(items).deleteAll(List.of(item));
         verify(modules).delete(module);
         assertEquals(1, second.getPosition());
+    }
+
+    @Test
+    void publishedForLearnerPreservesInlineQuizQuestionsWhileStrippingLinkedQuizContent() {
+        course.setPublishedVersion(1);
+        var inlineQuestion = JsonNodeFactory.instance.objectNode()
+                .put("prompt", "Which service runs .NET 8?")
+                .put("correctOption", 0);
+        inlineQuestion.set("options", JsonNodeFactory.instance.arrayNode().add("payment-service").add("order-service"));
+        var inlineQuizItem = JsonNodeFactory.instance.objectNode()
+                .put("id", UUID.randomUUID().toString())
+                .put("type", "QUIZ")
+                .put("title", "Readiness Check");
+        inlineQuizItem.putNull("assignmentId");
+        inlineQuizItem.set("content", JsonNodeFactory.instance.objectNode()
+                .set("questions", JsonNodeFactory.instance.arrayNode().add(inlineQuestion)));
+
+        var linkedQuizItem = JsonNodeFactory.instance.objectNode()
+                .put("id", UUID.randomUUID().toString())
+                .put("type", "QUIZ")
+                .put("title", "Lab Quiz")
+                .put("assignmentId", UUID.randomUUID().toString());
+        linkedQuizItem.set("content", JsonNodeFactory.instance.objectNode().put("secret", "hidden"));
+
+        var mod = JsonNodeFactory.instance.objectNode().put("id", moduleId.toString());
+        mod.set("items", JsonNodeFactory.instance.arrayNode().add(inlineQuizItem).add(linkedQuizItem));
+        var snapshot = JsonNodeFactory.instance.objectNode();
+        snapshot.set("modules", JsonNodeFactory.instance.arrayNode().add(mod));
+
+        CourseVersion version = CourseVersion.builder().course(course).version(1).draftRevision(1)
+                .snapshot(snapshot).snapshotDigest("sha256:abc").build();
+        when(versions.findByCourseIdAndVersion(course.getId(), 1)).thenReturn(Optional.of(version));
+
+        var view = service.publishedForLearner(workspaceId);
+        var itemsNode = view.snapshot().path("modules").get(0).path("items");
+        assertEquals(1, itemsNode.get(0).path("content").path("questions").size());
+        assertEquals("Which service runs .NET 8?", itemsNode.get(0).path("content").path("questions").get(0).path("prompt").asText());
+        assertEquals(0, itemsNode.get(1).path("content").size());
     }
 }

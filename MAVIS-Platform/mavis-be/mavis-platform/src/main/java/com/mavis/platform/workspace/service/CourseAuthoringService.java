@@ -126,7 +126,14 @@ public class CourseAuthoringService {
             moduleNodes.forEach(moduleNode -> {
                 JsonNode itemNodes = moduleNode.path("items");
                 if (itemNodes.isArray()) itemNodes.forEach(itemNode -> {
-                    if ("QUIZ".equals(itemNode.path("type").asText())) ((com.fasterxml.jackson.databind.node.ObjectNode)itemNode).set("content", JsonNodeFactory.instance.objectNode());
+                    // Only strip assignment-linked quiz payloads (graded server-side via course_quizzes);
+                    // standalone inline module quizzes store their questions in content.questions.
+                    if ("QUIZ".equals(itemNode.path("type").asText())
+                            && itemNode.hasNonNull("assignmentId")
+                            && !itemNode.path("assignmentId").asText().isBlank()) {
+                        ((com.fasterxml.jackson.databind.node.ObjectNode) itemNode)
+                                .set("content", JsonNodeFactory.instance.objectNode());
+                    }
                 });
             });
         }

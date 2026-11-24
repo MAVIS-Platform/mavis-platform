@@ -1157,7 +1157,8 @@ test("Inline module quiz normalizes questions/IDs, Active class Settings shows P
     path.join(__dirname, "../src/features/courses/screens.tsx"),
     "utf8",
   );
-  assert.match(courseScreensSrc, /hasNoPublishedLabQuiz\s*=\s*studentContext\.isSuccess && studentContext\.data\?\.quiz == null/);
+  assert.match(courseScreensSrc, /quizNotPublished\s*\|\|\s*\(studentContext\.isSuccess && studentContext\.data\?\.quiz == null\)/);
+  assert.match(courseScreensSrc, /runtimePrerequisiteMissing\s*=\s*\n?\s*step === 2 && requiresRuntime && !runtimeReady && !preview && !studentContextLoading/);
 
   const accessSrc = fs.readFileSync(
     path.join(__dirname, "../src/features/workspaces/course-access.tsx"),

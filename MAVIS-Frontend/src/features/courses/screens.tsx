@@ -649,7 +649,14 @@ export function LabWorkspace() {
       (session.data?.user?.role === "student" || isLecturer),
     ),
   );
-  const hasNoPublishedLabQuiz = studentContext.isSuccess && studentContext.data?.quiz == null;
+  const quizNotPublished =
+    quiz.isError &&
+    typeof quiz.error === "object" &&
+    quiz.error !== null &&
+    "status" in quiz.error &&
+    (quiz.error as { status?: number }).status === 404;
+  const hasNoPublishedLabQuiz =
+    quizNotPublished || (studentContext.isSuccess && studentContext.data?.quiz == null);
   const runtimeReady =
     isTheoryOnlyLab ||
     isLecturer ||
@@ -1150,7 +1157,7 @@ export function LabWorkspace() {
                 router.push(labHref(1, view));
               }}
               studentContext={studentContext.data}
-              studentContextLoading={studentContext.isPending}
+              studentContextLoading={studentContext.isLoading}
             />
           </div>
         </div>
@@ -1277,7 +1284,8 @@ function StepContent({
     citations?: string[];
   } | null>(null);
   const runtimeConfigurationMissing = step === 2 && !requiresRuntime;
-  const runtimePrerequisiteMissing = step === 2 && requiresRuntime && !runtimeReady && !preview;
+  const runtimePrerequisiteMissing =
+    step === 2 && requiresRuntime && !runtimeReady && !preview && !studentContextLoading;
   const runtimeUnavailable = runtimeConfigurationMissing || runtimePrerequisiteMissing;
   const [runtimeConfigurationDialogOpen, setRuntimeConfigurationDialogOpen] = useState(false);
   const [phaseIssue, setPhaseIssue] = useState<LabPhaseIssueKind | null>(null);
