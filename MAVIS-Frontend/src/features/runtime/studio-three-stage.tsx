@@ -685,6 +685,7 @@ function createTopPlateTexture(
   T: ThreeModule,
   node: StudioThreeNode,
   styleId: StudioStyleId,
+  maxAnisotropy = 4,
 ): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = 256;
@@ -897,8 +898,9 @@ function createTopPlateTexture(
 
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
-  texture.minFilter = T.LinearFilter;
+  texture.minFilter = T.LinearMipmapLinearFilter;
   texture.magFilter = T.LinearFilter;
+  texture.anisotropy = maxAnisotropy;
   return texture;
 }
 
@@ -973,6 +975,7 @@ function createZonePlateGroup(
   depth: number,
   accentHex: string,
   isLight: boolean,
+  maxAnisotropy = 4,
 ): ZoneRig {
   const group = new T.Group();
   const { fillGeo, borderGeo, hd } = buildZoneGeometries(T, width, depth);
@@ -1038,7 +1041,9 @@ function createZonePlateGroup(
   }
   const tex = new T.CanvasTexture(canvas);
   tex.colorSpace = T.SRGBColorSpace;
-  tex.minFilter = T.LinearFilter;
+  tex.minFilter = T.LinearMipmapLinearFilter;
+  tex.magFilter = T.LinearFilter;
+  tex.anisotropy = maxAnisotropy;
   const badgeH = 0.28;
   const badgeNaturalW = badgeH * (canvas.width / canvas.height);
   const badgeW = Math.min(width - 0.2, badgeNaturalW);
@@ -1074,13 +1079,13 @@ function attachFrontTelemetryBar(
   frontZ: number,
   isDark: boolean,
 ) {
-  // Recessed dark telemetry bezel slot on front wall of container/gateway
+  // Sleek machined telemetry bezel slot on front wall of container/gateway
   const bezel = new T.Mesh(
-    new T.BoxGeometry(panelW, 0.11, 0.018),
+    new T.BoxGeometry(panelW, 0.082, 0.016),
     new T.MeshStandardMaterial({
       color: new T.Color(isDark ? "#020617" : "#0f172a"),
-      roughness: 0.45,
-      metalness: 0.25,
+      roughness: 0.35,
+      metalness: 0.45,
     }),
   );
   bezel.position.set(0, panelY, frontZ);
@@ -1094,26 +1099,26 @@ function attachFrontTelemetryBar(
       ? "#f59e0b"
       : "#10b981";
   const led = new T.Mesh(
-    new T.BoxGeometry(0.05, 0.05, 0.022),
+    new T.BoxGeometry(0.038, 0.038, 0.02),
     new T.MeshStandardMaterial({
       color: new T.Color(ledColor),
       emissive: new T.Color(ledColor),
-      emissiveIntensity: isDark ? 1.1 : 0.7,
+      emissiveIntensity: isDark ? 1.2 : 0.8,
       roughness: 0.2,
     }),
   );
-  led.position.set(-panelW / 2 + 0.055, panelY, frontZ + 0.004);
+  led.position.set(-panelW / 2 + 0.048, panelY, frontZ + 0.004);
   led.userData = { serviceId: node.id };
   parent.add(led);
 
   // Data-driven RAM utilization bar inside front bezel (CodeCity / live Docker memory mapping)
-  const trackW = Math.max(0.14, panelW - 0.17);
-  const trackCenterX = 0.045;
+  const trackW = Math.max(0.14, panelW - 0.15);
+  const trackCenterX = 0.038;
   const track = new T.Mesh(
-    new T.BoxGeometry(trackW, 0.036, 0.014),
+    new T.BoxGeometry(trackW, 0.028, 0.014),
     new T.MeshBasicMaterial({ color: new T.Color("#334155") }),
   );
-  track.position.set(trackCenterX, panelY - 0.012, frontZ + 0.005);
+  track.position.set(trackCenterX, panelY - 0.01, frontZ + 0.005);
   track.userData = { serviceId: node.id };
   parent.add(track);
 
@@ -1122,15 +1127,15 @@ function attachFrontTelemetryBar(
     const fillW = Math.max(0.03, (trackW * Math.min(100, ramPct)) / 100);
     const ramColor = ramPct >= 85 ? "#f43f5e" : ramPct >= 70 ? "#f59e0b" : "#10b981";
     const fill = new T.Mesh(
-      new T.BoxGeometry(fillW, 0.038, 0.018),
+      new T.BoxGeometry(fillW, 0.03, 0.018),
       new T.MeshStandardMaterial({
         color: new T.Color(ramColor),
         emissive: new T.Color(ramColor),
-        emissiveIntensity: isDark ? 0.9 : 0.55,
+        emissiveIntensity: isDark ? 0.95 : 0.6,
         roughness: 0.25,
       }),
     );
-    fill.position.set(trackCenterX - trackW / 2 + fillW / 2, panelY - 0.012, frontZ + 0.008);
+    fill.position.set(trackCenterX - trackW / 2 + fillW / 2, panelY - 0.01, frontZ + 0.008);
     fill.userData = { serviceId: node.id };
     parent.add(fill);
   }
@@ -1145,15 +1150,15 @@ function attachFrontTelemetryBar(
     const cpuFillW = Math.max(0.03, trackW * cpuRatio);
     const cpuColor = node.cpuThrottlePct ? "#f59e0b" : "#38bdf8";
     const cpuFill = new T.Mesh(
-      new T.BoxGeometry(cpuFillW, 0.018, 0.018),
+      new T.BoxGeometry(cpuFillW, 0.014, 0.018),
       new T.MeshStandardMaterial({
         color: new T.Color(cpuColor),
         emissive: new T.Color(cpuColor),
-        emissiveIntensity: 0.65,
+        emissiveIntensity: 0.7,
         roughness: 0.3,
       }),
     );
-    cpuFill.position.set(trackCenterX - trackW / 2 + cpuFillW / 2, panelY + 0.028, frontZ + 0.008);
+    cpuFill.position.set(trackCenterX - trackW / 2 + cpuFillW / 2, panelY + 0.02, frontZ + 0.008);
     cpuFill.userData = { serviceId: node.id };
     parent.add(cpuFill);
   }
@@ -1196,6 +1201,7 @@ function buildServiceRig(
   node: StudioThreeNode,
   styleId: StudioStyleId,
   sharedTex: SharedStageTextures | null,
+  maxAnisotropy = 4,
 ): AnimatedNodeRig {
   const group = new T.Group();
   const wx = node.wx * WORLD_SCALE;
@@ -1424,7 +1430,7 @@ function buildServiceRig(
   };
 
   let topY = 0.72;
-  const topTex = createTopPlateTexture(T, node, styleId);
+  const topTex = createTopPlateTexture(T, node, styleId, maxAnisotropy);
   const topPlateMat = new T.MeshBasicMaterial({
     map: topTex,
     polygonOffset: true,
@@ -1534,15 +1540,21 @@ function buildServiceRig(
     sculptureGroup.add(spire);
     attachGlowOrb([0, crownY + 0.26, 0], 0.048, 0.34);
 
-    // Compact angled UML «gateway» nameplate mounted cleanly on front collar bevel
+    // Sleek angled metallic console lectern for UML «gateway» nameplate (zero collar overlap)
+    const lectern = new T.Group();
+    lectern.position.set(0, plinthH + 0.145, 0.44);
+    lectern.rotation.x = -Math.PI / 3.8;
+    const lecternBack = new T.Mesh(new T.BoxGeometry(0.36, 0.23, 0.016), darkMetalMat);
+    lecternBack.userData = { serviceId: node.id };
+    lectern.add(lecternBack);
     const gwPlate = new T.Mesh(new T.PlaneGeometry(0.34, 0.21), topPlateMat);
-    gwPlate.position.set(0, plinthH + baseCollarH + 0.03, 0.39);
-    gwPlate.rotation.x = -Math.PI / 3.4;
+    gwPlate.position.z = 0.01;
     gwPlate.userData = { serviceId: node.id };
-    sculptureGroup.add(gwPlate);
+    lectern.add(gwPlate);
+    sculptureGroup.add(lectern);
 
     if (!node.isStopped) {
-      attachFrontTelemetryBar(T, sculptureGroup, node, 0.74, plinthH * 0.62, plinthD / 2 + 0.012, isDark);
+      attachFrontTelemetryBar(T, sculptureGroup, node, 0.74, plinthH * 0.56, plinthD / 2 + 0.012, isDark);
     }
     topY = crownY + 0.31;
   } else if (visualArchetype === "DATABASE") {
@@ -2651,12 +2663,14 @@ export function StudioThreeStage({
     const deckGroup = new T.Group();
     deckGroup.position.set(deckCx, 0, deckCz);
 
+    const maxAnisotropy = Math.min(8, rendererRef.current?.capabilities.getMaxAnisotropy() ?? 4);
     const deckTopMat = new T.MeshPhysicalMaterial({
-      color: new T.Color(styleCfg.deckTopFill),
-      roughness: styleId === "control" ? 0.34 : styleId === "pop" ? 0.55 : 0.48,
-      metalness: styleId === "control" ? 0.32 : 0.06,
-      clearcoat: styleId === "control" ? 0.55 : styleId === "daylight" ? 0.38 : 0.18,
-      clearcoatRoughness: 0.32,
+      color: new T.Color(styleId === "control" ? "#070c18" : styleCfg.deckTopFill),
+      roughness: styleId === "control" ? 0.64 : styleId === "pop" ? 0.55 : 0.48,
+      metalness: styleId === "control" ? 0.16 : 0.06,
+      clearcoat: styleId === "control" ? 0.2 : styleId === "daylight" ? 0.38 : 0.18,
+      clearcoatRoughness: styleId === "control" ? 0.45 : 0.32,
+      envMapIntensity: styleId === "control" ? 0.32 : 0.8,
     });
     const deckSkirtMat = new T.MeshPhysicalMaterial({
       color: new T.Color(styleId === "control" ? "#0f172a" : styleId === "blueprint" ? "#93c5fd" : styleId === "pop" ? "#0f172a" : "#cbd5e1"),
@@ -2760,6 +2774,7 @@ export function StudioThreeStage({
         zl.depth,
         spec.accent,
         isLight,
+        maxAnisotropy,
       );
       zoneRig.group.position.set(zl.cx, 0, zl.cz);
       contentGroup.add(zoneRig.group);
@@ -2775,7 +2790,7 @@ export function StudioThreeStage({
         dropHoverService === node.id
           ? { ...node, isDropTarget: true }
           : node;
-      const rig = buildServiceRig(T, effectiveNode, styleId, sharedTexRef.current);
+      const rig = buildServiceRig(T, effectiveNode, styleId, sharedTexRef.current, maxAnisotropy);
       rig.labelSprite.visible = showNodeTagsRef.current;
       contentGroup.add(rig.group);
       nodeRigsRef.current.push(rig);
