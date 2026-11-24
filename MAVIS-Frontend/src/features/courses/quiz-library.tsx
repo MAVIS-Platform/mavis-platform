@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileQuestion, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,7 +42,6 @@ const EMPTY: Draft = { title: "", description: "", passPercent: 70, questions: [
 
 export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
-  const params = useSearchParams();
   const cache = useQueryClient();
   const course = useCourseAuthoring(workspaceId);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -128,9 +126,9 @@ export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
     </div>
   </section>;
 
-  return params.get("flow") === "first-setup" ? (
+  return (
     <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="quiz">
       {content}
     </CourseSetupFlowFrame>
-  ) : content;
+  );
 }

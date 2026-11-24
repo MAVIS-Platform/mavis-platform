@@ -459,19 +459,16 @@ export function LabAuthoring() {
       ) : section === "library" ? (
         <Assignments embedded />
       ) : (
-        <TheoryLibrary />
+        <TheoryLibrary embedded />
       )}
     </div>
   );
 
-  const displayedContent =
-    params?.get("flow") === "first-setup" ? (
-      <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lab">
-        {hubContent}
-      </CourseSetupFlowFrame>
-    ) : (
-      hubContent
-    );
+  const displayedContent = (
+    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lab">
+      {hubContent}
+    </CourseSetupFlowFrame>
+  );
 
   return (
     <RequestState query={workspaces} empty={!workspace}>

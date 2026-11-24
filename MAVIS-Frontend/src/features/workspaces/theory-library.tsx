@@ -60,7 +60,7 @@ function shortDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
 }
 
-export function TheoryLibrary() {
+export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
   const { t, locale } = useLocale();
   const params = useSearchParams();
   const selection = useSelection();
@@ -396,7 +396,7 @@ export function TheoryLibrary() {
     </div>
   );
 
-  return params?.get("flow") === "first-setup" ? (
+  return !embedded ? (
     <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lesson">
       {content}
     </CourseSetupFlowFrame>

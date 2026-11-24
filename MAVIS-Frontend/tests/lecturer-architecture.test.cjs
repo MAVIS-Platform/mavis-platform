@@ -54,8 +54,11 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   assert.match(referenceManager, /courseSetupStepHref\(workspaceId, "lesson"\)/);
   assert.match(referenceManager, /currentStep="repository"/);
   assert.match(lesson, /currentStep="lesson"/);
+  assert.match(lesson, /!embedded \?/);
   assert.match(quiz, /currentStep="quiz"/);
+  assert.doesNotMatch(quiz, /flow.*first-setup/);
   assert.match(lab, /currentStep="lab"/);
+  assert.match(lab, /<TheoryLibrary embedded \/>/);
   assert.match(workspace, /currentStep=\{requestedFlowStep\}/);
   assert.doesNotMatch(workspace, /CourseFirstSetupFlow/);
   assert.match(workspace, /\/references\?workspace=\$\{encodeURIComponent\(workspace\.id\)\}&from=first-setup/);

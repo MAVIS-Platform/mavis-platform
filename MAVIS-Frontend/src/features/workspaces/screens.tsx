@@ -478,7 +478,6 @@ export function WorkspaceOverview() {
   );
   const requestedView = params.get("view");
   const requestedFlowStep = params.get("flowStep") === "publish" ? "publish" : "arrange";
-  const inFirstSetupFlow = params.get("flow") === "first-setup";
   const activeTab =
     canManage && requestedView === "course-authoring"
       ? "authoring"
@@ -562,25 +561,18 @@ export function WorkspaceOverview() {
                 active={workspace.status === "ACTIVE"}
               />
             )}
-            {activeTab === "authoring" && canManage && canEdit &&
-              (inFirstSetupFlow ? (
-                <CourseSetupFlowFrame
-                  workspaceId={workspace.id}
-                  currentStep={requestedFlowStep}
-                >
-                  <CourseBuilder
-                    workspaceId={workspace.id}
-                    workspaceName={workspace.name}
-                    canCreateModules={courseAccess.canCreateModules}
-                  />
-                </CourseSetupFlowFrame>
-              ) : (
+            {activeTab === "authoring" && canManage && canEdit && (
+              <CourseSetupFlowFrame
+                workspaceId={workspace.id}
+                currentStep={requestedFlowStep}
+              >
                 <CourseBuilder
                   workspaceId={workspace.id}
                   workspaceName={workspace.name}
                   canCreateModules={courseAccess.canCreateModules}
                 />
-              ))}
+              </CourseSetupFlowFrame>
+            )}
             {activeTab === "content-actions" && canManage && canEdit && (
               <CourseContentHub workspaceId={workspace.id} />
             )}
