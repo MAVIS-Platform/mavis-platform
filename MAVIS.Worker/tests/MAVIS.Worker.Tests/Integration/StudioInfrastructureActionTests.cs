@@ -236,7 +236,7 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         var scaleCall = Assert.Single(docker.Calls, args => args.Contains("--scale"));
         var waitIdx = scaleCall.ToList().IndexOf("--wait-timeout");
         Assert.True(waitIdx >= 0 && waitIdx + 1 < scaleCall.Count);
-        Assert.Equal("60", scaleCall[waitIdx + 1]);
+        Assert.Equal("120", scaleCall[waitIdx + 1]);
     }
 
     [Theory]
