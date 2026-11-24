@@ -430,8 +430,11 @@ test("Moc Huong v4 C1 Context uses 3 confirmed roles and Vietnamese business act
   assert.ok(!visibleCellValues.includes("HTTP call (declared)"));
   assert.ok(!visibleCellValues.includes("Exports traces (configured)"));
   assert.ok(!visibleCellValues.includes("Unknown element"));
-  assert.ok(!visibleCellValues.toLowerCase().includes("mavis"));
+  assert.ok(!visibleCellValues.includes("OpenTelemetry &amp; MAVIS"));
   assert.ok(!visibleCellValues.toLowerCase().includes("quản trị hệ thống"));
+  for (const n of selection.document.layoutJson.nodes) {
+    assert.ok(!n.name.toLowerCase().includes("mavis"), `Architecture node should not mention MAVIS: ${n.name}`);
+  }
 
   const contextDrawio = buildContextDiagramDrawioXml(model, "Mộc Hương Shop Platform").replace(
     /&#xa;|\s+/g,

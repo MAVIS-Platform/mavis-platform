@@ -135,7 +135,9 @@ export function projectGraphModel(
       internalRelationships++;
       continue;
     }
-    const key = JSON.stringify([from, to, edge.protocol]);
+    const key = showComponents
+      ? JSON.stringify([from, to, edge.protocol, edge.originLayer])
+      : JSON.stringify([from, to, edge.protocol]);
     const status = normalizeResolutionStatus(edge.resolutionStatus);
 
     let underList = groupUnderlying.get(key);
