@@ -987,7 +987,8 @@ export function LiveTerminalConsole({
                       </span>
                     )}
                     <span
-                      className={`mt-0.5 inline-flex w-10 shrink-0 justify-center rounded px-1 py-px text-[9.5px] font-bold tracking-wide ${badgeClass}`}
+                      data-no-translate
+                      className={`mt-0.5 inline-flex w-10 shrink-0 justify-center whitespace-nowrap rounded px-1 py-px text-[9.5px] font-bold tracking-wide ${badgeClass}`}
                     >
                       {badgeText}
                     </span>

@@ -2149,11 +2149,11 @@ export const SCREEN_TOUR_CATALOG = {
         selectors: ['[data-tour="studio-tool-rail"]'],
         title: {
           en: "5. Quick Panel Switcher",
-          vi: "5. Thanh mở nhanh 5 bảng công cụ",
+          vi: "5. Thanh chuyển nhanh bảng công cụ",
         },
         description: {
-          en: "Open or hide the 5 panels from top to bottom: Mission, Service Controls, Impact Diagnostics, Snapshots, and Logs & Traces.",
-          vi: "Bật/tắt nhanh 5 bảng từ trên xuống: Nhiệm vụ Lab, Điều khiển Service, Chẩn đoán Impact, Lịch sử Snapshot và Logs & Traces.",
+          en: "Open or hide panels from top to bottom: Mission, Service Controls, Impact Diagnostics, Snapshots (when Docker is running), and Logs & Traces.",
+          vi: "Bật/tắt nhanh các bảng từ trên xuống: Mục tiêu Lab, Điều khiển Service, Chẩn đoán Impact, Lịch sử Snapshot (khi Docker đang chạy) và Log & Trace.",
         },
       },
       {

@@ -33,6 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Response } from "@/lib/api/contracts";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { StudioQuickAction } from "./studio-observability";
 import { resolveStudioSidebarIconClass, type StudioStyleId } from "./studio-styles";
 import {
@@ -285,6 +286,8 @@ export function LiveSandboxParity({
   onSelectSetupPanel,
   studioStyle = "daylight",
 }: LiveSandboxParityProps) {
+  const { t } = useLocale();
+  const isLight = studioStyle !== "control";
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -371,7 +374,7 @@ export function LiveSandboxParity({
       aria-label={label}
       className={
         compact
-          ? "space-y-3 text-slate-100"
+          ? `space-y-3 ${isLight ? "text-slate-900" : "text-slate-100"}`
           : "space-y-3 rounded-xl border border-slate-700 bg-slate-900/70 p-3 pr-1 text-slate-100 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
       }
     >
@@ -443,16 +446,30 @@ export function LiveSandboxParity({
 
       {show("library") &&
         (compact ? (
-          <section aria-label="Block library" className="space-y-3.5 text-slate-100">
+          <section
+            aria-label="Block library"
+            className={`space-y-3.5 ${isLight ? "text-slate-900" : "text-slate-100"}`}
+          >
             {/* 1. Services Explorer Header & Search */}
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-0.5">
                 <div className="flex items-center gap-1.5">
-                  <Boxes aria-hidden="true" className="size-3.5 text-slate-400" />
-                  <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-300">
-                    Services
+                  <Boxes
+                    aria-hidden="true"
+                    className={`size-3.5 ${isLight ? "text-slate-500" : "text-slate-400"}`}
+                  />
+                  <h4
+                    className={`text-[11px] font-semibold uppercase tracking-wider ${
+                      isLight ? "text-slate-700" : "text-slate-300"
+                    }`}
+                  >
+                    {t("Services", "Danh sách Service")}
                   </h4>
-                  <span className="rounded-full bg-slate-800/90 px-1.5 py-0.2 font-mono text-[10px] font-medium tabular-nums text-slate-400">
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 font-mono text-[10px] font-medium tabular-nums ${
+                      isLight ? "bg-slate-200/80 text-slate-700" : "bg-slate-800/90 text-slate-400"
+                    }`}
+                  >
                     {blocks.length}
                   </span>
                 </div>
@@ -460,9 +477,13 @@ export function LiveSandboxParity({
                   <button
                     type="button"
                     onClick={() => onSelect("")}
-                    className="rounded px-1.5 py-0.5 text-[10px] text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+                    className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
+                      isLight
+                        ? "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                        : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                    }`}
                   >
-                    Deselect
+                    {t("Deselect", "Bỏ chọn")}
                   </button>
                 )}
               </div>
@@ -471,21 +492,27 @@ export function LiveSandboxParity({
                 <label className="relative block">
                   <Search
                     aria-hidden="true"
-                    className="pointer-events-none absolute left-2.5 top-2 size-3 text-slate-500"
+                    className={`pointer-events-none absolute left-2.5 top-2 size-3 ${
+                      isLight ? "text-slate-400" : "text-slate-500"
+                    }`}
                   />
                   <Input
                     type="search"
-                    aria-label="Search Live blocks"
-                    placeholder="Filter services…"
+                    aria-label={t("Search Live blocks", "Tìm service")}
+                    placeholder={t("Filter services…", "Lọc tên service…")}
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    className="h-7 rounded-lg border-slate-800 bg-slate-950/80 pl-7 text-[11px] placeholder:text-slate-500 focus-visible:border-sky-500/50"
+                    className={`h-7 rounded-lg pl-7 text-[11px] focus-visible:border-sky-500/50 ${
+                      isLight
+                        ? "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400"
+                        : "border-slate-800 bg-slate-950/80 text-slate-100 placeholder:text-slate-500"
+                    }`}
                   />
                 </label>
               )}
 
-              {/* Clean Flat IDE Service Tree Rows */}
-              <ul className="space-y-0.5">
+              {/* Clean Theme-Aware Service Tree Rows (Badges wrap onto sub-row so service names never truncate) */}
+              <ul className="space-y-1">
                 {visibleBlocks.map((block) => {
                   const live = runningReplicas(data, block.service);
                   const isSelected = selected === block.service;
@@ -498,11 +525,11 @@ export function LiveSandboxParity({
                   const statusDot =
                     live === undefined
                       ? startsStopped
-                        ? "bg-amber-400"
-                        : "bg-emerald-400"
+                        ? "bg-amber-500"
+                        : "bg-emerald-500"
                       : live === 0
-                        ? "bg-rose-400"
-                        : "bg-emerald-400";
+                        ? "bg-rose-500"
+                        : "bg-emerald-500";
                   const replicaText =
                     live === undefined
                       ? startsStopped
@@ -514,6 +541,9 @@ export function LiveSandboxParity({
                   const isImpactTarget = authoring?.impactTargetService === block.service;
                   const isPredictedImpacted = Boolean(
                     authoring?.predictedImpactedServices?.includes(block.service),
+                  );
+                  const hasAuthorBadges = Boolean(
+                    authoring && (startsStopped || isImpactTarget || isPredictedImpacted || isScalable),
                   );
                   return (
                     <li
@@ -530,92 +560,142 @@ export function LiveSandboxParity({
                           authoring.onDropAuthorChip(chipId, block.service);
                         }
                       }}
-                      className={`group relative flex items-center justify-between gap-1.5 rounded-lg px-2 py-1.5 text-[11px] transition-colors ${
+                      className={`group relative rounded-lg px-2 py-1.5 text-[11px] transition-colors ${
                         isSelected
-                          ? "bg-sky-500/12 text-white ring-1 ring-inset ring-sky-500/45"
-                          : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
+                          ? isLight
+                            ? "bg-sky-50 text-sky-950 ring-1 ring-inset ring-sky-400/70"
+                            : "bg-sky-500/12 text-white ring-1 ring-inset ring-sky-500/45"
+                          : isLight
+                            ? "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                            : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
                       }`}
                     >
                       {isSelected && (
                         <span
                           aria-hidden="true"
-                          className="absolute inset-y-1.5 left-0 w-0.5 rounded-r bg-sky-400"
+                          className={`absolute inset-y-1.5 left-0 w-0.5 rounded-r ${
+                            isLight ? "bg-sky-600" : "bg-sky-400"
+                          }`}
                         />
                       )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isSelected) {
-                            onSelect("");
-                          } else {
-                            onSelect(block.service);
-                            onSelectSetupPanel?.(authoring ? "presets" : "service");
-                          }
-                        }}
-                        aria-label={`Inspect ${block.label}`}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      >
-                        <span
-                          className={`size-1.5 shrink-0 rounded-full ${statusDot}`}
-                          aria-hidden="true"
-                        />
-                        {!authoring && renderLiveBlockIcon(block.service, studioStyle)}
-                        <span className="truncate font-mono text-[11px] font-medium">
-                          {block.label}
-                        </span>
-                      </button>
-
-                      <div className="flex shrink-0 items-center gap-1">
-                        {authoring && startsStopped && (
-                          <span className="rounded bg-rose-500/15 px-1 py-0.5 text-[9px] font-semibold text-rose-300">
-                            Down
-                          </span>
-                        )}
-                        {authoring && isImpactTarget && (
-                          <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] font-semibold text-amber-300">
-                            Target
-                          </span>
-                        )}
-                        {authoring && !isImpactTarget && isPredictedImpacted && (
-                          <span className="rounded bg-amber-500/10 px-1 py-0.5 text-[9px] font-medium text-amber-200">
-                            Impact
-                          </span>
-                        )}
-                        {authoring && isScalable && (
-                          <span className="rounded bg-sky-500/15 px-1 py-0.5 text-[9px] font-semibold text-sky-300">
-                            Scale
-                          </span>
-                        )}
-                        <span
-                          className={`min-w-[22px] rounded px-1 py-0.5 text-center font-mono text-[10px] tabular-nums ${
-                            isSelected
-                              ? "bg-sky-500/20 font-semibold text-sky-200"
-                              : live === 0
-                                ? "bg-rose-500/15 text-rose-300"
-                                : "bg-slate-900/90 text-slate-400"
-                          }`}
+                      <div className="flex items-center justify-between gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              onSelect("");
+                            } else {
+                              onSelect(block.service);
+                              onSelectSetupPanel?.(authoring ? "presets" : "service");
+                            }
+                          }}
+                          title={block.label}
+                          aria-label={`Inspect ${block.label}`}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
                         >
-                          {replicaText}
-                        </span>
-                        {authoring?.onRemoveBlock && blocks.length > 1 && (
-                          <button
-                            type="button"
-                            disabled={authoring.busy}
-                            onClick={() => authoring.onRemoveBlock?.(block.service)}
-                            title={`Remove ${block.service} from Studio topology`}
-                            aria-label={`Remove ${block.service} from Studio topology`}
-                            className="rounded p-0.5 text-slate-500 opacity-0 transition-opacity hover:bg-slate-800 hover:text-rose-300 focus:opacity-100 group-hover:opacity-100 disabled:opacity-30"
+                          <span
+                            className={`size-1.5 shrink-0 rounded-full ${statusDot}`}
+                            aria-hidden="true"
+                          />
+                          {!authoring && renderLiveBlockIcon(block.service, studioStyle)}
+                          <span className="truncate font-mono text-[11px] font-semibold">
+                            {block.label}
+                          </span>
+                        </button>
+
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span
+                            className={`min-w-[22px] rounded px-1 py-0.5 text-center font-mono text-[10px] tabular-nums ${
+                              isSelected
+                                ? isLight
+                                  ? "bg-sky-200/70 font-semibold text-sky-900"
+                                  : "bg-sky-500/20 font-semibold text-sky-200"
+                                : live === 0
+                                  ? isLight
+                                    ? "bg-rose-100 text-rose-700"
+                                    : "bg-rose-500/15 text-rose-300"
+                                  : isLight
+                                    ? "bg-slate-200/70 text-slate-600"
+                                    : "bg-slate-900/90 text-slate-400"
+                            }`}
                           >
-                            <X aria-hidden="true" className="size-3" />
-                          </button>
-                        )}
+                            {replicaText}
+                          </span>
+                          {authoring?.onRemoveBlock && blocks.length > 1 && (
+                            <button
+                              type="button"
+                              disabled={authoring.busy}
+                              onClick={() => authoring.onRemoveBlock?.(block.service)}
+                              title={t(
+                                `Remove ${block.service} from Studio topology`,
+                                `Gỡ ${block.service} khỏi sơ đồ Studio`,
+                              )}
+                              aria-label={`Remove ${block.service} from Studio topology`}
+                              className={`rounded p-0.5 opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100 disabled:opacity-30 ${
+                                isLight
+                                  ? "text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                  : "text-slate-500 hover:bg-slate-800 hover:text-rose-300"
+                              }`}
+                            >
+                              <X aria-hidden="true" className="size-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
+                      {hasAuthorBadges && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1 pl-3.5">
+                          {startsStopped && (
+                            <span
+                              className={`rounded px-1.5 py-px text-[9.5px] font-semibold ${
+                                isLight
+                                  ? "bg-rose-100 text-rose-700"
+                                  : "bg-rose-500/15 text-rose-300"
+                              }`}
+                            >
+                              {t("Down", "Tắt sẵn")}
+                            </span>
+                          )}
+                          {isImpactTarget && (
+                            <span
+                              className={`rounded px-1.5 py-px text-[9.5px] font-semibold ${
+                                isLight
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-amber-500/20 text-amber-300"
+                              }`}
+                            >
+                              {t("Target", "Mục tiêu")}
+                            </span>
+                          )}
+                          {!isImpactTarget && isPredictedImpacted && (
+                            <span
+                              className={`rounded px-1.5 py-px text-[9.5px] font-medium ${
+                                isLight
+                                  ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                                  : "bg-amber-500/10 text-amber-200"
+                              }`}
+                            >
+                              {t("Impact", "Ảnh hưởng")}
+                            </span>
+                          )}
+                          {isScalable && (
+                            <span
+                              className={`rounded px-1.5 py-px text-[9.5px] font-semibold ${
+                                isLight
+                                  ? "bg-sky-100 text-sky-800"
+                                  : "bg-sky-500/15 text-sky-300"
+                              }`}
+                            >
+                              Scale
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
                 {visibleBlocks.length === 0 && (
                   <li className="px-2 py-2 text-[11px] text-slate-500">
-                    No matching services.
+                    {t("No matching services.", "Không tìm thấy service phù hợp.")}
                   </li>
                 )}
               </ul>
@@ -631,9 +711,17 @@ export function LiveSandboxParity({
                 );
                 if (extraServices.length === 0) return null;
                 return (
-                  <div className="space-y-1.5 border-t border-slate-800/80 pt-3">
-                    <p className="px-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                      Add from Compose
+                  <div
+                    className={`space-y-1.5 border-t pt-3 ${
+                      isLight ? "border-slate-200" : "border-slate-800/80"
+                    }`}
+                  >
+                    <p
+                      className={`px-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                        isLight ? "text-slate-500" : "text-slate-500"
+                      }`}
+                    >
+                      {t("Add from Compose", "Thêm từ Docker Compose")}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {extraServices.map((svc) => (
@@ -642,7 +730,11 @@ export function LiveSandboxParity({
                           type="button"
                           disabled={authoring.busy}
                           onClick={() => authoring.onAddBlock?.(svc)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-700/90 bg-slate-900/50 px-2 py-1 font-mono text-[10.5px] text-slate-300 transition-colors hover:border-sky-500/60 hover:bg-sky-500/10 hover:text-sky-200 disabled:opacity-40"
+                          className={`inline-flex items-center gap-1.5 rounded-lg border border-dashed px-2 py-1 font-mono text-[10.5px] transition-colors disabled:opacity-40 ${
+                            isLight
+                              ? "border-slate-300 bg-slate-50 text-slate-700 hover:border-sky-500 hover:bg-sky-50 hover:text-sky-800"
+                              : "border-slate-700/90 bg-slate-900/50 text-slate-300 hover:border-sky-500/60 hover:bg-sky-500/10 hover:text-sky-200"
+                          }`}
                         >
                           <Plus aria-hidden="true" className="size-3 text-slate-400" />
                           {renderLiveBlockIcon(svc, studioStyle)}
@@ -656,9 +748,13 @@ export function LiveSandboxParity({
 
             {/* 3. Explicit Connections (when configured) */}
             {(topology?.connections.length ?? 0) > 0 && (
-              <div className="space-y-1.5 border-t border-slate-800/80 pt-3">
+              <div
+                className={`space-y-1.5 border-t pt-3 ${
+                  isLight ? "border-slate-200" : "border-slate-800/80"
+                }`}
+              >
                 <p className="px-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  Connections ({topology?.connections.length})
+                  {t("Connections", "Đường gọi")} ({topology?.connections.length})
                 </p>
                 <ul className="space-y-1">
                   {topology?.connections.map((link) => {
@@ -670,9 +766,13 @@ export function LiveSandboxParity({
                     return (
                       <li
                         key={`${link.from}:${link.to}:${link.controllerService}`}
-                        className="flex items-center justify-between gap-1.5 rounded-lg bg-slate-900/50 px-2 py-1.5 text-[10.5px]"
+                        className={`flex items-center justify-between gap-1.5 rounded-lg px-2 py-1.5 text-[10.5px] ${
+                          isLight ? "bg-slate-100/80" : "bg-slate-900/50"
+                        }`}
                       >
-                        <span className="truncate font-mono text-slate-300">
+                        <span
+                          className={`truncate font-mono ${isLight ? "text-slate-700" : "text-slate-300"}`}
+                        >
                           {link.from} → {link.to}
                         </span>
                         {linkRunning !== undefined ? (
@@ -684,11 +784,15 @@ export function LiveSandboxParity({
                             }
                             className={`h-5 shrink-0 rounded border px-1.5 text-[9.5px] font-semibold transition-colors disabled:opacity-40 ${
                               connected
-                                ? "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
-                                : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                                ? isLight
+                                  ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                                  : "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+                                : isLight
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                  : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
                             }`}
                           >
-                            {connected ? "Disconnect" : "Connect"}
+                            {connected ? t("Disconnect", "Ngắt") : t("Connect", "Nối")}
                           </button>
                         ) : authoring ? (
                           <button
@@ -699,11 +803,15 @@ export function LiveSandboxParity({
                             }
                             className={`h-5 shrink-0 rounded border px-1.5 text-[9.5px] font-medium ${
                               startsCut
-                                ? "border-amber-500/50 bg-amber-500/15 text-amber-200"
-                                : "border-slate-800 bg-slate-950/70 text-slate-400"
+                                ? isLight
+                                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                                  : "border-amber-500/50 bg-amber-500/15 text-amber-200"
+                                : isLight
+                                  ? "border-slate-200 bg-white text-slate-600"
+                                  : "border-slate-800 bg-slate-950/70 text-slate-400"
                             }`}
                           >
-                            {startsCut ? "Starts Cut" : "Active"}
+                            {startsCut ? t("Starts Cut", "Ngắt sẵn") : t("Active", "Đang nối")}
                           </button>
                         ) : null}
                       </li>
@@ -719,19 +827,31 @@ export function LiveSandboxParity({
               const isPreviewAuthor = !isLiveRunning && Boolean(authoring);
               const canDrag = !busy && (isLiveRunning || isPreviewAuthor);
               return (
-                <div className="space-y-2 border-t border-slate-800/80 pt-3">
+                <div
+                  className={`space-y-2 border-t pt-3 ${
+                    isLight ? "border-slate-200" : "border-slate-800/80"
+                  }`}
+                >
                   <div className="flex items-center justify-between gap-2 px-0.5">
-                    <p className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      <Wrench aria-hidden="true" className="size-3 text-slate-400" />
-                      Action Toolbox
+                    <p
+                      className={`flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider ${
+                        isLight ? "text-slate-600" : "text-slate-400"
+                      }`}
+                    >
+                      <Wrench aria-hidden="true" className="size-3 opacity-75" />
+                      {t("Action Toolbox", "Bộ công cụ nhanh")}
                     </p>
                     {selected ? (
-                      <span className="truncate rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-[9.5px] font-medium text-sky-300">
+                      <span
+                        className={`truncate rounded px-1.5 py-0.5 font-mono text-[9.5px] font-medium ${
+                          isLight ? "bg-sky-100 text-sky-800" : "bg-sky-500/15 text-sky-300"
+                        }`}
+                      >
                         {selected}
                       </span>
                     ) : (
                       <span className="truncate text-[9.5px] text-slate-500">
-                        Drag onto block
+                        {t("Drag onto block", "Kéo vào khối 3D")}
                       </span>
                     )}
                   </div>
@@ -761,27 +881,52 @@ export function LiveSandboxParity({
                           }}
                           onClick={() => {
                             if (!selected) {
-                              setMessage("Select a block on the canvas, or drag this tool onto one.");
+                              setMessage(
+                                t(
+                                  "Select a block on the canvas, or drag this tool onto one.",
+                                  "Chọn 1 khối trên sơ đồ, hoặc kéo thả công cụ này vào khối.",
+                                ),
+                              );
                               return;
                             }
                             if (blocked) return;
                             void command(tool.action, selected);
                           }}
-                          className={`group flex items-center justify-between gap-1.5 rounded-lg border border-slate-800 bg-slate-900/75 px-2.5 py-2 text-left text-[11px] font-medium text-slate-200 transition-colors ${
+                          className={`group flex items-center justify-between gap-1.5 rounded-lg border px-2.5 py-2 text-left text-[11px] font-medium transition-colors ${
+                            isLight
+                              ? tool.action === "STOP"
+                                ? "border-slate-200 bg-white text-slate-800 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800"
+                                : "border-slate-200 bg-white text-slate-800 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
+                              : `border-slate-800 bg-slate-900/75 text-slate-200 ${tool.hoverClass}`
+                          } ${
                             canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"
-                          } ${blocked && selected ? "opacity-45" : ""} ${tool.hoverClass}`}
+                          } ${blocked && selected ? "opacity-45" : ""}`}
                         >
                           <span className="flex min-w-0 items-center gap-1.5">
                             {tool.action === "STOP" ? (
-                              <Square aria-hidden="true" className={`size-3 shrink-0 fill-current ${tool.iconColor}`} />
+                              <Square
+                                aria-hidden="true"
+                                className={`size-3 shrink-0 fill-current ${
+                                  isLight ? "text-rose-600" : tool.iconColor
+                                }`}
+                              />
                             ) : (
-                              <RotateCcw aria-hidden="true" className={`size-3 shrink-0 ${tool.iconColor}`} />
+                              <RotateCcw
+                                aria-hidden="true"
+                                className={`size-3 shrink-0 ${
+                                  isLight ? "text-emerald-600" : tool.iconColor
+                                }`}
+                              />
                             )}
                             <span className="truncate">{tool.shortLabel}</span>
                           </span>
                           <GripVertical
                             aria-hidden="true"
-                            className="size-3 shrink-0 text-slate-600 transition-colors group-hover:text-slate-400"
+                            className={`size-3 shrink-0 transition-colors ${
+                              isLight
+                                ? "text-slate-300 group-hover:text-slate-500"
+                                : "text-slate-600 group-hover:text-slate-400"
+                            }`}
                           />
                         </button>
                       );
@@ -808,7 +953,12 @@ export function LiveSandboxParity({
                           }}
                           onClick={() => {
                             if (!selected) {
-                              setMessage("Select a block on the canvas, or drag this scale tool onto one.");
+                              setMessage(
+                                t(
+                                  "Select a block on the canvas, or drag this scale tool onto one.",
+                                  "Chọn 1 khối trên sơ đồ, hoặc kéo thả công cụ Scale vào khối.",
+                                ),
+                              );
                               return;
                             }
                             if (scaleBlocked) return;
@@ -821,14 +971,24 @@ export function LiveSandboxParity({
                                 : tool.replicas;
                             void command("SCALE", selected, next);
                           }}
-                          className={`flex flex-col items-center justify-center rounded-lg border border-slate-800 bg-slate-900/75 px-1.5 py-1.5 text-center transition-colors hover:border-sky-500/50 hover:bg-sky-500/10 ${
+                          className={`flex flex-col items-center justify-center rounded-lg border px-1.5 py-1.5 text-center transition-colors ${
+                            isLight
+                              ? "border-slate-200 bg-white hover:border-sky-400 hover:bg-sky-50"
+                              : "border-slate-800 bg-slate-900/75 hover:border-sky-500/50 hover:bg-sky-500/10"
+                          } ${
                             canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"
                           } ${scaleBlocked && selected ? "opacity-45" : ""}`}
                         >
-                          <span className="font-mono text-[11px] font-semibold text-sky-300">
+                          <span
+                            className={`font-mono text-[11px] font-semibold ${
+                              isLight ? "text-sky-700" : "text-sky-300"
+                            }`}
+                          >
                             {tool.badge}
                           </span>
-                          <span className="text-[9.5px] text-slate-400">{tool.sub}</span>
+                          <span className={`text-[9.5px] ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                            {tool.sub}
+                          </span>
                         </button>
                       );
                     })}
@@ -839,9 +999,13 @@ export function LiveSandboxParity({
 
             {/* 5. Compact Lab Setup Shortcuts */}
             {(authoring || data.executionStatus === "RUNNING") && (
-              <div className="space-y-1 border-t border-slate-800/80 pt-3">
+              <div
+                className={`space-y-1 border-t pt-3 ${
+                  isLight ? "border-slate-200" : "border-slate-800/80"
+                }`}
+              >
                 <p className="px-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  {authoring ? "Lab Setup" : "Practice"}
+                  {authoring ? t("Lab Setup", "Thiết lập Lab") : t("Practice", "Thực hành")}
                 </p>
                 {authoring && (
                   <div className="space-y-0.5">
@@ -850,24 +1014,40 @@ export function LiveSandboxParity({
                       onClick={() => onSelectSetupPanel?.("presets")}
                       className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
                         activeSetupPanel === "presets"
-                          ? "bg-amber-500/12 text-amber-200 ring-1 ring-inset ring-amber-500/35"
-                          : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
+                          ? isLight
+                            ? "bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-300"
+                            : "bg-amber-500/12 text-amber-200 ring-1 ring-inset ring-amber-500/35"
+                          : isLight
+                            ? "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                            : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
                       }`}
                     >
-                      <span className="truncate">Visual Builder</span>
-                      <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-600" />
+                      <span className="truncate">{t("Visual Builder", "Thiết kế 3D")}</span>
+                      <ChevronRight
+                        aria-hidden="true"
+                        className={`size-3.5 shrink-0 ${isLight ? "text-slate-400" : "text-slate-600"}`}
+                      />
                     </button>
                     <button
                       type="button"
                       onClick={() => onSelectSetupPanel?.("mission")}
                       className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
                         activeSetupPanel === "mission"
-                          ? "bg-sky-500/12 text-sky-200 ring-1 ring-inset ring-sky-500/35"
-                          : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
+                          ? isLight
+                            ? "bg-sky-50 text-sky-900 ring-1 ring-inset ring-sky-300"
+                            : "bg-sky-500/12 text-sky-200 ring-1 ring-inset ring-sky-500/35"
+                          : isLight
+                            ? "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                            : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
                       }`}
                     >
-                      <span className="truncate">Mission &amp; Advanced</span>
-                      <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-600" />
+                      <span className="truncate">
+                        {t("Mission & Advanced", "Đề bài & Nâng cao")}
+                      </span>
+                      <ChevronRight
+                        aria-hidden="true"
+                        className={`size-3.5 shrink-0 ${isLight ? "text-slate-400" : "text-slate-600"}`}
+                      />
                     </button>
                   </div>
                 )}
@@ -877,15 +1057,25 @@ export function LiveSandboxParity({
                     onClick={() => onSelectSetupPanel?.("drills")}
                     className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
                       activeSetupPanel === "drills"
-                        ? "bg-emerald-500/12 text-emerald-200 ring-1 ring-inset ring-emerald-500/35"
-                        : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
+                        ? isLight
+                          ? "bg-emerald-50 text-emerald-900 ring-1 ring-inset ring-emerald-300"
+                          : "bg-emerald-500/12 text-emerald-200 ring-1 ring-inset ring-emerald-500/35"
+                        : isLight
+                          ? "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                          : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
                     }`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <RotateCcw aria-hidden="true" className="size-3.5 shrink-0 text-emerald-400" />
-                      <span className="truncate">Quick Live Drills</span>
+                      <RotateCcw
+                        aria-hidden="true"
+                        className={`size-3.5 shrink-0 ${isLight ? "text-emerald-600" : "text-emerald-400"}`}
+                      />
+                      <span className="truncate">{t("Quick Live Drills", "Bài tập nhanh")}</span>
                     </span>
-                    <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-600" />
+                    <ChevronRight
+                      aria-hidden="true"
+                      className={`size-3.5 shrink-0 ${isLight ? "text-slate-400" : "text-slate-600"}`}
+                    />
                   </button>
                 )}
               </div>

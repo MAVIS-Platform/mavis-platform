@@ -603,7 +603,7 @@ export function LiveStudioWorkbench({
   const [showRight, setShowRight] = useState(() => Boolean(authoring));
   const [rightCardMode, setRightCardMode] = useState<"service" | "diagnostics">("service");
   const [missionCollapsed, setMissionCollapsed] = useState(false);
-  const [missionHidden, setMissionHidden] = useState(false);
+  const [missionHidden, setMissionHidden] = useState(() => Boolean(authoring));
   const [telemetryPopoverOpen, setTelemetryPopoverOpen] = useState(false);
   const [stylePopoverOpen, setStylePopoverOpen] = useState(false);
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
@@ -1691,10 +1691,14 @@ export function LiveStudioWorkbench({
                   captureLiveCanvasAsExercise();
                 }
               }}
-              title={t(
-                "Turn your live Docker actions into the graded Lab exercise",
-                "Dùng trạng thái và thao tác vừa thử làm đề bài Lab",
-              )}
+              title={
+                liveDemoDerived
+                  ? `${t("Turn your live Docker actions into the graded Lab exercise", "Dùng trạng thái và thao tác vừa thử làm đề bài Lab")}: ${liveDemoDerived.summary}`
+                  : t(
+                      "Turn your live Docker actions into the graded Lab exercise",
+                      "Dùng trạng thái và thao tác vừa thử làm đề bài Lab",
+                    )
+              }
               className="h-8 px-2.5 text-[12.5px]"
             >
               {authoring.saving
@@ -2539,8 +2543,8 @@ export function LiveStudioWorkbench({
 
               <button
                 type="button"
-                title={t("Logs & Traces", "Logs & Traces")}
-                aria-label={t("Logs & Traces", "Logs & Traces")}
+                title={t("Logs & Traces", "Log & Trace")}
+                aria-label={t("Logs & Traces", "Log & Trace")}
                 aria-pressed={!bottomCollapsed && tab !== "snapshots"}
                 onClick={() => {
                   if (!bottomCollapsed && tab !== "snapshots") {
@@ -2834,13 +2838,13 @@ export function LiveStudioWorkbench({
                         : t("STANDBY", "SẴN SÀNG")}
                 </span>
 
-                <span className="hidden max-w-[260px] truncate text-[13px] font-medium text-muted-foreground xl:inline">
-                  {faultedServices.length > 0
-                    ? t(`${faultedServices.join(", ")} faulted`, `${faultedServices.join(", ")} đang sự cố`)
-                    : data.executionStatus === "RUNNING"
-                      ? t("Click any node to act", "Bấm node để thao tác")
+                {(faultedServices.length > 0 || data.executionStatus !== "RUNNING") && (
+                  <span className="hidden max-w-[260px] truncate text-[13px] font-medium text-muted-foreground xl:inline">
+                    {faultedServices.length > 0
+                      ? t(`${faultedServices.join(", ")} faulted`, `${faultedServices.join(", ")} đang sự cố`)
                       : t("Boot real Docker stack", "Chạy Docker thật")}
-                </span>
+                  </span>
+                )}
 
                 <span className={`h-4 w-px shrink-0 ${isLight ? "bg-slate-200" : "bg-slate-700"}`} aria-hidden="true" />
 
@@ -3192,7 +3196,7 @@ export function LiveStudioWorkbench({
                 <button
                   type="button"
                   aria-label={dockExpanded ? "Collapse telemetry dock" : "Expand telemetry dock"}
-                  title={dockExpanded ? "Collapse dock" : "Expand dock"}
+                  title={dockExpanded ? t("Collapse dock", "Thu gọn ngăn dưới") : t("Expand dock", "Mở rộng ngăn dưới")}
                   onClick={() => {
                     if (bottomCollapsed) {
                       setBottomCollapsed(false);
@@ -3201,7 +3205,11 @@ export function LiveStudioWorkbench({
                       setBottomHeight(dockExpanded ? 232 : 400);
                     }
                   }}
-                  className="grid size-6 shrink-0 place-items-center rounded border border-slate-800 bg-slate-950/70 text-slate-400 transition-colors hover:border-slate-700 hover:text-slate-100"
+                  className={`grid size-6 shrink-0 place-items-center rounded border transition-colors ${
+                    isLight
+                      ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
+                      : "border-slate-800 bg-slate-950/70 text-slate-400 hover:border-slate-700 hover:text-slate-100"
+                  }`}
                 >
                   {dockExpanded ? (
                     <ChevronDown aria-hidden="true" className="size-3.5" />
@@ -3214,7 +3222,11 @@ export function LiveStudioWorkbench({
                   aria-label={t("Close logs drawer", "Đóng ngăn Logs & Telemetry")}
                   title={t("Close drawer", "Đóng")}
                   onClick={() => setBottomCollapsed(true)}
-                  className="grid size-6 shrink-0 place-items-center rounded border border-slate-800 bg-slate-950/70 text-slate-400 transition-colors hover:border-slate-700 hover:text-slate-100"
+                  className={`grid size-6 shrink-0 place-items-center rounded border transition-colors ${
+                    isLight
+                      ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
+                      : "border-slate-800 bg-slate-950/70 text-slate-400 hover:border-slate-700 hover:text-slate-100"
+                  }`}
                 >
                   <X aria-hidden="true" className="size-3.5" />
                 </button>
@@ -4803,7 +4815,15 @@ export function LiveStudioWorkbench({
         </div>
 
         {/* FLOATING RIGHT CONTEXTUAL CARD (Style-Aware, Freely Draggable & Resizable) */}
-        {showRight && (
+        {showRight && (() => {
+          const rightTopPx = Math.max(16, 16 + rightOffset.y);
+          // Reserve space above the open bottom drawer so drawer controls (Expand/Close/Filters) are never occluded.
+          const rightBottomReserve = !bottomCollapsed
+            ? bottomHeight + 24
+            : rightHeight != null || rightOffset.y !== 0
+              ? 16
+              : 100;
+          return (
           <aside
             ref={rightCardRef}
             data-tour="studio-service-inspector"
@@ -4812,18 +4832,13 @@ export function LiveStudioWorkbench({
               top: 16 + rightOffset.y,
               right: 16 - rightOffset.x,
               width: rightWidth,
-              maxHeight:
-                rightHeight != null || rightOffset.y !== 0
-                  ? `calc(100% - ${Math.max(16, 16 + rightOffset.y) + 16}px)`
-                  : undefined,
+              maxHeight: `calc(100% - ${rightTopPx + rightBottomReserve}px)`,
               ...(rightHeight != null ? { height: rightHeight } : {}),
               scrollbarWidth: "thin",
               scrollbarColor: isLight ? "#cbd5e1 #ffffff" : "#334155 #0a0f18",
             }}
             className={`pointer-events-auto absolute flex max-w-[calc(100%-1rem)] flex-col overflow-hidden ${
               frontPanel === "right" ? "z-30" : "z-20"
-            } ${
-              rightHeight != null ? "max-h-[calc(100%-2rem)]" : "max-h-[calc(100%-6.25rem)]"
             } ${styleCfg.floatingCardClass}`}
           >
             {/* Left-edge Horizontal Resize Handle */}
@@ -5784,34 +5799,7 @@ export function LiveStudioWorkbench({
                 const isLiveDemoMode = !isPreviewMode && data.executionStatus === "RUNNING";
 
                 return (
-                  <section aria-label="Visual Studio Builder" className="space-y-3 text-xs">
-                    {/* Author-by-Doing Banner when lecturer has performed live Docker actions */}
-                    {liveDemoDerived && authoring.onApplyLiveDemoAsExercise && (
-                      <div
-                        className={`space-y-2 rounded-xl border p-2.5 ${
-                          isLight
-                            ? "border-emerald-300 bg-emerald-50 text-emerald-950"
-                            : "border-emerald-500/40 bg-emerald-950/40 text-emerald-100"
-                        }`}
-                      >
-                        <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                          {t("Author by Doing", "Tự sinh đề từ thao tác vừa thử")}
-                        </p>
-                        <p className="font-mono text-[11px] font-semibold">{liveDemoDerived.summary}</p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={authoring.saving}
-                          onClick={() => authoring.onApplyLiveDemoAsExercise?.(liveDemoDerived)}
-                          className="h-7 w-full bg-emerald-600 text-[11.5px] font-semibold text-white hover:bg-emerald-500"
-                        >
-                          {authoring.saving
-                            ? t("Saving…", "Đang lưu…")
-                            : t("Use live actions as exercise", "Dùng thao tác vừa thử làm đề bài")}
-                        </Button>
-                      </div>
-                    )}
-
+                  <section aria-label="Visual Studio Builder" className="space-y-2.5 text-xs">
                     {/* 1. 4-Card Exercise Goal Picker (Zero Icons / Zero Jargon) */}
                     <div className="space-y-1.5">
                       <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -5857,65 +5845,25 @@ export function LiveStudioWorkbench({
                       </div>
                     </div>
 
-                    {/* 2. Draggable Chips onto 3D Blocks (or Click for Selected Block) */}
-                    <div className="space-y-1.5">
-                      <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
-                        {t("2. Drag onto 3D block (or click)", "2. Kéo thả lên khối 3D (hoặc bấm)")}
-                      </p>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {AUTHOR_DRAG_CHIPS.map((chip) => {
-                          const toneClass =
-                            chip.accent === "rose"
-                              ? isLight
-                                ? "border-rose-300 bg-rose-50/70 text-rose-800 hover:bg-rose-100"
-                                : "border-rose-500/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
-                              : chip.accent === "amber"
-                                ? isLight
-                                  ? "border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100"
-                                  : "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
-                                : chip.accent === "sky"
-                                  ? isLight
-                                    ? "border-sky-300 bg-sky-50/80 text-sky-900 hover:bg-sky-100"
-                                    : "border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
-                                  : isLight
-                                    ? "border-violet-300 bg-violet-50/80 text-violet-900 hover:bg-violet-100"
-                                    : "border-violet-500/40 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20";
-                          return (
-                            <button
-                              key={chip.id}
-                              type="button"
-                              draggable={!authoring.busy}
-                              disabled={authoring.busy || !svc}
-                              title={t(chip.hintEn, chip.hintVi)}
-                              onDragStart={(event) => {
-                                event.dataTransfer.setData("application/x-mavis-studio-tool", chip.id);
-                                event.dataTransfer.setData("text/plain", chip.id);
-                                event.dataTransfer.effectAllowed = "copy";
-                              }}
-                              onClick={() => svc && authoring.onApplyBlockChip?.(chip.id, svc)}
-                              className={`cursor-grab rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${toneClass}`}
-                            >
-                              {t(chip.labelEn, chip.labelVi)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* 3. Selected 3D Block Direct Controls */}
+                    {/* 2. Unified Selected 3D Block Controls & Draggable Chips (Click for selected block OR drag onto any 3D block) */}
                     <div
                       className={`space-y-2 rounded-xl border p-2.5 ${
                         isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/70"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                            {t("2. Block Rules · Drag or click", "2. Cấu hình khối · Kéo thả hoặc bấm")}
+                          </p>
+                          <span
+                            className={`block truncate font-mono text-xs font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
+                          >
+                            {svc || t("Click a 3D block", "Bấm chọn 1 khối 3D")}
+                          </span>
+                        </div>
                         <span
-                          className={`truncate font-mono text-xs font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
-                        >
-                          {svc || t("Click a 3D block", "Bấm chọn 1 khối 3D")}
-                        </span>
-                        <span
-                          className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
+                          className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
                             startsDown
                               ? isLight
                                 ? "border-rose-300 bg-rose-50 text-rose-700"
@@ -5937,82 +5885,89 @@ export function LiveStudioWorkbench({
                         </span>
                       </div>
 
-                      {svc && (
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={authoring.busy}
-                            onClick={() => authoring.onToggleInitialStopped(svc, false)}
-                            className="h-7 text-[11px] font-semibold"
-                          >
-                            {startsDown
-                              ? t("Set Starts Up", "Bật lại ban đầu")
-                              : t("Set Starts Down", "Đặt sự cố ban đầu")}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={authoring.busy}
-                            onClick={() => authoring.onApplyBlockChip?.("author-impact-target", svc)}
-                            className={`h-7 text-[11px] font-semibold ${
-                              isImpactTarget
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {AUTHOR_DRAG_CHIPS.map((chip) => {
+                          const isChipActive =
+                            chip.id === "author-starts-down"
+                              ? startsDown
+                              : chip.id === "author-impact-target"
+                                ? isImpactTarget
+                                : chip.id === "author-scale-2x"
+                                  ? canScale || scaleTargetCount >= 2
+                                  : isCpuTarget;
+                          const activeBadge =
+                            chip.id === "author-scale-2x" && scaleTargetCount >= 2
+                              ? `${scaleTargetCount}x`
+                              : isChipActive
+                                ? "ON"
+                                : null;
+                          const labelText =
+                            chip.id === "author-scale-2x" && scaleTargetCount === 2
+                              ? t("Scale 2x -> 3x", "Scale 2x -> 3x")
+                              : t(chip.labelEn, chip.labelVi);
+                          const toneClass = isChipActive
+                            ? chip.accent === "rose"
+                              ? isLight
+                                ? "border-rose-500 bg-rose-100/90 text-rose-900 ring-1 ring-rose-400/50"
+                                : "border-rose-400 bg-rose-500/25 text-rose-100 ring-1 ring-rose-400/50"
+                              : chip.accent === "amber"
                                 ? isLight
-                                  ? "border-amber-400 bg-amber-50 text-amber-900"
-                                  : "border-amber-400/60 bg-amber-500/20 text-amber-200"
-                                : ""
-                            }`}
-                          >
-                            {isImpactTarget
-                              ? t("Clear Impact Target", "Bỏ mục tiêu Impact")
-                              : t("Set Impact Target", "Đặt mục tiêu Impact")}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={authoring.busy}
-                            onClick={() =>
-                              scaleTargetCount === 2
-                                ? authoring.onSetReplicaTarget?.(svc, 3)
-                                : authoring.onSetReplicaTarget?.(svc, 2)
-                            }
-                            className={`h-7 text-[11px] font-semibold ${
-                              canScale || scaleTargetCount >= 2
+                                  ? "border-amber-500 bg-amber-100/90 text-amber-950 ring-1 ring-amber-400/50"
+                                  : "border-amber-400 bg-amber-500/25 text-amber-100 ring-1 ring-amber-400/50"
+                                : chip.accent === "sky"
+                                  ? isLight
+                                    ? "border-sky-500 bg-sky-100/90 text-sky-950 ring-1 ring-sky-400/50"
+                                    : "border-sky-400 bg-sky-500/25 text-sky-100 ring-1 ring-sky-400/50"
+                                  : isLight
+                                    ? "border-violet-500 bg-violet-100/90 text-violet-950 ring-1 ring-violet-400/50"
+                                    : "border-violet-400 bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/50"
+                            : chip.accent === "rose"
+                              ? isLight
+                                ? "border-rose-200 bg-white text-rose-800 hover:border-rose-400 hover:bg-rose-50"
+                                : "border-rose-500/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+                              : chip.accent === "amber"
                                 ? isLight
-                                  ? "border-sky-400 bg-sky-50 text-sky-900"
-                                  : "border-sky-400/60 bg-sky-500/20 text-sky-200"
-                                : ""
-                            }`}
-                          >
-                            {scaleTargetCount >= 2
-                              ? `Scale >= ${scaleTargetCount}x (${scaleTargetCount === 2 ? "-> 3x" : "2x"})`
-                              : canScale
-                                ? t("Scalable · Set 2x", "Cho Scale · Đặt 2x")
-                                : t("Allow Scale 2x", "Cho phép Scale 2x")}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={authoring.busy}
-                            onClick={() => authoring.onApplyBlockChip?.("author-cpu-target", svc)}
-                            className={`h-7 text-[11px] font-semibold ${
-                              isCpuTarget
-                                ? isLight
-                                  ? "border-violet-400 bg-violet-50 text-violet-900"
-                                  : "border-violet-400/60 bg-violet-500/20 text-violet-200"
-                                : ""
-                            }`}
-                          >
-                            {isCpuTarget
-                              ? t("Clear CPU 25%", "Bỏ bóp CPU 25%")
-                              : t("Target CPU 25%", "Mục tiêu CPU 25%")}
-                          </Button>
-                        </div>
-                      )}
+                                  ? "border-amber-200 bg-white text-amber-900 hover:border-amber-400 hover:bg-amber-50"
+                                  : "border-amber-500/35 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                                : chip.accent === "sky"
+                                  ? isLight
+                                    ? "border-sky-200 bg-white text-sky-900 hover:border-sky-400 hover:bg-sky-50"
+                                    : "border-sky-500/35 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                                  : isLight
+                                    ? "border-violet-200 bg-white text-violet-900 hover:border-violet-400 hover:bg-violet-50"
+                                    : "border-violet-500/35 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20";
+                          return (
+                            <button
+                              key={chip.id}
+                              type="button"
+                              draggable={!authoring.busy}
+                              disabled={authoring.busy || !svc}
+                              title={t(chip.hintEn, chip.hintVi)}
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData("application/x-mavis-studio-tool", chip.id);
+                                event.dataTransfer.setData("text/plain", chip.id);
+                                event.dataTransfer.effectAllowed = "copy";
+                              }}
+                              onClick={() => {
+                                if (!svc) return;
+                                if (chip.id === "author-scale-2x" && scaleTargetCount === 2) {
+                                  authoring.onSetReplicaTarget?.(svc, 3);
+                                } else {
+                                  authoring.onApplyBlockChip?.(chip.id, svc);
+                                }
+                              }}
+                              className={`flex cursor-grab items-center justify-between gap-1 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition active:cursor-grabbing disabled:opacity-45 ${toneClass}`}
+                            >
+                              <span className="truncate">{labelText}</span>
+                              {activeBadge && (
+                                <span className="shrink-0 font-mono text-[9.5px] font-bold opacity-85">
+                                  {activeBadge}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
 
                       {/* Live Docker Test Controls while Running so Lecturer can Author-by-Doing */}
                       {isLiveDemoMode && svc && (
@@ -6430,7 +6385,8 @@ export function LiveStudioWorkbench({
               )}
             </div>
           </aside>
-        )}
+          );
+        })()}
       </div>
 
       {/* GONNACRASH-STYLE SESSION VERIFIED CELEBRATION MODAL */}

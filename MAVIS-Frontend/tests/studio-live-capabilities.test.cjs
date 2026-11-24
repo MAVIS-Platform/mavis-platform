@@ -1403,3 +1403,43 @@ test("Studio Settings toggles 3D node & edge tags, Stats shows rich Service Heal
   assert.ok(viImpact.instructions.includes("PAUSE"), "VI draft must preserve SE action keyword");
   assert.ok(viImpact.summary.includes("Change Impact"), "VI summary must keep natural SE terminology");
 });
+
+
+test("Studio Live Task 4 UX polish: no bottom-drawer occlusion, author mission hidden by default, unified block controls, light/VI sidebar, crisp log badges", () => {
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const paritySrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-sandbox-parity.tsx"),
+    "utf8",
+  );
+  const consoleSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-terminal-console.tsx"),
+    "utf8",
+  );
+
+  // 1. Right floating panel reserves bottomHeight when bottom drawer is open so Expand/Close/Filters stay clickable
+  assert.match(workbenchSrc, /const rightBottomReserve = !bottomCollapsed\s*\?\s*bottomHeight \+ 24/);
+  assert.match(workbenchSrc, /maxHeight:\s*`calc\(100% - \$\{rightTopPx \+ rightBottomReserve\}px\)`/);
+
+  // 2. Mission card defaults hidden in Author Mode so 3D canvas opens unobstructed (open by default for students)
+  assert.match(workbenchSrc, /const \[missionHidden, setMissionHidden\] = useState\(\(\) => Boolean\(authoring\)\);/);
+
+  // 3. Duplicate 4+4 block buttons unified into single draggable+clickable chip grid; duplicate emerald banner removed
+  assert.match(workbenchSrc, /2\. Block Rules · Drag or click/);
+  assert.doesNotMatch(workbenchSrc, /Set Starts Down/);
+  assert.equal(
+    (workbenchSrc.match(/Use live actions as exercise/g) || []).length,
+    1,
+    "Use live actions as exercise CTA should appear once in top bar (no duplicate right-panel banner)",
+  );
+
+  // 4. Service List Sidebar supports light theme & Vietnamese SE localization with wrapped badges
+  assert.match(paritySrc, /useLocale/);
+  assert.match(paritySrc, /const isLight = studioStyle !== "control";/);
+  assert.match(paritySrc, /hasAuthorBadges/);
+
+  // 5. Log level badge (INFO/WARN/ERR/ACT) is protected from auto-translation and wrapping
+  assert.match(consoleSrc, /data-no-translate[\s\S]{0,120}whitespace-nowrap/);
+});
