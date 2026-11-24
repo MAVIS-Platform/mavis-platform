@@ -1383,10 +1383,10 @@ test("Studio Settings toggles 3D node & edge tags, Stats shows rich Service Heal
   assert.match(threeSrc, /data-show-node-tags=\{String\(showNodeTags\)\}/);
   assert.match(obsSrc, /showEdgeTags && wireLabel/);
 
-  // Task 2: Rich Cluster Overview (Stats tab) with Service Health matrix & Lab Scope / Dependency Paths
-  assert.match(workbenchSrc, /Service Health & Topology/);
-  assert.match(workbenchSrc, /Lab Scope & Dependency Paths/);
-  assert.match(workbenchSrc, /Dependency Paths/);
+  // Task 2: Cluster Overview (Stats tab) keeps KPIs + Resource Capacity + RED charts cleanly without duplicating Telemetry table
+  assert.doesNotMatch(workbenchSrc, /Service Health & Topology/);
+  assert.doesNotMatch(workbenchSrc, /Lab Scope & Dependency Paths/);
+  assert.match(workbenchSrc, /Throughput/);
 
   // Task 3: EN/VI toggle right beside ? (ScreenHelpTrigger) + natural SE Vietnamese without translating service identifiers
   assert.match(workbenchSrc, /<ScreenHelpTrigger[\s\S]{0,1200}data-testid="studio-locale-toggle"/);
