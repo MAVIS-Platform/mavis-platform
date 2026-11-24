@@ -1058,6 +1058,8 @@ test("LiveTerminalConsole omits fake compose header and red error card, streamin
   assert.doesNotMatch(src, /studio-logs-error-banner/);
   assert.doesNotMatch(src, /Run Fresh Session/);
   assert.doesNotMatch(src, /Errors only \(/);
+  assert.match(src, /entry\.service !== "mavis-runner" && activeServiceFilter === "ALL"/);
+  assert.doesNotMatch(src, />\s*mavis-runner\s*</);
   assert.match(src, /explainRuntimeDiagnostic\(trimmed\)/);
 });
 

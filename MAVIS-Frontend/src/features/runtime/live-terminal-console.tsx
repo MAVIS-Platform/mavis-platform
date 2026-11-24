@@ -987,14 +987,16 @@ export function LiveTerminalConsole({
                     >
                       {badgeText}
                     </span>
-                    <span
-                      title={entry.sourceLabel}
-                      className={`w-32 shrink-0 truncate border-r pr-2 text-right font-semibold sm:w-36 ${
-                        isLight ? "border-slate-200" : "border-slate-800/90"
-                      } ${color.text}`}
-                    >
-                      {shortSource}
-                    </span>
+                    {entry.service !== "mavis-runner" && activeServiceFilter === "ALL" && (
+                      <span
+                        title={entry.sourceLabel}
+                        className={`max-w-[128px] shrink-0 truncate border-r pr-1.5 font-semibold ${
+                          isLight ? "border-slate-200" : "border-slate-800/90"
+                        } ${color.text}`}
+                      >
+                        {shortSource}
+                      </span>
+                    )}
                     <span
                       className={`min-w-0 flex-1 pl-1 ${
                         wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"
@@ -1064,17 +1066,8 @@ export function LiveTerminalConsole({
             </div>
           ) : (
             <div className="space-y-1 py-1 text-[11px]">
-              <div className="flex items-start px-1">
-                <span
-                  className={`w-32 shrink-0 border-r pr-2 text-right font-semibold sm:w-36 ${
-                    isLight
-                      ? "border-slate-200 text-indigo-700"
-                      : "border-slate-800/90 text-indigo-300"
-                  }`}
-                >
-                  mavis-runner
-                </span>
-                <span className={`pl-2 ${isLight ? "text-slate-700" : "text-slate-300"}`}>
+              <div className="px-1">
+                <span className={isLight ? "text-slate-700" : "text-slate-300"}>
                   {isPreviewMode
                     ? "Compose stack is in Lab Setup preview (containers not booted)."
                     : waiting
@@ -1082,17 +1075,8 @@ export function LiveTerminalConsole({
                       : `Session ${statusLabel} — attached to container logs; waiting for stdout/stderr output.`}
                 </span>
               </div>
-              <div className="flex items-start px-1">
-                <span
-                  className={`w-32 shrink-0 border-r pr-2 text-right font-semibold sm:w-36 ${
-                    isLight
-                      ? "border-slate-200 text-indigo-700"
-                      : "border-slate-800/90 text-indigo-300"
-                  }`}
-                >
-                  mavis-runner
-                </span>
-                <span className={`pl-2 ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+              <div className="px-1">
+                <span className={isLight ? "text-slate-600" : "text-slate-400"}>
                   Services ({serviceList.length}):{" "}
                   <span className={isLight ? "font-medium text-slate-900" : "text-slate-200"}>
                     {serviceList.length > 0 ? serviceList.join(", ") : "none configured"}
@@ -1100,17 +1084,8 @@ export function LiveTerminalConsole({
                 </span>
               </div>
               {isPreviewMode && (
-                <div className="flex items-start px-1">
-                  <span
-                    className={`w-32 shrink-0 border-r pr-2 text-right font-semibold sm:w-36 ${
-                      isLight
-                        ? "border-slate-200 text-indigo-700"
-                        : "border-slate-800/90 text-indigo-300"
-                    }`}
-                  >
-                    mavis-runner
-                  </span>
-                  <span className={`pl-2 ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                <div className="px-1">
+                  <span className={isLight ? "text-slate-600" : "text-slate-400"}>
                     Click{" "}
                     <span className={isLight ? "font-semibold text-emerald-700" : "text-emerald-300"}>
                       Run
