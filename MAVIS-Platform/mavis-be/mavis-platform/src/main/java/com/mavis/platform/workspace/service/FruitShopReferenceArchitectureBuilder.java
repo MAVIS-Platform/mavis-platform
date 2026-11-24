@@ -257,11 +257,59 @@ public final class FruitShopReferenceArchitectureBuilder {
     }
 
     private void addC3GatewayComponents() {
-        // Added in Commit 3
+        addComponent("c3-gw-auth", "ApiGateway", "C# 12 · ASP.NET Core Controller",
+                "AuthController", "Controller",
+                "ApiGateway.Controllers.AuthController",
+                "Demo JWT token issuance (/api/v1/auth/token) mapping Customer, Staff and Admin roles");
+        addComponent("c3-gw-yarp", "ApiGateway", "C# 12 · YARP 2.2.0 Reverse Proxy",
+                "YarpReverseProxyPipeline", "Proxy",
+                "ApiGateway.Program.MapReverseProxy",
+                "Reverse proxy routing /api/v1/catalog, /api/v1/basket, /api/v1/orders with X-Correlation-Id propagation & gateway-fixed rate limiter");
+        addComponent("c3-gw-jwt", "ApiGateway", "C# 12 · JWT Bearer & Policy Options",
+                "JwtOptions", "Security",
+                "ApiGateway.Options.JwtOptions",
+                "Configures HMAC-SHA256 TokenValidationParameters and AdminOnly / AuthenticatedUser policies");
+        addComponent("c3-gw-err", "ApiGateway", "C# 12 · IExceptionHandler",
+                "GlobalExceptionHandler", "Middleware",
+                "ApiGateway.Exceptions.GlobalExceptionHandler",
+                "Maps unhandled gateway pipeline exceptions into RFC 7807 ProblemDetails JSON");
+
+        addC3Edge("c3-gw-auth-jwt", "c3-gw-auth", "c3-gw-jwt", "CODE_DEPENDENCY",
+                props("label", "Issues signed JWT for Admin/Staff/Customer"));
+        addC3Edge("c3-gw-yarp-err", "c3-gw-yarp", "c3-gw-err", "CODE_DEPENDENCY",
+                props("label", "Handles downstream proxy faults (ProblemDetails)"));
+        addC3Edge("c3-gw-yarp-otel", "c3-gw-yarp", "otel-observability", "TRACING_EXPORT",
+                props("protocol", "OTLP / .NET OpenTelemetry 1.9"));
     }
 
     private void addC3CatalogComponents() {
-        // Added in Commit 3
+        addComponent("c3-cat-ctrl", "FruitCatalog.API", "C# 12 · ASP.NET Core Controller",
+                "CatalogItemsController", "Controller",
+                "FruitCatalog.API.Controllers.CatalogItemsController",
+                "Exposes catalog CRUD (AdminOnly) and stock reserve/release endpoints (/api/v1/catalog/items)");
+        addComponent("c3-cat-svc", "FruitCatalog.API", "C# 12 · Application Service",
+                "CatalogService", "Service",
+                "FruitCatalog.API.Services.CatalogService",
+                "Manages fruit inventory mutations, stock reservation & idempotency via EF Core");
+        addComponent("c3-cat-dbctx", "FruitCatalog.API", "C# 12 · EF Core 8 Npgsql DbContext",
+                "CatalogDbContext", "Repository",
+                "FruitCatalog.API.Data.CatalogDbContext",
+                "Maps fruit_products entity into isolated PostgreSQL schema catalog");
+        addComponent("c3-cat-init", "FruitCatalog.API", "C# 12 · Startup Seeder",
+                "CatalogDbInitializer", "Initializer",
+                "FruitCatalog.API.Data.CatalogDbInitializer",
+                "Seeds initial Vietnamese clean fruit catalog items on startup");
+
+        addC3Edge("c3-cat-ctrl-svc", "c3-cat-ctrl", "c3-cat-svc", "CODE_DEPENDENCY",
+                props("label", "Delegates ICatalogService calls"));
+        addC3Edge("c3-cat-svc-db", "c3-cat-svc", "c3-cat-dbctx", "CODE_DEPENDENCY",
+                props("label", "Persists fruit_products updates"));
+        addC3Edge("c3-cat-init-db", "c3-cat-init", "c3-cat-dbctx", "CODE_DEPENDENCY",
+                props("label", "Seeds catalog items on boot"));
+        addC3Edge("c3-cat-db-pg", "c3-cat-dbctx", "catalog-db", "DATABASE_ACCESS",
+                props("protocol", "Npgsql EF Core · schema catalog"));
+        addC3Edge("c3-gw-yarp-cat", "c3-gw-yarp", "c3-cat-ctrl", "GATEWAY_ROUTE",
+                props("route", "/api/v1/catalog/{**catch-all}"));
     }
 
     private void addC3BasketComponents() {
@@ -273,7 +321,95 @@ public final class FruitShopReferenceArchitectureBuilder {
     }
 
     private void addRealEvidences() {
-        // Added in Commits 3-5
+        // Gateway routes, JWT & OTel
+        addRelEvidence("admin-gw",
+                "src/Gateways/ApiGateway/Controllers/AuthController.cs:24",
+                "STATIC_CODE",
+                "new(\"admin@freshfruit.vn\", \"Admin123!\", \"usr-admin-01\", \"Admin\", \"Quản trị viên Project Trái Cây\")");
+        addRelEvidence("staff-gw",
+                "src/Gateways/ApiGateway/Controllers/AuthController.cs:23",
+                "STATIC_CODE",
+                "new(\"staff@freshfruit.vn\", \"Staff123!\", \"usr-staff-01\", \"Staff\", \"Nhân viên kho trái cây\")");
+        addRelEvidence("cust-gw",
+                "src/Gateways/ApiGateway/Controllers/AuthController.cs:22",
+                "STATIC_CODE",
+                "new(\"customer@freshfruit.vn\", \"Fruit123!\", \"usr-customer-01\", \"Customer\", \"Khách hàng thân thiết\")");
+        addRelEvidence("gw-catalog",
+                "src/Gateways/ApiGateway/appsettings.json:25",
+                "CONFIG_FILE",
+                "\"catalog-route\": { \"ClusterId\": \"catalog-cluster\", \"Match\": { \"Path\": \"/api/v1/catalog/{**catch-all}\" } }");
+        addRelEvidence("gw-basket",
+                "src/Gateways/ApiGateway/appsettings.json:33",
+                "CONFIG_FILE",
+                "\"basket-route\": { \"ClusterId\": \"basket-cluster\", \"Match\": { \"Path\": \"/api/v1/basket/{**catch-all}\" } }");
+        addRelEvidence("gw-ordering",
+                "src/Gateways/ApiGateway/appsettings.json:41",
+                "CONFIG_FILE",
+                "\"ordering-route\": { \"ClusterId\": \"ordering-cluster\", \"Match\": { \"Path\": \"/api/v1/orders/{**catch-all}\" } }");
+        addRelEvidence("gw-otel",
+                "src/Gateways/ApiGateway/Program.cs:105",
+                "STATIC_CODE",
+                ".AddOtlpExporter(otlp => otlp.Endpoint = new Uri(otlpEndpoint))");
+
+        // Catalog controller -> service -> EF Core catalog_db
+        addRelEvidence("cat-db",
+                "src/Services/FruitCatalog/FruitCatalog.API/Data/CatalogDbContext.cs:12",
+                "STATIC_CODE",
+                "modelBuilder.HasDefaultSchema(\"catalog\");");
+        addRelEvidence("c3-cat-ctrl-svc",
+                "src/Services/FruitCatalog/FruitCatalog.API/Controllers/CatalogItemsController.cs:62",
+                "STATIC_CODE",
+                "[HttpPost(\"{id:int}/reserve\")] public async Task<IActionResult> ReserveStock(...)");
+        addRelEvidence("c3-cat-svc-db",
+                "src/Services/FruitCatalog/FruitCatalog.API/Services/CatalogService.cs:127",
+                "STATIC_CODE",
+                "product.ReserveStock(quantity);");
+        addRelEvidence("c3-gw-yarp-cat",
+                "src/Gateways/ApiGateway/Program.cs:85",
+                "STATIC_CODE",
+                "builder.Services.AddReverseProxy().LoadFromConfig(builder.Configuration.GetSection(\"ReverseProxy\"));");
+
+        // Node anchors (Gateway & Catalog)
+        addNodeEvidence("ApiGateway",
+                "src/Gateways/ApiGateway/Program.cs:155",
+                "STATIC_CODE",
+                "app.MapReverseProxy();");
+        addNodeEvidence("FruitCatalog.API",
+                "src/Services/FruitCatalog/FruitCatalog.API/Controllers/CatalogItemsController.cs:10",
+                "STATIC_CODE",
+                "public sealed class CatalogItemsController(ICatalogService catalogService) : ControllerBase");
+        addNodeEvidence("c3-gw-auth",
+                "src/Gateways/ApiGateway/Controllers/AuthController.cs:15",
+                "STATIC_CODE",
+                "public sealed class AuthController(IOptions<JwtOptions> jwtOptions, IOptions<DemoAuthOptions> demoOptions)");
+        addNodeEvidence("c3-gw-yarp",
+                "src/Gateways/ApiGateway/Program.cs:76",
+                "STATIC_CODE",
+                "options.AddFixedWindowLimiter(\"gateway-fixed\", limiter => ...)");
+        addNodeEvidence("c3-gw-jwt",
+                "src/Gateways/ApiGateway/Program.cs:19",
+                "STATIC_CODE",
+                "builder.Services.AddOptions<JwtOptions>().BindConfiguration(JwtOptions.SectionName).ValidateOnStart();");
+        addNodeEvidence("c3-gw-err",
+                "src/Gateways/ApiGateway/Program.cs:29",
+                "STATIC_CODE",
+                "builder.Services.AddExceptionHandler<GlobalExceptionHandler>();");
+        addNodeEvidence("c3-cat-ctrl",
+                "src/Services/FruitCatalog/FruitCatalog.API/Controllers/CatalogItemsController.cs:50",
+                "STATIC_CODE",
+                "[Authorize(Policy = \"AdminOnly\")]");
+        addNodeEvidence("c3-cat-svc",
+                "src/Services/FruitCatalog/FruitCatalog.API/Services/CatalogService.cs:9",
+                "STATIC_CODE",
+                "public sealed class CatalogService(CatalogDbContext dbContext, ILogger<CatalogService> logger) : ICatalogService");
+        addNodeEvidence("c3-cat-dbctx",
+                "src/Services/FruitCatalog/FruitCatalog.API/Data/CatalogDbContext.cs:12",
+                "STATIC_CODE",
+                "modelBuilder.HasDefaultSchema(\"catalog\");");
+        addNodeEvidence("c3-cat-init",
+                "src/Services/FruitCatalog/FruitCatalog.API/Data/CatalogDbInitializer.cs:8",
+                "STATIC_CODE",
+                "public static async Task InitializeAsync(IServiceProvider services, ILogger logger)");
     }
 
     private DiagramVersion buildC1ContextDiagram() {
