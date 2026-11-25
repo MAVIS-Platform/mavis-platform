@@ -19,7 +19,6 @@ import { useSelection } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
-import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 import { smartFormatTheoryMarkdown } from "./theory-markdown";
 
 type TheoryAsset = {
@@ -816,9 +815,5 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
     </div>
   );
 
-  return !embedded ? (
-    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lesson">
-      {content}
-    </CourseSetupFlowFrame>
-  ) : content;
+  return content;
 }

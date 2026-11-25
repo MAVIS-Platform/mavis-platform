@@ -10,10 +10,9 @@ import {
 } from "@/features/assignments/source-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useApiQuery, usePermission } from "@/hooks/use-api";
+import { useApiMutation, useApiQuery, usePermission } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
-  CourseSetupFlowFrame,
   courseSetupStepHref,
 } from "@/features/courses/course-setup-flow-navigation";
 
@@ -27,6 +26,7 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const [sourcePending, setSourcePending] = useState(false);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const projects = useApiQuery("workspaceProjects", { workspaceId });
+  const publishReference = useApiMutation("publishReference");
   const existingRefs = (projects.data ?? []).filter(
     (project) => project.projectType === "TEACHER_REFERENCE" || project.isReferenceTemplate,
   );
@@ -205,24 +205,44 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                   setSelectedModelId(modelId);
                   setSourcePending(pending);
                 }}
-                onAnalysisComplete={() => {
-                  setImportOpen(false);
-                  toast.success(
-                    t(
-                      "Repository imported and analyzed successfully.",
-                      "Repository đã được nhập và phân tích thành công.",
-                    ),
+                onAnalysisComplete={({ projectId, snapshotId }) => {
+                  publishReference.mutate(
+                    { workspaceId, projectId, snapshotId },
+                    {
+                      onSuccess: () => {
+                        setImportOpen(false);
+                        toast.success(
+                          t(
+                            "Repository analyzed and C1–C3 architecture is ready.",
+                            "Repository đã được phân tích và sơ đồ C1–C3 đã sẵn sàng.",
+                          ),
+                        );
+                        redirectTimer.current = setTimeout(() => {
+                          router.push(courseSetupStepHref(workspaceId, "arrange", "repository"));
+                        }, 900);
+                      },
+                      onError: () => {
+                        toast.error(
+                          t(
+                            "The analysis completed, but the C1–C3 version could not be added to this course. Please try again.",
+                            "Phân tích đã hoàn tất nhưng chưa thể thêm phiên bản C1–C3 vào khóa học. Vui lòng thử lại.",
+                          ),
+                        );
+                      },
+                    },
                   );
-                  redirectTimer.current = setTimeout(() => {
-                    router.push(courseSetupStepHref(workspaceId, "arrange", "repository"));
-                  }, 900);
                 }}
               />
             </div>
 
             <div className="flex items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3.5">
               <p className="text-xs text-muted-foreground">
-                {selectedModelId && !sourcePending
+                {publishReference.isPending
+                  ? t(
+                      "Adding the generated C1–C3 architecture to this course…",
+                      "Đang thêm sơ đồ C1–C3 đã sinh vào khóa học…",
+                    )
+                  : selectedModelId && !sourcePending
                   ? t(
                       "Analysis is complete and the repository version is available for the next steps.",
                       "Phân tích đã hoàn tất và phiên bản repository có thể dùng cho các bước tiếp theo.",
@@ -237,6 +257,7 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                 size="sm"
                 variant="outline"
                 onClick={() => setImportOpen(false)}
+                disabled={publishReference.isPending}
               >
                 {t("Close", "Đóng")}
               </Button>
@@ -247,9 +268,5 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
     </section>
   );
 
-  return (
-    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="repository">
-      {content}
-    </CourseSetupFlowFrame>
-  );
+  return content;
 }

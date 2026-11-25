@@ -61,12 +61,11 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   assert.match(referenceManager, /onAnalysisComplete/);
   assert.match(referenceManager, /toast\.success/);
   assert.match(referenceManager, /courseSetupStepHref\(workspaceId, "arrange", "repository"\)/);
-  assert.match(referenceManager, /currentStep="repository"/);
-  assert.match(lesson, /currentStep="lesson"/);
-  assert.match(lesson, /!embedded \?/);
-  assert.match(quiz, /currentStep="quiz"/);
+  assert.doesNotMatch(referenceManager, /CourseSetupFlowFrame|currentStep="repository"/);
+  assert.doesNotMatch(lesson, /CourseSetupFlowFrame|currentStep="lesson"/);
+  assert.doesNotMatch(quiz, /CourseSetupFlowFrame|currentStep="quiz"/);
   assert.doesNotMatch(quiz, /flow.*first-setup/);
-  assert.match(lab, /currentStep="lab"/);
+  assert.doesNotMatch(lab, /CourseSetupFlowFrame|currentStep="lab"/);
   assert.doesNotMatch(lab, /LabTheorySection|id: "theory"|Lab theory/);
   assert.match(lesson, /theory-assets\/import-file/);
   assert.match(lesson, /theory-assets\/import-url/);
@@ -158,6 +157,9 @@ test("Commit #05 completes 6-step Lecturer setup with curated repos, lesson/quiz
   }
   assert.match(sourcePicker, /otherWorkspaceProjects/);
   assert.match(refManage, /CURATED_SAMPLE_REPOS/);
+  assert.match(refManage, /useApiMutation\("publishReference"\)/);
+  assert.match(refManage, /onAnalysisComplete=\{\(\{ projectId, snapshotId \}\) =>/);
+  assert.match(refManage, /publishReference\.mutate/);
   assert.match(theoryLib, /course-curriculum/);
   assert.match(theoryLib, /theory-assets\/reusable/);
   assert.match(theoryLib, /Smart Format/);

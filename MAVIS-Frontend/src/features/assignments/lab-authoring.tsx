@@ -25,7 +25,6 @@ import { type Assignment } from "./requirements";
 import { lecturerCourseAccess } from "@/features/lecturer/application/course-access-policy";
 import { LabInfoForm } from "./lab-info-form";
 import { LabStudioSection } from "./lab-studio-section";
-import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 
 type Tab = "info" | "studio";
 type LabWorkspaceSection = "create" | "library";
@@ -373,20 +372,14 @@ export function LabAuthoring() {
     </div>
   );
 
-  const displayedContent = (
-    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lab">
-      {hubContent}
-    </CourseSetupFlowFrame>
-  );
-
   return (
     <RequestState query={workspaces} empty={!workspace}>
       {workspace ? (
         <CourseWorkspaceShell workspace={workspace} active="lab-authoring">
-          {displayedContent}
+          {hubContent}
         </CourseWorkspaceShell>
       ) : (
-        displayedContent
+        hubContent
       )}
     </RequestState>
   );

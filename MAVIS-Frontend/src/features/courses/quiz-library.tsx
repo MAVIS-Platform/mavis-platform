@@ -11,7 +11,6 @@ import { emptyQuestion, type QuizDraft, type QuizQuestion } from "@/features/ass
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
-import { CourseSetupFlowFrame } from "./course-setup-flow-navigation";
 
 type QuizAsset = {
   id: string;
@@ -499,9 +498,5 @@ export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
     </section>
   );
 
-  return (
-    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="quiz">
-      {content}
-    </CourseSetupFlowFrame>
-  );
+  return content;
 }
