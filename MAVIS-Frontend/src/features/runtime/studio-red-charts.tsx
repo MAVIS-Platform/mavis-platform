@@ -160,10 +160,12 @@ export function buildTraceWaterfall(
   const group = (spans ?? []).filter((s) => s.traceId === traceId);
   if (group.length === 0) return { rows: [], totalMs: 0 };
 
-  // Resolve downstream target service for outbound spans via OTel interactions so child bars show caller -> callee.
+  // Resolve downstream target service for outbound spans via OTel span hierarchy & interactions.
   const targetBySpanId = new Map<string, string>();
+  const traceInteractions: StudioInteraction[] = [];
   for (const edge of interactions ?? []) {
     if (edge.traceId && edge.traceId !== traceId) continue;
+    traceInteractions.push(edge);
     if (edge.parentSpanId && edge.toService && !targetBySpanId.has(edge.parentSpanId)) {
       targetBySpanId.set(edge.parentSpanId, edge.toService);
     }
@@ -214,6 +216,43 @@ export function buildTraceWaterfall(
   }
   for (const list of children.values()) {
     list.sort((a, b) => a.startNs - b.startNs || a.span.spanId.localeCompare(b.span.spanId));
+  }
+
+  // Fill remaining outbound client targets from OTel parent->child cross-service spans or unmatched interactions.
+  const matchedTargetsByCaller = new Map<string, Set<string>>();
+  for (const item of parsed) {
+    if (!item.targetService) {
+      const crossChild = (children.get(item.span.spanId) ?? []).find(
+        (child) => child.span.runtimeService && child.span.runtimeService !== item.span.runtimeService,
+      );
+      if (crossChild) {
+        item.targetService = crossChild.span.runtimeService;
+      }
+    }
+    if (item.targetService) {
+      const set = matchedTargetsByCaller.get(item.span.runtimeService) ?? new Set<string>();
+      set.add(item.targetService);
+      matchedTargetsByCaller.set(item.span.runtimeService, set);
+    }
+  }
+  const consumedEdges = new Set<number>();
+  for (const item of parsed) {
+    if (item.targetService) continue;
+    const isOutboundLeaf = !item.span.route && (children.get(item.span.spanId)?.length ?? 0) === 0;
+    if (!isOutboundLeaf) continue;
+    const alreadyMatched = matchedTargetsByCaller.get(item.span.runtimeService);
+    const edgeIdx = traceInteractions.findIndex(
+      (edge, idx) =>
+        !consumedEdges.has(idx) &&
+        edge.fromService === item.span.runtimeService &&
+        edge.toService &&
+        edge.toService !== item.span.runtimeService &&
+        !alreadyMatched?.has(edge.toService),
+    );
+    if (edgeIdx >= 0) {
+      consumedEdges.add(edgeIdx);
+      item.targetService = traceInteractions[edgeIdx]!.toService;
+    }
   }
 
   const rows: WaterfallRow[] = [];

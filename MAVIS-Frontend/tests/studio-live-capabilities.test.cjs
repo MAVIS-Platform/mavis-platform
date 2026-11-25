@@ -2543,13 +2543,13 @@ test("Critical Audit 26 P0/P1/P2 Overhaul: initials, watermark, waterfall peers,
   assert.equal(wm.left, "MSSV: SE199926 · Nguyễn Văn Audit · Ảnh #1");
   assert.ok(!wm.left.includes("()"));
 
-  // P0: Trace Waterfall resolves downstream peer service and avoids duplicated HTTP 200 200
+  // P0: Trace Waterfall resolves downstream peer service from OTel parent->child hierarchy AND unmatched failed interactions without duplicating HTTP 200 200
   const wf = buildTraceWaterfall(
     [
       {
         traceId: "tr-1",
         spanId: "sp-root",
-        serviceName: "api-gateway",
+        runtimeService: "api-gateway",
         operationName: "GET /api/v1/storefront/live-flow",
         startTimeUnixNano: "1000000000",
         durationNanoseconds: "85000000",
@@ -2557,15 +2557,37 @@ test("Critical Audit 26 P0/P1/P2 Overhaul: initials, watermark, waterfall peers,
       },
       {
         traceId: "tr-1",
-        spanId: "sp-child",
+        spanId: "sp-client",
         parentSpanId: "sp-root",
-        serviceName: "order-service",
+        runtimeService: "order-service",
         operationName: "HTTP 200",
         httpMethod: "GET",
-        route: "/pricing",
         startTimeUnixNano: "1015000000",
         durationNanoseconds: "32000000",
         httpStatusCode: 200,
+      },
+      {
+        traceId: "tr-1",
+        spanId: "sp-server",
+        parentSpanId: "sp-client",
+        runtimeService: "pricing-service",
+        operationName: "GET /api/v1/pricing",
+        httpMethod: "GET",
+        route: "/api/v1/pricing",
+        startTimeUnixNano: "1017000000",
+        durationNanoseconds: "28000000",
+        httpStatusCode: 200,
+      },
+      {
+        traceId: "tr-1",
+        spanId: "sp-failed-call",
+        parentSpanId: "sp-root",
+        runtimeService: "order-service",
+        operationName: "GET",
+        httpMethod: "GET",
+        spanStatus: "ERROR",
+        startTimeUnixNano: "1050000000",
+        durationNanoseconds: "1200000000",
       },
     ],
     "tr-1",
@@ -2573,18 +2595,20 @@ test("Critical Audit 26 P0/P1/P2 Overhaul: initials, watermark, waterfall peers,
       {
         traceId: "tr-1",
         fromService: "order-service",
-        toService: "pricing-service",
-        childSpanId: "sp-child",
-        latencyMs: 31,
+        toService: "payment-service",
+        parentSpanId: "",
+        childSpanId: "",
       },
     ],
   );
-  assert.equal(wf.rows.length, 2);
-  const childRow = wf.rows.find((r) => r.spanId === "sp-child");
-  assert.ok(childRow);
-  assert.equal(childRow.targetService, "pricing-service");
-  assert.equal(childRow.label, "GET /pricing");
-  assert.ok(!/HTTP\s+200/i.test(childRow.label));
+  assert.equal(wf.rows.length, 4);
+  const clientRow = wf.rows.find((r) => r.spanId === "sp-client");
+  assert.ok(clientRow);
+  assert.equal(clientRow.targetService, "pricing-service");
+  assert.equal(clientRow.label, "GET");
+  const failedRow = wf.rows.find((r) => r.spanId === "sp-failed-call");
+  assert.ok(failedRow);
+  assert.equal(failedRow.targetService, "payment-service");
 
   const readSrc = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
   const workbench = readSrc("src/features/runtime/live-studio-workbench.tsx");

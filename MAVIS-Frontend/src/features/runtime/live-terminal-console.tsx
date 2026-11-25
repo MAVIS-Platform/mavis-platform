@@ -1138,7 +1138,19 @@ export function LiveTerminalConsole({
                 </tr>
               </thead>
               <tbody className={`divide-y ${isLight ? "divide-slate-200/80" : "divide-slate-800/70"}`}>
-                {visibleSpans.map((span) => {
+                {(() => {
+                  const peerBySpanId = new Map<string, string>();
+                  for (const candidate of spans) {
+                    if (candidate.parentSpanId && candidate.runtimeService && !peerBySpanId.has(candidate.parentSpanId)) {
+                      peerBySpanId.set(candidate.parentSpanId, candidate.runtimeService);
+                    }
+                  }
+                  for (const edge of data.telemetry?.interactions ?? []) {
+                    if (edge.parentSpanId && edge.toService && !peerBySpanId.has(edge.parentSpanId)) {
+                      peerBySpanId.set(edge.parentSpanId, edge.toService);
+                    }
+                  }
+                  return visibleSpans.map((span) => {
                   const ns = span.durationNanoseconds ? Number(span.durationNanoseconds) : NaN;
                   const ms = Number.isFinite(ns) && ns >= 0 ? ns / 1e6 : null;
                   const reportedStatus = span.spanStatus?.toUpperCase();
@@ -1162,6 +1174,14 @@ export function LiveTerminalConsole({
                           : isLight ? "text-emerald-700" : "text-emerald-300";
                   const barPct = ms !== null ? Math.min(100, Math.max(4, (ms / maxSpanMs) * 100)) : 0;
                   const rowSelected = activeTraceId === span.traceId;
+                  const peerCandidate = peerBySpanId.get(span.spanId);
+                  const peerSvc = peerCandidate && peerCandidate !== span.runtimeService ? peerCandidate : null;
+                  const rawOp = span.operationName?.trim() || "";
+                  const cleanOp =
+                    (rawOp && !/^HTTP\s+\d{3}$/i.test(rawOp) ? rawOp : null) ||
+                    (span.route ? `${span.httpMethod ? `${span.httpMethod} ` : ""}${span.route}` : null) ||
+                    (span.httpMethod ? span.httpMethod : "HTTP");
+                  const opDisplay = peerSvc ? `${cleanOp} → ${peerSvc}` : cleanOp;
                   return (
                     <tr
                       key={`${span.traceId}:${span.spanId}`}
@@ -1178,8 +1198,7 @@ export function LiveTerminalConsole({
                         {span.runtimeService}
                       </td>
                       <td className={`max-w-[260px] truncate px-2.5 py-1 ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                        {span.operationName ||
-                          (span.httpStatusCode ? `HTTP ${span.httpStatusCode}` : "Trace span")}
+                        {opDisplay}
                         {span.circuitOpen && (
                           <span
                             className={`ml-1.5 rounded px-1 py-0.5 text-[9.5px] font-semibold ${
@@ -1228,7 +1247,8 @@ export function LiveTerminalConsole({
                       </td>
                     </tr>
                   );
-                })}
+                  });
+                })()}
               </tbody>
             </table>
           ) : (
