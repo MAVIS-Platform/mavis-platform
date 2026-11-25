@@ -518,7 +518,7 @@ export function StudentCourseSyllabus({
       <div className="min-w-0 space-y-6">
         {!isLearningWorkspace && (
           <section className="mavis-hero-surface p-6 text-white">
-            <div className="mb-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <Button
                 asChild
                 size="sm"
@@ -527,57 +527,53 @@ export function StudentCourseSyllabus({
               >
                 <Link href="/courses">← {t("Back to courses", "Danh sách khóa học")}</Link>
               </Button>
-            </div>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="max-w-2xl space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className="border-white/25 bg-white/15 font-mono text-xs text-white"
-                  >
-                    {workspace.code || t("CLASS", "LỚP")}
-                  </Badge>
-                  <span className="tabular-nums text-xs font-medium text-sky-100">
-                    {summary.totalLabs > 0
-                      ? `${summary.completedLabs}/${summary.totalLabs} ${t("completed", "bài đã xong")} (${summary.completionPercent}%)`
-                      : t("Course Workspace", "Lớp học MAVIS")}
-                  </span>
-                </div>
-                <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-                  {workspace.name}
-                </h1>
-                <p className="text-sm leading-6 text-sky-100/90">
-                  {t(
-                    "Read the core lessons, pass the knowledge check, and practice directly inside MAVIS Studio.",
-                    "Đọc lý thuyết trọng tâm, hoàn thành bài trắc nghiệm và thực hành trực tiếp trong MAVIS Studio.",
-                  )}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-sky-100">
-                  <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1">
-                    <span className="shrink-0 whitespace-nowrap text-sky-100/85">
-                      {t("Instructor", "Giảng viên")}:
-                    </span>
-                    <strong className="min-w-0 truncate font-semibold text-white">
-                      {lecturerNames.length
-                        ? lecturerNames.join(" · ")
-                        : t("Assigned Lecturer", "Giảng viên phụ trách lớp")}
-                    </strong>
-                  </span>
-                </div>
-              </div>
               {resumeLabHref && (
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <Button asChild className="bg-white text-slate-950 shadow-sm hover:bg-sky-50">
-                    <Link href={resumeLabHref}>
-                      <Play
-                        className="mr-1.5 h-4 w-4 fill-current text-blue-700"
-                        aria-hidden="true"
-                      />
-                      {t("Continue learning", "Tiếp tục học")}
-                    </Link>
-                  </Button>
-                </div>
+                <Button asChild className="bg-white text-slate-950 shadow-sm hover:bg-sky-50">
+                  <Link href={resumeLabHref}>
+                    <Play
+                      className="mr-1.5 h-4 w-4 fill-current text-blue-700"
+                      aria-hidden="true"
+                    />
+                    {t("Continue learning", "Tiếp tục học")}
+                  </Link>
+                </Button>
               )}
+            </div>
+            <div className="max-w-2xl space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="border-white/25 bg-white/15 font-mono text-xs text-white"
+                >
+                  {workspace.code || t("CLASS", "LỚP")}
+                </Badge>
+                <span className="tabular-nums text-xs font-medium text-sky-100">
+                  {summary.totalLabs > 0
+                    ? `${summary.completedLabs}/${summary.totalLabs} ${t("completed", "bài đã xong")} (${summary.completionPercent}%)`
+                    : t("Course Workspace", "Lớp học MAVIS")}
+                </span>
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                {workspace.name}
+              </h1>
+              <p className="text-sm leading-6 text-sky-100/90">
+                {t(
+                  "Read the core lessons, pass the knowledge check, and practice directly inside MAVIS Studio.",
+                  "Đọc lý thuyết trọng tâm, hoàn thành bài trắc nghiệm và thực hành trực tiếp trong MAVIS Studio.",
+                )}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-sky-100">
+                <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1">
+                  <span className="shrink-0 whitespace-nowrap text-sky-100/85">
+                    {t("Instructor", "Giảng viên")}:
+                  </span>
+                  <strong className="min-w-0 truncate font-semibold text-white">
+                    {lecturerNames.length
+                      ? lecturerNames.join(" · ")
+                      : t("Assigned Lecturer", "Giảng viên phụ trách lớp")}
+                  </strong>
+                </span>
+              </div>
             </div>
 
             {summary.totalLabs > 0 && (

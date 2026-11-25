@@ -944,59 +944,138 @@ export function LabWorkspace() {
     >
       {workspace && lab && (
         <div className="space-y-3">
-          <header className="mavis-hero-surface px-4 py-3.5 text-white sm:px-5">
+          <header className="mavis-hero-surface space-y-3 px-4 py-3.5 text-white sm:px-5">
             <div className="flex flex-wrap items-center justify-between gap-2.5">
-              <div className="min-w-0 space-y-1.5">
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-sky-100">
-                  <Link
-                    className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/15 px-2.5 py-0.5 font-medium text-white transition-colors hover:bg-white/25"
-                    href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
-                  >
-                    ← {t("Back to course", "Quay lại khóa học")}
-                  </Link>
-                  <span className="text-white/50">/</span>
-                  <span className="truncate font-medium text-white/90">{workspace.name}</span>
-                  {currentModule && (
-                    <>
-                      <span className="text-white/50">/</span>
-                      <span className="truncate text-sky-100">
-                        {/^(?:Module|Chương)\s+\d+/i.test(currentModule.title.trim())
-                          ? currentModule.title
-                          : `${t("Module", "Chương")} ${currentModule.position}: ${currentModule.title}`}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
-                  {lab.title}
-                </h1>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <Badge
-                    variant="outline"
-                    className="border-white/30 bg-white/15 font-mono text-[11px] text-white"
-                  >
-                    {t("Class", "Lớp")} {workspace.code || "—"}
-                  </Badge>
-                  <Badge className="border-teal-300/35 bg-teal-400/20 text-[11px] font-medium text-teal-50">
-                    {requiresRuntime
-                      ? t("Studio Live Practice Lab", "Lab thực hành Studio Live")
-                      : isTheoryOnlyLab
-                        ? t("Theory Only Lab", "Lab lý thuyết")
-                        : t("Theory & Quiz Lab", "Lab lý thuyết & Quiz")}
-                  </Badge>
-                  {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
-                </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-sky-100">
+                <Link
+                  className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/15 px-2.5 py-0.5 font-medium text-white transition-colors hover:bg-white/25"
+                  href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
+                >
+                  ← {t("Back to course", "Quay lại khóa học")}
+                </Link>
+                <span className="text-white/50">/</span>
+                <span className="truncate font-medium text-white/90">{workspace.name}</span>
+                {currentModule && (
+                  <>
+                    <span className="text-white/50">/</span>
+                    <span className="truncate text-sky-100">
+                      {/^(?:Module|Chương)\s+\d+/i.test(currentModule.title.trim())
+                        ? currentModule.title
+                        : `${t("Module", "Chương")} ${currentModule.position}: ${currentModule.title}`}
+                    </span>
+                  </>
+                )}
               </div>
-              <div
-                aria-label={t("Lab actions", "Thao tác Lab")}
-                className="flex flex-wrap items-center gap-2"
-              >
-                {(roadmap.data?.labs.length ?? 0) > 1 && (
+              <Sheet open={tocOpen} onOpenChange={setTocOpen}>
+                <SheetTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                  >
+                    <List className="mr-1.5 size-4" aria-hidden="true" />
+                    {t("Contents", "Mục lục")}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="flex flex-col gap-4">
+                  <SheetHeader>
+                    <SheetTitle>
+                      {currentModule
+                        ? currentModule.title
+                        : t("Module contents", "Mục lục Module")}
+                    </SheetTitle>
+                  </SheetHeader>
+                  <nav
+                    aria-label={t("Module steps", "Nội dung Module")}
+                    className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1"
+                  >
+                    {expandedModuleItems.map((item) => {
+                      const isLabFlowItem = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(
+                        item.type,
+                      );
+                      const itemStep = isLabFlowItem
+                        ? resolveLabStepForItem(item, requiresRuntime)
+                        : null;
+                      const isSameLabItem = !item.assignmentId || item.assignmentId === assignmentId;
+                      const isCurrent =
+                        isSameLabItem && itemStep !== null && itemStep === displayedStep;
+                      const lockHint =
+                        isSameLabItem && itemStep !== null && !stepAvailable(itemStep)
+                          ? stepReason(itemStep)
+                          : undefined;
+                      const itemComplete =
+                        isSameLabItem &&
+                        ((itemStep === 1 && hasReferenceArch && Boolean(activeModelId)) ||
+                          (itemStep === 2 && runtimeEvidenceSatisfied) ||
+                          (itemStep === 3 && hasSubmitted));
+                      return (
+                        <Link
+                          key={item.id}
+                          href={flowItemHref(item)}
+                          title={lockHint}
+                          aria-current={isCurrent ? "step" : undefined}
+                          onClick={() => setTocOpen(false)}
+                          className={`block rounded-lg px-2.5 py-2 text-xs transition-colors ${
+                            isCurrent
+                              ? "bg-emerald-100 font-semibold text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          }`}
+                        >
+                          <span className="flex items-start justify-between gap-1.5">
+                            <span className="line-clamp-2 min-w-0 flex-1">{item.title}</span>
+                            {itemComplete && (
+                              <CheckCircle2
+                                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                  <Button asChild variant="outline" size="sm" className="w-full shrink-0">
+                    <Link
+                      href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
+                      onClick={() => setTocOpen(false)}
+                    >
+                      {t("Back to course", "Quay lại khóa học")}
+                    </Link>
+                  </Button>
+                </SheetContent>
+              </Sheet>
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
+                {lab.title}
+              </h1>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <Badge
+                  variant="outline"
+                  className="border-white/30 bg-white/15 font-mono text-[11px] text-white"
+                >
+                  {t("Class", "Lớp")} {workspace.code || "—"}
+                </Badge>
+                <Badge className="border-teal-300/35 bg-teal-400/20 text-[11px] font-medium text-teal-50">
+                  {requiresRuntime
+                    ? t("Studio Live Practice Lab", "Lab thực hành Studio Live")
+                    : isTheoryOnlyLab
+                      ? t("Theory Only Lab", "Lab lý thuyết")
+                      : t("Theory & Quiz Lab", "Lab lý thuyết & Quiz")}
+                </Badge>
+                {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
+              </div>
+            </div>
+            <div
+              aria-label={t("Lab actions", "Thao tác Lab")}
+              className="flex flex-wrap items-center justify-between gap-2.5"
+            >
+              {(roadmap.data?.labs.length ?? 0) > 1 ? (
+                <div className="min-w-0">
                   <label className="sr-only" htmlFor="lab-switcher">
                     {t("Switch Lab", "Chuyển bài Lab")}
                   </label>
-                )}
-                {(roadmap.data?.labs.length ?? 0) > 1 && (
                   <select
                     id="lab-switcher"
                     value={lab.id}
@@ -1028,7 +1107,11 @@ export function LabWorkspace() {
                       );
                     })}
                   </select>
-                )}
+                </div>
+              ) : (
+                <div />
+              )}
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   asChild
                   variant="outline"
@@ -1041,85 +1124,6 @@ export function LabWorkspace() {
                     {t("Submissions & Grades", "Bài nộp & Điểm")}
                   </Link>
                 </Button>
-                <Sheet open={tocOpen} onOpenChange={setTocOpen}>
-                  <SheetTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
-                    >
-                      <List className="mr-1.5 size-4" aria-hidden="true" />
-                      {t("Contents", "Mục lục")}
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="left" className="flex flex-col gap-4">
-                    <SheetHeader>
-                      <SheetTitle>
-                        {currentModule
-                          ? currentModule.title
-                          : t("Module contents", "Mục lục Module")}
-                      </SheetTitle>
-                    </SheetHeader>
-                    <nav
-                      aria-label={t("Module steps", "Nội dung Module")}
-                      className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1"
-                    >
-                      {expandedModuleItems.map((item) => {
-                        const isLabFlowItem = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(
-                          item.type,
-                        );
-                        const itemStep = isLabFlowItem
-                          ? resolveLabStepForItem(item, requiresRuntime)
-                          : null;
-                        const isSameLabItem = !item.assignmentId || item.assignmentId === assignmentId;
-                        const isCurrent =
-                          isSameLabItem && itemStep !== null && itemStep === displayedStep;
-                        const lockHint =
-                          isSameLabItem && itemStep !== null && !stepAvailable(itemStep)
-                            ? stepReason(itemStep)
-                            : undefined;
-                        const itemComplete =
-                          isSameLabItem &&
-                          ((itemStep === 1 && hasReferenceArch && Boolean(activeModelId)) ||
-                            (itemStep === 2 && runtimeEvidenceSatisfied) ||
-                            (itemStep === 3 && hasSubmitted));
-                        return (
-                          <Link
-                            key={item.id}
-                            href={flowItemHref(item)}
-                            title={lockHint}
-                            aria-current={isCurrent ? "step" : undefined}
-                            onClick={() => setTocOpen(false)}
-                            className={`block rounded-lg px-2.5 py-2 text-xs transition-colors ${
-                              isCurrent
-                                ? "bg-emerald-100 font-semibold text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100"
-                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                            }`}
-                          >
-                            <span className="flex items-start justify-between gap-1.5">
-                              <span className="line-clamp-2 min-w-0 flex-1">{item.title}</span>
-                              {itemComplete && (
-                                <CheckCircle2
-                                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-                                  aria-hidden="true"
-                                />
-                              )}
-                            </span>
-                          </Link>
-                        );
-                      })}
-                    </nav>
-                    <Button asChild variant="outline" size="sm" className="w-full shrink-0">
-                      <Link
-                        href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
-                        onClick={() => setTocOpen(false)}
-                      >
-                        {t("Back to course", "Quay lại khóa học")}
-                      </Link>
-                    </Button>
-                  </SheetContent>
-                </Sheet>
                 {isLecturer && (
                   <Button
                     asChild

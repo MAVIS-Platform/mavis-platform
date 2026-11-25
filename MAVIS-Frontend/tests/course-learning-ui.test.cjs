@@ -2546,3 +2546,28 @@ test("Sprint 3 #02 Syllabus Duration & Grounded AI Quiz: hides ~45m notes, groun
   assert.equal(jsonQuiz.errors.length, 0);
   assert.equal(jsonQuiz.draft.questions[0].correctOption, 0);
 });
+
+
+test("Sprint 3 #03 Hero Banners: aligns top-row CTAs on /roadmap and two-row action layout on /lab", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const lab = read("src/features/courses/screens.tsx");
+
+  const roadmapHero = syllabus.indexOf('<section className="mavis-hero-surface p-6 text-white">');
+  const roadmapTopRowEnd = syllabus.indexOf("</div>", syllabus.indexOf('t("Continue learning"', roadmapHero));
+  assert.ok(
+    roadmapHero !== -1 &&
+      roadmapTopRowEnd !== -1 &&
+      syllabus.indexOf('t("Back to courses"', roadmapHero) < roadmapTopRowEnd &&
+      syllabus.indexOf('t("Continue learning"', roadmapHero) < roadmapTopRowEnd,
+  );
+
+  const labHero = lab.indexOf('<header className="mavis-hero-surface');
+  const labHeading = lab.indexOf("<h1", labHero);
+  assert.ok(
+    labHero !== -1 &&
+      labHeading !== -1 &&
+      lab.indexOf('t("Contents", "Mục lục")', labHero) < labHeading &&
+      lab.indexOf('id="lab-switcher"', labHero) > labHeading &&
+      lab.indexOf('t("Submissions & Grades", "Bài nộp & Điểm")', labHero) > labHeading,
+  );
+});
