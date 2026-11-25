@@ -5238,10 +5238,14 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(
     settingsHtml,
     /Class settings/,
-    "Class rename/archive lives in the dedicated Settings tab",
+    "Class settings opens from the dedicated Settings tab",
   );
-  assert.match(settingsHtml, /Rename/);
-  assert.match(settingsHtml, /Archive workspace/);
+  assert.match(settingsHtml, /lucide-settings-2/);
+  assert.doesNotMatch(
+    settingsHtml,
+    /Archive workspace/,
+    "Destructive class controls stay hidden until the Class settings dialog opens",
+  );
   const { WorkspaceSelector } = require("../src/features/workspaces/components.tsx");
   assert.equal(
     renderComp(WorkspaceSelector, "ws-swd"),
