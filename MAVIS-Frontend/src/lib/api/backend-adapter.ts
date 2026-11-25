@@ -52,6 +52,9 @@ export class BackendAdapter implements ApiAdapter {
                 "workspaceSubmissions",
                 "assignmentSubmissions",
                 "submission",
+                "submissionExport",
+                "submissionReview",
+                "gradeSubmission",
                 "contextCandidates",
                 "runtimeReadSessions",
               ].includes(operation)

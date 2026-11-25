@@ -3386,6 +3386,8 @@ export function StudioObservability({
                       !isStopped &&
                       !isPaused &&
                       (lastSvcAction?.action === "THROTTLE_CPU" || status === "Bottleneck");
+                    const isStandby = data.executionStatus !== "RUNNING" || !live;
+                    const visualArchetype2D = resolveVisualArchetype({ id: name, archetype });
                     const replicasLabel = isStopped
                       ? "0×"
                       : live
@@ -3399,18 +3401,22 @@ export function StudioObservability({
                           ? activeStyleId === "blueprint" ? "[SLOW]" : "SLOW"
                           : isImpactedByOutage
                             ? activeStyleId === "blueprint" ? "[IMPACTED]" : "IMPACTED"
-                            : activeStyleId === "blueprint"
-                              ? `[LIVE ${replicasLabel}]`
-                              : `LIVE ${replicasLabel}`;
+                            : isStandby
+                              ? activeStyleId === "blueprint" ? "[STANDBY]" : "STANDBY"
+                              : activeStyleId === "blueprint"
+                                ? `[LIVE ${replicasLabel}]`
+                                : `LIVE ${replicasLabel}`;
                     const roleSubtitle =
-                      archetype === "DATABASE"
+                      visualArchetype2D === "DATABASE"
                         ? "Database"
-                        : archetype === "GATEWAY"
+                        : visualArchetype2D === "GATEWAY"
                           ? "API Gateway"
-                          : archetype === "QUEUE"
+                          : visualArchetype2D === "QUEUE"
                             ? "Message Broker"
-                            : "Microservice";
-                    const palette2D = resolveStudioNodePalette(activeStyleId, name, archetype, {
+                            : visualArchetype2D === "WORKER"
+                              ? "Worker"
+                              : "Microservice";
+                    const palette2D = resolveStudioNodePalette(activeStyleId, name, visualArchetype2D, {
                       isCritical: isStopped,
                       isWarning: isPaused || isThrottled || isImpactedByOutage,
                       isSelected,
@@ -3444,17 +3450,23 @@ export function StudioObservability({
                       ? isLight ? "#ffe4e6" : "#4c0519"
                       : isPaused || isThrottled || isImpactedByOutage
                         ? isLight ? "#fef3c7" : "#451a03"
-                        : isLight ? "#ecfdf5" : "#064e3b";
+                        : isStandby
+                          ? isLight ? "#f1f5f9" : "#1e293b"
+                          : isLight ? "#ecfdf5" : "#064e3b";
                     const pillInk = isStopped
                       ? isLight ? "#be123c" : "#fda4af"
                       : isPaused || isThrottled || isImpactedByOutage
                         ? isLight ? "#b45309" : "#fcd34d"
-                        : isLight ? "#047857" : "#6ee7b7";
+                        : isStandby
+                          ? isLight ? "#475569" : "#cbd5e1"
+                          : isLight ? "#047857" : "#6ee7b7";
                     const barColor = isStopped
                       ? "#e11d48"
                       : isPaused || isThrottled || isImpactedByOutage
                         ? "#f59e0b"
-                        : "#10b981";
+                        : isStandby
+                          ? "#64748b"
+                          : "#10b981";
                     const barRatio = isStopped ? 1 : isPaused || isThrottled ? 0.85 : isImpactedByOutage ? 0.72 : 0.38;
                     const r = styleCfg.nodeRadius;
 

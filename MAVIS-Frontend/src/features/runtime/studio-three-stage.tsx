@@ -1045,13 +1045,13 @@ function createZonePlateGroup(
   const ctx = canvas.getContext("2d");
   if (ctx) {
     drawRoundedRect(ctx, margin, margin, pillW, pillH, pillH / 2);
-    ctx.fillStyle = isLight ? "rgba(255,255,255,0.96)" : "rgba(10,15,24,0.94)";
+    ctx.fillStyle = isLight ? "#ffffff" : "rgba(10,15,24,0.96)";
     ctx.fill();
-    ctx.lineWidth = 1.6 * dpr;
-    ctx.strokeStyle = isLight ? `${accentHex}75` : `${accentHex}99`;
+    ctx.lineWidth = 2 * dpr;
+    ctx.strokeStyle = accentHex;
     ctx.stroke();
     ctx.font = font;
-    ctx.fillStyle = accentHex;
+    ctx.fillStyle = isLight ? "#0f172a" : "#f1f5f9";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(title, canvas.width / 2, canvas.height / 2 + 0.5 * dpr);
@@ -1061,9 +1061,9 @@ function createZonePlateGroup(
   tex.minFilter = T.LinearMipmapLinearFilter;
   tex.magFilter = T.LinearFilter;
   tex.anisotropy = maxAnisotropy;
-  const badgeH = 0.28;
+  const badgeH = 0.34;
   const badgeNaturalW = badgeH * (canvas.width / canvas.height);
-  const badgeW = Math.min(width - 0.2, badgeNaturalW);
+  const badgeW = Math.min(Math.max(width - 0.1, 1.45), badgeNaturalW);
   const badgeMesh = new T.Mesh(
     new T.PlaneGeometry(1, badgeH),
     new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
@@ -3278,7 +3278,11 @@ export function StudioThreeStage({
           zone.borderLine.geometry = borderGeo;
           zone.borderLine.computeLineDistances();
           zone.badgeMesh.position.set(0, 0.018, hd);
-          zone.badgeMesh.scale.set(Math.min(next.width - 0.2, zone.badgeNaturalW), 1, 1);
+          zone.badgeMesh.scale.set(
+            Math.min(Math.max(next.width - 0.1, 1.45), zone.badgeNaturalW),
+            1,
+            1,
+          );
           zone.width = next.width;
           zone.depth = next.depth;
         }

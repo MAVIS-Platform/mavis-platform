@@ -1532,7 +1532,7 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(live, /Expand telemetry dock/);
   assert.doesNotMatch(live, /aria-label="Lecturer Lab Setup Guide"/);
   assert.match(standalone, /Done · Course Builder/);
-  assert.match(standalone, /\/course-builder\?workspace=/);
+  assert.match(standalone, /\/workspace-overview\?workspace=.*view=course-authoring&flowStep=arrange/);
   assert.match(standalone, /setQueryData\(\["api", "runtimeConfiguration"/);
   assert.match(standalone, /cause\.status === 409/);
   assert.match(access, /queryKey: \["api", "runtimeConfiguration"\]/);

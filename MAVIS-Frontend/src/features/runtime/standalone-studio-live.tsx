@@ -168,7 +168,7 @@ function StandaloneStudioContent() {
   const returnHref = safeRelativeHref(params?.get("returnTo") ?? null, defaultReturnTo);
   const publishHref =
     workspaceId && assignmentId
-      ? `/course-builder?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}`
+      ? `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring&flowStep=arrange`
       : returnHref;
   const submitHref =
     workspaceId && assignmentId

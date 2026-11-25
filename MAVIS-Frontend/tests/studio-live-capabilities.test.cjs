@@ -2127,7 +2127,18 @@ test("3D SE block polish + authoring & reliability fixes: distance-compensated l
   assert.ok(obs.includes("«worker»"));
   assert.ok(styles.includes('worker: { accent: "#6366f1"'));
   assert.doesNotMatch(styles, /"order"\s*\|\s*"payment"\s*\|\s*"catalog"/);
-  assert.ok(standalone.includes("/course-builder?workspace="));
+  const adapter = fs.readFileSync(
+    path.join(__dirname, "../src/lib/api/backend-adapter.ts"),
+    "utf8",
+  );
+  assert.ok(standalone.includes("view=course-authoring&flowStep=arrange"));
+  assert.ok(!standalone.includes("/course-builder?workspace="));
+  assert.ok(stage.includes('isLight ? "#0f172a" : "#f1f5f9"'));
+  assert.ok(obs.includes('visualArchetype2D === "WORKER"'));
+  assert.ok(obs.includes('"STANDBY"'));
+  assert.ok(adapter.includes('"gradeSubmission"'));
+  assert.ok(adapter.includes('"submissionExport"'));
+  assert.ok(adapter.includes('"submissionReview"'));
   assert.ok(standalone.includes("stateless.find((s) => /payment|billing/i.test(s))"));
   assert.ok(labStudio.includes('baselineRequest.path !== "/api/gateway/orders"'));
   assert.ok(grading.includes("formatGradeRowTitle"));
