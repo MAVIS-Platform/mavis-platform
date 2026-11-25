@@ -41,6 +41,7 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   const quiz = read("src/features/courses/quiz-library.tsx");
   const lab = read("src/features/assignments/lab-authoring.tsx");
   const courseBuilder = read("src/features/courses/course-builder.tsx");
+  const courseOutline = read("src/features/courses/course-outline.tsx");
   assert.doesNotMatch(shell, /en: "Modules"|en: "Labs"/);
   assert.doesNotMatch(navigation, /label: "Modules"|label: "Labs"/);
   assert.match(hub, /Add Repository/);
@@ -74,7 +75,9 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   assert.match(workspace, /currentStep=\{requestedFlowStep\}/);
   assert.match(workspace, /contentStep=\{contentStep\}/);
   assert.doesNotMatch(workspace, /CourseFirstSetupFlow/);
-  assert.match(workspace, /courseSetupStepHref\(workspace\.id, "repository", undefined, "setup"\)/);
+  assert.doesNotMatch(workspaceOverview, /Start course setup|Bắt đầu thiết lập khóa học/);
+  assert.match(courseOutline, /courseSetupStepHref\(workspaceId, "repository", undefined, "setup"\)/);
+  assert.match(courseOutline, /Click to start setting up your course/);
   assert.doesNotMatch(workspaceOverview, /Review submissions|Update Course/);
   assert.match(courseBuilder, /isPublishStep/);
   assert.match(courseBuilder, /window\.location\.assign/);

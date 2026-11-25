@@ -1177,10 +1177,12 @@ test("Inline module quiz normalizes questions/IDs, Active class Settings shows P
   );
   const settingsBlock = wsScreensSrc.slice(
     wsScreensSrc.indexOf('activeTab === "settings" && canManage'),
-    wsScreensSrc.indexOf('activeTab === "settings" && canManage') + 900,
+    wsScreensSrc.indexOf('activeTab === "settings" && canManage') + 2400,
   );
   assert.ok(settingsBlock.includes("<CoursePasskey workspaceId={workspace.id} />"));
   assert.ok(settingsBlock.includes("<WorkspaceControls"));
+  assert.ok(settingsBlock.includes("<Dialog"));
+  assert.ok(settingsBlock.includes("<Settings2"));
   assert.ok(!settingsBlock.includes("{canEdit &&"), "Active class Settings tab must stay visible without canEdit guard");
 
   const courseScreensSrc = fs.readFileSync(

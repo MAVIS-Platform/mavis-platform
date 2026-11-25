@@ -13,6 +13,14 @@ function courseCoverIndex(courseId: string) {
   return hash % coverColors.length;
 }
 
+export function getCourseCoverTheme(courseId: string) {
+  const index = courseCoverIndex(courseId);
+  return {
+    color: coverColors[index] ?? coverColors[0],
+    Icon: coverIcons[index] ?? Building2,
+  };
+}
+
 export function CourseCover({
   courseId,
   className,
@@ -22,12 +30,11 @@ export function CourseCover({
   className?: string;
   children?: ReactNode;
 }) {
-  const index = courseCoverIndex(courseId);
-  const CoverIcon = coverIcons[index] ?? Building2;
+  const { color, Icon: CoverIcon } = getCourseCoverTheme(courseId);
   return (
     <div
       className={cn("relative h-28 shrink-0 overflow-hidden", className)}
-      style={{ backgroundColor: coverColors[index] }}
+      style={{ backgroundColor: color }}
     >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 to-transparent" />
       <CoverIcon

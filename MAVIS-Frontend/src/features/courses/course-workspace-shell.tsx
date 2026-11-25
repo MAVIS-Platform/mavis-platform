@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { getCourseCoverTheme } from "@/components/course-cover";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { cn } from "@/lib/utils";
 import type { Response } from "@/lib/api/contracts";
@@ -156,19 +157,29 @@ export function CourseWorkspaceShell({
   const isStudent = workspace.myRole?.toUpperCase() === "STUDENT";
   const activeStaffTab = resolveStaffTab(pathname, active);
   const activeStudentTab = resolveStudentTab(pathname, active);
+  const coverTheme = getCourseCoverTheme(workspace.id);
+  const CoverIcon = coverTheme.Icon;
 
   return (
     <div className="min-w-0 max-w-full space-y-6">
-      <header className="overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-600 p-5 text-white shadow-lg sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <header
+        className="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg sm:p-6"
+        style={{ backgroundColor: coverTheme.color }}
+      >
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/15" />
+        <CoverIcon
+          className="pointer-events-none absolute -bottom-16 -right-8 size-64 -rotate-12 text-white/10"
+          aria-hidden="true"
+        />
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 space-y-2">
             {!isStudent && (
               <div>
                 <Link
                   href="/workspaces"
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-white/80 transition-colors hover:text-white"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/35 bg-white/15 px-3 py-1.5 text-sm font-semibold text-white shadow-sm backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-white/60 hover:bg-white/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-emerald-900"
                 >
-                  <ArrowLeft className="size-3.5" aria-hidden="true" />
+                  <ArrowLeft className="size-4" aria-hidden="true" />
                   {t("Back to classes", "Quay lại danh sách lớp")}
                 </Link>
               </div>
@@ -227,7 +238,7 @@ export function CourseWorkspaceShell({
         {showTabs && (
           <nav
             aria-label={t("Class sections", "Các mục của lớp")}
-            className="mt-4 overflow-x-auto rounded-xl bg-black/20 p-1 backdrop-blur-sm"
+            className="relative z-10 mt-4 overflow-x-auto rounded-xl bg-black/20 p-1 backdrop-blur-sm"
           >
             <div className="flex w-max min-w-full flex-nowrap items-center gap-1">
               {(isStudent ? STUDENT_TABS : STAFF_TABS).map((tab) => {

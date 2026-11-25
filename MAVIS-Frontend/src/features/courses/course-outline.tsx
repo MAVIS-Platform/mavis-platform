@@ -39,6 +39,7 @@ import {
   type QuizQuestionData,
 } from "./java-coursera-curriculum-data";
 import { resolveLabTier } from "@/features/assignments/requirements";
+import { courseSetupStepHref } from "./course-setup-flow-navigation";
 
 export function isMissingCourseError(error: unknown) {
   return error instanceof ApiError && error.status === 404;
@@ -291,20 +292,20 @@ function CourseOutlineBody({
     if (!canManage) return null;
     return (
       <Link
-        href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
-        aria-label={t("Setup Curriculum", "Thiết lập Curriculum")}
+        href={courseSetupStepHref(workspaceId, "repository", undefined, "setup")}
+        aria-label={t("Start course setup", "Bắt đầu thiết lập khóa học")}
         className="group flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/40 px-6 py-14 text-center transition hover:border-primary/60 hover:bg-card/70"
       >
         <span className="flex size-20 items-center justify-center rounded-2xl border-2 border-dashed border-muted-foreground/35 bg-muted/40 text-muted-foreground transition group-hover:scale-[1.04] group-hover:border-primary group-hover:bg-primary/10 group-hover:text-primary">
           <Plus className="size-9 stroke-[1.75] transition-transform group-hover:rotate-90" aria-hidden="true" />
         </span>
         <h2 className="mt-5 text-base font-semibold tracking-tight text-foreground">
-          {t("No curriculum chapters yet.", "Chưa có chương học tập nào.")}
+          {t("Start course setup", "Bắt đầu thiết lập khóa học")}
         </h2>
         <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
           {t(
-            "Click to create your first module in Modules.",
-            "Bấm để tạo chương đầu tiên trong Đề cương & Học liệu.",
+            "Click to start setting up your course.",
+            "Bấm để bắt đầu thiết lập khóa học.",
           )}
         </p>
       </Link>

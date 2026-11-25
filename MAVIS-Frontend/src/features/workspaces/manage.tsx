@@ -125,9 +125,11 @@ export function CreateWorkspace({ onClose }: { onClose?: () => void } = {}) {
 export function WorkspaceControls({
   workspace,
   mode = "all",
+  onSaved,
 }: {
   workspace: import("@/lib/api/contracts").Response<"workspaces">[number];
   mode?: "overview" | "members" | "all";
+  onSaved?: () => void;
 }) {
   const session = useSession(),
     add = useApiMutation("addWorkspaceMember"),
@@ -151,7 +153,10 @@ export function WorkspaceControls({
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              update.mutate({ workspaceId: workspace.id, name, description });
+              update.mutate(
+                { workspaceId: workspace.id, name, description },
+                { onSuccess: () => onSaved?.() },
+              );
             }}
           >
             <FormField label="Workspace name">
@@ -261,16 +266,24 @@ export function WorkspaceControls({
         </>
       )}
       {showOverview && workspace.status !== "ARCHIVED" && (
-        <Button
-          variant="outline"
-          disabled={archive.isPending}
-          onClick={() => {
-            if (window.confirm("Archive this workspace?"))
-              archive.mutate({ workspaceId: workspace.id });
-          }}
-        >
-          Archive workspace
-        </Button>
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+          <p className="mb-3 text-xs text-muted-foreground">
+            Archive this class when the term ends. You can reopen it later.
+          </p>
+          <Button
+            variant="destructive"
+            disabled={archive.isPending}
+            onClick={() => {
+              if (window.confirm("Archive this workspace?"))
+                archive.mutate(
+                  { workspaceId: workspace.id },
+                  { onSuccess: () => onSaved?.() },
+                );
+            }}
+          >
+            Archive workspace
+          </Button>
+        </div>
       )}
       {showOverview && workspace.status === "ARCHIVED" && (
         <Button

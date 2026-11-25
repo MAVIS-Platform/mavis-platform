@@ -2,12 +2,19 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { CheckCircle2, Clock3, ClipboardCheck, Plus, Search, Users } from "lucide-react";
+import { CheckCircle2, Clock3, ClipboardCheck, Plus, Search, Settings2, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CourseCover } from "@/components/course-cover";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { Pagination, SearchInput } from "@/components/shared/forms";
 import { DataTable, DetailPanel } from "@/components/shared/data";
@@ -476,10 +483,6 @@ export function WorkspaceOverview() {
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const canEdit = canEditLecturerCourse(workspace?.status, canManage);
   const courseAccess = lecturerCourseAccess(workspace?.status);
-  const authoring = useCourseAuthoring(workspace?.id ?? "", Boolean(workspace && canManage));
-  const hasLearningContent = Boolean(
-    authoring.data?.modules.some((module) => module.items.length > 0),
-  );
   const requestedView = params.get("view");
   const requestedFlowStep = params.get("flowStep") === "publish" ? "publish" : "arrange";
   const requestedContentStep = params.get("contentStep");
@@ -508,21 +511,6 @@ export function WorkspaceOverview() {
         <CourseWorkspaceShell
           workspace={workspace}
           active={activeTab === "authoring" ? "authoring" : "content"}
-          actions={
-            canEdit && !hasLearningContent ? (
-              <Button
-                asChild
-                size="sm"
-                variant="outline"
-                className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
-              >
-                <Link href={courseSetupStepHref(workspace.id, "repository", undefined, "setup")}>
-                  <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                  {t("Start course setup", "Bắt đầu thiết lập khóa học")}
-                </Link>
-              </Button>
-            ) : undefined
-          }
         >
           <div className="space-y-5">
             {activeTab === "outline" && !canManage && (
@@ -615,6 +603,7 @@ export function WorkspaceMembers() {
   const query = useApiQuery("workspaces", {});
   const remove = useApiMutation("removeWorkspaceMember");
   const [search, setSearch] = useState("");
+  const [classSettingsOpen, setClassSettingsOpen] = useState(false);
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage =
     workspace?.myRole?.toUpperCase() === "LECTURER" || session.data?.user?.role === "admin";
@@ -649,27 +638,37 @@ export function WorkspaceMembers() {
         <CourseWorkspaceShell workspace={workspace} active={activeTab}>
           {activeTab === "settings" && canManage ? (
             <div className="space-y-5">
+              <div className="flex justify-end">
+                <Button type="button" onClick={() => setClassSettingsOpen(true)}>
+                  <Settings2 className="mr-2 size-4" aria-hidden="true" />
+                  {t("Class settings", "Cài đặt lớp học")}
+                </Button>
+              </div>
               <div id="class-passkey">
                 <CoursePasskey workspaceId={workspace.id} />
               </div>
-              <section className="rounded-2xl border bg-card p-5 shadow-xs">
-                <div className="space-y-0.5">
-                  <h3 className="text-base font-semibold">
-                    {t("Class settings", "Cài đặt chung của lớp")}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {t(
-                      "Update class name, description, or archive this class when the term ends.",
-                      "Cập nhật tên lớp, mô tả hoặc lưu trữ lớp học khi kết thúc học kỳ.",
-                    )}
-                  </p>
-                </div>
-                <WorkspaceControls
-                  key={`${workspace.id}-settings`}
-                  workspace={workspace}
-                  mode="overview"
-                />
-              </section>
+              <Dialog open={classSettingsOpen} onOpenChange={setClassSettingsOpen}>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Settings2 className="size-5 text-primary" aria-hidden="true" />
+                      {t("Class settings", "Cài đặt lớp học")}
+                    </DialogTitle>
+                    <DialogDescription>
+                      {t(
+                        "Update the class name and description, or archive this class when the term ends.",
+                        "Cập nhật tên và mô tả, hoặc lưu trữ lớp học khi kết thúc học kỳ.",
+                      )}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <WorkspaceControls
+                    key={`${workspace.id}-settings`}
+                    workspace={workspace}
+                    mode="overview"
+                    onSaved={() => setClassSettingsOpen(false)}
+                  />
+                </DialogContent>
+              </Dialog>
             </div>
           ) : (
             <div className="space-y-4">
