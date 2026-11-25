@@ -535,6 +535,16 @@ export function CourseRoadmap() {
         (canManage ? (
           <div className="space-y-6">
             <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-700 p-6 text-white shadow-sm">
+              <div className="mb-3">
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                >
+                  <Link href="/courses">← {t("Back to courses", "Quay lại khóa học")}</Link>
+                </Button>
+              </div>
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-100">
@@ -557,14 +567,6 @@ export function CourseRoadmap() {
                           "👁️ Preview Student Syllabus View",
                           "👁️ Xem Giao diện Lộ trình của Sinh viên",
                         )}
-                  </Button>
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-                  >
-                    <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
                   </Button>
                 </div>
               </div>
@@ -888,64 +890,6 @@ export function LabWorkspace() {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
   }, [selection, workspaceId]);
 
-  const readiness = useMemo(
-    () => [
-      ...(hasReferenceArch || requiresRuntime
-        ? [
-            {
-              label: t("Static architecture", "Kiến trúc tĩnh"),
-              state: activeModelId ? "READY" : referenceSnapshotId ? "IN PROGRESS" : "MISSING",
-            },
-          ]
-        : []),
-      isTheoryOnlyLab
-        ? {
-            label: t("Theory lesson", "Bài lý thuyết"),
-            state: "READY",
-          }
-        : {
-            label: t("Course prerequisite", "Điều kiện khóa học"),
-            state: runtimeReady ? "PASSED" : "IN PROGRESS",
-          },
-      ...(requiresRuntime
-        ? [
-            {
-              label: t("Studio receipt", "Biên nhận Studio"),
-              state: verifiedStudioSession ? "VERIFIED" : runtimeReady ? "READY" : "LOCKED",
-            },
-          ]
-        : []),
-    ],
-    [
-      activeModelId,
-      hasReferenceArch,
-      isTheoryOnlyLab,
-      referenceSnapshotId,
-      requiresRuntime,
-      runtimeReady,
-      verifiedStudioSession,
-      t,
-    ],
-  );
-  const readinessStateLabel = (state: string) => {
-    switch (state) {
-      case "READY":
-        return t("Ready", "Sẵn sàng");
-      case "IN PROGRESS":
-        return t("In progress", "Đang xử lý");
-      case "MISSING":
-        return t("Missing", "Chưa có");
-      case "PASSED":
-        return t("Passed", "Đã đạt");
-      case "VERIFIED":
-        return t("Verified", "Đã xác minh");
-      case "LOCKED":
-        return t("Locked", "Đang khóa");
-      default:
-        return state;
-    }
-  };
-
   if (!workspaceId)
     return (
       <p className="text-sm text-muted-foreground">
@@ -1028,21 +972,12 @@ export function LabWorkspace() {
                   </Badge>
                   <Badge className="border-teal-300/35 bg-teal-400/20 text-[11px] font-medium text-teal-50">
                     {requiresRuntime
-                      ? t("Studio Live Practice Lab", "Lab Thực Hành Studio Live")
+                      ? t("Studio Live Practice Lab", "Lab thực hành Studio Live")
                       : isTheoryOnlyLab
-                        ? t("Theory Only Lab", "Lab Chỉ Lý Thuyết")
-                        : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
+                        ? t("Theory Only Lab", "Lab lý thuyết")
+                        : t("Theory & Quiz Lab", "Lab lý thuyết & Quiz")}
                   </Badge>
                   {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
-                  {readiness.map((gate) => (
-                    <span
-                      key={gate.label}
-                      className="rounded-md border border-white/20 bg-slate-950/20 px-2 py-0.5 text-[11px] text-white/95"
-                    >
-                      <span className="text-sky-200">{gate.label}:</span>{" "}
-                      {readinessStateLabel(gate.state)}
-                    </span>
-                  ))}
                 </div>
               </div>
               <div

@@ -260,7 +260,7 @@ export function StudentCourseProgressCard({
             <div className="space-y-1.5 rounded-xl border bg-muted/35 p-3">
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="font-medium text-muted-foreground">
-                  {t("Course Progress", "Tiến Độ Khóa Học")}
+                  {t("Course progress", "Tiến độ khóa học")}
                 </span>
                 <span className="mavis-tabular font-semibold text-primary">
                   {summary.completedLabs}/{summary.totalLabs} {t("Labs", "bài")} ({summary.completionPercent}%)

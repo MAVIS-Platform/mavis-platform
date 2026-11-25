@@ -139,7 +139,7 @@ test("Lab UI keeps unavailable progress gates honest and runs the 3-phase Studio
   assert.match(access, /\/lab\?workspace=.*&assignment=.*&step=1/s);
   assert.match(
     course,
-    /state:\s*activeModelId\s*\?\s*"READY"\s*:\s*referenceSnapshotId\s*\?\s*"IN PROGRESS"\s*:\s*"MISSING"/,
+    /Lab thực hành Studio Live/,
   );
   assert.match(course, /job\.status === "completed" && job\.analysisState !== "PARTIAL"/);
   assert.match(course, /Runtime Studio is not available yet/);
@@ -2475,4 +2475,21 @@ test("Sprint 2 #04 Syllabus & Quiz Copy: removes fake 15-min label, deduplicates
   assert.match(syllabus, /function formatSyllabusItemDescription/);
   assert.match(syllabus, /hideTitle/);
   assert.match(quizRunner, /hideTitle\?: boolean \| undefined/);
+});
+
+
+test("Sprint 2 #05 Banners & Nav: left-aligns all Back buttons, declutters hero banners, and normalizes VI sentence case", () => {
+  const submissions = read("src/features/submissions/screens.tsx");
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
+  const lab = read("src/features/courses/screens.tsx");
+
+  assert.ok(submissions.indexOf('t("Back to class"') < submissions.indexOf('t("Submissions & Grades"'));
+  const syllabusHeroStart = syllabus.indexOf('<section className="mavis-hero-surface');
+  assert.ok(syllabusHeroStart !== -1 && syllabus.indexOf('t("Back to courses"', syllabusHeroStart) < syllabus.indexOf("{workspace.name}", syllabusHeroStart));
+  const lecturerHero = lab.indexOf("from-teal-900 via-teal-800");
+  assert.ok(lecturerHero !== -1 && lab.indexOf('t("Back to courses"', lecturerHero) < lab.indexOf("{workspace.name}", lecturerHero));
+  assert.doesNotMatch(syllabus, /Học Tiếp Bài Hiện Tại|Tiến Độ Hoàn Thành Khóa Học/);
+  assert.doesNotMatch(dashboard, /Tiến Độ Khóa Học/);
+  assert.doesNotMatch(lab, /Biên nhận Studio|Điều kiện khóa học/);
 });

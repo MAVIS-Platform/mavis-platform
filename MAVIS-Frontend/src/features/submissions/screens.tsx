@@ -72,6 +72,23 @@ function MySubmissions() {
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <div>
+          <div className="mb-2">
+            {workspace ? (
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/roadmap?workspace=${encodeURIComponent(workspace.id)}`}>
+                  <ArrowLeft className="mr-1.5 size-3.5" aria-hidden="true" />
+                  {t("Back to class", "Quay lại lớp")}
+                </Link>
+              </Button>
+            ) : (
+              <Button asChild size="sm" variant="outline">
+                <Link href="/courses">
+                  <ArrowLeft className="mr-1.5 size-3.5" aria-hidden="true" />
+                  {t("Back to My Courses", "Quay lại Khóa học của tôi")}
+                </Link>
+              </Button>
+            )}
+          </div>
           <h1 className="text-xl font-semibold tracking-tight">
             {t("Submissions & Grades", "Bài nộp & Điểm")}
           </h1>
@@ -98,21 +115,6 @@ function MySubmissions() {
                 ]}
               />
             </div>
-          )}
-          {workspace ? (
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/roadmap?workspace=${encodeURIComponent(workspace.id)}`}>
-                <ArrowLeft className="mr-1.5 size-3.5" aria-hidden="true" />
-                {t("Back to class", "Quay lại lớp")}
-              </Link>
-            </Button>
-          ) : (
-            <Button asChild size="sm" variant="outline">
-              <Link href="/courses">
-                <ArrowLeft className="mr-1.5 size-3.5" aria-hidden="true" />
-                {t("Back to My Courses", "Quay lại Khóa học của tôi")}
-              </Link>
-            </Button>
           )}
         </div>
       </header>

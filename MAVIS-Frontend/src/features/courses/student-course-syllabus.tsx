@@ -518,6 +518,16 @@ export function StudentCourseSyllabus({
       <div className="min-w-0 space-y-6">
         {!isLearningWorkspace && (
           <section className="mavis-hero-surface p-6 text-white">
+            <div className="mb-4">
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+              >
+                <Link href="/courses">← {t("Back to courses", "Danh sách khóa học")}</Link>
+              </Button>
+            </div>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="max-w-2xl space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -538,8 +548,8 @@ export function StudentCourseSyllabus({
                 </h1>
                 <p className="text-sm leading-6 text-sky-100/90">
                   {t(
-                    "Each Module combines repository knowledge, theory, and a Quiz before you enter MAVIS Studio for analysis, runtime experiments, and evidence submission.",
-                    "Mỗi Module kết hợp kiến thức repository, lý thuyết và Quiz trước khi bạn vào MAVIS Studio để phân tích, thực nghiệm runtime và nộp minh chứng.",
+                    "Read the core lessons, pass the knowledge check, and practice directly inside MAVIS Studio.",
+                    "Đọc lý thuyết trọng tâm, hoàn thành bài trắc nghiệm và thực hành trực tiếp trong MAVIS Studio.",
                   )}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-sky-100">
@@ -555,32 +565,25 @@ export function StudentCourseSyllabus({
                   </span>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                {resumeLabHref && (
+              {resumeLabHref && (
+                <div className="flex flex-wrap items-center gap-2.5">
                   <Button asChild className="bg-white text-slate-950 shadow-sm hover:bg-sky-50">
                     <Link href={resumeLabHref}>
                       <Play
                         className="mr-1.5 h-4 w-4 fill-current text-blue-700"
                         aria-hidden="true"
                       />
-                      {t("Resume Current Lesson", "Học Tiếp Bài Hiện Tại")}
+                      {t("Continue learning", "Tiếp tục học")}
                     </Link>
                   </Button>
-                )}
-                <Button
-                  asChild
-                  variant="outline"
-                  className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
-                >
-                  <Link href="/courses">← {t("Back to courses", "Quay lại khóa học")}</Link>
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
 
             {summary.totalLabs > 0 && (
               <div className="mt-5 max-w-lg space-y-1.5">
                 <div className="flex justify-between text-xs text-sky-100">
-                  <span>{t("Course Syllabus Progress", "Tiến Độ Hoàn Thành Khóa Học")}</span>
+                  <span>{t("Course progress", "Tiến độ khóa học")}</span>
                   <span className="tabular-nums font-semibold text-white">
                     {summary.completedLabs}/{summary.totalLabs} · {summary.completionPercent}%
                   </span>
