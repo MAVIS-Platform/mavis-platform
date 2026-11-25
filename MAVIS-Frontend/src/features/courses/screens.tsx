@@ -945,20 +945,20 @@ export function LabWorkspace() {
       {workspace && lab && (
         <div className="space-y-3">
           <header className="mavis-hero-surface space-y-3 px-4 py-3.5 text-white sm:px-5">
-            <div className="flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-sky-100">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-xs text-sky-100">
                 <Link
-                  className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/15 px-2.5 py-0.5 font-medium text-white transition-colors hover:bg-white/25"
+                  className="inline-flex shrink-0 whitespace-nowrap items-center gap-1 rounded-md border border-white/25 bg-white/15 px-2.5 py-0.5 font-medium text-white transition-colors hover:bg-white/25"
                   href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
                 >
                   ← {t("Back to course", "Quay lại khóa học")}
                 </Link>
-                <span className="text-white/50">/</span>
-                <span className="truncate font-medium text-white/90">{workspace.name}</span>
+                <span className="shrink-0 text-white/50">/</span>
+                <span className="max-w-[42%] truncate font-medium text-white/90">{workspace.name}</span>
                 {currentModule && (
                   <>
-                    <span className="text-white/50">/</span>
-                    <span className="truncate text-sky-100">
+                    <span className="shrink-0 text-white/50">/</span>
+                    <span className="min-w-0 flex-1 truncate text-sky-100">
                       {/^(?:Module|Chương)\s+\d+/i.test(currentModule.title.trim())
                         ? currentModule.title
                         : `${t("Module", "Chương")} ${currentModule.position}: ${currentModule.title}`}
@@ -972,7 +972,7 @@ export function LabWorkspace() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="shrink-0 border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                    className="shrink-0 whitespace-nowrap border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
                   >
                     <List className="mr-1.5 size-4" aria-hidden="true" />
                     {t("Contents", "Mục lục")}

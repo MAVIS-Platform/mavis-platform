@@ -56,6 +56,31 @@ function download(name: string, content: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
+function localizeQuizGenerationError(
+  message: string,
+  t: (en: string, vi: string) => string,
+): string {
+  if (/add theory content or attach a reference architecture model/i.test(message)) {
+    return t(
+      "Add theory content or attach a reference architecture model before generating Quiz questions.",
+      "Vui lòng thêm nội dung lý thuyết hoặc gắn sơ đồ kiến trúc tham chiếu trước khi dùng AI tạo câu hỏi Quiz.",
+    );
+  }
+  if (/select at least one source/i.test(message)) {
+    return t(
+      "Select at least one source (theory chapters or static diagrams).",
+      "Vui lòng chọn ít nhất một nguồn học liệu (Lý thuyết các Chương hoặc Sơ đồ tĩnh).",
+    );
+  }
+  if (/not configured|api key|provider/i.test(message)) {
+    return t(
+      "AI Quiz generation is not configured yet. Configure an AI provider in Administration or import from NotebookLM.",
+      "Chưa cấu hình nhà cung cấp AI. Hãy cấu hình AI trong Quản trị hoặc dùng tính năng Nhập từ NotebookLM.",
+    );
+  }
+  return message;
+}
+
 export function QuizBuilder({
   workspaceId,
   assignmentId,
@@ -430,7 +455,7 @@ export function QuizBuilder({
 
       {generateFromTheory.error && (
         <p role="alert" className="text-xs text-destructive">
-          {generateFromTheory.error.message}
+          {localizeQuizGenerationError(generateFromTheory.error.message, t)}
         </p>
       )}
       {!assetMode && draft.isError && !(draft.error instanceof ApiError && draft.error.status === 404) && (

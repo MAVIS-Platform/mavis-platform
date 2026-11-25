@@ -802,12 +802,13 @@ function QuizResult({
   onRetry: () => void;
   onNextLesson?: (() => void) | undefined;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const passed = typeof passedOverride === "boolean" ? passedOverride : scorePercent >= passPercent;
   const submittedLabel = submittedAt
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-        new Date(submittedAt),
-      )
+    ? new Intl.DateTimeFormat(locale === "vi" ? "vi-VN" : "en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(submittedAt))
     : t("Just now", "Vừa xong");
   return (
     <section className="mx-auto mt-6 max-w-[850px] overflow-hidden rounded-2xl border bg-background shadow-xs">

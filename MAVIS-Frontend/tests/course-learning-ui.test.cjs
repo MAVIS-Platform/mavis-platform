@@ -2582,3 +2582,17 @@ test("Sprint 3 #04 Section 3 Essay Panel: streamlines to essay prompt, full stud
   assert.match(subV2, /essayPrompt\?: string \| undefined/);
   assert.match(screens, /essayPrompt=\{labInstructions\}/);
 });
+
+
+test("Sprint 3 #05 Lab Header Row 1 & Quiz AI/Date i18n: keeps /lab Row 1 single-line and localizes AI error + date format", () => {
+  const screens = read("src/features/courses/screens.tsx");
+  const builder = read("src/features/assignments/quiz-builder.tsx");
+  const runner = read("src/features/courses/chapter-quiz-runner.tsx");
+
+  assert.match(screens, /className="flex items-center justify-between gap-3"/);
+  assert.match(screens, /className="flex min-w-0 flex-1 items-center gap-1\.5 overflow-hidden text-xs text-sky-100"/);
+  assert.match(screens, /shrink-0 whitespace-nowrap border-white\/30 bg-white\/12 text-white/);
+  assert.match(builder, /function localizeQuizGenerationError/);
+  assert.match(builder, /localizeQuizGenerationError\(generateFromTheory\.error\.message, t\)/);
+  assert.match(runner, /locale === "vi" \? "vi-VN" : "en-US"/);
+});
