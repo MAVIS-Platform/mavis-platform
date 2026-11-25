@@ -2143,12 +2143,6 @@ function StepContent({
                                 : undefined
                             }
                           />
-                          <p className="text-xs leading-5 text-muted-foreground">
-                            {t(
-                              "Select an element to inspect its details and source evidence.",
-                              "Chọn một thành phần để xem chi tiết và evidence mã nguồn.",
-                            )}
-                          </p>
                         </div>
                       </aside>
                     </div>
@@ -2203,12 +2197,6 @@ function StepContent({
                           onTabChange={setInspectorTab}
                           onExplainWithAi={() => setInspectorTab("ai")}
                         />
-                        <p className="text-xs leading-5 text-muted-foreground">
-                          {t(
-                            "Select an element to inspect its details and source evidence.",
-                            "Chọn một thành phần để xem chi tiết và evidence mã nguồn.",
-                          )}
-                        </p>
                       </div>
                     </aside>
                   </div>

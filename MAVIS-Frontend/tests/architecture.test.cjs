@@ -6762,3 +6762,27 @@ test("Task #04 SWD Inspector: 4-tab Sticky Inspector integrates Grounded AI Tuto
   assert.doesNotMatch(screens, /BR-05 & DS-02b|Demo DS-02b/);
   assert.match(route, /cleanSourceLocator/);
 });
+
+
+test("Sprint 2 #02 Static Inspector: defers SVG pointer capture until drag threshold, keeps all 4 tabs visible, and removes duplicate AI/evidence prompts", () => {
+  const viewer = fs.readFileSync(
+    path.join(root, "src/features/architecture/architecture-svg-viewer.tsx"),
+    "utf8",
+  );
+  const components = fs.readFileSync(
+    path.join(root, "src/features/architecture/components.tsx"),
+    "utf8",
+  );
+  const screens = fs.readFileSync(
+    path.join(root, "src/features/courses/screens.tsx"),
+    "utf8",
+  );
+
+  const downIdx = viewer.indexOf("onPointerDown={(event) => {");
+  const moveIdx = viewer.indexOf("onPointerMove={(event) => {");
+  const captureIdx = viewer.indexOf("setPointerCapture?.(event.pointerId)");
+  assert.ok(downIdx !== -1 && moveIdx !== -1 && captureIdx > moveIdx, "setPointerCapture must happen after drag threshold in onPointerMove");
+  assert.match(viewer, /data-svg-edge=\{edge\.id\}/);
+  assert.doesNotMatch(components, /Giải thích bằng AI/);
+  assert.doesNotMatch(screens, /evidence mã nguồn/);
+});

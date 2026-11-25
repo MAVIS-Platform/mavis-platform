@@ -959,12 +959,11 @@ export function ArchitectureSvgViewer({
       <div
         ref={viewportRef}
         onDoubleClick={(event) => {
-          if (event.target instanceof Element && event.target.closest("[data-svg-node]")) return;
+          if (event.target instanceof Element && event.target.closest("[data-svg-node], [data-svg-edge]")) return;
           fitToView();
         }}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
-          event.currentTarget.setPointerCapture?.(event.pointerId);
           dragRef.current = {
             active: true,
             pointerId: event.pointerId,
@@ -984,6 +983,7 @@ export function ArchitectureSvgViewer({
             d.moved = true;
             setIsDragging(true);
             suppressClickRef.current = true;
+            event.currentTarget.setPointerCapture?.(event.pointerId);
           }
           if (d.moved) {
             setView((prev) => ({
@@ -993,14 +993,14 @@ export function ArchitectureSvgViewer({
           }
         }}
         onPointerUp={(event) => {
-          if (dragRef.current.pointerId === event.pointerId) {
+          if (dragRef.current.pointerId === event.pointerId && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
             event.currentTarget.releasePointerCapture?.(event.pointerId);
           }
           dragRef.current.active = false;
           setIsDragging(false);
         }}
         onPointerCancel={(event) => {
-          if (dragRef.current.pointerId === event.pointerId) {
+          if (dragRef.current.pointerId === event.pointerId && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
             event.currentTarget.releasePointerCapture?.(event.pointerId);
           }
           dragRef.current.active = false;
@@ -1142,6 +1142,7 @@ export function ArchitectureSvgViewer({
               return (
                 <g
                   key={edge.id}
+                  data-svg-edge={edge.id}
                   onClick={
                     onSelect && selectTarget ? () => onSelect(selectTarget) : undefined
                   }

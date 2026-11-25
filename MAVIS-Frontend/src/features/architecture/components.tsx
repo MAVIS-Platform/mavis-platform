@@ -387,7 +387,7 @@ export function ElementDetailsPanel({
   aiPanel,
   activeTab: controlledTab,
   onTabChange,
-  onExplainWithAi,
+  onExplainWithAi: _onExplainWithAi,
   onInspectServiceC3,
 }: {
   model: ArchitecturalModel;
@@ -533,48 +533,22 @@ export function ElementDetailsPanel({
         subject={element ? "element" : "relationship"}
       />
     );
-  const detailTabs: Array<{ id: InspectorTab; label: string }> = element
-    ? [
-        { id: "overview", label: t("Overview", "Tổng quan") },
-        {
-          id: "relationships",
-          label: `${t("Relationships", "Quan hệ")} (${incoming.length + outgoing.length})`,
-        },
-        { id: "evidence", label: t("Evidence", "Bằng chứng") },
-        ...(aiPanel ? [{ id: "ai" as const, label: t("Ask AI", "Hỏi AI") }] : []),
-      ]
-    : edge
-      ? [
-          { id: "overview", label: t("Overview", "Tổng quan") },
-          { id: "evidence", label: t("Evidence", "Bằng chứng") },
-          ...(aiPanel ? [{ id: "ai" as const, label: t("Ask AI", "Hỏi AI") }] : []),
-        ]
-      : aiPanel
-        ? [
-            { id: "overview", label: t("Overview", "Tổng quan") },
-            { id: "ai", label: t("Ask AI", "Hỏi AI") },
-          ]
-        : [];
+  const detailTabs: Array<{ id: InspectorTab; label: string }> = [
+    { id: "overview", label: t("Overview", "Tổng quan") },
+    {
+      id: "relationships",
+      label: element
+        ? `${t("Relationships", "Quan hệ")} (${incoming.length + outgoing.length})`
+        : edge
+          ? `${t("Relationships", "Quan hệ")} (2)`
+          : t("Relationships", "Quan hệ"),
+    },
+    { id: "evidence", label: t("Evidence", "Bằng chứng") },
+    ...(aiPanel ? [{ id: "ai" as const, label: t("Ask AI", "Hỏi AI") }] : []),
+  ];
   const visibleTab = detailTabs.some((tab) => tab.id === currentTab)
     ? currentTab
     : (detailTabs[0]?.id ?? "overview");
-  const aiButton =
-    aiPanel || onExplainWithAi ? (
-      <div className="pt-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="w-full"
-          onClick={() => {
-            selectTab("ai");
-            onExplainWithAi?.();
-          }}
-        >
-          {t("Explain with AI", "Giải thích bằng AI")}
-        </Button>
-      </div>
-    ) : null;
 
   return (
     <DetailPanel
@@ -711,7 +685,6 @@ export function ElementDetailsPanel({
                 {t("View C3 diagram for this service →", "Xem sơ đồ C3 của service này →")}
               </Button>
             )}
-            {aiButton}
           </div>
           <div role="tabpanel" hidden={visibleTab !== "relationships"} className="space-y-4">
             {connectionList("Incoming", "Thành phần gọi đến", incoming)}
@@ -774,7 +747,6 @@ export function ElementDetailsPanel({
                   </Button>
                 </div>
               )}
-              {aiButton}
             </div>
             <p className="text-xs text-muted-foreground">
               {t("Linked evidence:", "Bằng chứng liên kết:")}{" "}
@@ -790,6 +762,45 @@ export function ElementDetailsPanel({
                       }`}
               </span>
             </p>
+          </div>
+          <div role="tabpanel" hidden={visibleTab !== "relationships"} className="space-y-3">
+            <h4 className="text-sm font-semibold">
+              {t("Connected components", "Hai đầu kết nối")}
+            </h4>
+            <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">{t("Caller / Source", "Thành phần gọi")}</span>
+                {onSelect ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 font-mono text-xs"
+                    onClick={() => onSelect(edge.from)}
+                  >
+                    {nameOf(edge.from)}
+                  </Button>
+                ) : (
+                  <span className="font-mono font-medium">{nameOf(edge.from)}</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">{t("Target / Callee", "Thành phần nhận")}</span>
+                {onSelect ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 font-mono text-xs"
+                    onClick={() => onSelect(edge.to)}
+                  >
+                    {nameOf(edge.to)}
+                  </Button>
+                ) : (
+                  <span className="font-mono font-medium">{nameOf(edge.to)}</span>
+                )}
+              </div>
+            </div>
           </div>
           <div role="tabpanel" hidden={visibleTab !== "evidence"} className="space-y-3">
             <h4 className="text-sm font-semibold">
@@ -808,11 +819,26 @@ export function ElementDetailsPanel({
           <div role="tabpanel" hidden={visibleTab !== "overview"} className="space-y-2">
             <p className="text-xs leading-5 text-muted-foreground">
               {t(
-                "Select a service, container, or connection in the diagram to inspect its SWD role, inbound/outbound dependencies, and source code evidence.",
-                "Chọn một service, container hoặc kết nối trên sơ đồ để xem vai trò SWD, quan hệ gọi đến/đi và bằng chứng mã nguồn.",
+                "Select a service, container, or connection in the diagram to inspect its role, inbound/outbound dependencies, and source code evidence.",
+                "Chọn một service, container hoặc kết nối trên sơ đồ để xem vai trò, quan hệ gọi đến/đi và bằng chứng mã nguồn.",
               )}
             </p>
-            {aiButton}
+          </div>
+          <div role="tabpanel" hidden={visibleTab !== "relationships"} className="space-y-2">
+            <p className="text-xs leading-5 text-muted-foreground">
+              {t(
+                "Select any component or connection on the diagram to explore incoming callers and outgoing dependencies.",
+                "Chọn một thành phần hoặc kết nối trên sơ đồ để xem các luồng gọi đến và gọi ra.",
+              )}
+            </p>
+          </div>
+          <div role="tabpanel" hidden={visibleTab !== "evidence"} className="space-y-2">
+            <p className="text-xs leading-5 text-muted-foreground">
+              {t(
+                "Select any component or connection on the diagram to inspect verified source code snippets.",
+                "Chọn một thành phần hoặc kết nối trên sơ đồ để xem đoạn mã nguồn chứng minh.",
+              )}
+            </p>
           </div>
           {aiPanel && (
             <div role="tabpanel" hidden={visibleTab !== "ai"} className="space-y-3">
