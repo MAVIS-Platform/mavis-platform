@@ -750,8 +750,8 @@ test("Studio 3D/2D service icons and sculptures adapt distinctly to all 4 Studio
 
   // Tactile Pop gives each service role a vibrant pastel fill with bold ink outline
   const popOrder = resolveStudioNodePalette("pop", "order-service", "SERVICE", healthy);
-  const popPayment = resolveStudioNodePalette("pop", "payment-service", "SERVICE", healthy);
-  const popCatalog = resolveStudioNodePalette("pop", "catalog-service", "SERVICE", healthy);
+  const popPayment = resolveStudioNodePalette("pop", "notification-worker", "SERVICE", healthy);
+  const popCatalog = resolveStudioNodePalette("pop", "postgres-db", "DATABASE", healthy);
   const popGateway = resolveStudioNodePalette("pop", "api-gateway", "GATEWAY", healthy);
   assert.equal(popOrder.stroke, "#0f172a");
   assert.equal(
@@ -2059,4 +2059,76 @@ test("Submission detail UX cleanup: hides raw SHA-256 digests, deduplicates note
 
   assert.doesNotMatch(components, /Technical verification IDs & digests/);
   assert.ok(components.includes("isNotesDuplicated"));
+});
+
+test("3D SE block polish + authoring & reliability fixes: distance-compensated labels with pin, CORE-DATA zone separation, front zone badge, worker stereotype, Course Builder done link, and socket-reset retry", () => {
+  const { computeLiveZoneRects } = require("../src/features/runtime/studio-three-stage.tsx");
+  const posById = new Map([
+    ["api-gateway", { wx: -300, wz: 0 }],
+    ["order-service", { wx: 0, wz: 0 }],
+    ["postgres-db", { wx: 150, wz: 0 }],
+  ]);
+  const zones = computeLiveZoneRects(
+    [
+      { key: "EDGE", memberIds: ["api-gateway"] },
+      { key: "CORE", memberIds: ["order-service"] },
+      { key: "DATA", memberIds: ["postgres-db"] },
+    ],
+    posById,
+    -6,
+    6,
+    -4,
+    4,
+  );
+  const core = zones.find((z) => z.key === "CORE");
+  const data = zones.find((z) => z.key === "DATA");
+  assert.ok(core && data, "Both CORE and DATA zones must be computed");
+  assert.ok(
+    core.cx + core.width / 2 <= data.cx - data.width / 2 + 0.01,
+    "CORE and DATA trust zones must separate horizontally without overlapping borders",
+  );
+
+  const stage = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obs = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const styles = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-styles.ts"),
+    "utf8",
+  );
+  const standalone = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  const labStudio = fs.readFileSync(
+    path.join(__dirname, "../src/features/assignments/lab-studio-section.tsx"),
+    "utf8",
+  );
+  const grading = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/grading.tsx"),
+    "utf8",
+  );
+  const proxyRoute = fs.readFileSync(
+    path.join(__dirname, "../app/api/backend/[...path]/route.ts"),
+    "utf8",
+  );
+
+  assert.ok(stage.includes("labelPin"));
+  assert.ok(stage.includes("depthComp"));
+  assert.ok(stage.includes("badgeMesh.position.set(0, 0.018, hd)"));
+  assert.ok(stage.includes("staticCurve"));
+  assert.ok(obs.includes('visualRole === "WORKER"'));
+  assert.ok(obs.includes("«worker»"));
+  assert.ok(styles.includes('worker: { accent: "#6366f1"'));
+  assert.doesNotMatch(styles, /"order"\s*\|\s*"payment"\s*\|\s*"catalog"/);
+  assert.ok(standalone.includes("/course-builder?workspace="));
+  assert.ok(standalone.includes("stateless.find((s) => /payment|billing/i.test(s))"));
+  assert.ok(labStudio.includes('baselineRequest.path !== "/api/gateway/orders"'));
+  assert.ok(grading.includes("formatGradeRowTitle"));
+  assert.ok(grading.includes("line-clamp-2"));
+  assert.ok(proxyRoute.includes("canRetrySocketReset"));
 });

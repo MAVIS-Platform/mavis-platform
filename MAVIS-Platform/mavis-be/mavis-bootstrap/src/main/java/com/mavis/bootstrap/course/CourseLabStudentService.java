@@ -99,6 +99,10 @@ public class CourseLabStudentService {
     @org.springframework.beans.factory.annotation.Value("${mavis.runtime.user-start-cooldown-seconds:15}")
     private long userStartCooldownSeconds = 15;
 
+    // Optional single-transaction template so large 16-service model clones batch in one DB transaction instead of 1,000+ auto-commits.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
     // Prevents double-click Start from spawning duplicate Studio sessions for the same student and lab.
     private final java.util.concurrent.locks.ReentrantLock[] startSessionLocks =
             java.util.stream.IntStream.range(0, 64)
@@ -754,6 +758,10 @@ public class CourseLabStudentService {
     }
 
     private void cloneModelElements(ModelVersion sourceModel, ModelVersion targetModel) {
+        if (transactionTemplate != null) {
+            transactionTemplate.executeWithoutResult(status -> cloneModelElementsBatched(sourceModel, targetModel));
+            return;
+        }
         List<ModelElement> sourceElements = elements.findByModelVersionId(sourceModel.getId());
         if (sourceElements == null || sourceElements.isEmpty()) {
             return;
@@ -792,6 +800,60 @@ public class CourseLabStudentService {
         cloneModelRelationships(sourceModel, targetModel, copied);
     }
 
+    private void cloneModelElementsBatched(ModelVersion sourceModel, ModelVersion targetModel) {
+        List<ModelElement> sourceElements = elements.findByModelVersionId(sourceModel.getId());
+        if (sourceElements == null || sourceElements.isEmpty()) {
+            return;
+        }
+        List<ModelElement> sourceRoots = new ArrayList<>();
+        List<ModelElement> rootCopies = new ArrayList<>();
+        for (ModelElement src : sourceElements) {
+            if (src.getParentElement() == null) {
+                sourceRoots.add(src);
+                rootCopies.add(ModelElement.builder()
+                        .modelVersion(targetModel)
+                        .elementType(src.getElementType())
+                        .languageStack(src.getLanguageStack())
+                        .name(src.getName())
+                        .scope(src.getScope())
+                        .properties(src.getProperties())
+                        .status(src.getStatus())
+                        .build());
+            }
+        }
+        Map<UUID, ModelElement> copied = new HashMap<>();
+        if (!rootCopies.isEmpty()) {
+            List<ModelElement> savedRoots = elements.saveAll(rootCopies);
+            for (int i = 0; i < Math.min(sourceRoots.size(), savedRoots.size()); i++) {
+                copied.put(sourceRoots.get(i).getId(), savedRoots.get(i));
+            }
+        }
+        List<ModelElement> sourceChildren = new ArrayList<>();
+        List<ModelElement> childCopies = new ArrayList<>();
+        for (ModelElement src : sourceElements) {
+            if (src.getParentElement() != null) {
+                sourceChildren.add(src);
+                childCopies.add(ModelElement.builder()
+                        .modelVersion(targetModel)
+                        .parentElement(copied.get(src.getParentElement().getId()))
+                        .elementType(src.getElementType())
+                        .languageStack(src.getLanguageStack())
+                        .name(src.getName())
+                        .scope(src.getScope())
+                        .properties(src.getProperties())
+                        .status(src.getStatus())
+                        .build());
+            }
+        }
+        if (!childCopies.isEmpty()) {
+            List<ModelElement> savedChildren = elements.saveAll(childCopies);
+            for (int i = 0; i < Math.min(sourceChildren.size(), savedChildren.size()); i++) {
+                copied.put(sourceChildren.get(i).getId(), savedChildren.get(i));
+            }
+        }
+        cloneModelRelationshipsBatched(sourceModel, targetModel, copied);
+    }
+
     private void backfillModelRelationships(
             ModelVersion sourceModel, ModelVersion targetModel, List<ModelElement> targetElements) {
         List<ModelElement> sourceElements = elements.findByModelVersionId(sourceModel.getId());
@@ -810,7 +872,36 @@ public class CourseLabStudentService {
                     (src.getElementType() + ":" + src.getName()).toLowerCase(Locale.ROOT));
             if (match != null) mapped.put(src.getId(), match);
         }
-        cloneModelRelationships(sourceModel, targetModel, mapped);
+        if (transactionTemplate != null) {
+            transactionTemplate.executeWithoutResult(status -> cloneModelRelationshipsBatched(sourceModel, targetModel, mapped));
+        } else {
+            cloneModelRelationships(sourceModel, targetModel, mapped);
+        }
+    }
+
+    private void cloneModelRelationshipsBatched(
+            ModelVersion sourceModel, ModelVersion targetModel, Map<UUID, ModelElement> copiedBySourceId) {
+        List<ModelRelationship> sourceRels = relationships.findByModelVersionId(sourceModel.getId());
+        if (sourceRels == null || sourceRels.isEmpty()) return;
+        List<ModelRelationship> relCopies = new ArrayList<>();
+        for (ModelRelationship rel : sourceRels) {
+            if (rel.getSourceElement() == null || rel.getTargetElement() == null) continue;
+            ModelElement srcCopy = copiedBySourceId.get(rel.getSourceElement().getId());
+            ModelElement dstCopy = copiedBySourceId.get(rel.getTargetElement().getId());
+            if (srcCopy == null || dstCopy == null || Objects.equals(srcCopy.getId(), dstCopy.getId())) continue;
+            relCopies.add(ModelRelationship.builder()
+                    .modelVersion(targetModel)
+                    .sourceElement(srcCopy)
+                    .targetElement(dstCopy)
+                    .relationType(rel.getRelationType() != null ? rel.getRelationType() : "CALLS")
+                    .originLayer(rel.getOriginLayer() != null ? rel.getOriginLayer() : "STATIC")
+                    .direction(rel.getDirection() != null ? rel.getDirection() : "DIRECTED")
+                    .properties(rel.getProperties())
+                    .build());
+        }
+        if (!relCopies.isEmpty()) {
+            relationships.saveAll(relCopies);
+        }
     }
 
     private void cloneModelRelationships(

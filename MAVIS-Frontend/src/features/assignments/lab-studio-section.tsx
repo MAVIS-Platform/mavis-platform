@@ -549,7 +549,8 @@ export function LabStudioSection({
                       {t("Baseline Endpoint", "Endpoint kiểm thử")}
                     </p>
                     <p className="mt-1 truncate font-mono text-xs font-medium text-foreground">
-                      {baselineRequest?.path ? (
+                      {baselineRequest?.path &&
+                      (hasConfiguredExercise || baselineRequest.path !== "/api/gateway/orders") ? (
                         `${baselineRequest.method} ${baselineRequest.path}`
                       ) : (
                         <span className="font-sans font-normal text-muted-foreground">

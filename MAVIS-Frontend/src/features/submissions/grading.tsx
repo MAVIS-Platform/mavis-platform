@@ -42,6 +42,15 @@ export function resolveSubmissionOutcome(
   return review.score > PASSING_SCORE ? "PASS" : "NEEDS REVISION";
 }
 
+function formatGradeRowTitle(rawTitle: string, locale: string): string {
+  const trimmed = rawTitle.trim();
+  if (locale !== "vi") return trimmed;
+  if (/^theory explanation$/i.test(trimmed)) return "Giải thích của sinh viên";
+  const studioMatch = trimmed.match(/^studio snapshot\s+(\d+)$/i);
+  if (studioMatch) return `Ảnh chụp Studio #${studioMatch[1]}`;
+  return trimmed;
+}
+
 export function GradingPanel({
   submissionId,
   studentSnapshots,
@@ -51,7 +60,7 @@ export function GradingPanel({
   studentSnapshots?: StudentSnapshotItem[] | undefined;
   guidedLab: boolean;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const canReview = usePermission("submission:review");
   const query = useApiQuery(
     "submissionReview",
@@ -100,7 +109,7 @@ export function GradingPanel({
                     className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5"
                   >
                     <div className="min-w-0">
-                      <p className="font-medium">{g.title || g.snapshotId}</p>
+                      <p className="font-medium">{formatGradeRowTitle(g.title || g.snapshotId, locale)}</p>
                       {g.comment && <p className="text-muted-foreground">{g.comment}</p>}
                     </div>
                     <Badge variant={g.score > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
@@ -229,7 +238,7 @@ export function GradeForm({
   studentSnapshots?: StudentSnapshotItem[] | undefined;
   guidedLab: boolean;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const save = useApiMutation("gradeSubmission");
   const initialUseSnapshots = Boolean(
     (review.snapshotGrades && review.snapshotGrades.length > 0) ||
@@ -443,13 +452,17 @@ export function GradeForm({
             const writtenExplanation = studentSnapshots?.find(
               (item) => item.snapshotId === row.snapshotId,
             )?.writtenExplanation;
+            const cleanedExplanation = writtenExplanation
+              ? stripLegacySubmissionNoise(writtenExplanation)
+              : "";
+            const displayTitle = formatGradeRowTitle(row.title, locale);
             return (
               <div
                 key={`${row.snapshotId}-${idx}`}
                 className="space-y-2 rounded-md border bg-background p-3"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold">{row.title}</span>
+                  <span className="text-xs font-semibold">{displayTitle}</span>
                   {isValidCell && (
                     <Badge variant={num! > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
                       {num! > SNAPSHOT_PASS_EXCLUSIVE
@@ -458,9 +471,12 @@ export function GradeForm({
                     </Badge>
                   )}
                 </div>
-                {writtenExplanation && stripLegacySubmissionNoise(writtenExplanation) && (
-                  <p className="whitespace-pre-wrap rounded border bg-muted/30 p-2 text-xs text-foreground">
-                    {stripLegacySubmissionNoise(writtenExplanation)}
+                {cleanedExplanation && (
+                  <p
+                    title={cleanedExplanation}
+                    className="line-clamp-2 whitespace-pre-wrap rounded border bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground"
+                  >
+                    {cleanedExplanation}
                   </p>
                 )}
                 <div className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">

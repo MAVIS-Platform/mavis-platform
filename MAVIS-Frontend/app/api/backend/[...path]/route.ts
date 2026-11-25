@@ -144,30 +144,40 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
     const base = process.env["MAVIS_JAVA_URL"] ?? "http://127.0.0.1:8081";
     const isSseStream = request.method === "GET" && path.endsWith("/studio/stream");
     if (isSseStream) headers.set("Accept", "text/event-stream");
-    let upstream = await fetch(
-      `${base.replace(/\/$/, "")}/api/v1/${path}${request.nextUrl.search}`,
-      {
-        method: request.method,
-        headers,
-        body: body ?? null,
-        cache: "no-store",
-        redirect: "error",
-        signal: isSseStream ? request.signal : AbortSignal.timeout(120000),
-      },
-    );
+    const targetUrl = `${base.replace(/\/$/, "")}/api/v1/${path}${request.nextUrl.search}`;
+    // Idempotent GETs and idempotent studio-sessions start can safely retry once if Tomcat drops an idle keep-alive socket.
+    const canRetrySocketReset =
+      !isSseStream &&
+      (request.method === "GET" ||
+        (request.method === "POST" && path.endsWith("/studio-sessions")));
+    const fetchUpstream = async (): Promise<Response> => {
+      const maxAttempts = canRetrySocketReset ? 2 : 1;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+          return await fetch(targetUrl, {
+            method: request.method,
+            headers,
+            body: body ?? null,
+            cache: "no-store",
+            redirect: "error",
+            signal: isSseStream ? request.signal : AbortSignal.timeout(120000),
+          });
+        } catch (err) {
+          const isTimeout =
+            err instanceof DOMException && ["AbortError", "TimeoutError"].includes(err.name);
+          if (isTimeout || attempt + 1 >= maxAttempts) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+      throw new Error("Upstream fetch exhausted");
+    };
+    let upstream = await fetchUpstream();
     if (upstream.status === 401 && !login && refreshToken && !rotatedRefresh) {
       const refreshed = await refreshSessionToken(refreshToken);
       token = refreshed.token;
       rotatedRefresh = refreshed.refreshToken;
       headers.set("Authorization", `Bearer ${token}`);
-      upstream = await fetch(`${base.replace(/\/$/, "")}/api/v1/${path}${request.nextUrl.search}`, {
-        method: request.method,
-        headers,
-        body: body ?? null,
-        cache: "no-store",
-        redirect: "error",
-        signal: isSseStream ? request.signal : AbortSignal.timeout(120000),
-      });
+      upstream = await fetchUpstream();
     }
     if (isSseStream && upstream.ok && upstream.body) {
       const streamResponse = new NextResponse(upstream.body, {

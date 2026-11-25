@@ -6274,7 +6274,10 @@ export function LiveStudioWorkbench({
                               type="button"
                               disabled={authoring.busy}
                               onClick={() =>
-                                authoring.onSelectGoal?.(goal.id, canvasSelected || undefined)
+                                authoring.onSelectGoal?.(
+                                  goal.id,
+                                  canvasSelected || goalTargetSvc || undefined,
+                                )
                               }
                               className={`border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
                                 isActive ? themeActiveBtn : themeIdleBtn

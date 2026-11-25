@@ -854,6 +854,37 @@ public class CourseSetupService {
             if (!s.isBlank()) svcNames.add(s);
         }
         String baselinePath = pickSmartDefaultBaselinePath(profile, svcNames);
+        if (("/api/gateway/orders".equals(baselinePath) || "/health".equals(baselinePath))
+                && jdbc != null && refModel != null && refModel.getProject() != null) {
+            try {
+                List<String> siblingPaths = jdbc.queryForList("""
+                        SELECT baseline_requests->0->>'path'
+                        FROM lab_studio_exercises
+                        WHERE runtime_project_id = ?
+                          AND revision > 1
+                          AND baseline_requests IS NOT NULL
+                          AND jsonb_typeof(baseline_requests) = 'array'
+                          AND jsonb_array_length(baseline_requests) > 0
+                        ORDER BY updated_at DESC
+                        LIMIT 10
+                        """, String.class, refModel.getProject().getId());
+                String bestSibling = null;
+                int bestSiblingScore = 0;
+                for (String candidate : siblingPaths) {
+                    if (candidate == null || candidate.isBlank() || "/api/gateway/orders".equals(candidate)) continue;
+                    int score = scoreBaselineCandidate(candidate.trim(), "api-gateway", 40);
+                    if (score > bestSiblingScore) {
+                        bestSiblingScore = score;
+                        bestSibling = candidate.trim();
+                    }
+                }
+                if (bestSibling != null) {
+                    baselinePath = bestSibling;
+                }
+            } catch (Exception ignored) {
+                // Fall back to default path if sibling lookup is unavailable in unit-test mocks.
+            }
+        }
         ArrayNode baseline = json.createArrayNode();
         baseline.addObject()
                 .put("method", "GET")

@@ -625,6 +625,19 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Transactional(readOnly = true)
     public SubmissionResponseDTO getSubmissionById(UUID submissionId) {
         log.debug("Lấy chi tiết bài nộp theo submissionId: {}", submissionId);
+        if (jdbc != null) {
+            User actor = accessPolicyService.requireCurrentActiveUser();
+            boolean revealDraft = actor != null && actor.getRole() != null
+                    && !"STUDENT".equalsIgnoreCase(actor.getRole().getCode());
+            List<LightweightSubmissionRow> rows = executeLightweightSubmissionQuery(
+                    "s.id = ?", List.of(submissionId), revealDraft);
+            if (rows.isEmpty()) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId);
+            }
+            SubmissionResponseDTO dto = rows.get(0).dto();
+            requireLightweightSubmissionReadAccess(dto, actor);
+            return dto;
+        }
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
 
@@ -637,10 +650,32 @@ public class SubmissionServiceImpl implements SubmissionService {
         return SubmissionResponseDTO.fromEntity(submission, feedbackCount, review, revealDraft);
     }
 
+    private void requireLightweightSubmissionReadAccess(SubmissionResponseDTO dto, User actor) {
+        boolean v2Lab = dto.getLabMode() != null && !"LEGACY".equalsIgnoreCase(dto.getLabMode());
+        if (v2Lab) {
+            UUID currentUserId = actor != null ? actor.getId() : SecurityUtils.getCurrentUserId();
+            if (currentUserId != null && currentUserId.equals(dto.getSubmittedById())) {
+                if (dto.getWorkspaceId() != null) {
+                    accessPolicyService.requireWorkspaceMember(dto.getWorkspaceId());
+                }
+                return;
+            }
+            if (dto.getWorkspaceId() != null) {
+                accessPolicyService.requireWorkspaceLecturer(dto.getWorkspaceId());
+                return;
+            }
+        }
+        Project project = dto.getProjectId() == null ? null : projectRepository.findById(dto.getProjectId()).orElse(null);
+        accessPolicyService.requireProjectReadAccess(project);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public com.mavis.platform.submission.dto.SubmissionExportBundleDTO exportSubmissionBundle(UUID submissionId) {
         log.info("Xuất gói bài nộp bất biến: submissionId={}", submissionId);
+        if (jdbc != null) {
+            return exportSubmissionBundleLightweight(submissionId);
+        }
 
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
@@ -1153,8 +1188,221 @@ public class SubmissionServiceImpl implements SubmissionService {
         }, params.toArray());
     }
 
+    // Export projection skips heavy runtime_sessions.runner_receipt_json / studio_control & assignments.studio_topology_snapshot TOAST columns.
+    private static final String SUBMISSION_EXPORT_SELECT = """
+            SELECT s.id,
+                   a.workspace_id,
+                   w.name AS workspace_name,
+                   s.assignment_id,
+                   a.title AS assignment_title,
+                   a.lab_order,
+                   a.lab_mode,
+                   s.project_id,
+                   p.name AS project_name,
+                   s.submitted_by,
+                   u.full_name AS submitted_by_name,
+                   u.email AS submitted_by_email,
+                   s.source_snapshot_id,
+                   ss.artifact_hash,
+                   s.model_version_id,
+                   mv.revision AS model_revision,
+                   s.diagram_version_id,
+                   dv.notation AS diagram_notation,
+                   dv.level AS diagram_level,
+                   dv.layout_json::text AS layout_json_text,
+                   CASE WHEN er.summary_metrics IS NOT NULL
+                         AND jsonb_typeof(er.summary_metrics->'complianceScore') = 'number'
+                        THEN (er.summary_metrics->>'complianceScore')::double precision
+                        ELSE NULL END AS compliance_score,
+                   s.runtime_session_id,
+                   rs.scenario_status,
+                   rs.trace_quality,
+                   s.course_quiz_evidence::text AS course_quiz_evidence_json,
+                   s.theory_evidence::text AS theory_evidence_json,
+                   s.studio_evidence::text AS studio_evidence_json,
+                   s.student_snapshots::text AS student_snapshots_json,
+                   s.submission_notes,
+                   s.evidence_package_digest,
+                   s.submitted_at,
+                   sr.status AS review_status,
+                   sr.score AS review_score,
+                   sr.lab_outcome AS review_lab_outcome,
+                   sr.summary AS review_summary,
+                   sr.snapshot_grades::text AS snapshot_grades_json,
+                   grader.full_name AS reviewer_name,
+                   sr.updated_at AS reviewed_at
+            FROM submission_snapshots s
+            JOIN assignments a ON a.id = s.assignment_id
+            LEFT JOIN workspaces w ON w.id = a.workspace_id
+            LEFT JOIN projects p ON p.id = s.project_id
+            LEFT JOIN users u ON u.id = s.submitted_by
+            LEFT JOIN source_snapshots ss ON ss.id = s.source_snapshot_id
+            LEFT JOIN model_versions mv ON mv.id = s.model_version_id
+            LEFT JOIN diagram_versions dv ON dv.id = s.diagram_version_id
+            LEFT JOIN evaluation_runs er ON er.id = s.evaluation_run_id
+            LEFT JOIN runtime_sessions rs ON rs.id = s.runtime_session_id
+            LEFT JOIN submission_reviews sr ON sr.submission_id = s.id
+            LEFT JOIN users grader ON grader.id = sr.lecturer_id
+            WHERE s.id = ?
+            """;
+
+    private com.mavis.platform.submission.dto.SubmissionExportBundleDTO exportSubmissionBundleLightweight(UUID submissionId) {
+        ObjectMapper mapper = this.json != null ? this.json : new ObjectMapper();
+        var rows = jdbc.query(SUBMISSION_EXPORT_SELECT, (rs, rowNum) -> {
+            UUID wsId = toUuid(rs.getObject("workspace_id"));
+            UUID assignmentId = toUuid(rs.getObject("assignment_id"));
+            UUID projectId = toUuid(rs.getObject("project_id"));
+            UUID submittedById = toUuid(rs.getObject("submitted_by"));
+            String labModeRaw = rs.getString("lab_mode");
+            String labMode = labModeRaw != null ? labModeRaw : "LEGACY";
+
+            User actor = accessPolicyService.requireCurrentActiveUser();
+            requireLightweightSubmissionReadAccess(
+                    SubmissionResponseDTO.builder()
+                            .id(submissionId)
+                            .workspaceId(wsId)
+                            .assignmentId(assignmentId)
+                            .projectId(projectId)
+                            .submittedById(submittedById)
+                            .labMode(labMode)
+                            .build(),
+                    actor);
+
+            List<com.mavis.platform.submission.dto.FeedbackResponseDTO> feedbacks = feedbackCommentRepository
+                    .findBySubmissionIdOrderByCreatedAtAsc(submissionId).stream()
+                    .map(com.mavis.platform.submission.dto.FeedbackResponseDTO::fromEntity)
+                    .collect(Collectors.toList());
+
+            Double complianceScore = toDouble(rs.getObject("compliance_score"));
+            JsonNode layoutJson = parseJsonOrNull(mapper, rs.getString("layout_json_text"));
+            String diagramNotation = rs.getString("diagram_notation");
+            String diagramLevel = rs.getString("diagram_level");
+            String mermaidDsl = layoutJson != null
+                    ? com.mavis.common.utils.MermaidDslGenerator.generateFromLayoutJson(
+                            diagramNotation, diagramLevel, layoutJson).getDsl()
+                    : null;
+
+            String reviewStatusRaw = rs.getString("review_status");
+            boolean released = reviewStatusRaw != null && !"DRAFT".equals(reviewStatusRaw);
+            java.math.BigDecimal reviewScore = released ? rs.getBigDecimal("review_score") : null;
+            String reviewSummary = released ? Objects.toString(rs.getString("review_summary"), "") : "";
+            String reviewerName = released ? rs.getString("reviewer_name") : null;
+            OffsetDateTime reviewedAt = released ? toOffsetDateTime(rs, "reviewed_at") : null;
+            JsonNode snapshotGrades = released ? parseJsonOrNull(mapper, rs.getString("snapshot_grades_json")) : null;
+            String labOutcome = released ? rs.getString("review_lab_outcome") : null;
+
+            String assignmentTitle = rs.getString("assignment_title");
+            String projectName = rs.getString("project_name");
+            String submittedByName = rs.getString("submitted_by_name");
+            String submittedByEmail = rs.getString("submitted_by_email");
+            UUID sourceSnapshotId = toUuid(rs.getObject("source_snapshot_id"));
+            String artifactHash = rs.getString("artifact_hash");
+            UUID modelVersionId = toUuid(rs.getObject("model_version_id"));
+            Integer modelRevision = toInteger(rs.getObject("model_revision"));
+            UUID diagramVersionId = toUuid(rs.getObject("diagram_version_id"));
+            UUID runtimeSessionId = toUuid(rs.getObject("runtime_session_id"));
+            String scenarioStatus = rs.getString("scenario_status");
+            String traceQuality = rs.getString("trace_quality");
+            String submissionNotes = rs.getString("submission_notes");
+            String digest = rs.getString("evidence_package_digest");
+            OffsetDateTime submittedAt = toOffsetDateTime(rs, "submitted_at");
+
+            StringBuilder md = new StringBuilder();
+            md.append("# BÁO CÁO TỔNG HỢP GÓI BÀI NỘP BẤT BIẾN (IMMUTABLE SUBMISSION BUNDLE)\n\n");
+            md.append("## 1. Thông Tin Chung Bài Nộp\n");
+            md.append("- **Mã bài nộp (Submission ID)**: `").append(submissionId).append("`\n");
+            md.append("- **Đề bài (Assignment)**: ").append(assignmentTitle != null ? assignmentTitle : "N/A").append("\n");
+            md.append("- **Đồ án (Project)**: ").append(projectName != null ? projectName : "N/A").append("\n");
+            md.append("- **Sinh viên nộp bài**: ").append(submittedByName != null ? submittedByName : "N/A");
+            if (submittedByEmail != null) md.append(" (").append(submittedByEmail).append(")");
+            md.append("\n- **Thời gian nộp bài**: ").append(submittedAt).append("\n");
+            if (submissionNotes != null && !submissionNotes.isBlank()) {
+                md.append("- **Ghi chú của sinh viên**: ").append(submissionNotes).append("\n");
+            }
+            md.append("\n## 2. Phiên Bản Kiến Trúc & Tính Toàn Vẹn Bất Biến (Pinning)\n");
+            md.append("- **Source Snapshot ID**: `").append(sourceSnapshotId != null ? sourceSnapshotId : "N/A").append("`\n");
+            md.append("- **Mã băm mã nguồn (Artifact Hash)**: `").append(artifactHash != null ? artifactHash : "N/A").append("`\n");
+            md.append("- **Model Version ID**: `").append(modelVersionId != null ? modelVersionId : "N/A").append("`\n");
+            md.append("- **Phiên bản mô hình (Revision)**: ").append(modelRevision != null ? modelRevision : "N/A").append("\n");
+            md.append("- **Diagram Version ID**: `").append(diagramVersionId != null ? diagramVersionId : "N/A").append("`\n\n");
+            md.append("- **Evidence Package SHA-256**: `").append(digest).append("`\n\n");
+            md.append("## 3. Đánh Giá Kiến Trúc & Thực Nghiệm Runtime\n");
+            md.append("- **Điểm tuân thủ quy tắc kiến trúc (Compliance Score)**: ")
+                    .append(complianceScore != null ? complianceScore + " / 100" : "Chưa chấm điểm / Không áp dụng").append("\n");
+            md.append("- **Phiên thực nghiệm (Runtime Session)**: `").append(runtimeSessionId != null ? runtimeSessionId : "N/A").append("`\n");
+            md.append("- **Trạng thái kịch bản (Scenario Status)**: ").append(scenarioStatus != null ? scenarioStatus : "N/A").append("\n");
+            md.append("- **Chất lượng Trace (Trace Quality)**: ").append(traceQuality != null ? traceQuality : "N/A").append("\n\n");
+            md.append("## 4. Sơ Đồ Kiến Trúc (Mermaid DSL)\n```mermaid\n")
+                    .append(mermaidDsl != null ? mermaidDsl : "flowchart LR\n    emptyNode[\"Chưa có sơ đồ\"]")
+                    .append("\n```\n\n## 5. Nhận Xét & Đánh Giá Của Giảng Viên (Feedbacks)\n");
+            if (feedbacks.isEmpty()) {
+                md.append("*Chưa có nhận xét nào từ giảng viên.*\n");
+            } else {
+                for (int i = 0; i < feedbacks.size(); i++) {
+                    var fb = feedbacks.get(i);
+                    md.append(i + 1).append(". **").append(fb.getLecturerName() != null ? fb.getLecturerName() : "Giảng viên").append("**");
+                    if (fb.getCreatedAt() != null) md.append(" (").append(fb.getCreatedAt()).append(")");
+                    md.append(":\n   - *Nội dung*: ").append(fb.getCommentText()).append("\n\n");
+                }
+            }
+            if (released) {
+                var tenScore = SubmissionReviewService.toTenScale(reviewScore);
+                md.append("\n## Lecturer review\n- Status: ").append(reviewStatusRaw)
+                        .append("\n- Lecturer score (0-10): ").append(tenScore != null ? tenScore + " / 10" : "N/A")
+                        .append(" (equivalent ").append(reviewScore).append("/100)\n\n").append(reviewSummary).append("\n");
+            }
+
+            return com.mavis.platform.submission.dto.SubmissionExportBundleDTO.builder()
+                    .studioEvidence(parseJsonOrNull(mapper, rs.getString("studio_evidence_json")))
+                    .submissionId(submissionId)
+                    .workspaceId(wsId)
+                    .workspaceName(rs.getString("workspace_name"))
+                    .projectId(projectId)
+                    .projectName(projectName)
+                    .assignmentId(assignmentId)
+                    .assignmentTitle(assignmentTitle)
+                    .labOrder(toInteger(rs.getObject("lab_order")))
+                    .labMode(labMode)
+                    .submittedById(submittedById)
+                    .submittedByName(submittedByName)
+                    .sourceSnapshotId(sourceSnapshotId)
+                    .artifactHash(artifactHash)
+                    .evidencePackageDigest(digest)
+                    .modelVersionId(modelVersionId)
+                    .modelRevision(modelRevision)
+                    .diagramVersionId(diagramVersionId)
+                    .layoutJson(layoutJson)
+                    .mermaidDsl(mermaidDsl)
+                    .complianceScore(complianceScore)
+                    .reviewStatus(released ? reviewStatusRaw : "PENDING")
+                    .lecturerScore(reviewScore)
+                    .reviewSummary(reviewSummary)
+                    .reviewerName(reviewerName)
+                    .reviewedAt(reviewedAt)
+                    .runtimeSessionId(runtimeSessionId)
+                    .courseQuizEvidence(parseJsonOrNull(mapper, rs.getString("course_quiz_evidence_json")))
+                    .theoryEvidence(parseJsonOrNull(mapper, rs.getString("theory_evidence_json")))
+                    .studentSnapshots(parseJsonOrNull(mapper, rs.getString("student_snapshots_json")))
+                    .snapshotGrades(snapshotGrades)
+                    .labOutcome(labOutcome)
+                    .scenarioStatus(scenarioStatus)
+                    .lecturerFeedbacks(feedbacks)
+                    .markdownSummaryReport(md.toString())
+                    .exportedAt(OffsetDateTime.now())
+                    .build();
+        }, submissionId);
+        if (rows.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId);
+        }
+        return rows.get(0);
+    }
+
     static String lightweightSelectSql() {
         return SUBMISSION_LIST_SELECT;
+    }
+
+    static String lightweightExportSql() {
+        return SUBMISSION_EXPORT_SELECT;
     }
 
     private static UUID toUuid(Object value) {

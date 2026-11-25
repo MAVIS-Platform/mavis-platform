@@ -1289,6 +1289,14 @@ class SubmissionServiceImplTest {
                 .doesNotContain("layout_json")
                 .contains("snap - 'telemetry' - 'actions' - 'imageData'");
 
+        String exportSql = SubmissionServiceImpl.lightweightExportSql();
+        assertThat(exportSql)
+                .doesNotContain(" ? ")
+                .doesNotContain("runner_receipt_json")
+                .doesNotContain("studio_control")
+                .doesNotContain("studio_topology_snapshot")
+                .contains("s.studio_evidence::text");
+
         var jdbcMock = mock(org.springframework.jdbc.core.JdbcTemplate.class);
         org.springframework.test.util.ReflectionTestUtils.setField(submissionService, "jdbc", jdbcMock);
         try {

@@ -187,13 +187,25 @@ export function computeLiveZoneRects(
     });
   }
 
-  // Keep adjacent horizontal zones cleanly separated so dashed borders never collide
-  const edgeRect = rects.find((z) => z.key === "EDGE");
-  const coreRect = rects.find((z) => z.key === "CORE");
-  if (edgeRect && coreRect && edgeRect.nodeMaxX < coreRect.nodeMinX && edgeRect.bx1 > coreRect.bx0 - 0.16) {
-    const splitX = (edgeRect.nodeMaxX + coreRect.nodeMinX) / 2;
-    edgeRect.bx1 = Math.max(edgeRect.nodeMaxX + 0.68, splitX - 0.1);
-    coreRect.bx0 = Math.min(coreRect.nodeMinX - 0.68, splitX + 0.1);
+  // Keep adjacent horizontal trust zones cleanly separated (EDGE vs CORE, CORE vs DATA, EDGE vs DATA) so dashed borders never collide
+  const orderedPairs: ReadonlyArray<readonly [string, string]> = [
+    ["EDGE", "CORE"],
+    ["CORE", "DATA"],
+    ["EDGE", "DATA"],
+  ];
+  for (const [leftKey, rightKey] of orderedPairs) {
+    const leftRect = rects.find((z) => z.key === leftKey);
+    const rightRect = rects.find((z) => z.key === rightKey);
+    if (
+      leftRect &&
+      rightRect &&
+      leftRect.nodeMaxX < rightRect.nodeMinX &&
+      leftRect.bx1 > rightRect.bx0 - 0.16
+    ) {
+      const splitX = (leftRect.nodeMaxX + rightRect.nodeMinX) / 2;
+      leftRect.bx1 = Math.max(leftRect.nodeMaxX + 0.68, splitX - 0.1);
+      rightRect.bx0 = Math.min(rightRect.nodeMinX - 0.68, splitX + 0.1);
+    }
   }
 
   return rects.map((zr) => ({
@@ -338,6 +350,8 @@ type AnimatedNodeRig = {
   }>;
   stasisRing?: THREE.Object3D | undefined;
   labelSprite: THREE.Sprite;
+  labelPin: THREE.Line;
+  labelPriority: number;
   labelBaseY: number;
   labelBaseW: number;
   labelBaseH: number;
@@ -468,8 +482,8 @@ function createNodeLabelSprite(
         ? `×${node.replicas}·${node.cpuThrottlePct}%`
         : `×${node.replicas}`;
   const isMono = styleId === "blueprint";
-  const font = `700 ${13 * dpr}px ${isMono ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "Inter, system-ui, sans-serif"}`;
-  const badgeFont = `700 ${11 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const font = `700 ${12 * dpr}px ${isMono ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "Inter, system-ui, sans-serif"}`;
+  const badgeFont = `700 ${10 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
 
   const measureCtx = canvas.getContext("2d");
   if (!measureCtx) {
@@ -478,17 +492,17 @@ function createNodeLabelSprite(
   measureCtx.font = font;
   const textW = Math.ceil(measureCtx.measureText(text).width);
   measureCtx.font = badgeFont;
-  const badgeW = Math.max(26 * dpr, Math.ceil(measureCtx.measureText(badge).width) + 12 * dpr);
+  const badgeW = Math.max(22 * dpr, Math.ceil(measureCtx.measureText(badge).width) + 10 * dpr);
 
-  const padX = 10 * dpr;
+  const padX = 8 * dpr;
   const role = resolveVisualArchetype(node);
-  const roleLabel = role === "DATABASE" ? "DB" : role;
-  const chipW = Math.ceil(measureCtx.measureText(roleLabel).width) + 12 * dpr;
-  const chipH = 18 * dpr;
-  const gap = 8 * dpr;
+  const roleLabel = role === "DATABASE" ? "DB" : role === "GATEWAY" ? "GW" : role === "SERVICE" ? "SVC" : role;
+  const chipW = Math.ceil(measureCtx.measureText(roleLabel).width) + 10 * dpr;
+  const chipH = 16 * dpr;
+  const gap = 6 * dpr;
   const pillW = padX + chipW + gap + textW + gap + badgeW + padX;
-  const pillH = 30 * dpr;
-  const shadowPad = 8 * dpr;
+  const pillH = 26 * dpr;
+  const shadowPad = 7 * dpr;
 
   canvas.width = pillW + shadowPad * 2;
   canvas.height = pillH + shadowPad * 2;
@@ -542,7 +556,7 @@ function createNodeLabelSprite(
 
   // Right replica count chip
   const countX = x + pillW - padX - badgeW;
-  const countH = 18 * dpr;
+  const countH = 16 * dpr;
   const countY = y + (pillH - countH) / 2;
   drawRoundedRect(ctx, countX, countY, badgeW, countH, styleId === "blueprint" ? 3 * dpr : countH / 2);
   ctx.fillStyle = node.palette.pillChipBg;
@@ -564,7 +578,7 @@ function createNodeLabelSprite(
   });
   const sprite = new T.Sprite(material);
   const aspect = canvas.width / canvas.height;
-  const spriteH = 0.44;
+  const spriteH = 0.34;
   sprite.scale.set(spriteH * aspect, spriteH, 1);
   sprite.renderOrder = 20;
   return sprite;
@@ -1056,7 +1070,8 @@ function createZonePlateGroup(
   );
   badgeMesh.scale.set(badgeW, 1, 1);
   badgeMesh.rotation.x = -Math.PI / 2;
-  badgeMesh.position.set(0, 0.016, -hd);
+  // Place zone title on the camera-facing front rim (+hd) so back-row blocks never occlude it.
+  badgeMesh.position.set(0, 0.018, hd);
   badgeMesh.renderOrder = 3;
   group.add(badgeMesh);
 
@@ -1956,12 +1971,34 @@ function buildServiceRig(
     group.add(halo);
   }
 
-  // Crisp 3D Floating Service Pill Sprite (positioned cleanly above tallest spire/turbine)
+  // Crisp 3D Floating Service Pill Sprite + subtle vertical anchor pin tying label to its exact block
   const labelSprite = createNodeLabelSprite(T, node, styleId);
-  const labelBaseY = topY + 0.34;
+  const labelBaseY = topY + 0.28;
   labelSprite.position.set(0, labelBaseY, 0);
   labelSprite.userData = { serviceId: node.id };
   group.add(labelSprite);
+
+  const pinGeo = new T.BufferGeometry().setFromPoints([
+    new T.Vector3(0, topY + 0.04, 0),
+    new T.Vector3(0, labelBaseY - 0.14, 0),
+  ]);
+  const pinMat = new T.LineBasicMaterial({
+    color: new T.Color(node.palette.pillStroke),
+    transparent: true,
+    opacity: isDark ? 0.55 : 0.45,
+  });
+  const labelPin = new T.Line(pinGeo, pinMat);
+  labelPin.renderOrder = 19;
+  labelPin.userData = { serviceId: node.id };
+  group.add(labelPin);
+
+  const labelPriority = node.isSelected
+    ? 3
+    : node.isCritical
+      ? 2
+      : node.isWarning
+        ? 1
+        : 0;
 
   return {
     id: node.id,
@@ -1978,6 +2015,8 @@ function buildServiceRig(
     smokeParticles,
     stasisRing,
     labelSprite,
+    labelPin,
+    labelPriority,
     labelBaseY,
     labelBaseW: labelSprite.scale.x,
     labelBaseH: labelSprite.scale.y,
@@ -2282,17 +2321,22 @@ export function StudioThreeStage({
         // Compare billboard bounds in camera space so overlap follows orbit and zoom.
         const projected = new T.Vector3();
         const occupied: Array<{ x: number; y: number; w: number; h: number }> = [];
-        function reserveLabel(position: THREE.Vector3, width: number, height: number) {
+        const rigDepths = new Map<AnimatedNodeRig, number>();
+        const sortedRigs: AnimatedNodeRig[] = [];
+        function reserveLabel(position: THREE.Vector3, width: number, height: number, forceCommit = false) {
           projected.copy(position).applyMatrix4(perspCam.matrixWorldInverse);
           const depth = -projected.z;
           if (depth <= 0) return false;
           const x = projected.x / depth;
           const y = projected.y / depth;
-          const w = width / (2 * depth);
-          const h = height / (2 * depth);
-          if (occupied.some(r => Math.abs(r.x - x) < r.w + w && Math.abs(r.y - y) < r.h + h)) return false;
+          const w = (width * 1.04) / (2 * depth);
+          const h = (height * 1.06) / (2 * depth);
+          const overlaps = occupied.some(
+            (r) => Math.abs(r.x - x) < r.w + w && Math.abs(r.y - y) < r.h + h,
+          );
+          if (overlaps && !forceCommit) return false;
           occupied.push({ x, y, w, h });
-          return true;
+          return !overlaps;
         }
 
         const animate = (now: number) => {
@@ -2317,7 +2361,10 @@ export function StudioThreeStage({
           live.panY += (target.panY - live.panY) * smooth;
 
           const clampedPitch = Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, live.pitch));
-          const dist = 13.0 / Math.max(0.4, Math.min(2.2, live.zoom));
+          const deck = deckRigRef.current;
+          const stageSpan = deck ? Math.max(deck.baseW, deck.baseD * 1.15) : 7.5;
+          const baseDist = Math.max(13.0, stageSpan * 1.32);
+          const dist = baseDist / Math.max(0.4, Math.min(2.2, live.zoom));
           const panScale = 0.0085;
           const lookX = -live.panX * panScale;
           const lookZ = -live.panY * panScale;
@@ -2327,6 +2374,7 @@ export function StudioThreeStage({
 
           perspCam.position.set(camX, camY, camZ);
           perspCam.lookAt(lookX, 0.32, lookZ);
+          perspCam.updateMatrixWorld();
 
           // Living 60fps diorama animations (zero per-frame allocations)
           const tSec = now * 0.001;
@@ -2334,6 +2382,8 @@ export function StudioThreeStage({
             const u = (tSec * pkt.speed + pkt.phase) % 1;
             pkt.curve.getPoint(u, pkt.mesh.position);
           }
+          rigDepths.clear();
+          const lpBase = computeNodeLabelPlacement(live.yaw, clampedPitch, live.zoom, 0);
           for (const rig of nodeRigsRef.current) {
             if (rig.halo) {
               const pulse = 1 + Math.sin(tSec * 3.2 + rig.phase) * 0.028;
@@ -2372,25 +2422,79 @@ export function StudioThreeStage({
               const m = sp.mesh.material as THREE.MeshBasicMaterial;
               m.opacity = (1 - u) * 0.55;
             }
-            const lp = computeNodeLabelPlacement(live.yaw, clampedPitch, live.zoom, rig.labelBaseY);
-            rig.labelSprite.position.set(lp.x, lp.y, lp.z);
-            rig.labelSprite.scale.set(rig.labelBaseW * lp.scale, rig.labelBaseH * lp.scale, 1);
+            // Distance-compensated billboard sizing keeps foreground & background pills visually uniform.
+            scratchVec.set(
+              rig.group.position.x + lpBase.x,
+              rig.labelBaseY + lpBase.y,
+              rig.group.position.z + lpBase.z,
+            );
+            projected.copy(scratchVec).applyMatrix4(perspCam.matrixWorldInverse);
+            const camDepth = Math.max(3.5, -projected.z);
+            rigDepths.set(rig, camDepth);
+            const depthComp = Math.max(0.74, Math.min(1.18, camDepth / 12.2));
+            const finalScale = lpBase.scale * depthComp;
+            rig.labelSprite.position.set(lpBase.x, rig.labelBaseY + lpBase.y, lpBase.z);
+            rig.labelSprite.scale.set(rig.labelBaseW * finalScale, rig.labelBaseH * finalScale, 1);
           }
 
-          perspCam.updateMatrixWorld();
           occupied.length = 0;
-          for (const rig of nodeRigsRef.current) {
-            scratchVec.copy(rig.group.position);
-            scratchVec.y += rig.labelBaseY * 0.32;
-            reserveLabel(scratchVec, 0.85, 0.48);
-          }
-          for (const rig of nodeRigsRef.current) {
+          sortedRigs.length = 0;
+          for (const rig of nodeRigsRef.current) sortedRigs.push(rig);
+          sortedRigs.sort((a, b) => {
+            if (b.labelPriority !== a.labelPriority) return b.labelPriority - a.labelPriority;
+            return (rigDepths.get(a) ?? 12) - (rigDepths.get(b) ?? 12);
+          });
+
+          const rightX = Math.cos(live.yaw);
+          const rightZ = -Math.sin(live.yaw);
+          const candidates: ReadonlyArray<readonly [number, number]> = [
+            [0, 0],
+            [0, 0.2],
+            [-0.36, 0.1],
+            [0.36, 0.1],
+            [0, 0.36],
+            [-0.48, 0.26],
+            [0.48, 0.26],
+          ];
+          for (const rig of sortedRigs) {
             const tag = rig.labelSprite;
+            rig.labelPin.visible = tag.visible;
             if (!tag.visible) continue;
-            for (let attempt = 0; attempt < 4; attempt++) {
-              scratchVec.copy(tag.position).add(rig.group.position);
-              if (reserveLabel(scratchVec, tag.scale.x, tag.scale.y) || attempt === 3) break;
-              tag.position.y += tag.scale.y * 0.65;
+            const originX = tag.position.x;
+            const originY = tag.position.y;
+            const originZ = tag.position.z;
+            let placed = false;
+            for (const [lat, lift] of candidates) {
+              const cx = originX + rightX * lat;
+              const cy = originY + lift;
+              const cz = originZ + rightZ * lat;
+              scratchVec.set(
+                rig.group.position.x + cx,
+                rig.group.position.y + cy,
+                rig.group.position.z + cz,
+              );
+              if (reserveLabel(scratchVec, tag.scale.x, tag.scale.y)) {
+                tag.position.set(cx, cy, cz);
+                placed = true;
+                break;
+              }
+            }
+            if (!placed) {
+              // Keep label tethered closely above its own block instead of flying onto a neighbor.
+              const fallbackY = originY + 0.18;
+              tag.position.set(originX, fallbackY, originZ);
+              scratchVec.set(
+                rig.group.position.x + originX,
+                rig.group.position.y + fallbackY,
+                rig.group.position.z + originZ,
+              );
+              reserveLabel(scratchVec, tag.scale.x, tag.scale.y, true);
+            }
+            const pinPos = rig.labelPin.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+            if (pinPos) {
+              pinPos.setXYZ(0, 0, Math.max(0.45, rig.labelBaseY - 0.24), 0);
+              pinPos.setXYZ(1, tag.position.x, tag.position.y - tag.scale.y * 0.44, tag.position.z);
+              pinPos.needsUpdate = true;
             }
           }
           for (const edge of edgeRigsRef.current) {
@@ -2754,32 +2858,37 @@ export function StudioThreeStage({
       const anchor = compute3DEdgeAnchors(ax, az, bx, bz, nodes, edge.from, edge.to, hasReverse);
 
       if (edge.kind === "static") {
-        const lineGeo = new T.BufferGeometry().setFromPoints([
-          new T.Vector3(anchor.sx, 0.028, anchor.sz),
-          new T.Vector3(anchor.ex, 0.028, anchor.ez),
-        ]);
+        // Low-arch deflected dashed connector keeps static SE dependency direction legible on dark & light decks without piercing intermediate blocks.
+        const staticCurve = new T.QuadraticBezierCurve3(
+          new T.Vector3(anchor.sx, 0.055, anchor.sz),
+          new T.Vector3(anchor.midX, 0.14, anchor.midZ),
+          new T.Vector3(anchor.ex, 0.055, anchor.ez),
+        );
+        const lineGeo = new T.BufferGeometry().setFromPoints(staticCurve.getPoints(20));
+        const staticOpacity = edge.isSevered ? 0.95 : isLight ? 0.74 : 0.84;
         const lineMat = new T.LineDashedMaterial({
           color: new T.Color(edge.color),
-          dashSize: 0.14,
-          gapSize: 0.11,
+          dashSize: 0.16,
+          gapSize: 0.1,
           transparent: true,
-          opacity: edge.isSevered ? 0.9 : 0.52,
+          opacity: staticOpacity,
         });
         const line = new T.Line(lineGeo, lineMat);
         line.computeLineDistances();
         line.userData["edgeHit"] = { id: edge.id, from: edge.from, to: edge.to };
         contentGroup.add(line);
 
-        // Subtle floor directional tip right at target plinth rim
-        const tipGeo = new T.ConeGeometry(0.055, 0.15, 8);
+        const tipGeo = new T.ConeGeometry(0.072, 0.19, 8);
         const tipMat = new T.MeshBasicMaterial({
           color: new T.Color(edge.color),
           transparent: true,
-          opacity: edge.isSevered ? 0.9 : 0.52,
+          opacity: staticOpacity,
         });
         const tipMesh = new T.Mesh(tipGeo, tipMat);
-        tipMesh.position.set(anchor.ex - anchor.nx * 0.08, 0.042, anchor.ez - anchor.nz * 0.08);
-        tipMesh.quaternion.setFromUnitVectors(upVec, new T.Vector3(anchor.nx, 0, anchor.nz).normalize());
+        const tipPos = staticCurve.getPoint(0.93);
+        const tipTan = staticCurve.getTangent(0.93).normalize();
+        tipMesh.position.copy(tipPos);
+        tipMesh.quaternion.setFromUnitVectors(upVec, tipTan);
         tipMesh.userData["edgeHit"] = { id: edge.id, from: edge.from, to: edge.to };
         contentGroup.add(tipMesh);
 
@@ -2792,6 +2901,7 @@ export function StudioThreeStage({
           tubeRadius: 0.02,
           line,
           arrowMesh: tipMesh,
+          curve: staticCurve,
         });
         continue;
       }
@@ -2951,6 +3061,7 @@ export function StudioThreeStage({
   useEffect(() => {
     for (const rig of nodeRigsRef.current) {
       rig.labelSprite.visible = showNodeTags;
+      rig.labelPin.visible = showNodeTags;
     }
     for (const edge of edgeRigsRef.current) {
       if (edge.badgeSprite) {
@@ -3078,22 +3189,26 @@ export function StudioThreeStage({
         edge.hasReverse,
       );
       if (edge.kind === "static" && edge.line) {
-        const pos = edge.line.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
-        if (pos) {
-          pos.setXYZ(0, anchor.sx, 0.03, anchor.sz);
-          pos.setXYZ(1, anchor.ex, 0.03, anchor.ez);
-          pos.needsUpdate = true;
-          edge.line.computeLineDistances();
-        }
-        if (edge.arrowMesh) {
-          edge.arrowMesh.position.set(
-            anchor.ex - anchor.nx * 0.08,
-            0.045,
-            anchor.ez - anchor.nz * 0.08,
+        const staticCurve =
+          edge.curve ??
+          new T.QuadraticBezierCurve3(
+            new T.Vector3(anchor.sx, 0.055, anchor.sz),
+            new T.Vector3(anchor.midX, 0.14, anchor.midZ),
+            new T.Vector3(anchor.ex, 0.055, anchor.ez),
           );
+        staticCurve.v0.set(anchor.sx, 0.055, anchor.sz);
+        staticCurve.v1.set(anchor.midX, 0.14, anchor.midZ);
+        staticCurve.v2.set(anchor.ex, 0.055, anchor.ez);
+        edge.curve = staticCurve;
+        const pts = staticCurve.getPoints(20);
+        edge.line.geometry.dispose();
+        edge.line.geometry = new T.BufferGeometry().setFromPoints(pts);
+        edge.line.computeLineDistances();
+        if (edge.arrowMesh) {
+          edge.arrowMesh.position.copy(staticCurve.getPoint(0.93));
           edge.arrowMesh.quaternion.setFromUnitVectors(
             up,
-            new T.Vector3(anchor.nx, 0, anchor.nz).normalize(),
+            staticCurve.getTangent(0.93).normalize(),
           );
         }
       } else if (edge.kind === "observed" && edge.curve) {
@@ -3162,7 +3277,7 @@ export function StudioThreeStage({
           zone.borderLine.geometry.dispose();
           zone.borderLine.geometry = borderGeo;
           zone.borderLine.computeLineDistances();
-          zone.badgeMesh.position.set(0, 0.016, -hd);
+          zone.badgeMesh.position.set(0, 0.018, hd);
           zone.badgeMesh.scale.set(Math.min(next.width - 0.2, zone.badgeNaturalW), 1, 1);
           zone.width = next.width;
           zone.depth = next.depth;

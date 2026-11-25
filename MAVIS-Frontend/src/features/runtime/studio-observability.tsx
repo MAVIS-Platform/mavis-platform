@@ -27,6 +27,7 @@ import {
 } from "./studio-styles";
 import {
   StudioThreeStage,
+  resolveVisualArchetype,
   type StudioThreeEdge,
   type StudioThreeNode,
 } from "./studio-three-stage";
@@ -1428,7 +1429,7 @@ export function StudioObservability({
       let wz = 0;
       if (layoutMode === "CIRCULAR") {
         const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
-        const radius = Math.min(270, 175 + total * 12);
+        const radius = Math.min(340, 195 + total * 16);
         wx = Math.cos(angle) * radius;
         wz = Math.sin(angle) * radius;
       } else if (layoutMode === "GRID") {
@@ -1436,14 +1437,14 @@ export function StudioObservability({
         const col = index % cols;
         const row = Math.floor(index / cols);
         const rows = Math.ceil(total / cols);
-        const spX = Math.min(220, 520 / Math.max(1, cols - 1));
-        const spZ = Math.min(210, 460 / Math.max(1, rows - 1));
+        const spX = Math.max(215, Math.min(248, 680 / Math.max(1, cols - 1)));
+        const spZ = Math.max(205, Math.min(238, 620 / Math.max(1, rows - 1)));
         wx = (col - (cols - 1) / 2) * spX;
         wz = (row - (rows - 1) / 2) * spZ;
       } else {
         const loc = colLocation.get(name) ?? { colIdx: 0, rowIdx: 0, rowCount: 1 };
-        const spX = totalCols <= 1 ? 0 : Math.min(220, 560 / (totalCols - 1));
-        const spZ = loc.rowCount <= 1 ? 0 : Math.min(230, 480 / (loc.rowCount - 1));
+        const spX = totalCols <= 1 ? 0 : Math.max(218, Math.min(255, 700 / (totalCols - 1)));
+        const spZ = loc.rowCount <= 1 ? 0 : Math.max(208, Math.min(245, 650 / (loc.rowCount - 1)));
         wx = (loc.colIdx - (totalCols - 1) / 2) * spX;
         wz = (loc.rowIdx - (loc.rowCount - 1) / 2) * spZ;
       }
@@ -1643,14 +1644,17 @@ export function StudioObservability({
         isSelected,
         isDropTarget,
       });
+      const visualRole = resolveVisualArchetype({ id: name, archetype });
       const stereotype =
-        archetype === "GATEWAY"
+        visualRole === "GATEWAY"
           ? "«gateway»"
-          : archetype === "DATABASE"
+          : visualRole === "DATABASE"
             ? "«database»"
-            : archetype === "QUEUE"
+            : visualRole === "QUEUE"
               ? "«broker»"
-              : "«service»";
+              : visualRole === "WORKER"
+                ? "«worker»"
+                : "«service»";
       const liveReplicas = live ? live.runningReplicas : authorStartsDown ? 0 : 1;
       builtNodes.push({
         id: name,
@@ -1718,8 +1722,8 @@ export function StudioObservability({
             : isRequiredEdge
               ? "#38bdf8"
               : isLight
-                ? "#94a3b8"
-                : "#64748b",
+                ? "#64748b"
+                : "#94a3b8",
         dashed: !isRequiredEdge && !isImpactBlastEdge,
         protocol: edge.protocol,
         isAsync: isAsyncProtocol(edge.protocol),

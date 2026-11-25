@@ -168,7 +168,7 @@ function StandaloneStudioContent() {
   const returnHref = safeRelativeHref(params?.get("returnTo") ?? null, defaultReturnTo);
   const publishHref =
     workspaceId && assignmentId
-      ? `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&tab=publish`
+      ? `/course-builder?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}`
       : returnHref;
   const submitHref =
     workspaceId && assignmentId
@@ -1032,7 +1032,8 @@ function StandaloneStudioContent() {
               (preferredService && !/gateway|edge|proxy/i.test(preferredService)
                 ? preferredService
                 : null) ??
-              stateless.find((s) => /payment|billing|inventory|cart/i.test(s)) ??
+              stateless.find((s) => /payment|billing/i.test(s)) ??
+              stateless.find((s) => /inventory|order|cart/i.test(s)) ??
               stateless[1] ??
               stateless[0] ??
               nonGateway[0] ??
@@ -1471,7 +1472,7 @@ function StandaloneStudioContent() {
             className="h-8 whitespace-nowrap bg-emerald-600 px-2.5 text-[12.5px] text-white hover:bg-emerald-500"
           >
             <Link href={publishHref}>
-              {t("Done · Step 6", "Xong · Bước 6")}
+              {t("Done · Course Builder", "Xong · Khung khóa học")}
               <ArrowRight className="ml-1 size-3" aria-hidden="true" />
             </Link>
           </Button>

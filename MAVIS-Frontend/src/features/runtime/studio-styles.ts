@@ -346,9 +346,7 @@ type ServiceVisualRole =
   | "gateway"
   | "database"
   | "queue"
-  | "order"
-  | "payment"
-  | "catalog"
+  | "worker"
   | "service";
 
 function detectServiceVisualRole(serviceName: string, archetype: string): ServiceVisualRole {
@@ -368,20 +366,19 @@ function detectServiceVisualRole(serviceName: string, archetype: string): Servic
   if (archetype === "QUEUE" || /(kafka|rabbit|amqp|broker|queue|\bmq\b|stream|bus)/.test(n)) {
     return "queue";
   }
-  if (/(order|cart|checkout)/.test(n)) return "order";
-  if (/(payment|billing|ledger|wallet|invoice)/.test(n)) return "payment";
-  if (/(catalog|inventory|product|warehouse)/.test(n)) return "catalog";
+  if (/(worker|consumer|processor|dispatcher|scheduler|notifier|cron|job)/.test(n)) {
+    return "worker";
+  }
   return "service";
 }
 
+// Consistent SE architectural tier palette (Gateway / Service / Worker / Database / Broker — never mixes warning amber).
 const DAYLIGHT_ROLE_COLORS: Record<ServiceVisualRole, { accent: string; top: string }> = {
   gateway: { accent: "#0284c7", top: "#e0f2fe" },
-  order: { accent: "#2563eb", top: "#dbeafe" },
-  payment: { accent: "#0d9488", top: "#ccfbf1" },
-  catalog: { accent: "#6366f1", top: "#e0e7ff" },
-  database: { accent: "#059669", top: "#dcfce7" },
-  queue: { accent: "#7c3aed", top: "#f3e8ff" },
   service: { accent: "#2563eb", top: "#dbeafe" },
+  worker: { accent: "#6366f1", top: "#e0e7ff" },
+  database: { accent: "#059669", top: "#dcfce7" },
+  queue: { accent: "#9333ea", top: "#f3e8ff" },
 };
 
 const POP_ROLE_COLORS: Record<
@@ -389,12 +386,10 @@ const POP_ROLE_COLORS: Record<
   { fill: string; top: string; chip: string; accent: string }
 > = {
   gateway: { fill: "#e0f2fe", top: "#7dd3fc", chip: "#38bdf8", accent: "#0369a1" },
-  order: { fill: "#fef9c3", top: "#fde047", chip: "#facc15", accent: "#854d0e" },
-  payment: { fill: "#d1fae5", top: "#6ee7b7", chip: "#34d399", accent: "#065f46" },
-  catalog: { fill: "#f3e8ff", top: "#d8b4fe", chip: "#c084fc", accent: "#6b21a8" },
-  database: { fill: "#dcfce7", top: "#86efac", chip: "#4ade80", accent: "#166534" },
-  queue: { fill: "#ffedd5", top: "#fdba74", chip: "#fb923c", accent: "#9a3412" },
   service: { fill: "#dbeafe", top: "#93c5fd", chip: "#60a5fa", accent: "#1e40af" },
+  worker: { fill: "#e0e7ff", top: "#a5b4fc", chip: "#818cf8", accent: "#3730a3" },
+  database: { fill: "#dcfce7", top: "#86efac", chip: "#4ade80", accent: "#166534" },
+  queue: { fill: "#f3e8ff", top: "#d8b4fe", chip: "#c084fc", accent: "#6b21a8" },
 };
 
 const CONTROL_ROLE_COLORS: Record<
@@ -402,12 +397,10 @@ const CONTROL_ROLE_COLORS: Record<
   { stroke: string; top: string; chip: string; accent: string }
 > = {
   gateway: { stroke: "#38bdf8", top: "#0c4a6e", chip: "#0c4a6e", accent: "#7dd3fc" },
-  order: { stroke: "#60a5fa", top: "#1e3a8a", chip: "#1e3a8a", accent: "#93c5fd" },
-  payment: { stroke: "#34d399", top: "#064e3b", chip: "#064e3b", accent: "#6ee7b7" },
-  catalog: { stroke: "#c084fc", top: "#3b0764", chip: "#3b0764", accent: "#e9d5ff" },
+  service: { stroke: "#60a5fa", top: "#1e3a8a", chip: "#1e3a8a", accent: "#93c5fd" },
+  worker: { stroke: "#818cf8", top: "#312e81", chip: "#312e81", accent: "#c7d2fe" },
   database: { stroke: "#2dd4bf", top: "#134e4a", chip: "#134e4a", accent: "#5eead4" },
-  queue: { stroke: "#f472b6", top: "#500724", chip: "#500724", accent: "#f9a8d4" },
-  service: { stroke: "#60a5fa", top: "#172554", chip: "#172554", accent: "#93c5fd" },
+  queue: { stroke: "#c084fc", top: "#3b0764", chip: "#3b0764", accent: "#e9d5ff" },
 };
 
 export function resolveStudioNodePalette(
@@ -557,15 +550,11 @@ export function resolveStudioSidebarIconClass(styleId: StudioStyleId, serviceNam
       case "database":
         return "text-emerald-400";
       case "queue":
-        return "text-pink-400";
-      case "order":
-        return "text-blue-400";
-      case "payment":
-        return "text-emerald-300";
-      case "catalog":
         return "text-purple-300";
+      case "worker":
+        return "text-indigo-300";
       default:
-        return "text-slate-300";
+        return "text-blue-400";
     }
   }
   // daylight
@@ -575,14 +564,10 @@ export function resolveStudioSidebarIconClass(styleId: StudioStyleId, serviceNam
     case "database":
       return "text-emerald-600";
     case "queue":
-      return "text-violet-600";
-    case "order":
-      return "text-blue-600";
-    case "payment":
-      return "text-teal-600";
-    case "catalog":
+      return "text-purple-600";
+    case "worker":
       return "text-indigo-600";
     default:
-      return "text-slate-600";
+      return "text-blue-600";
   }
 }
