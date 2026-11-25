@@ -137,6 +137,7 @@ test("Lecturer course cards open directly and own an Active-Inactive lifecycle t
   assert.match(workspace, /<Switch/);
   assert.match(workspace, /updateWorkspace\.mutateAsync/);
   assert.doesNotMatch(workspace, /t\("Open class", "Mở lớp"\)/);
+  assert.doesNotMatch(workspace, /t\("Submissions", "Bài nộp"\)/);
   assert.doesNotMatch(workspace, /Active · read only/);
   assert.match(workspace, /course\.modules\.some\(\(module\) => module\.items\.length === 0\)/);
   assert.match(workspace, /Complete Course setup/);

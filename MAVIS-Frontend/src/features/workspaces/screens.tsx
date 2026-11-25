@@ -278,7 +278,7 @@ export function Workspaces() {
                         window.location.assign(workspaceUrl);
                       }
                     }}
-                    className="group flex min-h-[350px] cursor-pointer flex-col overflow-hidden rounded-lg border bg-card transition-all duration-200 ease-out hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg focus-visible:-translate-y-1 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 active:translate-y-0 active:scale-[0.99]"
+                    className="group flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-card transition-all duration-200 ease-out hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg focus-visible:-translate-y-1 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 active:translate-y-0 active:scale-[0.99]"
                   >
                     <CourseCover
                       courseId={workspace.id}
@@ -423,25 +423,6 @@ export function Workspaces() {
                           </span>
                         )}
                       </div>
-                      <div className="mt-auto grid gap-3 border-t pt-4">
-                        <Button
-                          asChild
-                          variant="outline"
-                          className="border-primary/45 text-primary hover:bg-primary/10"
-                        >
-                          <Link
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => event.stopPropagation()}
-                            href={
-                              "/submissions?workspace=" +
-                              encodeURIComponent(workspace.id) +
-                              (pending > 0 ? "&status=PENDING" : "")
-                            }
-                          >
-                            {t("Submissions", "Bài nộp")}
-                          </Link>
-                        </Button>
-                      </div>
                     </div>
                   </article>
                 );
@@ -498,11 +479,11 @@ export function WorkspaceOverview() {
       ? "authoring"
       : canManage && requestedView === "quiz-library"
         ? "quiz-library"
-      : canManage && (requestedView === "content-actions" || requestedView === "course-flow")
-        ? "content-actions"
-      : canManage && requestedView === "course-setup"
-        ? "setup"
-        : "outline";
+        : canManage && (requestedView === "content-actions" || requestedView === "course-flow")
+          ? "content-actions"
+          : canManage && requestedView === "course-setup"
+            ? "setup"
+            : "outline";
 
   return (
     <RequestState query={query} empty={!workspace}>
