@@ -541,10 +541,10 @@ test("Evidence & Submit receives the verified Runtime Studio session", () => {
     /const runtimeEvidenceSatisfied = Boolean\(verifiedStudioSession\) \|\| hasSubmitted/,
   );
   assert.match(lab, /Complete the MAVIS Studio Live session and capture a snapshot/);
-  assert.ok(lab.includes("Studio Practice Summary"));
-  assert.ok(lab.includes("Verified Studio session"));
-  assert.ok(lab.includes("Telemetry & service interactions"));
-  assert.ok(lab.includes("Before / After studio actions"));
+  assert.ok(lab.includes("1. Tiến độ hoàn thành Module"));
+  assert.ok(lab.includes("2. Kết quả bài kiểm tra (Quiz)"));
+  assert.doesNotMatch(lab, /Telemetry & service interactions/);
+  assert.doesNotMatch(lab, /Before \/ After studio actions/);
   assert.match(lab, /\(step === 2 \|\| step === 3\)/);
 });
 
@@ -2452,4 +2452,15 @@ test("Sprint 2 #01: learning pages unlock window scroll and use concise Previous
   assert.match(syllabus, /t\("Next", "Tiếp theo"\)/);
   assert.match(screens, /<span>\{t\("Previous", "Trước"\)\}<\/span>/);
   assert.match(screens, /<span>\{t\("Next", "Tiếp theo"\)\}<\/span>/);
+});
+
+
+test("Sprint 2 #03 Module Submit: structures step=3 into 3 clean sections without telemetry clutter or 0/12 passed quiz fallback", () => {
+  const lab = read("src/features/courses/screens.tsx");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
+  assert.ok(lab.includes("1. Tiến độ hoàn thành Module"));
+  assert.ok(lab.includes("2. Kết quả bài kiểm tra (Quiz)"));
+  assert.ok(subV2.includes("3. Bài tập tự luận & Nộp bài"));
+  assert.doesNotMatch(lab, /Telemetry & service interactions|Before \/ After studio actions|Verified Studio session/);
+  assert.doesNotMatch(subV2, /4\. Kết quả nộp bài/);
 });

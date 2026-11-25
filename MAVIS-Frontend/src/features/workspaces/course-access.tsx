@@ -680,7 +680,15 @@ export type StudentLabContext = {
     runtimeUnlocked: boolean;
   } | null;
   studioSessions: StudentLabStudioSession[];
-  latestSubmission: { id: string; submittedAt?: string | null } | null;
+  latestSubmission: {
+    id: string;
+    submittedAt?: string | null;
+    frozenQuizCorrectCount?: number | null;
+    frozenQuizTotalQuestions?: number | null;
+    frozenQuizPassPercent?: number | null;
+    submissionNotes?: string | null;
+    studentSnapshots?: Array<{ writtenExplanation?: string | null }> | null;
+  } | null;
   latestReview: StudentLabLatestReview | null;
   studioExercise?: {
     baselineRequests?: Array<{ method?: string; path?: string; expectedStatus?: number | null }>;

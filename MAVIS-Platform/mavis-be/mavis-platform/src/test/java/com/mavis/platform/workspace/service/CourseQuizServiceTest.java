@@ -394,4 +394,45 @@ class CourseQuizServiceTest {
                 questions, List.of(List.of(9), List.of(), List.of())));
     }
 
+    @Test
+    void prefersBestPassingAttemptScoreWhenStudentHasLaterFailedRetake() throws Exception {
+        var workspaceId = UUID.randomUUID();
+        var labId = UUID.randomUUID();
+        var modelId = UUID.randomUUID();
+        var studentId = UUID.randomUUID();
+        var workspace = Workspace.builder().id(workspaceId).status("ACTIVE").build();
+        var lab = Assignment.builder().id(labId).workspace(workspace).labOrder(1)
+                .referenceModel(ModelVersion.builder().id(modelId).build()).build();
+        var student = User.builder().id(studentId).role(Role.builder().code("STUDENT").build()).build();
+
+        var assignments = mock(AssignmentRepository.class);
+        var access = mock(AccessPolicyService.class);
+        var policy = mock(CourseLabPolicy.class);
+        var jdbc = mock(JdbcTemplate.class);
+        var service = new CourseQuizService(assignments, access, policy, jdbc, new ObjectMapper());
+        when(assignments.findById(labId)).thenReturn(Optional.of(lab));
+        when(access.requireCurrentActiveUser()).thenReturn(student);
+
+        var quizRow = mock(java.sql.ResultSet.class);
+        when(quizRow.getInt(1)).thenReturn(1);
+        when(quizRow.getString(2)).thenReturn("Module 1");
+        when(quizRow.getInt(3)).thenReturn(70);
+        when(quizRow.getString(4)).thenReturn("[]");
+        when(jdbc.query(contains("FROM course_quizzes"), any(RowMapper.class), eq(labId), eq(modelId)))
+                .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(quizRow, 0)));
+
+        var bestRow = mock(java.sql.ResultSet.class);
+        when(bestRow.getString(1)).thenReturn("PASSED");
+        when(bestRow.getInt(2)).thenReturn(11);
+        when(bestRow.getObject(3, java.time.OffsetDateTime.class)).thenReturn(java.time.OffsetDateTime.now());
+        when(jdbc.query(contains("AND passed = true"), any(RowMapper.class), eq(labId), eq(studentId), eq(1)))
+                .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(bestRow, 0)));
+        when(policy.hasPassedQuizVersion(labId, studentId, 1)).thenReturn(true);
+
+        var quiz = service.get(workspaceId, labId);
+        assertTrue(quiz.passed());
+        assertEquals("PASSED", quiz.latestStatus());
+        assertEquals(11, quiz.latestCorrectCount());
+    }
+
 }

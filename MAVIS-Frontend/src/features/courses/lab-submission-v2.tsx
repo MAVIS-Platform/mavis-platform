@@ -113,7 +113,15 @@ export function LabSubmissionV2({
   capturedSnapshotCount?: number | undefined;
   studioStateLoading?: boolean | undefined;
   runtimeEvidenceHref?: string | undefined;
-  initialSubmission?: { id: string; submittedAt?: string | null } | null | undefined;
+  initialSubmission?:
+    | {
+        id: string;
+        submittedAt?: string | null;
+        submissionNotes?: string | null;
+        studentSnapshots?: Array<{ writtenExplanation?: string | null }> | null;
+      }
+    | null
+    | undefined;
   initialReview?: StudentLabLatestReview | null | undefined;
   hasReferenceArch?: boolean | undefined;
   quizSummary?:
@@ -166,8 +174,10 @@ export function LabSubmissionV2({
           id: initialSubmission.id,
           submittedAt: initialSubmission.submittedAt ?? "",
           evidencePackageDigest: undefined as string | undefined,
-          studentSnapshots: undefined as Array<{ writtenExplanation?: string | null }> | undefined,
-          submissionNotes: undefined as string | undefined,
+          studentSnapshots: (initialSubmission.studentSnapshots ?? undefined) as
+            | Array<{ writtenExplanation?: string | null }>
+            | undefined,
+          submissionNotes: (initialSubmission.submissionNotes ?? undefined) as string | undefined,
         }
       : undefined);
   const review = useApiQuery(
@@ -184,10 +194,15 @@ export function LabSubmissionV2({
     typeof capturedSnapshotCount === "number" &&
     capturedSnapshotCount === 0;
 
+  const submittedAnswerPreview =
+    latest?.studentSnapshots?.[0]?.writtenExplanation?.trim() ||
+    latest?.submissionNotes?.trim() ||
+    "";
+
   if (latest && !revising) {
     return (
       <div id="lab-submit">
-        <DetailPanel title={t("Module Result & Next Steps", "4. Kết quả nộp bài & Tiếp tục")}>
+        <DetailPanel title={t("3. Essay Assignment & Submission", "3. Bài tập tự luận & Nộp bài")}>
           <div className="space-y-3 rounded-xl border border-emerald-300/70 bg-emerald-500/5 p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
@@ -243,6 +258,16 @@ export function LabSubmissionV2({
                   )}
                 </div>
               )}
+            {submittedAnswerPreview && (
+              <div className="space-y-1 rounded-md border bg-background/90 p-3 text-xs">
+                <p className="font-medium text-muted-foreground">
+                  {t("Submitted response", "Nội dung bài đã nộp")}
+                </p>
+                <p className="line-clamp-4 whitespace-pre-wrap text-foreground">
+                  {submittedAnswerPreview}
+                </p>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Button asChild size="sm" className="bg-teal-600 text-white hover:bg-teal-700">
                 <Link
@@ -291,7 +316,7 @@ export function LabSubmissionV2({
 
   return (
     <div id="lab-submit">
-      <DetailPanel title={t("Reflection & Module Submission", "3. Bài viết tổng hợp & Nộp bài")}>
+      <DetailPanel title={t("3. Essay Assignment & Submission", "3. Bài tập tự luận & Nộp bài")}>
         <div className="space-y-3">
           <p className="flex items-start gap-2 text-sm text-muted-foreground">
             <FileText className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

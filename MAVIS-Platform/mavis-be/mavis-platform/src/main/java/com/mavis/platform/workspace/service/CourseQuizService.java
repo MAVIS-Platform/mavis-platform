@@ -205,8 +205,14 @@ public class CourseQuizService {
         AttemptSummary latestAttempt = null;
         String latestStatus = null;
         if (CourseLabPolicy.isStudent(user)) {
-            latestAttempt = latestAttempt(lab.getId(), user.getId(), quiz.version());
-            latestStatus = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version())
+            boolean hasPassed = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version());
+            AttemptSummary passedAttempt = hasPassed
+                    ? bestPassedAttempt(lab.getId(), user.getId(), quiz.version())
+                    : null;
+            latestAttempt = passedAttempt != null
+                    ? passedAttempt
+                    : latestAttempt(lab.getId(), user.getId(), quiz.version());
+            latestStatus = hasPassed
                     ? "PASSED"
                     : latestAttempt == null ? "NOT_ATTEMPTED" : latestAttempt.status();
         }
@@ -234,8 +240,14 @@ public class CourseQuizService {
         AttemptSummary latestAttempt = null;
         String latestStatus = null;
         if (CourseLabPolicy.isStudent(user)) {
-            latestAttempt = latestAttempt(lab.getId(), user.getId(), quiz.version());
-            latestStatus = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version())
+            boolean hasPassed = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version());
+            AttemptSummary passedAttempt = hasPassed
+                    ? bestPassedAttempt(lab.getId(), user.getId(), quiz.version())
+                    : null;
+            latestAttempt = passedAttempt != null
+                    ? passedAttempt
+                    : latestAttempt(lab.getId(), user.getId(), quiz.version());
+            latestStatus = hasPassed
                     ? "PASSED"
                     : latestAttempt == null ? "NOT_ATTEMPTED" : latestAttempt.status();
         }
@@ -410,6 +422,17 @@ public class CourseQuizService {
                 FROM course_quiz_attempts
                 WHERE assignment_id = ? AND student_id = ? AND quiz_version = ?
                 ORDER BY submitted_at DESC, attempt_id DESC LIMIT 1
+                """, (rs, row) -> new AttemptSummary(rs.getString(1), rs.getInt(2),
+                        rs.getObject(3, OffsetDateTime.class)), assignmentId, studentId, version)
+                .stream().findFirst().orElse(null);
+    }
+
+    private AttemptSummary bestPassedAttempt(UUID assignmentId, UUID studentId, int version) {
+        return jdbc.query("""
+                SELECT 'PASSED', correct_count, submitted_at
+                FROM course_quiz_attempts
+                WHERE assignment_id = ? AND student_id = ? AND quiz_version = ? AND passed = true
+                ORDER BY correct_count DESC, submitted_at DESC, attempt_id DESC LIMIT 1
                 """, (rs, row) -> new AttemptSummary(rs.getString(1), rs.getInt(2),
                         rs.getObject(3, OffsetDateTime.class)), assignmentId, studentId, version)
                 .stream().findFirst().orElse(null);
