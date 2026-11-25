@@ -194,7 +194,7 @@ test("Lecturer UX Pack 1: single-line breadcrumbs & class tabs, Google mark isol
   assert.match(workspaces, /gradebookLoading/);
   assert.match(subScreens, /Next pending/);
   assert.match(grading, /applyScoreToAllSnapshots/);
-  assert.match(subComponents, /Technical verification IDs & digests/);
+  assert.doesNotMatch(subComponents, /Technical verification IDs & digests/);
 });
 
 test("Council Scope Gap Pack: THEORY_ONLY Markdown reader, Admin Test Connection, and VI parity", () => {

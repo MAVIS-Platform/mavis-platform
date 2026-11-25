@@ -245,7 +245,7 @@ async function main() {
     await page.getByRole("button", { name: "Download evidence", exact: true }).last().click();
     const evidencePath = path.join(output, "studio-evidence.json");
     await (await evidenceDownload).saveAs(evidencePath);
-    await page.getByText("Frozen Studio evidence", { exact: true }).click();
+    await page.getByRole("heading", { name: "Studio practice snapshots", exact: true }).waitFor();
     await page.getByRole("img", { name: "Studio snapshot 1", exact: true }).waitFor();
     assert.ok(
       JSON.parse(fs.readFileSync(evidencePath, "utf8")).imageData.startsWith(

@@ -2033,3 +2033,30 @@ test("Follow-up polish: submission BFF timeout/fast-submit, multi-lab step-3 pre
     /\{assignment && courseAccess\.canCreateLabs && \(\s*<Button[\s\S]{0,900}t\("New Lab", "Tạo Lab mới"\)/,
   );
 });
+
+test("Submission detail UX cleanup: hides raw SHA-256 digests, deduplicates notes/snapshots, and clearly labels student snapshot captions", () => {
+  const studioEv = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/studio-evidence.tsx"),
+    "utf8",
+  );
+  const frozen = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/frozen-artifacts.tsx"),
+    "utf8",
+  );
+  const components = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/components.tsx"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(studioEv, /evidence\.data\.studioEvidence\.receiptDigest/);
+  assert.doesNotMatch(studioEv, /\{snapshot\.digest\}/);
+  assert.ok(studioEv.includes('t("Student note when capturing", "Ghi chú của sinh viên lúc chụp")'));
+  assert.ok(studioEv.includes("localizeRuleLabel"));
+
+  assert.doesNotMatch(frozen, /Evidence package SHA-256|Technical details & export|Frozen Lab v2|\(\{snap\.step\}\)/);
+  assert.ok(frozen.includes("visibleStudentSnapshots"));
+  assert.ok(frozen.includes('quizEv.status !== "NOT_REQUIRED"'));
+
+  assert.doesNotMatch(components, /Technical verification IDs & digests/);
+  assert.ok(components.includes("isNotesDuplicated"));
+});

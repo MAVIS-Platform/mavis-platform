@@ -56,70 +56,81 @@ function projectionDsl(payload: Record<string, unknown>): string | null {
     }),
   ].join("\n");
 }
+function formatSnapshotTitle(
+  snap: NonNullable<Submission["studentSnapshots"]>[number],
+  t: (en: string, vi?: string) => string,
+): string {
+  const raw = (snap.title || "").trim();
+  if (!raw || /^theory explanation$/i.test(raw)) {
+    return t("Student explanation", "Giải thích của sinh viên");
+  }
+  const studioMatch = raw.match(/^studio snapshot\s+(\d+)$/i);
+  if (studioMatch) {
+    return t(`Studio snapshot #${studioMatch[1]}`, `Ảnh chụp Studio #${studioMatch[1]}`);
+  }
+  return raw;
+}
+
+function visibleStudentSnapshots(submission: Submission) {
+  const hasStudioEvidence = Boolean(submission.studioEvidence);
+  return (submission.studentSnapshots ?? []).filter((snap) => {
+    // Avoid duplicating Studio snapshot captions already paired with 3D images in StudioSubmissionEvidence.
+    if (hasStudioEvidence && (snap.step === "STEP_4_RUNTIME" || snap.snapshotId.startsWith("STUDIO_"))) {
+      return false;
+    }
+    return Boolean(snap.writtenExplanation && stripLegacySubmissionNoise(snap.writtenExplanation));
+  });
+}
+
 function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
-  const { locale, t } = useLocale();
+  const { t } = useLocale();
   const quizEv = submission.courseQuizEvidence;
+  const showQuiz = Boolean(quizEv && quizEv.status !== "NOT_REQUIRED");
   const quizCorrect = quizEv?.correctCount ?? 0;
   const quizTotal = quizEv?.questionCount ?? 0;
   const quizScorePercent = quizTotal > 0 ? Math.round((quizCorrect / quizTotal) * 100) : 0;
+  const snapshots = visibleStudentSnapshots(submission);
+
   return (
     <>
-      {submission.studentSnapshots && submission.studentSnapshots.length > 0 && (
-        <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs">
-          <p className="font-medium">
-            {locale === "vi"
-              ? "Các Snapshot đã nộp & Giải thích lý thuyết"
-              : <>Submitted Snapshots &amp; Theoretical Explanations</>}
-          </p>
-          <div className="space-y-2">
-            {submission.studentSnapshots.map((snap, idx) => (
-              <div key={`${snap.snapshotId}-${idx}`} className="rounded border bg-background p-2.5">
-                <p className="font-medium">
-                  {snap.title || snap.snapshotId}{" "}
-                  {snap.step && (
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      ({snap.step})
-                    </span>
-                  )}
+      {snapshots.length > 0 && (
+        <div className="space-y-3">
+          {snapshots.map((snap, idx) => {
+            const explanation = snap.writtenExplanation
+              ? stripLegacySubmissionNoise(snap.writtenExplanation)
+              : "";
+            return (
+              <div
+                key={`${snap.snapshotId}-${idx}`}
+                className="space-y-1.5 rounded-xl border bg-muted/15 p-3.5"
+              >
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {formatSnapshotTitle(snap, t)}
                 </p>
-                {snap.targetViewOrService && (
-                  <p className="text-[11px] text-muted-foreground">
-                    {t("Target", "Mục tiêu")}: {snap.targetViewOrService}
+                {explanation && (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                    {explanation}
                   </p>
                 )}
-                {snap.writtenExplanation &&
-                  stripLegacySubmissionNoise(snap.writtenExplanation) && (
-                    <p className="mt-1 whitespace-pre-wrap text-foreground">
-                      {stripLegacySubmissionNoise(snap.writtenExplanation)}
-                    </p>
-                  )}
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
-      {quizEv && (
-        <div className="rounded-lg border bg-muted/20 p-3 text-xs">
-          <p className="font-medium">{t("Lab Quiz Result", "Kết quả Quiz của Lab")}</p>
-          <p className="text-muted-foreground">
-            {quizEv.status === "NOT_REQUIRED"
-              ? submission.labMode === "THEORY_QUIZ_STUDIO" ||
-                Boolean(submission.studioEvidence || submission.runtime?.studioVerified)
-                ? t("NOT_REQUIRED · Studio Lab (no quiz gate)", "KHÔNG BẮT BUỘC · Lab Studio (không yêu cầu quiz)")
-                : t("NOT_REQUIRED · Theory Only", "KHÔNG BẮT BUỘC · Chỉ lý thuyết")
-              : `${quizEv.status} · ${quizCorrect}/${quizTotal} (${quizScorePercent}%${quizEv.passPercent != null ? ` · pass ≥ ${quizEv.passPercent}%` : ""}) · Quiz v${quizEv.quizVersion ?? 1}`}
-          </p>
+      {showQuiz && quizEv && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/15 px-3.5 py-2.5 text-sm">
+          <span className="font-medium text-foreground">
+            {t("Lab Quiz Result", "Kết quả Quiz của Lab")}
+          </span>
+          <span className="text-muted-foreground">
+            {quizEv.status === "PASSED" ? t("Passed", "Đạt") : t("Not passed", "Chưa đạt")} ·{" "}
+            {quizCorrect}/{quizTotal} ({quizScorePercent}%
+            {quizEv.passPercent != null
+              ? ` · ${t("pass", "yêu cầu")} ≥ ${quizEv.passPercent}%`
+              : ""}
+            )
+          </span>
         </div>
-      )}
-      {submission.evidencePackageDigest && (
-        <details className="rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          <summary className="cursor-pointer font-medium text-foreground">
-            {t("Technical details & export", "Chi tiết kỹ thuật & xuất dữ liệu")}
-          </summary>
-          <div className="mt-2 font-mono leading-relaxed break-all">
-            {t("Evidence package SHA-256", "Mã băm gói minh chứng SHA-256")}: {submission.evidencePackageDigest}
-          </div>
-        </details>
       )}
     </>
   );
@@ -134,29 +145,31 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
     (submission.labMode !== "LEGACY" ||
       Boolean(submission.studentSnapshots?.length) ||
       Boolean(submission.courseQuizEvidence));
-  if (!layout)
+  if (!layout) {
+    const hasHeaderContent =
+      visibleStudentSnapshots(submission).length > 0 ||
+      Boolean(submission.courseQuizEvidence && submission.courseQuizEvidence.status !== "NOT_REQUIRED");
+    if (isV2NoDiagram && !hasHeaderContent) return null;
     return (
       <DetailPanel
         title={
           isV2NoDiagram
-            ? t("Frozen Lab evidence", "Minh chứng bài làm Lab")
+            ? t("Student work & explanation", "Bài làm & Giải thích của sinh viên")
             : t("Submitted diagram", "Sơ đồ đã nộp")
         }
       >
         <SubmissionEvidenceHeader submission={submission} />
-        <p className="text-sm text-muted-foreground">
-          {isV2NoDiagram
-            ? t(
-                "Frozen Lab v2 evidence package · No diagram artifact required for this Lab mode.",
-                "Bài làm Lab v2 · Chế độ Lab này không yêu cầu nộp sơ đồ riêng.",
-              )
-            : t(
-                `No diagram payload was returned for this submission. The pinned ID is ${submission.diagramVersionId ?? "unavailable"}.`,
-                `Không có dữ liệu sơ đồ trả về cho bài nộp này. ID đã ghim: ${submission.diagramVersionId ?? "không có"}.`,
-              )}
-        </p>
+        {!isV2NoDiagram && (
+          <p className="text-sm text-muted-foreground">
+            {t(
+              "No diagram payload was returned for this submission.",
+              "Không có dữ liệu sơ đồ trả về cho bài nộp này.",
+            )}
+          </p>
+        )}
       </DetailPanel>
     );
+  }
   const artifacts = Array.isArray(layout["artifacts"])
     ? (layout["artifacts"] as Array<{
         notation: string;
@@ -165,7 +178,7 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
       }>)
     : [{ notation: submission.diagramNotation ?? "Diagram", layoutJson: layout }];
   return (
-    <DetailPanel title={t("Frozen submitted diagrams", "Sơ đồ đã nộp")}>
+    <DetailPanel title={t("Submitted diagrams", "Sơ đồ đã nộp")}>
       <SubmissionEvidenceHeader submission={submission} />
       {artifacts.map((artifact, index) => {
         const payload = artifact.layoutJson ?? {},
@@ -173,8 +186,10 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
         return (
           <section key={index} className="space-y-3 rounded-xl border p-4">
             <h3 className="text-sm font-semibold">
-              {artifact.notation} · {String(payload["viewId"] ?? artifact.level ?? "")}{" "}
-              {payload["documentRevision"] ? `· ${t("revision", "bản")} ${payload["documentRevision"]}` : ""}
+              {artifact.notation}
+              {payload["viewId"] || artifact.level
+                ? ` · ${String(payload["viewId"] ?? artifact.level)}`
+                : ""}
             </h3>
             {typeof dsl === "string" ? (
               <DiagramPreview
@@ -186,36 +201,25 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
             ) : (
               <p className="text-sm text-muted-foreground">
                 {t(
-                  "Frozen architecture snapshot preserved as JSON evidence. Download its exact payload below.",
-                  "Bản chụp kiến trúc được lưu dưới dạng JSON minh chứng. Tải tệp chi tiết bên dưới.",
+                  "Architecture snapshot saved as JSON. Download the file below to inspect.",
+                  "Bản chụp kiến trúc được lưu dạng JSON. Tải tệp bên dưới để xem chi tiết.",
                 )}
               </p>
             )}
-            <details className="rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              <summary className="cursor-pointer font-medium text-foreground">
-                {t("Technical details & export", "Chi tiết kỹ thuật & xuất dữ liệu")}
-              </summary>
-              <div className="mt-2 space-y-2">
-                <p className="break-all">
-                  {t(
-                    `Pinned bundle/version: ${submission.diagramVersionId}. Later edits do not change the contents below.`,
-                    `Phiên bản sơ đồ đã ghim: ${submission.diagramVersionId}. Các chỉnh sửa sau này không làm thay đổi nội dung bên dưới.`,
-                  )}
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    downloadArtifact(
-                      `submitted-diagram-${index + 1}.json`,
-                      JSON.stringify(payload, null, 2),
-                    )
-                  }
-                >
-                  {t("Download diagram JSON", "Tải JSON sơ đồ")}
-                </Button>
-              </div>
-            </details>
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  downloadArtifact(
+                    `submitted-diagram-${index + 1}.json`,
+                    JSON.stringify(payload, null, 2),
+                  )
+                }
+              >
+                {t("Download diagram JSON", "Tải JSON sơ đồ")}
+              </Button>
+            </div>
           </section>
         );
       })}

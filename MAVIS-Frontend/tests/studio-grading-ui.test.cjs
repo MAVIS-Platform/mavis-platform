@@ -75,7 +75,7 @@ test("Commit #06 cleans student submission evidence, enables dark-mode Mermaid p
   const grading = read("src/features/submissions/grading.tsx");
 
   assert.match(frozen, /style=\{isDark \? "dark" : "clean"\}/);
-  assert.match(frozen, /<details[^>]*>[\s\S]*Evidence package SHA-256/);
+  assert.doesNotMatch(frozen, /Evidence package SHA-256/);
   assert.doesNotMatch(subV2, /\[CB=|DBPerService=|sectionId: "MITIGATION"/);
   assert.match(grading, /t\("Save grading draft", "Lưu nháp"\)/);
   assert.match(grading, /t\("Complete & publish grade", "Hoàn tất & Công bố điểm"\)/);
@@ -90,5 +90,5 @@ test("Phase 2: Studio Lab dossiers without a per-Lab quiz never render contradic
   assert.match(components, /const isStudioLab =[\s\S]*THEORY_QUIZ_STUDIO[\s\S]*studioEvidence[\s\S]*studioVerified/);
   assert.match(components, /const isTheoryOnly =\s*!isStudioLab/);
   assert.match(screens, /courseQuizEvidence\?\.status === "NOT_REQUIRED" &&[\s\S]*labMode !== "THEORY_QUIZ_STUDIO"/);
-  assert.match(frozen, /NOT_REQUIRED · Studio Lab \(no quiz gate\)/);
+  assert.match(frozen, /quizEv\.status !== "NOT_REQUIRED"/);
 });

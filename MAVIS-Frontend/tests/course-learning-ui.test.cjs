@@ -318,7 +318,7 @@ test("WF-04 submission UI exposes every evidence gate and the sealed package dig
     composer,
     /staticExplanation\.trim\(\)\.length > 0\s+&& \(!requiresStudio \|\| \(interactiveStudio \? capturedStudioSnapshots\.length > 0 : runtimeExplanation\.trim\(\)\.length > 0\)\)/,
   );
-  assert.ok(frozen.includes("Evidence package SHA-256"));
+  assert.doesNotMatch(frozen, /Evidence package SHA-256/);
   assert.match(contract, /evidencePackageDigest:\s*z\s*\.string\(\)\s*\.regex/);
 });
 
@@ -564,7 +564,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
 
   assert.ok(grading.includes("const SNAPSHOT_PASS_EXCLUSIVE = 5.0"));
   assert.ok(grading.includes("Per-snapshot grading results (> 5.0 / 10 required)"));
-  assert.ok(frozen.includes("Submitted Snapshots &amp; Theoretical Explanations"));
+  assert.ok(frozen.includes("Student work & explanation"));
   assert.ok(runtimeScreens.includes('t("Step 2: Test Scenarios")'));
 
   for (const key of [
@@ -1230,12 +1230,12 @@ test("FrozenArtifacts renders digest, quiz proof and snapshot explanations for L
     }),
   );
 
-  assert.ok(html.includes("Frozen Lab evidence"));
-  assert.ok(html.includes("Evidence package SHA-256:"));
+  assert.ok(html.includes("Student work &amp; explanation"));
+  assert.ok(!html.includes("sha256:"));
   assert.ok(html.includes("Lab Quiz Result"));
-  assert.ok(html.includes("Submitted Snapshots &amp; Theoretical Explanations"));
+  assert.ok(html.includes("Student explanation"));
   assert.ok(html.includes("Isolated databases preserve service autonomy."));
-  assert.ok(html.includes("No diagram artifact required for this Lab mode."));
+  assert.ok(!html.includes("No diagram artifact required for this Lab mode."));
 });
 
 test("GradeForm renders student snapshot explanations and preserves dirty draft across review revision sync", () => {

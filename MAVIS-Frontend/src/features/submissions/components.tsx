@@ -14,7 +14,7 @@ import type { Submission } from "@/types/domain";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { formatCourseLabTitle, formatLabModeLabel } from "@/lib/format/course-display";
 export function SubmissionVersionHeader({ submission }: { submission: Submission }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const canReview = usePermission("submission:review");
   const quiz = submission.courseQuizEvidence;
   const isStudioLab =
@@ -35,8 +35,26 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
   );
   const formattedSubmittedAt = (() => {
     const d = new Date(submission.submittedAt);
-    return Number.isNaN(d.getTime()) ? submission.submittedAt : d.toLocaleString();
+    if (Number.isNaN(d.getTime())) return submission.submittedAt;
+    return d.toLocaleString(locale === "vi" ? "vi-VN" : "en-US", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   })();
+  const cleanedNotes = submission.submissionNotes
+    ? stripLegacySubmissionNoise(submission.submissionNotes)
+    : "";
+  const isNotesDuplicated =
+    Boolean(cleanedNotes) &&
+    (submission.studentSnapshots ?? []).some(
+      (snap) =>
+        snap.writtenExplanation &&
+        stripLegacySubmissionNoise(snap.writtenExplanation) === cleanedNotes,
+    );
+  const displayNotes = isNotesDuplicated ? "" : cleanedNotes;
   const studioEval =
     submission.studioEvidence &&
     typeof submission.studioEvidence["exerciseEvaluation"] === "object" &&
@@ -56,6 +74,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge
             status={t("Submitted", "Bài đã nộp")}
+            preserveCase
             variant="source"
           />
           {isTheoryOnly ? (
@@ -74,11 +93,12 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
           {(submission.runtime?.studioVerified || Boolean(submission.studioEvidence)) && (
             <StatusBadge
               status={t("Studio Live Verified", "Đã xác minh Studio Live")}
+              preserveCase
               variant="success"
             />
           )}
         </div>
-        <p className="text-sm font-medium">
+        <p className="text-sm font-semibold text-foreground">
           {submission.workspaceName ? `${submission.workspaceName} · ` : ""}
           {labLabel}
         </p>
@@ -89,22 +109,14 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             ? ` · ${t("Compliance", "Tuân thủ 3E")}: ${submission.complianceScore}`
             : ""}
         </p>
-        {submission.submissionNotes &&
-          stripLegacySubmissionNoise(submission.submissionNotes) && (
-            <p className="whitespace-pre-wrap text-sm">
-              {stripLegacySubmissionNoise(submission.submissionNotes)}
-            </p>
-          )}
+        {displayNotes && (
+          <p className="whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-sm leading-relaxed">
+            {displayNotes}
+          </p>
+        )}
         {quiz && quiz.status === "PASSED" && quiz.correctCount != null && quiz.questionCount != null && (
           <p className="text-sm">
             {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
-            {" · "}
-            {t("Version", "Phiên bản")} {quiz.quizVersion ?? 1}
-          </p>
-        )}
-        {isTheoryOnly && (
-          <p className="text-sm">
-            {t("Theory-only Lab (no Quiz required)", "Lab chỉ lý thuyết (không yêu cầu Quiz)")}
           </p>
         )}
         <SubmissionExport submissionId={submission.id} />
@@ -117,6 +129,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge
           status={t("Submitted", "Bài đã nộp")}
+          preserveCase
           variant="source"
         />
         {isTheoryOnly ? (
@@ -135,6 +148,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
         {(submission.runtime?.studioVerified || Boolean(submission.studioEvidence)) && (
           <StatusBadge
             status={t("Studio Live Verified", "Đã xác minh Studio Live")}
+            preserveCase
             variant="success"
           />
         )}
@@ -162,12 +176,6 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             {quiz.questionCount > 0
               ? ` (${Math.round((quiz.correctCount / quiz.questionCount) * 100)}%)`
               : ""}
-            {" · "}v{quiz.quizVersion ?? 1}
-          </span>
-        )}
-        {isTheoryOnly && (
-          <span className="inline-flex items-center rounded-lg border bg-muted/40 px-2.5 py-1 font-medium text-muted-foreground">
-            {t("Theory-only Lab (no Quiz required)", "Lab chỉ lý thuyết (không yêu cầu Quiz)")}
           </span>
         )}
         {submission.complianceScore !== null && submission.complianceScore !== undefined && (
@@ -184,9 +192,8 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             })}`}
           >
             {submission.runtime.studioVerified
-              ? t("Verified Studio evidence", "Minh chứng Studio đã xác minh")
-              : t("Runtime evidence", "Minh chứng Runtime")}{" "}
-            · {submission.runtime.id.slice(0, 8)}
+              ? t("View verified Studio session", "Xem phiên thực hành Studio")
+              : t("View Runtime session", "Xem phiên chạy Runtime")}
           </Link>
         ) : submission.studioEvidence ? (
           <span className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-800 dark:text-emerald-300">
@@ -199,42 +206,15 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
         ) : null}
       </div>
 
-      {submission.submissionNotes &&
-        stripLegacySubmissionNoise(submission.submissionNotes) && (
-          <p className="whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-sm">
-            {stripLegacySubmissionNoise(submission.submissionNotes)}
-          </p>
-        )}
+      {displayNotes && (
+        <p className="whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-sm leading-relaxed">
+          {displayNotes}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SubmissionExport submissionId={submission.id} />
       </div>
-
-      <details className="rounded-lg border bg-muted/15 px-3 py-2 text-xs text-muted-foreground">
-        <summary className="cursor-pointer font-medium text-foreground/80">
-          {t("Technical verification IDs & digests", "Mã định danh & SHA-256 kiểm chứng kỹ thuật")}
-        </summary>
-        <div className="mt-2 space-y-1 break-all font-mono text-[11px]">
-          <p>
-            {t("Submission", "Bài nộp")}: {submission.id}
-          </p>
-          <p>
-            {t("Model", "Mô hình")}: {submission.model.id} · rev {submission.model.revision} ·{" "}
-            {t("source", "nguồn")} {submission.snapshot.id}
-          </p>
-          {(submission.diagramVersionId || submission.evaluationRunId) && (
-            <p>
-              {t("Diagram", "Sơ đồ")}: {submission.diagramVersionId ?? "—"} ·{" "}
-              {t("Evaluation", "Đánh giá tĩnh")}: {submission.evaluationRunId ?? "—"}
-            </p>
-          )}
-          {typeof submission.studioEvidence?.["receiptDigest"] === "string" && (
-            <p>
-              Receipt: {String(submission.studioEvidence["receiptDigest"])}
-            </p>
-          )}
-        </div>
-      </details>
     </DetailPanel>
   );
 }
