@@ -2465,8 +2465,12 @@ test("End-to-end Studio -> Lab Review & Submit -> Simplified Lecturer Grading re
   // Pillar 4: Lecturer-only automated grading assistant + video/lightbox evidence + simple manual score
   assert.match(subEvidence, /const canReview = usePermission\("submission:review"\)/);
   assert.match(subEvidence, /canReview && evidence\.success/);
+  assert.match(subEvidence, /explicitType === "CIRCUIT_BREAKER"/);
+  assert.match(subEvidence, /explicitType === "CONFIG_REGRESSION"/);
+  assert.match(subEvidence, /event\.key === "Escape"/);
   assert.match(subEvidence, /<video/);
   assert.match(subEvidence, /data:video\/webm/);
+  assert.match(exercisePanel, /whitespace-normal/);
   assert.match(grading, /id="mavis-simple-score"/);
   assert.match(grading, /<details/);
 });

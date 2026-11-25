@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Camera,
   CheckCircle2,
@@ -41,6 +41,7 @@ const evaluationImpactSchema = z
 
 const exerciseEvaluationSchema = z
   .object({
+    exerciseType: z.string().optional(),
     predictionLocked: z.boolean().optional(),
     predictedServices: z.array(z.string()).optional(),
     observedAffectedServices: z.array(z.string()).optional(),
@@ -56,8 +57,13 @@ const exerciseEvaluationSchema = z
 const studioActionSchema = z
   .object({
     action: z.string(),
-    serviceName: z.string(),
+    service: z.string().optional(),
+    serviceName: z.string().optional(),
+    status: z.string().optional(),
+    replicas: z.number().nullish(),
     targetReplicas: z.number().nullish(),
+    cpuPercent: z.number().nullish(),
+    targetRps: z.number().nullish(),
     createdAt: z.string().optional(),
   })
   .passthrough();
@@ -76,6 +82,7 @@ const frozenStudio = z
               capturedAt: z.string(),
               explanation: z.string(),
               digest: z.string(),
+              actions: z.array(studioActionSchema).optional(),
               imageData: z
                 .string()
                 .refine(
@@ -146,8 +153,18 @@ function detectSupportedExerciseLabel(
   actions: ReadonlyArray<z.infer<typeof studioActionSchema>>,
   t: (en: string, vi?: string) => string,
 ): string {
-  if (latestEval?.impact || latestEval?.predictionLocked) {
+  const explicitType = latestEval?.exerciseType?.toUpperCase();
+  if (explicitType === "CHANGE_IMPACT" || latestEval?.impact || latestEval?.predictionLocked) {
     return t("Change Impact Analysis", "Phân tích ảnh hưởng (Change Impact)");
+  }
+  if (explicitType === "SCALE_UNDER_LOAD") {
+    return t("Load & Horizontal Scaling", "Chịu tải & Scale ngang");
+  }
+  if (explicitType === "CIRCUIT_BREAKER" || explicitType === "CASCADING_FAILURE") {
+    return t("Outage Recovery", "Khôi phục sự cố (Outage Recovery)");
+  }
+  if (explicitType === "CONFIG_REGRESSION") {
+    return t("CPU Bottleneck & Latency", "Tắc nghẽn CPU & Độ trễ");
   }
   const labels = (latestEval?.rules ?? []).map((r) => r.label.toLowerCase()).join(" ");
   if (labels.includes("replicas") || actions.some((a) => a.action.toUpperCase() === "SCALE")) {
@@ -156,8 +173,10 @@ function detectSupportedExerciseLabel(
   if (actions.some((a) => a.action.toUpperCase() === "THROTTLE_CPU")) {
     return t("CPU Bottleneck & Latency", "Tắc nghẽn CPU & Độ trễ");
   }
-  if (actions.some((a) => ["PAUSE", "STOP"].includes(a.action.toUpperCase()))) {
-    return t("Failure & Recovery", "Sự cố & Khôi phục dịch vụ");
+  if (
+    actions.some((a) => ["START", "RESUME", "PAUSE", "STOP"].includes(a.action.toUpperCase()))
+  ) {
+    return t("Outage Recovery", "Khôi phục sự cố (Outage Recovery)");
   }
   return t("Studio Practice", "Thực hành Studio");
 }
@@ -183,6 +202,14 @@ export function StudioSubmissionEvidence({
     title: string;
     note?: string | undefined;
   } | null>(null);
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightbox]);
   const exported = useApiQuery(
     "submissionExport",
     { submissionId },
@@ -192,7 +219,12 @@ export function StudioSubmissionEvidence({
   if (!available) return null;
 
   const snapshots = evidence.success ? evidence.data.studioEvidence.snapshots : [];
-  const actions = evidence.success ? (evidence.data.studioEvidence.actions ?? []) : [];
+  const rawActions = evidence.success
+    ? (evidence.data.studioEvidence.actions?.length
+        ? evidence.data.studioEvidence.actions
+        : [...snapshots].reverse().find((s) => (s.actions?.length ?? 0) > 0)?.actions ?? [])
+    : [];
+  const actions = rawActions.filter((a) => !a.status || a.status.toUpperCase() === "CONFIRMED");
   const latestEval = evidence.success
     ? [...snapshots]
         .reverse()
@@ -258,15 +290,21 @@ export function StudioSubmissionEvidence({
               <span className="font-medium text-muted-foreground">
                 {t("Executed actions:", "Thao tác đã chạy:")}
               </span>
-              {actions.slice(-6).map((act, idx) => (
-                <span
-                  key={`${act.action}-${act.serviceName}-${idx}`}
-                  className="rounded-md border bg-background px-2 py-0.5 font-mono font-medium text-foreground"
-                >
-                  {act.action} {act.serviceName}
-                  {typeof act.targetReplicas === "number" ? ` → ×${act.targetReplicas}` : ""}
-                </span>
-              ))}
+              {actions.slice(-6).map((act, idx) => {
+                const svc = act.service ?? act.serviceName ?? "";
+                const reps = act.replicas ?? act.targetReplicas;
+                return (
+                  <span
+                    key={`${act.action}-${svc}-${idx}`}
+                    className="rounded-md border bg-background px-2 py-0.5 font-mono font-medium text-foreground"
+                  >
+                    {act.action} {svc}
+                    {typeof reps === "number" ? ` → ×${reps}` : ""}
+                    {typeof act.cpuPercent === "number" ? ` (${act.cpuPercent}% CPU)` : ""}
+                    {typeof act.targetRps === "number" ? ` (${act.targetRps} RPS)` : ""}
+                  </span>
+                );
+              })}
             </div>
           )}
 

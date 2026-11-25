@@ -569,14 +569,14 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
         `Mục tiêu: Xử lý tăng tải đột biến bằng cách mở rộng bản sao (Scale-Out) cho ${svc}.`,
         `1. Ghi nhận chỉ số p95/tỉ lệ lỗi ban đầu, sau đó tăng tải probe${rpsText ? ` lên${rpsText}` : ""} (Set Load) để mô phỏng cao điểm.`,
         `2. Tăng số replica của ${svc} lên tối thiểu ${count}x và theo dõi hệ thống ổn định (tỉ lệ lỗi <= ${errLimit}%${p95ClauseVi}).`,
-        `3. Chụp snapshot Trước/Sau khi scale (Before/After) để so sánh hiệu năng rồi bấm Hoàn thành.`,
+        `3. Chụp snapshot Trước/Sau khi scale hoặc quay video làm bằng chứng rồi bấm Kết thúc Studio để nộp bài cho giảng viên chấm.`,
       ].join("\n");
     }
     return [
       `Goal: Handle a traffic spike by scaling out ${svc} to at least ${count} replicas.`,
       `1. Record baseline metrics, then raise probe load${rpsText ? ` to${rpsText}` : ""} to simulate peak traffic.`,
       `2. Scale ${svc} to at least ${count}x replicas while keeping error rate <= ${errLimit}%${p95ClauseEn}.`,
-      `3. Capture Before/After snapshots comparing p95 latency and click Finish.`,
+      `3. Capture Before/After snapshots or record a video as evidence, then click Finish Studio to submit for lecturer grading.`,
     ].join("\n");
   }
 
@@ -591,14 +591,14 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
         `Mục tiêu: Chẩn đoán sự cố khởi phát sẵn và khôi phục hệ thống về trạng thái ổn định (tỉ lệ lỗi <= ${errLimit}%).`,
         `1. Quan sát các khối 3D, tỉ lệ lỗi và Log & Trace để xác định service đang tắt sẵn (${downList}) cùng các nhánh upstream bị ảnh hưởng.`,
         `2. Khởi động lại (START) service gặp sự cố và kiểm tra traffic phục hồi về mức lỗi <= ${errLimit}%.`,
-        `3. Chụp snapshot Trước/Sau khi khôi phục (Before/After) làm bằng chứng rồi bấm Hoàn thành.`,
+        `3. Chụp snapshot Trước/Sau khi khôi phục hoặc quay video làm bằng chứng rồi bấm Kết thúc Studio để nộp bài cho giảng viên chấm.`,
       ].join("\n");
     }
     return [
       `Goal: Diagnose the pre-existing outage and restore healthy traffic (error rate <= ${errLimit}%).`,
       `1. Inspect 3D block health, error charts, and Logs & Traces to pinpoint the stopped service (${downList}) and impacted callers.`,
       `2. START the failed service and verify live traces recover to <= ${errLimit}% error rate.`,
-      `3. Capture Before/After recovery snapshots as evidence and click Finish.`,
+      `3. Capture Before/After recovery snapshots or record a video, then click Finish Studio to submit for lecturer grading.`,
     ].join("\n");
   }
 
@@ -612,14 +612,14 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
         `Mục tiêu: Phân tích suy giảm hiệu năng khi giới hạn tài nguyên CPU của ${svc} xuống ${pct}%.`,
         `1. Quan sát độ trễ p95 ban đầu ở trạng thái bình thường để làm mốc so sánh.`,
         `2. Bóp CPU của ${svc} xuống ${pct}%, theo dõi độ trễ p95 tăng vọt${p95NoteVi} và hiệu ứng nghẽn cổ chai lan sang các service gọi vào.`,
-        `3. Chụp snapshot Trước/Sau (Before/After) kèm giải thích nguyên nhân điểm nghẽn rồi bấm Hoàn thành.`,
+        `3. Chụp snapshot Trước/Sau hoặc quay video làm bằng chứng rồi bấm Kết thúc Studio để nộp bài cho giảng viên chấm.`,
       ].join("\n");
     }
     return [
       `Goal: Diagnose performance degradation when ${svc} CPU is throttled to ${pct}%.`,
       `1. Record healthy baseline p95 latency before injecting CPU pressure.`,
       `2. Throttle ${svc} CPU to ${pct}% and observe the p95 latency jump${p95NoteEn} across upstream callers.`,
-      `3. Capture Before/After snapshots explaining the bottleneck and click Finish.`,
+      `3. Capture Before/After snapshots or record a video explaining the bottleneck, then click Finish Studio to submit for lecturer grading.`,
     ].join("\n");
   }
 

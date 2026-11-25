@@ -235,17 +235,19 @@ export function StudioExercisePanel({
           variant="outline"
           disabled={busy || (predictionRequired && !predictionLocked)}
           onClick={runPrescribed}
-          className={`h-7 w-full font-mono text-[11px] ${
+          className={`h-auto min-h-8 w-full whitespace-normal px-2.5 py-1.5 text-center font-mono text-[11px] leading-snug ${
             isLight
               ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
               : "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
           }`}
         >
-          <Play className="mr-1 size-3" aria-hidden="true" />
-          {t("Apply", "Chạy")} {prescribed.action} {t("on", "trên")} {prescribed.service}
-          {prescribed.cpuPercent ? ` (${prescribed.cpuPercent}%)` : ""}
-          {prescribed.targetRps ? ` (${prescribed.targetRps} RPS)` : ""}
-          {prescribed.replicas ? ` (×${prescribed.replicas})` : ""}
+          <Play className="mr-1.5 size-3 shrink-0" aria-hidden="true" />
+          <span>
+            {t("Apply", "Chạy")} {prescribed.action} {t("on", "trên")} {prescribed.service}
+            {prescribed.cpuPercent ? ` (${prescribed.cpuPercent}%)` : ""}
+            {prescribed.targetRps ? ` (${prescribed.targetRps} RPS)` : ""}
+            {prescribed.replicas ? ` (×${prescribed.replicas})` : ""}
+          </span>
         </Button>
       )}
 

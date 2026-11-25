@@ -40,6 +40,9 @@ export class BackendAdapter implements ApiAdapter {
               "saveRuntimeConfiguration",
               "startRuntime",
               "runtimeApprove",
+              "submit",
+              "studioCapture",
+              "submissionExport",
             ].includes(operation)
           ? 120000
           : [
@@ -47,12 +50,10 @@ export class BackendAdapter implements ApiAdapter {
                 "elementEvidenceContext",
                 "model",
                 "reviewContext",
-                "submit",
                 "submissions",
                 "workspaceSubmissions",
                 "assignmentSubmissions",
                 "submission",
-                "submissionExport",
                 "submissionReview",
                 "gradeSubmission",
                 "contextCandidates",

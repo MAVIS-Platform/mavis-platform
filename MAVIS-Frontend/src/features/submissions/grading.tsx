@@ -439,10 +439,10 @@ export function GradeForm({
                 max={10}
                 step="0.01"
                 aria-label={t("Overall score for all snapshots", "Điểm chấm bài nộp")}
-                placeholder="0.0 – 10.0"
+                placeholder="0 – 10"
                 value={bulkScore}
                 onChange={(e) => applyScoreToAllSnapshots(e.target.value)}
-                className="w-32 bg-background font-mono text-sm font-semibold"
+                className="w-36 bg-background font-mono text-sm font-semibold"
               />
               <div className="flex flex-wrap items-center gap-1.5">
                 {["9.5", "8.5", "7.0", "5.0"].map((preset) => {
