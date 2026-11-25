@@ -61,6 +61,28 @@ function formatSyllabusItemTitle(
   return item.title.replace(/^Quiz Gate\s*·\s*/i, `${t("Quiz", "Bài kiểm tra")} · `);
 }
 
+function stripModulePrefix(title: string) {
+  return title.replace(/^(?:Module|Chương|Chặng)\s+\d+\s*[:–—·.-]\s*/i, "").trim() || title;
+}
+
+function formatModuleHeading(position: number, title: string) {
+  return `Module ${position}: ${stripModulePrefix(title)}`;
+}
+
+function formatSyllabusItemDescription(
+  description: string | null | undefined,
+  t: (en: string, vi: string) => string,
+) {
+  if (!description) return description;
+  if (/Vượt qua\s+Quiz\s*Gate\s*\(\s*>=\s*70%\s*\)/i.test(description)) {
+    return t(
+      "Complete the quiz (>= 70%) to unlock the next hands-on lab.",
+      "Hoàn thành bài trắc nghiệm (đạt tối thiểu 70%) để mở khóa bài thực hành tiếp theo.",
+    );
+  }
+  return description.replace(/Quiz\s*Gate/gi, t("Quiz", "bài kiểm tra"));
+}
+
 function itemBadgeMeta(
   item: Pick<OutlineItemData, "id" | "type">,
   t: (en: string, vi: string) => string,
@@ -68,7 +90,7 @@ function itemBadgeMeta(
   switch (resolveModuleFlowKind(item)) {
     case "THEORY":
       return {
-        label: t("Reading · 15 min", "Đọc · 15 phút"),
+        label: t("Reading", "Lý thuyết"),
         pillClass:
           "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800",
       };
@@ -452,7 +474,7 @@ export function StudentCourseSyllabus({
                         {t(`Module ${mod.position}`, `Module ${mod.position}`)}
                       </span>
                       <span className="mt-0.5 block line-clamp-1 text-xs font-normal text-muted-foreground">
-                        {mod.title.replace(/^(?:Module|Chương)\s+\d+\s*[:–—-]\s*/i, "").trim() || mod.title}
+                        {stripModulePrefix(mod.title)}
                       </span>
                     </button>
                   );
@@ -611,11 +633,7 @@ export function StudentCourseSyllabus({
             <section className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
               <div className="border-b pb-4">
                 <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                  {`Module ${courseContentModule.position}: ${
-                    courseContentModule.title
-                      .replace(/^(?:Module|Chương)\s+\d+\s*[:–—-]\s*/i, "")
-                      .trim() || courseContentModule.title
-                  }`}
+                  {formatModuleHeading(courseContentModule.position, courseContentModule.title)}
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {courseContentModule.description ||
@@ -882,10 +900,12 @@ export function StudentCourseSyllabus({
                         )}
                       </div>
                       <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                        {activeItem.title}
+                        {formatSyllabusItemTitle(activeItem, t)}
                       </h2>
                       {activeItem.description && (
-                        <p className="text-sm text-muted-foreground">{activeItem.description}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatSyllabusItemDescription(activeItem.description, t)}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -1066,7 +1086,8 @@ export function StudentCourseSyllabus({
 
                   {activeItem.type === "QUIZ" && (
                     <ChapterQuizRunner
-                      title={activeItem.title}
+                      title={formatSyllabusItemTitle(activeItem, t)}
+                      hideTitle
                       questions={
                         activeItem.quizQuestions?.length
                           ? activeItem.quizQuestions

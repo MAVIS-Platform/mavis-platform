@@ -608,7 +608,7 @@ public class CourseLabSeederService {
                         new CourseAuthoringService.ItemRequest(
                                 "QUIZ",
                                 "Quiz Module " + modSpec.position() + " · Kiểm tra Trắc nghiệm (" + modSpec.quizQuestions().size() + " câu)",
-                                "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+                                "Hoàn thành bài trắc nghiệm (>= 70%) để mở khóa bài thực hành tiếp theo.",
                                 lab.getId(), json.createObjectNode(), true));
 
                 if (modSpec.essay() != null) {
@@ -697,7 +697,7 @@ public class CourseLabSeederService {
                         : workspace.getName() + " · Giáo trình Microservices";
                 courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
                         courseTitle.length() > 255 ? courseTitle.substring(0, 255) : courseTitle,
-                        "Giáo trình & chuỗi bài Lab thực hành kiến trúc phần mềm Microservices (C4, 3E, Reverse BFS, Quiz Gate & MAVIS Studio Live)."));
+                        "Giáo trình & chuỗi bài Lab thực hành kiến trúc phần mềm Microservices (C4, 3E, Reverse BFS, Trắc nghiệm & MAVIS Studio Live)."));
             }
 
             List<List<Assignment>> groups = partitionLabsIntoModules(allLabs);
@@ -721,10 +721,10 @@ public class CourseLabSeederService {
                     String theoryBody = "## " + lab.getTitle() + "\n\n"
                             + (lab.getDescription() != null && !lab.getDescription().isBlank()
                                     ? lab.getDescription()
-                                    : "Nghiên cứu kiến trúc tham chiếu C1–C3, quy tắc 3E và luồng phụ thuộc trước khi làm Quiz Gate.")
+                                    : "Nghiên cứu kiến trúc tham chiếu C1–C3, quy tắc 3E và luồng phụ thuộc trước khi làm bài kiểm tra.")
                             + "\n\n- Quan sát sơ đồ kiến trúc C1–C3 và đồ thị phụ thuộc ở Bước 1.\n"
                             + "- Phân tích vùng ảnh hưởng bằng Reverse BFS ở Bước 2.\n"
-                            + "- Vượt qua Quiz Gate (>= 70%) trước khi thực nghiệm trên MAVIS Runtime Studio và nộp bằng chứng.";
+                            + "- Hoàn thành bài trắc nghiệm (>= 70%) trước khi thực nghiệm trên MAVIS Runtime Studio.";
                     ObjectNode theoryContent = json.createObjectNode().put("body", theoryBody);
                     courseAuthoring.addItem(workspaceId, moduleId,
                             new CourseAuthoringService.ItemRequest(
@@ -732,7 +732,7 @@ public class CourseLabSeederService {
                                     "Kiến thức trọng tâm chuẩn bị cho Lab", null, theoryContent, true));
                     courseAuthoring.addItem(workspaceId, moduleId,
                             new CourseAuthoringService.ItemRequest(
-                                    "QUIZ", "Quiz Gate · " + lab.getTitle(),
+                                    "QUIZ", "Bài kiểm tra · " + lab.getTitle(),
                                     "Kiểm tra nhận thức mở khóa Lab", lab.getId(), json.createObjectNode(), true));
                     boolean isRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
                     courseAuthoring.addItem(workspaceId, moduleId,

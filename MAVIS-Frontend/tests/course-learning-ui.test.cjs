@@ -2464,3 +2464,15 @@ test("Sprint 2 #03 Module Submit: structures step=3 into 3 clean sections withou
   assert.doesNotMatch(lab, /Telemetry & service interactions|Before \/ After studio actions|Verified Studio session/);
   assert.doesNotMatch(subV2, /4\. Kết quả nộp bài/);
 });
+
+
+test("Sprint 2 #04 Syllabus & Quiz Copy: removes fake 15-min label, deduplicates Module/Quiz titles, and cleans Quiz Gate wording", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const quizRunner = read("src/features/courses/chapter-quiz-runner.tsx");
+  assert.doesNotMatch(syllabus, /Đọc · 15 phút|Reading · 15 min/);
+  assert.match(syllabus, /function stripModulePrefix/);
+  assert.match(syllabus, /function formatModuleHeading/);
+  assert.match(syllabus, /function formatSyllabusItemDescription/);
+  assert.match(syllabus, /hideTitle/);
+  assert.match(quizRunner, /hideTitle\?: boolean \| undefined/);
+});

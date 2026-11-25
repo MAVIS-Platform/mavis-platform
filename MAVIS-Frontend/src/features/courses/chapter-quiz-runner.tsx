@@ -114,6 +114,7 @@ export function ChapterQuizRunner({
   assignmentId,
   nextLessonTitle,
   onNextLesson,
+  hideTitle,
 }: {
   title: string;
   questions: QuizQuestionData[];
@@ -122,6 +123,7 @@ export function ChapterQuizRunner({
   assignmentId?: string | null | undefined;
   nextLessonTitle?: string | undefined;
   onNextLesson?: (() => void) | undefined;
+  hideTitle?: boolean | undefined;
 }) {
   const { t } = useLocale();
   const client = useApi();
@@ -363,6 +365,7 @@ export function ChapterQuizRunner({
     return (
       <QuizLanding
         title={title}
+        hideTitle={hideTitle}
         questionCount={displayedQuestions.length}
         passPercent={passPercent}
         durationMinutes={durationMinutes}
@@ -391,6 +394,7 @@ export function ChapterQuizRunner({
     return (
       <QuizResult
         title={title}
+        hideTitle={hideTitle}
         scorePercent={scorePercent}
         passPercent={passPercent}
         passedOverride={currentAttempt.passed}
@@ -422,6 +426,7 @@ export function ChapterQuizRunner({
   return (
     <QuizTaking
       title={title}
+      hideTitle={hideTitle}
       questions={displayedQuestions}
       answers={currentAttempt.answers}
       passPercent={passPercent}
@@ -460,12 +465,14 @@ export function ChapterQuizRunner({
 
 function QuizLanding({
   title,
+  hideTitle,
   questionCount,
   passPercent,
   durationMinutes,
   onStart,
 }: {
   title: string;
+  hideTitle?: boolean | undefined;
   questionCount: number;
   passPercent: number;
   durationMinutes: number;
@@ -481,7 +488,7 @@ function QuizLanding({
         >
           {t("Graded assignment", "Bài kiểm tra tính điểm")}
         </Badge>
-        <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
+        {!hideTitle && <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>}
         <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
           {t(
             "Complete this assessment to check your understanding and unlock the next learning step.",
@@ -525,6 +532,7 @@ function QuizLanding({
 
 function QuizTaking({
   title,
+  hideTitle,
   questions,
   answers,
   passPercent,
@@ -537,6 +545,7 @@ function QuizTaking({
   submitError,
 }: {
   title: string;
+  hideTitle?: boolean | undefined;
   questions: RunnerQuestionData[];
   answers: Record<string, number | number[]>;
   passPercent: number;
@@ -563,7 +572,7 @@ function QuizTaking({
       <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
         <div className="min-w-0">
           <Badge variant="outline">{t("Graded quiz", "Bài kiểm tra tính điểm")}</Badge>
-          <h2 className="mt-2 text-2xl font-bold tracking-tight">{title}</h2>
+          {!hideTitle && <h2 className="mt-2 text-2xl font-bold tracking-tight">{title}</h2>}
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <span>
               {t(
@@ -706,6 +715,7 @@ function QuizTaking({
 
 function QuizResult({
   title,
+  hideTitle,
   scorePercent,
   passPercent,
   passedOverride,
@@ -722,6 +732,7 @@ function QuizResult({
   onRetry,
 }: {
   title: string;
+  hideTitle?: boolean | undefined;
   scorePercent: number;
   passPercent: number;
   passedOverride?: boolean | undefined;
@@ -754,7 +765,7 @@ function QuizResult({
         >
           {t("Graded assignment", "Bài kiểm tra tính điểm")}
         </Badge>
-        <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
+        {!hideTitle && <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>}
         <p className="mt-3 text-sm text-muted-foreground">
           {t("Your result is ready.", "Kết quả của bạn đã sẵn sàng.")}
         </p>
@@ -778,7 +789,7 @@ function QuizResult({
             {passed ? t("You passed!", "Bạn đã đạt!") : t("Not passed yet", "Bạn chưa đạt")}
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            {t(`Passing score: ${passPercent}%.`, `Ngưỡng đạt: ${passPercent}%.`)}
+            {t(`Passing score: ${passPercent}%.`, `Điểm đạt: ${passPercent}%.`)}
           </p>
           <p className="mt-3 text-3xl font-bold tabular-nums">{scorePercent}%</p>
           <p className="mt-1 text-sm text-muted-foreground">
