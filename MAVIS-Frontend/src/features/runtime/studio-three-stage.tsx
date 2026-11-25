@@ -470,9 +470,10 @@ function createNodeLabelSprite(
   T: ThreeModule,
   node: StudioThreeNode,
   styleId: StudioStyleId,
+  maxAnisotropy = 4,
 ): THREE.Sprite {
   const canvas = document.createElement("canvas");
-  const dpr = 2;
+  const dpr = 3;
   const text = node.label.length > 22 ? `${node.label.slice(0, 20)}…` : node.label;
   const badge = node.isStopped
     ? "0"
@@ -482,8 +483,8 @@ function createNodeLabelSprite(
         ? `×${node.replicas}·${node.cpuThrottlePct}%`
         : `×${node.replicas}`;
   const isMono = styleId === "blueprint";
-  const font = `700 ${12 * dpr}px ${isMono ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "Inter, system-ui, sans-serif"}`;
-  const badgeFont = `700 ${10 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const font = `800 ${13 * dpr}px ${isMono ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "Inter, system-ui, sans-serif"}`;
+  const badgeFont = `800 ${10.5 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
 
   const measureCtx = canvas.getContext("2d");
   if (!measureCtx) {
@@ -530,10 +531,13 @@ function createNodeLabelSprite(
   }
 
   drawRoundedRect(ctx, x, y, pillW, pillH, rx);
-  ctx.fillStyle = node.palette.pillBg;
+  ctx.fillStyle = styleId === "daylight" ? "#ffffff" : node.palette.pillBg;
   ctx.fill();
-  ctx.lineWidth = (styleId === "pop" || node.isSelected || node.isCritical ? 2.2 : 1.4) * dpr;
-  ctx.strokeStyle = node.palette.pillStroke;
+  ctx.lineWidth = (styleId === "pop" || node.isSelected || node.isCritical ? 2.4 : 1.8) * dpr;
+  ctx.strokeStyle =
+    styleId === "daylight" && !node.isSelected && !node.isCritical && !node.isWarning
+      ? "#94a3b8"
+      : node.palette.pillStroke;
   ctx.stroke();
 
   const chipX = x + padX;
@@ -568,8 +572,10 @@ function createNodeLabelSprite(
 
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
-  texture.minFilter = T.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.minFilter = T.LinearMipmapLinearFilter;
   texture.magFilter = T.LinearFilter;
+  texture.anisotropy = maxAnisotropy;
   const material = new T.SpriteMaterial({
     map: texture,
     transparent: true,
@@ -578,7 +584,7 @@ function createNodeLabelSprite(
   });
   const sprite = new T.Sprite(material);
   const aspect = canvas.width / canvas.height;
-  const spriteH = 0.34;
+  const spriteH = 0.42;
   sprite.scale.set(spriteH * aspect, spriteH, 1);
   sprite.renderOrder = 20;
   return sprite;
@@ -589,10 +595,11 @@ function createEdgeBadgeSprite(
   label: string,
   edge: StudioThreeEdge,
   isLight: boolean,
+  maxAnisotropy = 4,
 ): THREE.Sprite {
   const canvas = document.createElement("canvas");
-  const dpr = 2;
-  const font = `700 ${11 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const dpr = 3;
+  const font = `800 ${11.5 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   const mctx = canvas.getContext("2d");
   if (!mctx) return new T.Sprite();
   mctx.font = font;
@@ -635,7 +642,10 @@ function createEdgeBadgeSprite(
 
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
-  texture.minFilter = T.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.minFilter = T.LinearMipmapLinearFilter;
+  texture.magFilter = T.LinearFilter;
+  texture.anisotropy = maxAnisotropy;
   const material = new T.SpriteMaterial({
     map: texture,
     transparent: true,
@@ -643,7 +653,7 @@ function createEdgeBadgeSprite(
     depthWrite: false,
   });
   const sprite = new T.Sprite(material);
-  const h = 0.30;
+  const h = 0.34;
   sprite.scale.set(h * (canvas.width / canvas.height), h, 1);
   sprite.renderOrder = 18;
   return sprite;
@@ -1972,7 +1982,7 @@ function buildServiceRig(
   }
 
   // Crisp 3D Floating Service Pill Sprite + subtle vertical anchor pin tying label to its exact block
-  const labelSprite = createNodeLabelSprite(T, node, styleId);
+  const labelSprite = createNodeLabelSprite(T, node, styleId, maxAnisotropy);
   const labelBaseY = topY + 0.28;
   labelSprite.position.set(0, labelBaseY, 0);
   labelSprite.userData = { serviceId: node.id };
@@ -2219,7 +2229,7 @@ export function StudioThreeStage({
         }
 
         // Cap DPR at 1.5 and cache static shadow map so 3D camera orbit stays locked at 60-120fps
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = T.PCFSoftShadowMap;
         renderer.shadowMap.autoUpdate = false;
@@ -2431,7 +2441,7 @@ export function StudioThreeStage({
             projected.copy(scratchVec).applyMatrix4(perspCam.matrixWorldInverse);
             const camDepth = Math.max(3.5, -projected.z);
             rigDepths.set(rig, camDepth);
-            const depthComp = Math.max(0.74, Math.min(1.18, camDepth / 12.2));
+            const depthComp = Math.max(0.84, Math.min(1.75, camDepth / 11.4));
             const finalScale = lpBase.scale * depthComp;
             rig.labelSprite.position.set(lpBase.x, rig.labelBaseY + lpBase.y, lpBase.z);
             rig.labelSprite.scale.set(rig.labelBaseW * finalScale, rig.labelBaseH * finalScale, 1);
@@ -3028,7 +3038,7 @@ export function StudioThreeStage({
       // Floating Traffic Metric Badge at Cleared Apex
       let badgeSprite: THREE.Sprite | undefined;
       if (edge.label) {
-        badgeSprite = createEdgeBadgeSprite(T, edge.label, edge, isLight);
+        badgeSprite = createEdgeBadgeSprite(T, edge.label, edge, isLight, maxAnisotropy);
         badgeSprite.visible = showEdgeTagsRef.current;
         const apex = curve.getPoint(0.5);
         badgeSprite.position.set(apex.x, apex.y + 0.21, apex.z);

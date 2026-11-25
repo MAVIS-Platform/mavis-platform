@@ -186,15 +186,9 @@ public class RuntimeStudioService {
         }
         if(request.imageData()!=null) {
             try {
-                if(!request.imageData().startsWith("data:image/png;base64,") || request.imageData().length()>450000) throw new IllegalArgumentException();
-                byte[] png=java.util.Base64.getDecoder().decode(request.imageData().substring(22));
-                if(png.length<24 || !java.util.Arrays.equals(java.util.Arrays.copyOf(png,8),new byte[]{(byte)137,80,78,71,13,10,26,10}))
-                    throw new IllegalArgumentException();
-                var dimensions=java.nio.ByteBuffer.wrap(png,16,8);
-                int width=dimensions.getInt(),height=dimensions.getInt();
-                if(width<1||height<1||width>2000||height>2000)throw new IllegalArgumentException();
+                validateSnapshotImage(request.imageData());
                 evidence.put("imageData",request.imageData());
-            } catch(IllegalArgumentException invalid) {throw error(ErrorCode.BAD_REQUEST,"Snapshot image must be a bounded PNG.");}
+            } catch(IllegalArgumentException invalid) {throw error(ErrorCode.BAD_REQUEST,"Snapshot image must be a bounded PNG or WebP.");}
         }
         try {
             evidence.put("digest", com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils.computeDigest(evidence));
@@ -977,6 +971,53 @@ public class RuntimeStudioService {
             return session.getConfirmedServiceMappings().keySet().iterator().next();
         }
         return "order-service";
+    }
+
+    private static void validateSnapshotImage(String imageData) {
+        if (imageData.length() > 450_000) throw new IllegalArgumentException();
+        int width, height;
+        if (imageData.startsWith("data:image/png;base64,")) {
+            byte[] png = java.util.Base64.getDecoder().decode(imageData.substring(22));
+            if (png.length < 24 || !java.util.Arrays.equals(
+                    java.util.Arrays.copyOf(png, 8),
+                    new byte[]{(byte) 137, 80, 78, 71, 13, 10, 26, 10})) {
+                throw new IllegalArgumentException();
+            }
+            var dimensions = java.nio.ByteBuffer.wrap(png, 16, 8);
+            width = dimensions.getInt();
+            height = dimensions.getInt();
+        } else if (imageData.startsWith("data:image/webp;base64,")) {
+            byte[] webp = java.util.Base64.getDecoder().decode(imageData.substring(23));
+            if (webp.length < 30
+                    || webp[0] != 'R' || webp[1] != 'I' || webp[2] != 'F' || webp[3] != 'F'
+                    || webp[8] != 'W' || webp[9] != 'E' || webp[10] != 'B' || webp[11] != 'P') {
+                throw new IllegalArgumentException();
+            }
+            String chunk = new String(webp, 12, 4, java.nio.charset.StandardCharsets.US_ASCII);
+            if ("VP8 ".equals(chunk)) {
+                if ((webp[23] & 0xFF) != 0x9D || (webp[24] & 0xFF) != 0x01 || (webp[25] & 0xFF) != 0x2A) {
+                    throw new IllegalArgumentException();
+                }
+                width = (webp[26] & 0xFF) | ((webp[27] & 0x3F) << 8);
+                height = (webp[28] & 0xFF) | ((webp[29] & 0x3F) << 8);
+            } else if ("VP8L".equals(chunk)) {
+                if ((webp[20] & 0xFF) != 0x2F) throw new IllegalArgumentException();
+                int bits = (webp[21] & 0xFF)
+                        | ((webp[22] & 0xFF) << 8)
+                        | ((webp[23] & 0xFF) << 16)
+                        | ((webp[24] & 0xFF) << 24);
+                width = (bits & 0x3FFF) + 1;
+                height = ((bits >>> 14) & 0x3FFF) + 1;
+            } else if ("VP8X".equals(chunk)) {
+                width = 1 + ((webp[24] & 0xFF) | ((webp[25] & 0xFF) << 8) | ((webp[26] & 0xFF) << 16));
+                height = 1 + ((webp[27] & 0xFF) | ((webp[28] & 0xFF) << 8) | ((webp[29] & 0xFF) << 16));
+            } else {
+                throw new IllegalArgumentException();
+            }
+        } else {
+            throw new IllegalArgumentException();
+        }
+        if (width < 1 || height < 1 || width > 2000 || height > 2000) throw new IllegalArgumentException();
     }
 
     private static BusinessException error(ErrorCode code, String message) { return new BusinessException(code, message); }

@@ -91,7 +91,8 @@ export function StudioSnapshotComparison({
             {[before.data, after.data].map((snapshot, index) =>
               snapshot &&
               typeof snapshot["imageData"] === "string" &&
-              snapshot["imageData"].startsWith("data:image/png;base64,") ? (
+              (snapshot["imageData"].startsWith("data:image/png;base64,") ||
+                snapshot["imageData"].startsWith("data:image/webp;base64,")) ? (
                 <figure key={index}>
                   <figcaption>{t(index === 0 ? "Before" : "After")}</figcaption>
                   <img

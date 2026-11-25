@@ -454,9 +454,49 @@ export interface StudentInstructionsParams {
   locale?: "en" | "vi" | undefined;
 }
 
+export type ParsedMissionInstructions = {
+  goal: string | null;
+  steps: string[];
+  notes: string[];
+};
+
+/** Splits Lab Mission text into a top goal banner and numbered step items (handling both newlines and inline 1. 2. 3.). */
+export function parseMissionInstructions(raw: string): ParsedMissionInstructions {
+  const trimmed = raw.trim();
+  if (!trimmed) return { goal: null, steps: [], notes: [] };
+  const normalized = trimmed
+    .replace(/\r\n/g, "\n")
+    .replace(/([.:!?])\s+(\d+\.\s+)/g, "$1\n$2");
+  const lines = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  let goal: string | null = null;
+  const steps: string[] = [];
+  const notes: string[] = [];
+  for (const line of lines) {
+    const goalMatch = line.match(/^(?:Mục tiêu|Goal)\s*:\s*(.+)$/i);
+    if (goalMatch?.[1] && !goal) {
+      goal = goalMatch[1].trim();
+      continue;
+    }
+    const stepMatch = line.match(/^\d+[.)]\s*(.+)$/);
+    if (stepMatch?.[1]) {
+      steps.push(stepMatch[1].trim());
+      continue;
+    }
+    if (!goal && lines.length > 1 && steps.length === 0) {
+      goal = line;
+    } else {
+      notes.push(line);
+    }
+  }
+  return { goal, steps, notes };
+}
+
 /**
  * Generates clear, scannable, step-by-step student instructions synchronized with the exercise's
- * automated grading criteria (zero LLM hallucination risk, preserves exact service/action tokens).
+ * automated verification criteria (zero LLM hallucination risk, preserves exact service/action tokens).
  */
 export function buildStudentExerciseInstructions(params: StudentInstructionsParams): string {
   const {

@@ -56,6 +56,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
 import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
+import { useQueryClient } from "@tanstack/react-query";
 import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
@@ -72,6 +73,7 @@ import {
   buildStudentExerciseInstructions,
   computeStaticBlastRadius,
   deriveExerciseFromLiveActions,
+  parseMissionInstructions,
   resolveModelServiceEdges,
   smartPickBaselineEndpoint,
   type AuthorBlockChipId,
@@ -643,7 +645,7 @@ export function LiveStudioWorkbench({
   const [rightWidth, setRightWidth] = useState(() => (authoring ? 360 : 340));
   const [rightHeight, setRightHeight] = useState<number | null>(null);
   const [rightOffset, setRightOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [missionWidth, setMissionWidth] = useState(278);
+  const [missionWidth, setMissionWidth] = useState(316);
   const [missionHeight, setMissionHeight] = useState<number | null>(null);
   const [missionOffset, setMissionOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [frontPanel, setFrontPanel] = useState<"right" | "mission">("right");
@@ -963,6 +965,7 @@ export function LiveStudioWorkbench({
   const [recordingSteps, setRecordingSteps] = useState(0);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [savingReplay, setSavingReplay] = useState(false);
+  const queryClient = useQueryClient();
   const [capturingScreen, setCapturingScreen] = useState(false);
   const [replayError, setReplayError] = useState("");
   const replayCaptureRef = useRef<{
@@ -1266,7 +1269,18 @@ export function LiveStudioWorkbench({
     setCapturingScreen(true);
     setReplayError("");
     try {
-      const imageData = await captureStudioImage(svg, true);
+      const sessionUser = queryClient.getQueryData<Response<"session">>([
+        "api",
+        "session",
+        {},
+      ])?.user;
+      const imageData = await captureStudioImage(svg, true, {
+        studentName: sessionUser?.name,
+        studentEmail: sessionUser?.email,
+        snapshotIndex: liveReplays.length + 1,
+        sessionId: evidenceScopeId,
+        capturedAt: new Date().toISOString(),
+      });
       const digestBytes = await crypto.subtle.digest(
         "SHA-256",
         new TextEncoder().encode(JSON.stringify({ sessionId: evidenceScopeId, frame })),
@@ -2816,10 +2830,64 @@ export function LiveStudioWorkbench({
                   </div>
                 </div>
                 {!missionCollapsed && (
-                  <div className={`min-h-0 flex-1 space-y-2 overflow-y-auto border-t px-3.5 pt-2.5 pb-3 text-[13px] leading-snug ${isLight ? "border-slate-200/80" : "border-slate-800"}`}>
-                    <p className={isLight ? "font-medium text-slate-700" : "font-medium text-slate-200"}>
-                      {effectiveMissionInstructions}
-                    </p>
+                  <div className={`min-h-0 flex-1 space-y-2.5 overflow-y-auto border-t px-3.5 pt-2.5 pb-3 text-[12.5px] leading-relaxed ${isLight ? "border-slate-200/80" : "border-slate-800"}`}>
+                    {(() => {
+                      const parsed = parseMissionInstructions(effectiveMissionInstructions);
+                      if (!parsed.goal && parsed.steps.length === 0) {
+                        return (
+                          <p className={`whitespace-pre-line ${isLight ? "font-medium text-slate-700" : "font-medium text-slate-200"}`}>
+                            {effectiveMissionInstructions}
+                          </p>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2">
+                          {parsed.goal && (
+                            <div
+                              className={`rounded-lg border px-2.5 py-2 ${
+                                isLight
+                                  ? "border-sky-200/90 bg-sky-50/75 text-slate-800"
+                                  : "border-sky-500/30 bg-sky-950/35 text-slate-100"
+                              }`}
+                            >
+                              <p
+                                className={`text-[10px] font-bold tracking-wider uppercase ${
+                                  isLight ? "text-sky-700" : "text-sky-300"
+                                }`}
+                              >
+                                {t("Goal", "Mục tiêu")}
+                              </p>
+                              <p className="mt-0.5 font-medium leading-snug">{parsed.goal}</p>
+                            </div>
+                          )}
+                          {parsed.steps.length > 0 && (
+                            <ol className="space-y-1.5">
+                              {parsed.steps.map((stepText, idx) => (
+                                <li key={`${idx}-${stepText.slice(0, 16)}`} className="flex items-start gap-2">
+                                  <span
+                                    className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${
+                                      isLight
+                                        ? "bg-slate-900 text-white"
+                                        : "bg-sky-500/25 text-sky-200 ring-1 ring-sky-400/40"
+                                    }`}
+                                  >
+                                    {idx + 1}
+                                  </span>
+                                  <span className={isLight ? "text-slate-700" : "text-slate-200"}>
+                                    {stepText}
+                                  </span>
+                                </li>
+                              ))}
+                            </ol>
+                          )}
+                          {parsed.notes.length > 0 && (
+                            <p className={`whitespace-pre-line text-[12px] ${isLight ? "text-slate-600" : "text-slate-300"}`}>
+                              {parsed.notes.join("\n")}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {studio.cancelledWhileQueued && (
                       <p
                         role="status"
@@ -4605,14 +4673,14 @@ export function LiveStudioWorkbench({
                           {isScreenshot && replayItem.imageData && (
                             <a
                               href={replayItem.imageData}
-                              download={`mavis-screenshot-${replayItem.id.slice(0, 8)}.png`}
+                              download={`mavis-screenshot-${replayItem.id.slice(0, 8)}.${replayItem.imageData.startsWith("data:image/webp;") ? "webp" : "png"}`}
                               className={`inline-flex h-7 items-center rounded-md border px-2.5 text-[11px] font-medium transition ${
                                 isLight
                                   ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                                   : "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
                               }`}
                             >
-                              Download PNG
+                              {t("Download Image", "Tải ảnh")}
                             </a>
                           )}
                           <Button

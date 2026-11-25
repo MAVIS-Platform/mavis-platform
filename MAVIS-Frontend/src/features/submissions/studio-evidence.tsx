@@ -55,7 +55,14 @@ const frozenStudio = z
               capturedAt: z.string(),
               explanation: z.string(),
               digest: z.string(),
-              imageData: z.string().startsWith("data:image/png;base64,").optional(),
+              imageData: z
+                .string()
+                .refine(
+                  (val) =>
+                    val.startsWith("data:image/png;base64,") ||
+                    val.startsWith("data:image/webp;base64,"),
+                )
+                .optional(),
               exerciseEvaluation: exerciseEvaluationSchema.nullish(),
             })
             .passthrough(),

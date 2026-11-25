@@ -61,6 +61,21 @@ class RuntimeStudioServiceTest {
         var imgEx = assertThrows(BusinessException.class, () -> service.capture(id,
             new RuntimeStudioService.CaptureRequest("Oversized PNG test", oversizedPng, "2026-11-23T00:00:00Z")));
         assertEquals(com.mavis.common.exception.ErrorCode.BAD_REQUEST, imgEx.getErrorCode());
+
+        // Valid 1x1 VP8L WebP snapshot is accepted while malformed WebP is rejected
+        byte[] validWebpBytes = new byte[] {
+            'R','I','F','F', 26,0,0,0, 'W','E','B','P', 'V','P','8','L', 13,0,0,0,
+            0x2f, 0,0,0,0, 0,0,0,0,0, 0,0,0
+        };
+        String validWebp = "data:image/webp;base64," + java.util.Base64.getEncoder().encodeToString(validWebpBytes);
+        var captured = service.capture(id,
+            new RuntimeStudioService.CaptureRequest("Crisp WebP snapshot", validWebp, "2026-11-23T00:00:00Z"));
+        assertEquals(validWebp, captured.path("imageData").asText());
+
+        String invalidWebp = "data:image/webp;base64," + java.util.Base64.getEncoder().encodeToString("not-a-webp-image-payload-0123456789".getBytes());
+        var badWebpEx = assertThrows(BusinessException.class, () -> service.capture(id,
+            new RuntimeStudioService.CaptureRequest("Corrupt WebP", invalidWebp, "2026-11-23T00:00:00Z")));
+        assertEquals(com.mavis.common.exception.ErrorCode.BAD_REQUEST, badWebpEx.getErrorCode());
     }
 
     @Test void preparedProfileAllowsOnlyDeclaredScaleTargets() throws Exception {

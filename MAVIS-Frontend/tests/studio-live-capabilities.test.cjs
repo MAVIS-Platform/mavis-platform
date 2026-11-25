@@ -574,7 +574,7 @@ test("Batch 3: Scale capped at 1..3, PNG snapshot downscales within 440k chars, 
   );
   assert.ok(obsSrc.includes("[1, 2, 3] as const"));
   assert.ok(obsSrc.includes("SNAPSHOT_MAX_DATA_URL_CHARS = 440_000"));
-  assert.ok(obsSrc.includes("[1280, 960, 720]"));
+  assert.ok(obsSrc.includes("[1600, 1280, 960, 720]"));
   assert.ok(obsSrc.includes('toDataURL("image/png")'));
   assert.ok(!obsSrc.includes('toDataURL("image/jpeg")'));
 
@@ -2156,4 +2156,70 @@ test("3D SE block polish + authoring & reliability fixes: distance-compensated l
     const src = fs.readFileSync(path.join(__dirname, rel), "utf8");
     assert.doesNotMatch(src, /Auto-Grad|Chấm tự động|Tự chấm|Tiêu chí chấm|Ngưỡng chấm/i, rel);
   }
+});
+
+test("Studio crisp 3D labels, MSSV snapshot watermark, WebP encoding, and structured Lab Mission card", () => {
+  const {
+    extractStudentCode,
+    formatSnapshotWatermark,
+  } = require("../src/features/runtime/studio-observability.tsx");
+  const { parseMissionInstructions } = require(
+    "../src/features/runtime/studio-authoring-helpers.ts",
+  );
+
+  // MSSV extraction from full name or university email without repeating code in display name
+  assert.equal(extractStudentCode("Lê Minh Triết · Sinh Viên SE181979", "sv.java@mavis.edu.vn"), "SE181979");
+  assert.equal(extractStudentCode("Nguyễn Văn An", "annvhe171234@fpt.edu.vn"), "HE171234");
+  assert.equal(extractStudentCode("Lecturer Studio", "gv.studio@mavis.edu.vn"), null);
+
+  const stamped = formatSnapshotWatermark({
+    studentName: "Lê Minh Triết · Sinh Viên SE181979",
+    studentEmail: "sv.java@mavis.edu.vn",
+    snapshotIndex: 2,
+    sessionId: "28bc2cbf-7330-4da2-a514-19638a57b610",
+    capturedAt: "2026-11-25T12:27:00Z",
+  });
+  assert.equal(stamped.left, "MSSV: SE181979 · Lê Minh Triết · Ảnh #2");
+  assert.match(stamped.right, /^MAVIS VERIFIED · .+ · #28bc2cbf$/);
+
+  const fallbackStamped = formatSnapshotWatermark({
+    studentName: "Lecturer Studio",
+    studentEmail: "gv.studio@mavis.edu.vn",
+    snapshotIndex: 1,
+  });
+  assert.equal(fallbackStamped.left, "Lecturer Studio · gv.studio@mavis.edu.vn · Ảnh #1");
+
+  // Mission parser splits both multi-line and single-paragraph collapsed instructions into Goal + Steps
+  const collapsed =
+    "Mục tiêu: Kiểm chứng phạm vi lan truyền sự cố khi tạm dừng (PAUSE) service payment-service. 1. Quan sát sơ đồ phụ thuộc 3D. 2. Thực hiện PAUSE trên payment-service. 3. Chụp snapshot Trước/Sau.";
+  const parsed = parseMissionInstructions(collapsed);
+  assert.equal(
+    parsed.goal,
+    "Kiểm chứng phạm vi lan truyền sự cố khi tạm dừng (PAUSE) service payment-service.",
+  );
+  assert.deepEqual(parsed.steps, [
+    "Quan sát sơ đồ phụ thuộc 3D.",
+    "Thực hiện PAUSE trên payment-service.",
+    "Chụp snapshot Trước/Sau.",
+  ]);
+
+  // Verify WebGL mipmaps, zoomed-out depthComp, WebP support, and watermark call sites
+  const stage = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obs = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const evidence = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/studio-evidence.tsx"),
+    "utf8",
+  );
+  assert.ok(stage.includes("LinearMipmapLinearFilter"));
+  assert.ok(stage.includes("Math.min(1.75, camDepth / 11.4)"));
+  assert.ok(stage.includes("Math.min(window.devicePixelRatio || 1, 2)"));
+  assert.ok(obs.includes("stampSnapshotWatermark"));
+  assert.ok(obs.includes('toDataURL("image/webp", 0.92)'));
+  assert.ok(evidence.includes("data:image/webp;base64,"));
 });

@@ -428,7 +428,21 @@ export function useStudioSession(sessionId: string) {
     setDownloadError(null);
     const task = (async () => {
       try {
-        const imageData = graph ? await captureStudioImage(graph).catch(() => undefined) : undefined;
+        const sessionUser = queryClient.getQueryData<ApiResponse<"session">>([
+          "api",
+          "session",
+          {},
+        ])?.user;
+        const watermark = {
+          studentName: sessionUser?.name,
+          studentEmail: sessionUser?.email,
+          snapshotIndex: (data.snapshots?.length ?? 0) + 1,
+          sessionId,
+          capturedAt: new Date().toISOString(),
+        };
+        const imageData = graph
+          ? await captureStudioImage(graph, false, watermark).catch(() => undefined)
+          : undefined;
         await capture.mutateAsync({
           sessionId,
           explanation: explanation.trim(),

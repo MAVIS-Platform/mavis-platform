@@ -3968,9 +3968,123 @@ export function StudioObservability({
 }
 
 const SNAPSHOT_MAX_DATA_URL_CHARS = 440_000;
-const SNAPSHOT_MAX_EDGES = [1280, 960, 720] as const;
+const SNAPSHOT_MAX_EDGES = [1600, 1280, 960, 720] as const;
 
-export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = false): Promise<string> {
+export type StudioSnapshotWatermark = {
+  studentName?: string | null | undefined;
+  studentEmail?: string | null | undefined;
+  studentCode?: string | null | undefined;
+  snapshotIndex?: number | null | undefined;
+  sessionId?: string | null | undefined;
+  capturedAt?: string | null | undefined;
+};
+
+export function extractStudentCode(
+  name?: string | null,
+  email?: string | null,
+): string | null {
+  const fromName = (name ?? "").match(/\b([A-Z]{2}\d{5,8}|\d{7,10})\b/i);
+  if (fromName?.[1]) return fromName[1].toUpperCase();
+  const localPart = (email ?? "").split("@")[0] ?? "";
+  const fromEmail = localPart.match(/([A-Z]{2}\d{5,8}|\d{7,10})/i);
+  if (fromEmail?.[1]) return fromEmail[1].toUpperCase();
+  return null;
+}
+
+export function formatSnapshotWatermark(watermark?: StudioSnapshotWatermark): {
+  left: string;
+  right: string;
+} {
+  const rawName = (watermark?.studentName ?? "").trim();
+  const rawEmail = (watermark?.studentEmail ?? "").trim();
+  const code =
+    (watermark?.studentCode ?? "").trim().toUpperCase() ||
+    extractStudentCode(rawName, rawEmail);
+
+  const cleanName = code
+    ? rawName
+        .replace(new RegExp(`\\s*[·•|\\-–—]?\\s*(?:Sinh\\s*Vi[êe]n|Student|MSSV)?\\s*:?\\s*${code}\\b`, "ig"), "")
+        .replace(/\s*[·•|\-–—]\s*$/, "")
+        .trim()
+    : rawName;
+
+  const leftParts: string[] = [];
+  if (code) leftParts.push(`MSSV: ${code}`);
+  if (cleanName) leftParts.push(cleanName);
+  else if (!code && rawEmail) leftParts.push(rawEmail);
+  if (!code && cleanName && rawEmail) leftParts.push(rawEmail);
+  if (watermark?.snapshotIndex && watermark.snapshotIndex > 0) {
+    leftParts.push(`Ảnh #${watermark.snapshotIndex}`);
+  }
+  const left = leftParts.length > 0 ? leftParts.join(" · ") : "MAVIS Studio Snapshot";
+
+  const timestamp = (() => {
+    const dt = watermark?.capturedAt ? new Date(watermark.capturedAt) : new Date();
+    if (Number.isNaN(dt.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+  })();
+  const sessionShort = watermark?.sessionId ? watermark.sessionId.slice(0, 8) : "";
+  const right = ["MAVIS VERIFIED", timestamp, sessionShort ? `#${sessionShort}` : ""]
+    .filter(Boolean)
+    .join(" · ");
+  return { left, right };
+}
+
+function stampSnapshotWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  watermark?: StudioSnapshotWatermark,
+): void {
+  if (!watermark) return;
+  const { left, right } = formatSnapshotWatermark(watermark);
+  const barH = Math.max(28, Math.min(44, Math.round(height * 0.046)));
+  const y = height - barH;
+  const fontSize = Math.max(11, Math.min(16, Math.round(barH * 0.44)));
+  const padX = Math.max(12, Math.round(width * 0.014));
+
+  ctx.save();
+  ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+  ctx.fillRect(0, y, width, barH);
+  ctx.fillStyle = "rgba(56, 189, 248, 0.55)";
+  ctx.fillRect(0, y, width, 1.5);
+
+  ctx.textBaseline = "middle";
+  const midY = y + barH / 2 + 0.5;
+
+  ctx.font = `700 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.fillStyle = "#f8fafc";
+  ctx.textAlign = "left";
+  ctx.fillText(left, padX, midY, Math.max(120, width * 0.62));
+
+  ctx.font = `600 ${Math.max(10, fontSize - 1)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.fillStyle = "#7dd3fc";
+  ctx.textAlign = "right";
+  ctx.fillText(right, width - padX, midY, Math.max(100, width * 0.34));
+  ctx.restore();
+}
+
+function encodeSnapshotCanvas(canvas: HTMLCanvasElement): string {
+  // Prefer WebP (quality 0.92) to retain full 1600px sharpness well under the 440 KB cap; fallback to PNG.
+  const webp = canvas.toDataURL("image/webp", 0.92);
+  if (webp.startsWith("data:image/webp;base64,") && webp.length <= SNAPSHOT_MAX_DATA_URL_CHARS) {
+    return webp;
+  }
+  const png = canvas.toDataURL("image/png");
+  if (png.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return png;
+  const webpCompact = canvas.toDataURL("image/webp", 0.82);
+  if (webpCompact.startsWith("data:image/webp;base64,") && webpCompact.length <= SNAPSHOT_MAX_DATA_URL_CHARS) {
+    return webpCompact;
+  }
+  return png;
+}
+
+export async function captureStudioImage(
+  svg: SVGSVGElement,
+  wholeDiagram = false,
+  watermark?: StudioSnapshotWatermark,
+): Promise<string> {
   const styles = getComputedStyle(svg);
   const webglCanvas = svg.parentElement?.querySelector<HTMLCanvasElement>(
     "canvas[data-studio-webgl-canvas]",
@@ -4003,20 +4117,18 @@ export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = fals
     (webglCanvas as HTMLCanvasElement & { __mavisRenderNow?: () => void }).__mavisRenderNow?.();
     sourceCtx.drawImage(webglCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height);
 
-    const firstUrl = sourceCanvas.toDataURL("image/png");
-    if (firstUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return firstUrl;
-
-    const scaled = document.createElement("canvas");
-    for (const maxEdge of SNAPSHOT_MAX_EDGES.slice(1)) {
+    const outCanvas = document.createElement("canvas");
+    for (const maxEdge of SNAPSHOT_MAX_EDGES) {
       const scale = Math.min(1, maxEdge / longest);
-      scaled.width = Math.max(1, Math.round(naturalW * scale));
-      scaled.height = Math.max(1, Math.round(naturalH * scale));
-      const context = scaled.getContext("2d");
+      outCanvas.width = Math.max(1, Math.round(naturalW * scale));
+      outCanvas.height = Math.max(1, Math.round(naturalH * scale));
+      const context = outCanvas.getContext("2d");
       if (!context) throw new Error("Could not render Studio snapshot");
       context.fillStyle = bgFill;
-      context.fillRect(0, 0, scaled.width, scaled.height);
-      context.drawImage(sourceCanvas, 0, 0, scaled.width, scaled.height);
-      const dataUrl = scaled.toDataURL("image/png");
+      context.fillRect(0, 0, outCanvas.width, outCanvas.height);
+      context.drawImage(sourceCanvas, 0, 0, outCanvas.width, outCanvas.height);
+      stampSnapshotWatermark(context, outCanvas.width, outCanvas.height, watermark);
+      const dataUrl = encodeSnapshotCanvas(outCanvas);
       if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
     }
     throw new Error("Snapshot image too large");
@@ -4044,7 +4156,8 @@ export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = fals
       context.fillStyle = styles.backgroundColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/png");
+      stampSnapshotWatermark(context, canvas.width, canvas.height, watermark);
+      const dataUrl = encodeSnapshotCanvas(canvas);
       if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
     }
     throw new Error("Snapshot image too large");
