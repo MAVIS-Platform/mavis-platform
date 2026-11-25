@@ -1999,3 +1999,37 @@ test("HyperMesh Audit P0-1..P1-9: multi-lab auto-link, receipt sealing & cache s
   assert.ok(courseScreens.includes("studentContext.data?.quiz != null"));
   assert.ok(standalone.includes("initialLoadError"));
 });
+
+test("Follow-up polish: submission BFF timeout/fast-submit, multi-lab step-3 prev link scoping, and Active New Lab guard", () => {
+  const adapter = fs.readFileSync(
+    path.join(__dirname, "../src/lib/api/backend-adapter.ts"),
+    "utf8",
+  );
+  const javaOps = fs.readFileSync(
+    path.join(__dirname, "../src/lib/api/java-operations.ts"),
+    "utf8",
+  );
+  const screens = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/screens.tsx"),
+    "utf8",
+  );
+  const labAuthoring = fs.readFileSync(
+    path.join(__dirname, "../src/features/assignments/lab-authoring.tsx"),
+    "utf8",
+  );
+
+  for (const op of ['"submit"', '"submissions"', '"workspaceSubmissions"', '"assignmentSubmissions"', '"submission"']) {
+    assert.ok(adapter.includes(op), `BackendAdapter must grant 60s timeout tier to ${op}`);
+  }
+  assert.match(
+    javaOps,
+    /if \(Array\.isArray\(input\["theoryAnswers"\]\)\)[\s\S]*?,\s*false,\s*false,\s*\);/,
+  );
+  assert.ok(screens.includes("(!item.assignmentId || item.assignmentId === assignmentId)"));
+  assert.ok(screens.includes("const isSameAssignment = targetAssignmentId === assignmentId;"));
+  assert.ok(screens.includes("const isSameLabItem = !item.assignmentId || item.assignmentId === assignmentId;"));
+  assert.match(
+    labAuthoring,
+    /\{assignment && courseAccess\.canCreateLabs && \(\s*<Button[\s\S]{0,900}t\("New Lab", "Tạo Lab mới"\)/,
+  );
+});

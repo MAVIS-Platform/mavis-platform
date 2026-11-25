@@ -1278,4 +1278,34 @@ class SubmissionServiceImplTest {
                 .containsExactlyInAnyOrder(gradedOld.getId(), pendingOlder.getId())
                 .doesNotContain(obsoleteSub.getId());
     }
+
+    @Test
+    void lightweightSubmissionListSqlStripsHeavyBlobsAndAvoidsBareQuestionMarkOperator() {
+        String sql = SubmissionServiceImpl.lightweightSelectSql();
+        assertThat(sql)
+                .doesNotContain(" ? ")
+                .doesNotContain("runner_receipt_json")
+                .doesNotContain("studio_control")
+                .doesNotContain("layout_json")
+                .contains("snap - 'telemetry' - 'actions' - 'imageData'");
+
+        var jdbcMock = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(submissionService, "jdbc", jdbcMock);
+        try {
+            student.setRole(Role.builder().code("STUDENT").build());
+            when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+            UUID targetWsId = UUID.randomUUID();
+            when(jdbcMock.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+                    .thenReturn(List.of());
+
+            List<SubmissionResponseDTO> rows = submissionService.getMySubmissions(targetWsId);
+            assertThat(rows).isEmpty();
+            var sqlCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+            verify(jdbcMock).query(sqlCaptor.capture(), any(org.springframework.jdbc.core.RowMapper.class),
+                    eq(userId), eq(userId), eq(targetWsId));
+            assertThat(sqlCaptor.getValue()).contains("AND a.workspace_id = ?");
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(submissionService, "jdbc", null);
+        }
+    }
 }

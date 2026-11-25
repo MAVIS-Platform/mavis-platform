@@ -259,7 +259,7 @@ export function LabAuthoring() {
                   ))}
                 </select>
               )}
-              {assignment && (
+              {assignment && courseAccess.canCreateLabs && (
                 <Button
                   type="button"
                   size="sm"

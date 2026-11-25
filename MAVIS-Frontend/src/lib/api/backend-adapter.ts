@@ -47,6 +47,11 @@ export class BackendAdapter implements ApiAdapter {
                 "elementEvidenceContext",
                 "model",
                 "reviewContext",
+                "submit",
+                "submissions",
+                "workspaceSubmissions",
+                "assignmentSubmissions",
+                "submission",
                 "contextCandidates",
                 "runtimeReadSessions",
               ].includes(operation)

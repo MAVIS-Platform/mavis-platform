@@ -847,23 +847,30 @@ export function LabWorkspace() {
   );
   const flowItemHref = (item: OutlineItemData): string => {
     if (item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
+      const targetAssignmentId = item.assignmentId;
+      const isSameAssignment = targetAssignmentId === assignmentId;
       const resolvedStep = resolveLabStepForItem(item, requiresRuntime);
+      const targetStepHref = (targetStep: 1 | 2 | 3) =>
+        isSameAssignment
+          ? labHref(targetStep)
+          : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(targetAssignmentId)}&step=${targetStep}${preview ? "&preview=1" : ""}`;
       if (resolvedStep === 2 && requiresRuntime && !preview) {
         return buildStudioLiveHref({
           workspaceId,
-          assignmentId: item.assignmentId,
+          assignmentId: targetAssignmentId,
           mode: "student",
-          returnTo: `${labHref(3)}#lab-submit`,
-          sessionId: verifiedStudioSession?.id || undefined,
+          returnTo: `${targetStepHref(3)}#lab-submit`,
+          sessionId: isSameAssignment ? verifiedStudioSession?.id || undefined : undefined,
         });
       }
-      return labHref(resolvedStep);
+      return targetStepHref(resolvedStep);
     }
     return `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(item.id)}`;
   };
   const activeFlowIndex = expandedModuleItems.findIndex(
     (item) =>
       ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type) &&
+      (!item.assignmentId || item.assignmentId === assignmentId) &&
       resolveLabStepForItem(item, requiresRuntime) === displayedStep,
   );
   const prevFlowItem = activeFlowIndex > 0 ? expandedModuleItems[activeFlowIndex - 1] : undefined;
@@ -1065,15 +1072,18 @@ export function LabWorkspace() {
                         const itemStep = isLabFlowItem
                           ? resolveLabStepForItem(item, requiresRuntime)
                           : null;
-                        const isCurrent = itemStep !== null && itemStep === displayedStep;
+                        const isSameLabItem = !item.assignmentId || item.assignmentId === assignmentId;
+                        const isCurrent =
+                          isSameLabItem && itemStep !== null && itemStep === displayedStep;
                         const lockHint =
-                          itemStep !== null && !stepAvailable(itemStep)
+                          isSameLabItem && itemStep !== null && !stepAvailable(itemStep)
                             ? stepReason(itemStep)
                             : undefined;
                         const itemComplete =
-                          (itemStep === 1 && hasReferenceArch && Boolean(activeModelId)) ||
-                          (itemStep === 2 && runtimeEvidenceSatisfied) ||
-                          (itemStep === 3 && hasSubmitted);
+                          isSameLabItem &&
+                          ((itemStep === 1 && hasReferenceArch && Boolean(activeModelId)) ||
+                            (itemStep === 2 && runtimeEvidenceSatisfied) ||
+                            (itemStep === 3 && hasSubmitted));
                         return (
                           <Link
                             key={item.id}

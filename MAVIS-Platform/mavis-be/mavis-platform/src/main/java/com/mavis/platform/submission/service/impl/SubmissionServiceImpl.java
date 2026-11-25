@@ -46,6 +46,9 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
     private final ObjectMapper json;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
     @Override
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getMySubmissions() {
@@ -58,6 +61,9 @@ public class SubmissionServiceImpl implements SubmissionService {
         User user = accessPolicyService.requireCurrentActiveUser();
         boolean admin = user.getRole() != null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
         boolean revealDraft = admin || (user.getRole() != null && !"STUDENT".equalsIgnoreCase(user.getRole().getCode()));
+        if (jdbc != null) {
+            return queryMySubmissionsLightweight(user.getId(), admin, workspaceId, revealDraft);
+        }
         List<SubmissionSnapshot> visible = submissionSnapshotRepository.findVisibleTo(user.getId(), admin);
         if (visible.isEmpty()) {
             return Collections.emptyList();
@@ -553,9 +559,16 @@ public class SubmissionServiceImpl implements SubmissionService {
         if (activeAssignmentIds.isEmpty()) {
             return List.of();
         }
-        List<SubmissionSnapshot> submissions =
-                submissionSnapshotRepository.findByAssignmentIdInOrderBySubmittedAtDesc(activeAssignmentIds);
-        List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
+        List<SubmissionResponseDTO> mapped;
+        if (jdbc != null) {
+            String placeholders = activeAssignmentIds.stream().map(id -> "?").collect(Collectors.joining(","));
+            mapped = querySubmissionsLightweight("s.assignment_id IN (" + placeholders + ")",
+                    new ArrayList<>(activeAssignmentIds), true);
+        } else {
+            List<SubmissionSnapshot> submissions =
+                    submissionSnapshotRepository.findByAssignmentIdInOrderBySubmittedAtDesc(activeAssignmentIds);
+            mapped = mapToResponseListWithFeedbackCount(submissions, true);
+        }
         return filterAndSortLecturerSubmissions(mapped, reviewStatus, labOutcome);
     }
 
@@ -573,8 +586,10 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Assignment not found"));
         if (assignment.getWorkspace() == null) throw new BusinessException(ErrorCode.FORBIDDEN, "Assignment workspace required");
         accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
-        List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId);
-        List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
+        List<SubmissionResponseDTO> mapped = jdbc != null
+                ? querySubmissionsLightweight("s.assignment_id = ?", List.of(assignmentId), true)
+                : mapToResponseListWithFeedbackCount(
+                        submissionSnapshotRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId), true);
         return filterAndSortLecturerSubmissions(mapped, reviewStatus, labOutcome);
     }
 
@@ -599,6 +614,9 @@ public class SubmissionServiceImpl implements SubmissionService {
         log.debug("Lấy danh sách bài nộp theo projectId: {}", projectId);
         accessPolicyService.requireProjectReadAccess(projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Project not found")));
+        if (jdbc != null) {
+            return querySubmissionsLightweight("s.project_id = ?", List.of(projectId), false);
+        }
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByProjectIdOrderBySubmittedAtDesc(projectId);
         return mapToResponseListWithFeedbackCount(submissions, false);
     }
@@ -915,6 +933,259 @@ public class SubmissionServiceImpl implements SubmissionService {
                         reviewsBySubmission.get(s.getId()),
                         revealDraft))
                 .collect(Collectors.toList());
+    }
+
+    // Scalar + SQL-stripped studio_evidence summary avoids loading multi-MB PNG/OTel TOAST JSONB on submission list queries.
+    private static final String SUBMISSION_LIST_SELECT = """
+            SELECT s.id,
+                   a.workspace_id,
+                   w.name AS workspace_name,
+                   COALESCE(w.course_mode, false) AS workspace_course_mode,
+                   s.assignment_id,
+                   a.title AS assignment_title,
+                   a.lab_order,
+                   a.lab_mode,
+                   CASE WHEN a.ai_policy IS NOT NULL
+                         AND jsonb_typeof(a.ai_policy->'archivedV1') = 'boolean'
+                        THEN (a.ai_policy->>'archivedV1')::boolean
+                        ELSE false END AS assignment_archived_v1,
+                   s.project_id,
+                   p.name AS project_name,
+                   s.submitted_by,
+                   u.full_name AS submitted_by_name,
+                   u.email AS submitted_by_email,
+                   s.source_snapshot_id,
+                   s.model_version_id,
+                   mv.revision AS model_revision,
+                   s.diagram_version_id,
+                   dv.notation AS diagram_notation,
+                   s.evaluation_run_id,
+                   CASE WHEN er.summary_metrics IS NOT NULL
+                         AND jsonb_typeof(er.summary_metrics->'complianceScore') = 'number'
+                        THEN (er.summary_metrics->>'complianceScore')::double precision
+                        ELSE NULL END AS compliance_score,
+                   s.runtime_session_id,
+                   rs.scenario_status,
+                   s.course_quiz_evidence::text AS course_quiz_evidence_json,
+                   s.theory_evidence::text AS theory_evidence_json,
+                   CASE WHEN s.studio_evidence IS NULL THEN NULL
+                        WHEN jsonb_typeof(s.studio_evidence) <> 'object' THEN s.studio_evidence::text
+                        WHEN jsonb_typeof(s.studio_evidence->'snapshots') = 'array' THEN
+                          jsonb_set(
+                            s.studio_evidence - 'receipt',
+                            '{snapshots}',
+                            COALESCE(
+                              (SELECT jsonb_agg(
+                                 CASE WHEN jsonb_typeof(snap) = 'object'
+                                      THEN snap - 'telemetry' - 'actions' - 'imageData'
+                                      ELSE snap END
+                               ) FROM jsonb_array_elements(s.studio_evidence->'snapshots') AS snap),
+                              '[]'::jsonb
+                            )
+                          )::text
+                        ELSE (s.studio_evidence - 'receipt')::text
+                   END AS studio_evidence_summary_json,
+                   s.student_snapshots::text AS student_snapshots_json,
+                   s.submission_notes,
+                   s.evidence_package_digest,
+                   s.submitted_at,
+                   (SELECT COUNT(*) FROM feedback_comments fc WHERE fc.submission_id = s.id) AS feedback_count,
+                   sr.status AS review_status,
+                   sr.score AS review_score,
+                   sr.lab_outcome AS review_lab_outcome,
+                   sr.summary AS review_summary,
+                   grader.full_name AS graded_by_name,
+                   sr.updated_at AS graded_at
+            FROM submission_snapshots s
+            JOIN assignments a ON a.id = s.assignment_id
+            LEFT JOIN workspaces w ON w.id = a.workspace_id
+            LEFT JOIN projects p ON p.id = s.project_id
+            LEFT JOIN users u ON u.id = s.submitted_by
+            LEFT JOIN model_versions mv ON mv.id = s.model_version_id
+            LEFT JOIN diagram_versions dv ON dv.id = s.diagram_version_id
+            LEFT JOIN evaluation_runs er ON er.id = s.evaluation_run_id
+            LEFT JOIN runtime_sessions rs ON rs.id = s.runtime_session_id
+            LEFT JOIN submission_reviews sr ON sr.submission_id = s.id
+            LEFT JOIN users grader ON grader.id = sr.lecturer_id
+            """;
+
+    private record LightweightSubmissionRow(
+            SubmissionResponseDTO dto,
+            boolean workspaceCourseMode,
+            boolean assignmentArchivedV1) {}
+
+    private List<SubmissionResponseDTO> queryMySubmissionsLightweight(
+            UUID userId, boolean admin, UUID workspaceId, boolean revealDraft) {
+        StringBuilder where = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+        if (admin) {
+            where.append("1 = 1");
+        } else {
+            where.append("(s.submitted_by = ? OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = a.workspace_id AND wm.user_id = ? AND wm.member_role = 'LECTURER'))");
+            params.add(userId);
+            params.add(userId);
+        }
+        if (workspaceId != null) {
+            where.append(" AND a.workspace_id = ?");
+            params.add(workspaceId);
+        }
+        List<LightweightSubmissionRow> rows = executeLightweightSubmissionQuery(where.toString(), params, revealDraft);
+        if (rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Set<UUID> workspacesWithOrderedLabs = rows.stream()
+                .filter(r -> r.dto().getLabOrder() != null && r.dto().getWorkspaceId() != null)
+                .map(r -> r.dto().getWorkspaceId())
+                .collect(Collectors.toSet());
+        return rows.stream()
+                .filter(r -> !isObsoleteDetachedLightweight(r, workspacesWithOrderedLabs))
+                .map(LightweightSubmissionRow::dto)
+                .toList();
+    }
+
+    private static boolean isObsoleteDetachedLightweight(
+            LightweightSubmissionRow row, Set<UUID> workspacesWithOrderedLabs) {
+        if (!row.workspaceCourseMode() || row.dto().getLabOrder() != null) {
+            return false;
+        }
+        if (row.assignmentArchivedV1()) {
+            return true;
+        }
+        UUID wsId = row.dto().getWorkspaceId();
+        return wsId != null && workspacesWithOrderedLabs.contains(wsId);
+    }
+
+    private List<SubmissionResponseDTO> querySubmissionsLightweight(
+            String whereClause, List<Object> params, boolean revealDraft) {
+        return executeLightweightSubmissionQuery(whereClause, params, revealDraft).stream()
+                .map(LightweightSubmissionRow::dto)
+                .toList();
+    }
+
+    private List<LightweightSubmissionRow> executeLightweightSubmissionQuery(
+            String whereClause, List<Object> params, boolean revealDraft) {
+        String sql = SUBMISSION_LIST_SELECT + " WHERE " + whereClause + " ORDER BY s.submitted_at DESC";
+        ObjectMapper mapper = this.json != null ? this.json : new ObjectMapper();
+        return jdbc.query(sql, (rs, rowNum) -> {
+            UUID id = toUuid(rs.getObject("id"));
+            UUID wsId = toUuid(rs.getObject("workspace_id"));
+            Integer labOrder = toInteger(rs.getObject("lab_order"));
+            String labModeRaw = rs.getString("lab_mode");
+            JsonNode courseQuizEvidence = parseJsonOrNull(mapper, rs.getString("course_quiz_evidence_json"));
+            JsonNode theoryEvidence = parseJsonOrNull(mapper, rs.getString("theory_evidence_json"));
+            JsonNode studioEvidence = parseJsonOrNull(mapper, rs.getString("studio_evidence_summary_json"));
+            JsonNode studentSnapshots = parseJsonOrNull(mapper, rs.getString("student_snapshots_json"));
+
+            boolean guidedLab = labOrder != null
+                    || (courseQuizEvidence != null
+                        && ("PASSED".equals(courseQuizEvidence.path("status").asText())
+                            || "NOT_REQUIRED".equals(courseQuizEvidence.path("status").asText())));
+
+            String rawReviewStatus = rs.getString("review_status");
+            boolean visibleReview = rawReviewStatus != null
+                    && (revealDraft || !"DRAFT".equalsIgnoreCase(rawReviewStatus));
+            String reviewStatus = visibleReview ? rawReviewStatus : "PENDING";
+            java.math.BigDecimal scoreBd = rs.getBigDecimal("review_score");
+            Double reviewScore = visibleReview && scoreBd != null ? scoreBd.doubleValue() : null;
+            Double reviewScoreTenScale = reviewScore != null
+                    ? Math.round((reviewScore / 10.0) * 100.0) / 100.0
+                    : null;
+            String rawLabOutcome = rs.getString("review_lab_outcome");
+            String labOutcome = "PENDING";
+            if (visibleReview) {
+                if (rawLabOutcome != null && !rawLabOutcome.isBlank()) {
+                    labOutcome = rawLabOutcome;
+                } else if ("RETURNED".equalsIgnoreCase(reviewStatus)) {
+                    labOutcome = "NEEDS_REVISION";
+                } else if ("GRADED".equalsIgnoreCase(reviewStatus) && reviewScore != null) {
+                    labOutcome = reviewScore > 50.0 ? "PASSED" : "NEEDS_REVISION";
+                }
+            }
+
+            Double complianceScore = toDouble(rs.getObject("compliance_score"));
+            OffsetDateTime submittedAt = toOffsetDateTime(rs, "submitted_at");
+            OffsetDateTime gradedAt = visibleReview ? toOffsetDateTime(rs, "graded_at") : null;
+
+            SubmissionResponseDTO dto = SubmissionResponseDTO.builder()
+                    .id(id)
+                    .workspaceId(wsId)
+                    .workspaceName(rs.getString("workspace_name"))
+                    .assignmentId(toUuid(rs.getObject("assignment_id")))
+                    .guidedLab(guidedLab)
+                    .assignmentTitle(rs.getString("assignment_title"))
+                    .labOrder(labOrder)
+                    .projectId(toUuid(rs.getObject("project_id")))
+                    .projectName(rs.getString("project_name"))
+                    .submittedById(toUuid(rs.getObject("submitted_by")))
+                    .submittedByName(rs.getString("submitted_by_name"))
+                    .submittedByEmail(rs.getString("submitted_by_email"))
+                    .labMode(labModeRaw != null ? labModeRaw : "LEGACY")
+                    .sourceSnapshotId(toUuid(rs.getObject("source_snapshot_id")))
+                    .modelVersionId(toUuid(rs.getObject("model_version_id")))
+                    .modelRevision(toInteger(rs.getObject("model_revision")))
+                    .diagramVersionId(toUuid(rs.getObject("diagram_version_id")))
+                    .diagramNotation(rs.getString("diagram_notation"))
+                    .evaluationRunId(toUuid(rs.getObject("evaluation_run_id")))
+                    .complianceScore(complianceScore)
+                    .runtimeSessionId(toUuid(rs.getObject("runtime_session_id")))
+                    .courseQuizEvidence(courseQuizEvidence)
+                    .theoryEvidence(theoryEvidence)
+                    .studioEvidence(studioEvidence)
+                    .studentSnapshots(studentSnapshots)
+                    .scenarioStatus(rs.getString("scenario_status"))
+                    .feedbackCount(rs.getLong("feedback_count"))
+                    .submissionNotes(rs.getString("submission_notes"))
+                    .evidencePackageDigest(rs.getString("evidence_package_digest"))
+                    .submittedAt(submittedAt)
+                    .reviewStatus(reviewStatus)
+                    .reviewScore(reviewScore)
+                    .reviewScoreTenScale(reviewScoreTenScale)
+                    .labOutcome(labOutcome)
+                    .reviewSummary(visibleReview ? rs.getString("review_summary") : null)
+                    .gradedByName(visibleReview ? rs.getString("graded_by_name") : null)
+                    .gradedAt(gradedAt)
+                    .build();
+
+            return new LightweightSubmissionRow(
+                    dto,
+                    rs.getBoolean("workspace_course_mode"),
+                    rs.getBoolean("assignment_archived_v1"));
+        }, params.toArray());
+    }
+
+    static String lightweightSelectSql() {
+        return SUBMISSION_LIST_SELECT;
+    }
+
+    private static UUID toUuid(Object value) {
+        if (value == null) return null;
+        if (value instanceof UUID u) return u;
+        return UUID.fromString(value.toString());
+    }
+
+    private static Integer toInteger(Object value) {
+        return value instanceof Number n ? n.intValue() : null;
+    }
+
+    private static Double toDouble(Object value) {
+        return value instanceof Number n ? n.doubleValue() : null;
+    }
+
+    private static OffsetDateTime toOffsetDateTime(java.sql.ResultSet rs, String col) throws java.sql.SQLException {
+        Object raw = rs.getObject(col);
+        if (raw == null) return null;
+        if (raw instanceof OffsetDateTime odt) return odt;
+        if (raw instanceof java.sql.Timestamp ts) return ts.toInstant().atOffset(java.time.ZoneOffset.UTC);
+        return OffsetDateTime.parse(raw.toString());
+    }
+
+    private static JsonNode parseJsonOrNull(ObjectMapper mapper, String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return mapper.readTree(raw);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     static void requireSubmissionReadAccess(com.mavis.common.security.AccessPolicyService accessPolicyService,
