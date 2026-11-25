@@ -8,14 +8,13 @@ import { useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { useSearchParams } from "next/navigation";
 import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
 import { WorkspaceSelector } from "@/features/workspaces/components";
-import { useCourseEssays, useWorkspaceGradebook } from "@/features/workspaces/course-access";
+import { useWorkspaceGradebook } from "@/features/workspaces/course-access";
 import {
   formatCourseLabTitle,
   formatLabModeLabel,
   formatTenScaleScore,
   toTenScaleScore,
 } from "@/lib/format/course-display";
-import { LecturerEssayRow } from "@/features/courses/course-essay-panel";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { DataTable, StatusLabel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
@@ -244,12 +243,12 @@ function TeachingSubmissions() {
   const courseAccess = lecturerCourseAccess(workspace?.status);
   const initialAssignment = params.get("assignment");
   const [selected, setSelected] = useState(initialAssignment || "ALL");
-  const [viewMode, setViewMode] = useState<"queue" | "essays" | "gradebook">(
+  const [viewMode, setViewMode] = useState<"queue" | "gradebook">(
     params.get("view") === "results" ? "gradebook" : "queue",
   );
   const requestedStatus = (params.get("status") ?? "").toUpperCase();
   const [reviewStatusFilter, setReviewStatusFilter] = useState(
-    ["PENDING", "DRAFT", "GRADED", "RETURNED"].includes(requestedStatus) ? requestedStatus : "ALL",
+    ["PENDING", "DRAFT", "GRADED"].includes(requestedStatus) ? requestedStatus : "ALL",
   );
   const [outcomeFilter, setOutcomeFilter] = useState("ALL");
   const assignments = useApiQuery("assignments", { workspaceId }, { enabled: !!workspaceId });
@@ -278,8 +277,6 @@ function TeachingSubmissions() {
         : base.filter((s) => s.assignmentId === selectedAssignmentId);
     return {
       total: scoped.length,
-      pending: scoped.filter((s) => !s.reviewStatus || s.reviewStatus === "PENDING").length,
-      graded: scoped.filter((s) => s.reviewStatus === "GRADED").length,
       needsRevision: scoped.filter((s) => s.labOutcome === "NEEDS_REVISION").length,
     };
   }, [allClassSubs.data, selectedAssignmentId]);
@@ -295,40 +292,14 @@ function TeachingSubmissions() {
           {(
             [
               {
-                id: "pending",
-                label: `${t("Pending", "Chờ chấm")}${allClassSubs.isSuccess ? ` (${counts.pending})` : ""}`,
-                active: viewMode === "queue" && reviewStatusFilter === "PENDING",
-                onClick: () => {
-                  setViewMode("queue");
-                  setReviewStatusFilter("PENDING");
-                  setOutcomeFilter("ALL");
-                },
-              },
-              {
-                id: "graded",
-                label: `${t("Graded", "Đã chấm")}${allClassSubs.isSuccess ? ` (${counts.graded})` : ""}`,
-                active: viewMode === "queue" && reviewStatusFilter === "GRADED",
-                onClick: () => {
-                  setViewMode("queue");
-                  setReviewStatusFilter("GRADED");
-                  setOutcomeFilter("ALL");
-                },
-              },
-              {
                 id: "all",
                 label: `${t("All submissions", "Tất cả")}${allClassSubs.isSuccess ? ` (${counts.total})` : ""}`,
-                active: viewMode === "queue" && reviewStatusFilter === "ALL",
+                active: viewMode === "queue",
                 onClick: () => {
                   setViewMode("queue");
                   setReviewStatusFilter("ALL");
                   setOutcomeFilter("ALL");
                 },
-              },
-              {
-                id: "essays",
-                label: t("Essays", "Tự luận"),
-                active: viewMode === "essays",
-                onClick: () => setViewMode("essays"),
               },
               {
                 id: "gradebook",
@@ -379,8 +350,6 @@ function TeachingSubmissions() {
           workspaceId={workspaceId}
           workspaceCode={workspace?.code || workspaceId}
         />
-      ) : viewMode === "essays" ? (
-        <CourseEssaysGradingPanel workspaceId={workspaceId} />
       ) : viewMode === "gradebook" ? (
         <ClassGradebookMatrix
           workspaceId={workspaceId}
@@ -419,7 +388,6 @@ function TeachingSubmissions() {
                     { value: "PENDING", label: t("Pending review", "Chờ chấm") },
                     { value: "DRAFT", label: t("Draft", "Bản nháp") },
                     { value: "GRADED", label: t("Graded", "Đã chấm") },
-                    { value: "RETURNED", label: t("Returned", "Trả sửa lại") },
                   ]}
                 />
                 <SelectField
@@ -464,28 +432,6 @@ function TeachingSubmissions() {
     </CourseWorkspaceShell>
   ) : (
     body
-  );
-}
-
-function CourseEssaysGradingPanel({ workspaceId }: { workspaceId: string }) {
-  const { t } = useLocale();
-  const essays = useCourseEssays(workspaceId);
-  const rows = essays.data ?? [];
-  return (
-    <RequestState
-      query={essays}
-      empty={!rows.length}
-      emptyMessage={t(
-        "No chapter essays have been submitted in this class yet.",
-        "Chưa có sinh viên nào nộp bài Tự luận theo chương trong lớp này.",
-      )}
-    >
-      <div className="space-y-4">
-        {rows.map((submission) => (
-          <LecturerEssayRow key={submission.id} workspaceId={workspaceId} submission={submission} />
-        ))}
-      </div>
-    </RequestState>
   );
 }
 
