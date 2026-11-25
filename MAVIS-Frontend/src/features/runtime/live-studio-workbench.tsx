@@ -83,9 +83,10 @@ import {
   type StudioGoalId,
   type TargetChangeAction,
 } from "./studio-authoring-helpers";
-import { startStudioRecording } from "./studio-recording";
+import { blobToDataUrl, startStudioRecording } from "./studio-recording";
 import {
   StudioEvidenceReplay,
+  StudioSnapshotPreviewCard,
   StudioVideo,
   deleteStudioEvidence,
   downloadStudioEvidence,
@@ -93,6 +94,10 @@ import {
   storeStudioEvidence,
   type EvidenceFrame,
 } from "./studio-evidence";
+import {
+  buildSmartSnapshotPlan,
+  type SmartSnapshotOverlay,
+} from "./studio-smart-snapshot";
 import {
   LiveSandboxParity,
   parseMemoryMiB,
@@ -967,6 +972,8 @@ export function LiveStudioWorkbench({
   const [savingReplay, setSavingReplay] = useState(false);
   const queryClient = useQueryClient();
   const [capturingScreen, setCapturingScreen] = useState(false);
+  const [smartAutoFocus, setSmartAutoFocus] = useState(true);
+  const [smartIncludeStats, setSmartIncludeStats] = useState(true);
   const [replayError, setReplayError] = useState("");
   const replayCaptureRef = useRef<{
     started: number;
@@ -1167,6 +1174,35 @@ export function LiveStudioWorkbench({
   }
 
   const runtimeFlows = useMemo(() => summarizeRuntimeFlows(data), [data]);
+  const smartSnapshotPlan = useMemo(
+    () =>
+      buildSmartSnapshotPlan(data, {
+        locale: locale === "en" ? "en" : "vi",
+        selectedService: canvasSelected || null,
+        authoringExerciseType: authoring?.exerciseType ?? null,
+        authoringTargetService: authoring?.targetChangeAction?.service ?? null,
+      }),
+    [
+      data,
+      locale,
+      canvasSelected,
+      authoring?.exerciseType,
+      authoring?.targetChangeAction?.service,
+    ],
+  );
+  const activeSmartOverlay: SmartSnapshotOverlay = useMemo(
+    () => ({
+      badge: smartSnapshotPlan.badge,
+      accentColor: smartSnapshotPlan.accentColor,
+      focusSummary: smartSnapshotPlan.focusSummary,
+      focusServices: smartSnapshotPlan.focusServices,
+      stats: smartSnapshotPlan.stats,
+      autoCheckSummary: smartSnapshotPlan.autoCheckSummary,
+      autoFocus: smartAutoFocus,
+      includeStats: smartIncludeStats,
+    }),
+    [smartSnapshotPlan, smartAutoFocus, smartIncludeStats],
+  );
 
   const captureLiveReplayFrame = useCallback(
     (label: string, elapsedMs = 0): EvidenceFrame | null => {
@@ -1274,13 +1310,18 @@ export function LiveStudioWorkbench({
         "session",
         {},
       ])?.user;
-      const imageData = await captureStudioImage(svg, true, {
-        studentName: sessionUser?.name,
-        studentEmail: sessionUser?.email,
-        snapshotIndex: liveReplays.length + 1,
-        sessionId: evidenceScopeId,
-        capturedAt: new Date().toISOString(),
-      });
+      const imageData = await captureStudioImage(
+        svg,
+        true,
+        {
+          studentName: sessionUser?.name,
+          studentEmail: sessionUser?.email,
+          snapshotIndex: liveReplays.length + 1,
+          sessionId: evidenceScopeId,
+          capturedAt: new Date().toISOString(),
+        },
+        activeSmartOverlay,
+      );
       const digestBytes = await crypto.subtle.digest(
         "SHA-256",
         new TextEncoder().encode(JSON.stringify({ sessionId: evidenceScopeId, frame })),
@@ -1321,7 +1362,21 @@ export function LiveStudioWorkbench({
     const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
     if (svg) {
       try {
-        videoRecorderRef.current = startStudioRecording(svg);
+        const sessionUser = queryClient.getQueryData<Response<"session">>([
+          "api",
+          "session",
+          {},
+        ])?.user;
+        videoRecorderRef.current = startStudioRecording(svg, {
+          watermark: {
+            studentName: sessionUser?.name,
+            studentEmail: sessionUser?.email,
+            snapshotIndex: (data.snapshots?.length ?? 0) + 1,
+            sessionId: evidenceScopeId,
+            capturedAt: new Date().toISOString(),
+          },
+          smartOverlay: activeSmartOverlay,
+        });
       } catch {
         // Fallback cleanly to frame-by-frame interactive replay when MediaRecorder is unavailable
         videoRecorderRef.current = null;
@@ -1362,32 +1417,62 @@ export function LiveStudioWorkbench({
       const frames = [...rec.frames, finalFrame];
       const video = await videoRecorderRef.current?.stop().catch(() => undefined);
       videoRecorderRef.current = null;
-      const digestBytes = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(JSON.stringify({ sessionId: evidenceScopeId, frames })),
-      );
-      const digest =
-        "sha256:" +
-        Array.from(new Uint8Array(digestBytes), (b) => b.toString(16).padStart(2, "0")).join("");
-      const saved: LiveRuntimeReplay = {
-        id: crypto.randomUUID(),
-        sessionId: evidenceScopeId,
-        kind: "LIVE_REPLAY",
-        capturedAt: new Date().toISOString(),
-        explanation:
-          explanation.trim() ||
-          `Live runtime replay · ${frames.length} steps · ${totalRunningReplicas} pods`,
-        digest,
-        frame: finalFrame,
-        replay: frames,
-        ...(video ? { video: video.blob, durationMs: video.durationMs } : { durationMs: elapsed }),
-      };
-      await storeStudioEvidence(saved).catch(() => undefined);
-      setLiveReplays((prev) => [saved, ...prev]);
+      const videoNote =
+        explanation.trim() ||
+        `${smartSnapshotPlan.suggestedNote} · Video ${((video?.durationMs ?? elapsed) / 1000).toFixed(1)}s`;
+
+      // Attach recorded 3D WebGL video directly as verified Lab evidence so it appears on Submit & Lecturer Grading.
+      let attachedToSession = false;
+      if (
+        !isPreviewMode &&
+        data.executionStatus === "RUNNING" &&
+        data.telemetry &&
+        !waiting &&
+        (data.snapshots?.length ?? 0) < 8 &&
+        video &&
+        video.blob.size > 0
+      ) {
+        const videoData = await blobToDataUrl(video.blob).catch(() => undefined);
+        if (videoData && videoData.length <= 3_400_000) {
+          const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ?? null;
+          await captureSnapshot(svg, {
+            explanationOverride: videoNote,
+            videoData,
+            ...(video.posterImageData ? { posterImageData: video.posterImageData } : {}),
+            smartOverlay: activeSmartOverlay,
+          });
+          attachedToSession = true;
+        }
+      }
+
+      if (!attachedToSession) {
+        const digestBytes = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(JSON.stringify({ sessionId: evidenceScopeId, frames })),
+        );
+        const digest =
+          "sha256:" +
+          Array.from(new Uint8Array(digestBytes), (b) => b.toString(16).padStart(2, "0")).join("");
+        const saved: LiveRuntimeReplay = {
+          id: crypto.randomUUID(),
+          sessionId: evidenceScopeId,
+          kind: "LIVE_REPLAY",
+          capturedAt: new Date().toISOString(),
+          explanation: videoNote,
+          digest,
+          frame: finalFrame,
+          replay: frames,
+          ...(video?.posterImageData ? { imageData: video.posterImageData } : {}),
+          ...(video ? { video: video.blob, durationMs: video.durationMs } : { durationMs: elapsed }),
+        };
+        await storeStudioEvidence(saved).catch(() => undefined);
+        setLiveReplays((prev) => [saved, ...prev]);
+      }
       replayCaptureRef.current = null;
       setRecordingSteps(0);
       setRecordingSeconds(0);
       setTab("snapshots");
+      setBottomCollapsed(false);
     } catch (cause) {
       setReplayError(cause instanceof Error ? cause.message : "Could not save runtime replay.");
     } finally {
@@ -1401,22 +1486,7 @@ export function LiveStudioWorkbench({
   }
 
   function buildAutoObservationNote() {
-    const runningBlocks = blocks.filter((b) => (runningFor(data, b.service) ?? 0) > 0).length;
-    const parts: string[] = [
-      `${runningBlocks}/${blocks.length || data.services.length} services running (${totalRunningReplicas} pods)`,
-    ];
-    if (lastConfirmed) {
-      parts.push(
-        `latest action: ${lastConfirmed.action} ${lastConfirmed.service}${lastConfirmed.replicas ? ` → ${lastConfirmed.replicas}` : ""}`,
-      );
-    }
-    if (lastConfirmed?.result) {
-      const p95 = metric(lastConfirmed.result.metricsAfter["p95LatencyMs"]);
-      const err = metric(lastConfirmed.result.metricsAfter["errorRatePercent"]);
-      if (p95 !== "—") parts.push(`p95 ${p95} ms`);
-      if (err !== "—") parts.push(`${err}% errors`);
-    }
-    setExplanation(parts.join(" · "));
+    setExplanation(smartSnapshotPlan.suggestedNote);
   }
 
   function captureLiveCanvasAsExercise() {
@@ -3135,8 +3205,12 @@ export function LiveStudioWorkbench({
                           void captureSnapshot(
                             graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ??
                               null,
+                            { smartOverlay: activeSmartOverlay },
                           );
                         } else {
+                          if (!explanation.trim()) {
+                            setExplanation(smartSnapshotPlan.suggestedNote);
+                          }
                           requestAnimationFrame(() => snapshotNoteRef.current?.focus());
                         }
                       }}
@@ -4251,6 +4325,74 @@ export function LiveStudioWorkbench({
 
           {tab === "snapshots" && (
             <section aria-label="Snapshots and runtime recording" className="space-y-3">
+              {/* Smart Exercise-Aware Snapshot Banner */}
+              <div
+                className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+                  isLight
+                    ? "border-sky-200 bg-sky-50/70 text-slate-800"
+                    : "border-sky-500/30 bg-slate-900/75 text-slate-200"
+                }`}
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[10px] font-bold text-slate-950"
+                    style={{ backgroundColor: smartSnapshotPlan.accentColor }}
+                  >
+                    <Target aria-hidden="true" className="size-3" />
+                    {smartSnapshotPlan.badge}
+                  </span>
+                  <span className="font-mono text-[11px] font-semibold">
+                    {smartSnapshotPlan.focusSummary}
+                  </span>
+                  {smartIncludeStats && smartSnapshotPlan.stats.length > 0 && (
+                    <span className="hidden text-[11px] text-muted-foreground md:inline">
+                      · {t("Auto stats", "Tự kèm chỉ số")}:{" "}
+                      {smartSnapshotPlan.stats.map((s) => s.label).join(", ")}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-pressed={smartAutoFocus}
+                    onClick={() => setSmartAutoFocus((prev) => !prev)}
+                    className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition ${
+                      smartAutoFocus
+                        ? isLight
+                          ? "border-sky-400 bg-sky-600 text-white"
+                          : "border-sky-400/70 bg-sky-500/25 text-sky-200"
+                        : isLight
+                          ? "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+                          : "border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Target aria-hidden="true" className="size-3" />
+                    {smartAutoFocus
+                      ? t("Auto-focus: ON", "Tự focus: BẬT")
+                      : t("Auto-focus: OFF", "Tự focus: TẮT")}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={smartIncludeStats}
+                    onClick={() => setSmartIncludeStats((prev) => !prev)}
+                    className={`inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition ${
+                      smartIncludeStats
+                        ? isLight
+                          ? "border-emerald-400 bg-emerald-600 text-white"
+                          : "border-emerald-400/70 bg-emerald-500/25 text-emerald-200"
+                        : isLight
+                          ? "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+                          : "border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Sparkles aria-hidden="true" className="size-3" />
+                    {smartIncludeStats
+                      ? t("Stats HUD: ON", "Kèm stats: BẬT")
+                      : t("Stats HUD: OFF", "Kèm stats: TẮT")}
+                  </button>
+                </div>
+              </div>
+
               {/* Primary Capture Bar + Compact Secondary Tools */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative flex min-w-[240px] flex-1 items-center">
@@ -4303,6 +4445,7 @@ export function LiveStudioWorkbench({
                     void captureSnapshot(
                       graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ??
                         null,
+                      { smartOverlay: activeSmartOverlay },
                     )
                   }
                   className="h-9 bg-[#0056D2] px-3.5 text-xs font-semibold text-white hover:bg-[#00419E] disabled:opacity-45"
@@ -4544,48 +4687,22 @@ export function LiveStudioWorkbench({
                 </details>
               )}
 
-              {/* Signed Evidence Snapshots */}
+              {/* Signed Evidence Snapshots & Recorded Videos */}
               {(data.snapshots?.length ?? 0) > 0 && (
-                <div className="grid gap-2 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-2">
                   {data.snapshots?.map((snapshot, idx) => (
-                    <div
+                    <StudioSnapshotPreviewCard
                       key={snapshot.id}
-                      className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-xs ${
-                        isLight
-                          ? "border-slate-200 bg-slate-50/70 text-slate-900"
-                          : "border-slate-800 bg-slate-900/70 text-slate-100"
-                      }`}
-                    >
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span
-                            className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
-                              isLight
-                                ? "bg-emerald-100 text-emerald-800"
-                                : "bg-emerald-500/15 text-emerald-300"
-                            }`}
-                          >
-                            SNAPSHOT #{idx + 1}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {new Date(snapshot.capturedAt).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        <p className="leading-snug font-medium">{snapshot.explanation}</p>
-                        <p className="font-mono text-[10px] text-muted-foreground">
-                          #{snapshot.digest.slice(0, 14)}…
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 shrink-0 px-2.5 text-[11px]"
-                        onClick={() => void downloadSnapshot(snapshot.id)}
-                      >
-                        Download evidence
-                      </Button>
-                    </div>
+                      sessionId={snapshot.sessionId || activeSessionId}
+                      snapshot={snapshot}
+                      index={idx}
+                      isLight={isLight}
+                      exerciseBadge={smartSnapshotPlan.badge}
+                      accentColor={smartSnapshotPlan.accentColor}
+                      missionGoal={missionCard?.instructions || authoring?.instructions}
+                      exerciseStats={smartSnapshotPlan.stats}
+                      onDownloadEvidence={(id) => void downloadSnapshot(id)}
+                    />
                   ))}
                 </div>
               )}
@@ -4652,17 +4769,14 @@ export function LiveStudioWorkbench({
                               isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-[#070b14]"
                             }`}
                           />
+                        ) : replayItem.video && replayItem.video.size > 0 ? (
+                          <StudioVideo
+                            blob={replayItem.video}
+                            durationMs={replayItem.durationMs ?? 0}
+                            posterDataUrl={replayItem.imageData}
+                          />
                         ) : (
-                          <>
-                            {replayItem.video && replayItem.video.size > 0 && (
-                              <StudioVideo
-                                blob={replayItem.video}
-                                durationMs={replayItem.durationMs ?? 0}
-                                posterSvg={replayItem.frame.svg}
-                              />
-                            )}
-                            <StudioEvidenceReplay frames={replayItem.replay} />
-                          </>
+                          <StudioEvidenceReplay frames={replayItem.replay} />
                         )}
 
                         <div

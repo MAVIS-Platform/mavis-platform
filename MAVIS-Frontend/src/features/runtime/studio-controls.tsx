@@ -11,10 +11,12 @@ import { LiveSandboxParity } from "./live-sandbox-parity";
 import { Textarea } from "@/components/ui/textarea";
 import { StudioSnapshotComparison } from "./studio-snapshot-comparison";
 import { PreparedLiveTopology } from "./prepared-live-topology";
+import { StudioSnapshotPreviewCard } from "./studio-evidence";
+import { buildSmartSnapshotPlan } from "./studio-smart-snapshot";
 import { useStudioSession } from "./use-studio-session";
 
 export function StudioControls({ sessionId }: { sessionId: string }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const {
     state,
     services,
@@ -348,30 +350,42 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
             waiting ||
             (data.snapshots?.length ?? 0) >= 8
           }
-          onClick={() =>
+          onClick={() => {
+            const plan = buildSmartSnapshotPlan(data, {
+              locale: locale === "en" ? "en" : "vi",
+              selectedService: service || null,
+            });
             void captureSnapshot(
               workspace.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ?? null,
-            )
-          }
+              {
+                smartOverlay: {
+                  badge: plan.badge,
+                  accentColor: plan.accentColor,
+                  focusSummary: plan.focusSummary,
+                  focusServices: plan.focusServices,
+                  stats: plan.stats,
+                  autoCheckSummary: plan.autoCheckSummary,
+                  autoFocus: true,
+                  includeStats: true,
+                },
+              },
+            );
+          }}
         >
           {t("Capture evidence snapshot")}
         </Button>
-        {data.snapshots?.map((snapshot) => (
-          <div key={snapshot.id} className="rounded border p-2 text-sm">
-            <p>
-              {new Date(snapshot.capturedAt).toLocaleString()} · {snapshot.explanation}
-            </p>
-            <p className="break-all font-mono">{snapshot.digest}</p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void downloadSnapshot(snapshot.id)}
-            >
-              {t("Download evidence")}
-            </Button>
-          </div>
-        ))}
+        <div className="grid gap-3 md:grid-cols-2">
+          {data.snapshots?.map((snapshot, idx) => (
+            <StudioSnapshotPreviewCard
+              key={snapshot.id}
+              sessionId={sessionId}
+              snapshot={snapshot}
+              index={idx}
+              isLight
+              onDownloadEvidence={(id) => void downloadSnapshot(id)}
+            />
+          ))}
+        </div>
       </section>
     </section>
   );

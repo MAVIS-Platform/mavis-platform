@@ -21,7 +21,7 @@ public class SubmissionResponseDTO {
         summary.remove("receipt");
         for(var snapshot:summary.path("snapshots"))
             if(snapshot instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
-                object.remove(java.util.List.of("telemetry","actions","imageData"));
+                object.remove(java.util.List.of("telemetry","actions","imageData","videoData"));
         return summary;
     }
 

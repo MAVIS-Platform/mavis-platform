@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, FileText } from "lucide-react";
+import { Camera, CheckCircle2, FileText, Lock, PlayCircle, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -11,7 +11,10 @@ import { formatTenScaleScore } from "@/lib/format/course-display";
 import { DetailPanel } from "@/components/shared/data";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { Badge } from "@/components/ui/badge";
+import type { Response } from "@/lib/api/contracts";
 import type { StudentLabLatestReview } from "@/features/workspaces/course-access";
+import { StudioSnapshotPreviewCard } from "@/features/runtime/studio-evidence";
+import { buildSmartSnapshotPlan } from "@/features/runtime/studio-smart-snapshot";
 
 export function labSubmissionDraftKey(
   userId: string | null | undefined,
@@ -21,76 +24,21 @@ export function labSubmissionDraftKey(
   return `mavis:lab-v2-draft:${userId || "anon"}:${workspaceId}:${assignmentId}`;
 }
 
-type LabRubricProfile = {
-  items: [string, string, string];
-  c2Target: string;
-  c3Target: string;
-};
+type StudioStateData = Response<"studioState">;
 
-function resolveLabRubricProfile(
-  labOrder?: number | null,
-  labTitle?: string,
-): LabRubricProfile {
-  const lower = (labTitle ?? "").toLowerCase();
-  if (labOrder === 1 || lower.includes("ddd") || lower.includes("static view")) {
-    return {
-      items: [
-        "Bounded Context Isolation",
-        "Database-per-Service Boundary",
-        "Immutable DTO / Port Contract",
-      ],
-      c2Target: "order-service",
-      c3Target: "InventoryClientPort",
-    };
-  }
-  if (labOrder === 2 || lower.includes("gateway") || lower.includes("outbox") || lower.includes("saga")) {
-    return {
-      items: [
-        "API Gateway Route & Auth Boundary",
-        "Resilient Sync Fallback / Timeout",
-        "Transactional Outbox + X-Idempotency-Key",
-      ],
-      c2Target: "api-gateway",
-      c3Target: "OutboxEventPublisher",
-    };
-  }
-  if (labOrder === 3 || lower.includes("bfs") || lower.includes("blast radius") || lower.includes("cqrs")) {
-    return {
-      items: [
-        "Cycle-Safe Reverse BFS Trace",
-        "Visited-Set Loop Prevention",
-        "Async Event / Bulkhead Decoupling",
-      ],
-      c2Target: "payment-service",
-      c3Target: "DomainEventBroker",
-    };
-  }
-  if (labOrder === 5 || lower.includes("telemetry") || lower.includes("production") || lower.includes("fruit") || lower.includes("c#")) {
-    return {
-      items: [
-        "OpenTelemetry Traceparent Continuity",
-        "Health Probes (/health/ready & /live)",
-        "Bounded Context & Idempotent Settlement",
-      ],
-      c2Target: "fruit-payment-service",
-      c3Target: "TraceContextPropagator",
-    };
-  }
-  return {
-    items: [
-      "Circuit Breaker + Fallback",
-      "Database-per-Service Isolation",
-      "Scale & p95 Latency Recovery",
-    ],
-    c2Target: "order-service",
-    c3Target: "ResiliencePolicyPort",
-  };
-}
+type SnapshotPreviewItem = {
+  id: string;
+  sessionId?: string | undefined;
+  capturedAt?: string | undefined;
+  explanation?: string | undefined;
+  digest?: string | undefined;
+  hasVideo?: boolean | undefined;
+};
 
 export function LabSubmissionV2({
   workspaceId,
   assignmentId,
-  labOrder,
+  labOrder: _labOrder,
   labTitle,
   labMode,
   runtimeSessionId,
@@ -101,6 +49,8 @@ export function LabSubmissionV2({
   initialReview,
   hasReferenceArch = true,
   essayPrompt,
+  studioInstructions,
+  studioSessionData,
   capturedSnapshots = [],
   quizSummary: _quizSummary,
   nextModuleHref: _nextModuleHref,
@@ -128,13 +78,9 @@ export function LabSubmissionV2({
   initialReview?: StudentLabLatestReview | null | undefined;
   hasReferenceArch?: boolean | undefined;
   essayPrompt?: string | undefined;
-  capturedSnapshots?:
-    | Array<{
-        id: string;
-        capturedAt?: string;
-        explanation?: string;
-      }>
-    | undefined;
+  studioInstructions?: string | undefined;
+  studioSessionData?: StudioStateData | undefined;
+  capturedSnapshots?: SnapshotPreviewItem[] | undefined;
   quizSummary?:
     | {
         passed: boolean;
@@ -150,11 +96,7 @@ export function LabSubmissionV2({
     | ((reason: "submission-explanation" | "submission-runtime" | "submission-failed") => void)
     | undefined;
 }) {
-  const { t } = useLocale();
-  const rubricProfile = useMemo(
-    () => resolveLabRubricProfile(labOrder, labTitle),
-    [labOrder, labTitle],
-  );
+  const { locale, t } = useLocale();
   const cache = useQueryClient();
   const session = useSession();
   const userId = session.data?.user?.id;
@@ -172,6 +114,7 @@ export function LabSubmissionV2({
       setAnswer("");
     }
   }, [draftKey]);
+
   const studio = labMode === "THEORY_QUIZ_STUDIO";
   const showArchRubric = studio || hasReferenceArch;
   const mine = useMemo(
@@ -210,66 +153,190 @@ export function LabSubmissionV2({
     latest?.submissionNotes?.trim() ||
     "";
 
+  // Exercise info summary (strictly objective facts — no auto-grading score shown to students).
+  const smartPlan = useMemo(
+    () =>
+      studioSessionData
+        ? buildSmartSnapshotPlan(studioSessionData, {
+            locale: locale === "en" ? "en" : "vi",
+            includeAutoCheck: false,
+          })
+        : null,
+    [studioSessionData, locale],
+  );
+  const confirmedActions = useMemo(
+    () => (studioSessionData?.actions ?? []).filter((a) => a.status === "CONFIRMED"),
+    [studioSessionData?.actions],
+  );
+  const lockedPrediction = studioSessionData?.prediction?.predictedServices ?? [];
+  const effectiveDescription = studioInstructions?.trim() || essayPrompt?.trim() || "";
+
+  const studioPracticeSummary = studio && (effectiveDescription || smartPlan || confirmedActions.length > 0) && (
+    <div className="space-y-2.5 rounded-xl border bg-muted/20 p-3.5 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            <Target className="size-4 text-primary" aria-hidden="true" />
+            {labTitle || t("Lab Practice Info", "Thông tin bài thực hành Lab")}
+          </span>
+          {smartPlan && (
+            <span
+              className="rounded-md px-2 py-0.5 font-mono text-[10px] font-bold text-slate-950"
+              style={{ backgroundColor: smartPlan.accentColor }}
+            >
+              {smartPlan.badge}
+            </span>
+          )}
+        </div>
+        {runtimeEvidenceHref && (!latest || revising) && (
+          <Button asChild size="sm" variant="outline" className="h-7 px-2.5 text-[11px]">
+            <Link href={runtimeEvidenceHref}>
+              <Camera className="mr-1 size-3" aria-hidden="true" />
+              {t("Open Studio to add media", "Mở lại Studio để bổ sung ảnh/video")}
+            </Link>
+          </Button>
+        )}
+      </div>
+
+      {effectiveDescription && (
+        <div className="space-y-1 rounded-lg border bg-background/90 p-3">
+          <p className="text-[11px] font-semibold text-muted-foreground">
+            {t("Exercise description", "Mô tả đề bài thực hành")}
+          </p>
+          <MarkdownPreview markdown={effectiveDescription} />
+        </div>
+      )}
+
+      {(confirmedActions.length > 0 || lockedPrediction.length > 0) && (
+        <div className="flex flex-wrap gap-3 pt-0.5">
+          {confirmedActions.length > 0 && (
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+                <PlayCircle className="size-3.5" aria-hidden="true" />
+                {t("Actions executed", "Thao tác đã thực hiện")}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {confirmedActions.map((act) => (
+                  <span
+                    key={act.actionId}
+                    className="rounded-md border bg-background px-2 py-0.5 font-mono text-[11px] font-medium text-foreground"
+                  >
+                    {act.action} {act.service}
+                    {act.replicas ? ` ×${act.replicas}` : ""}
+                    {act.cpuPercent ? ` (${act.cpuPercent}%)` : ""}
+                    {act.targetRps ? ` (${act.targetRps} RPS)` : ""}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {lockedPrediction.length > 0 && (
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+                <Lock className="size-3" aria-hidden="true" />
+                {t("Locked prediction", "Dự đoán đã khóa")}
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {lockedPrediction.map((svc) => (
+                  <span
+                    key={svc}
+                    className="rounded-md border border-indigo-300/60 bg-indigo-500/10 px-2 py-0.5 font-mono text-[11px] font-medium text-indigo-800 dark:text-indigo-200"
+                  >
+                    {svc}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const visualMediaGallery = capturedSnapshots.length > 0 && (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <Camera className="size-4 text-primary" aria-hidden="true" />
+          {t(
+            `Captured Snapshots & Videos (${capturedSnapshots.length})`,
+            `Ảnh Snapshot & Video thực hành (${capturedSnapshots.length})`,
+          )}
+        </p>
+        <span className="text-xs text-muted-foreground">
+          {t(
+            "Click any snapshot to zoom full screen",
+            "Nhấn vào ảnh để phóng to kiểm tra trước khi nộp",
+          )}
+        </span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {capturedSnapshots.map((snap, index) => (
+          <StudioSnapshotPreviewCard
+            key={snap.id}
+            sessionId={snap.sessionId || runtimeSessionId || ""}
+            snapshot={{
+              id: snap.id,
+              capturedAt: snap.capturedAt || new Date().toISOString(),
+              explanation: snap.explanation || "",
+              ...(snap.digest ? { digest: snap.digest } : {}),
+              ...(snap.hasVideo ? { hasVideo: true } : {}),
+            }}
+            index={index}
+            isLight
+            exerciseBadge={smartPlan?.badge}
+            accentColor={smartPlan?.accentColor}
+            missionGoal={effectiveDescription || undefined}
+            exerciseStats={smartPlan?.stats}
+          />
+        ))}
+      </div>
+    </div>
+  );
+
   if (latest && !revising) {
     return (
       <div id="lab-submit">
-        <DetailPanel title={t("3. Essay Assignment & Submission", "3. Bài tập tự luận & Nộp bài")}>
-          <div className="space-y-3 rounded-xl border border-emerald-300/70 bg-emerald-500/5 p-4 text-sm">
+        <DetailPanel
+          title={t("Review & Lab Submission", "Xem lại & Xác nhận nộp bài Lab")}
+        >
+          <div className="space-y-4 rounded-xl border border-emerald-300/70 bg-emerald-500/5 p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
                 <CheckCircle2 className="size-4" aria-hidden="true" />
-                {t("Submitted", "Đã nộp")}
+                {t("Submitted", "Đã nộp bài")}
                 {latest.submittedAt ? ` · ${new Date(latest.submittedAt).toLocaleString()}` : ""}
               </p>
               {(!activeReview ||
                 activeReview.status === "PENDING" ||
                 activeReview.status === "DRAFT") && (
                 <Badge variant="secondary">
-                  {t("Pending Lecturer Review", "Đang chờ Giảng viên chấm")}
+                  {t("Waiting for Lecturer grading", "Đang chờ Giảng viên chấm điểm")}
                 </Badge>
               )}
             </div>
-            {essayPrompt?.trim() && (
+
+            {studioPracticeSummary}
+            {visualMediaGallery}
+
+            {!studio && essayPrompt?.trim() && (
               <div className="space-y-1.5 rounded-md border bg-background p-3 text-xs">
                 <p className="font-semibold text-muted-foreground">
-                  {t("Essay prompt", "Đề bài tự luận")}
+                  {t("Assignment prompt", "Đề bài")}
                 </p>
                 <MarkdownPreview markdown={essayPrompt} />
               </div>
             )}
+
             {submittedAnswer && (
               <div className="space-y-1.5 rounded-md border bg-background/95 p-3 text-xs">
                 <p className="font-semibold text-muted-foreground">
-                  {t("Your submitted essay", "Nội dung bài tự luận đã nộp")}
+                  {t("Your submitted description & explanation", "Mô tả & giải thích bài làm đã nộp")}
                 </p>
                 <p className="whitespace-pre-wrap leading-5 text-foreground">{submittedAnswer}</p>
               </div>
             )}
-            {capturedSnapshots.length > 0 && (
-              <div className="space-y-1.5 rounded-md border bg-background/95 p-3 text-xs">
-                <p className="font-semibold text-muted-foreground">
-                  {t(
-                    `Attached practice snapshots (${capturedSnapshots.length})`,
-                    `Ảnh chụp thực hành đính kèm (${capturedSnapshots.length})`,
-                  )}
-                </p>
-                <ul className="space-y-1.5">
-                  {capturedSnapshots.map((snap, index) => (
-                    <li key={snap.id} className="rounded border bg-muted/20 px-2.5 py-1.5">
-                      <span className="font-medium text-foreground">
-                        #{index + 1}
-                        {snap.capturedAt ? ` · ${new Date(snap.capturedAt).toLocaleString()}` : ""}
-                      </span>
-                      {snap.explanation?.trim() ? (
-                        <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">
-                          {snap.explanation}
-                        </p>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+
             {activeReview &&
               activeReview.status !== "PENDING" &&
               activeReview.status !== "DRAFT" && (
@@ -277,8 +344,8 @@ export function LabSubmissionV2({
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={activeReview.status === "RETURNED" ? "warning" : "success"}>
                       {activeReview.status === "RETURNED"
-                        ? t("Returned for revision", "Trả lại để sửa")
-                        : t("Published result", "Kết quả đã công bố")}
+                        ? t("Returned for revision", "Cần chỉnh sửa & nộp lại")
+                        : t("Graded by Lecturer", "Giảng viên đã chấm điểm")}
                     </Badge>
                     {activeReview.score !== null && (
                       <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-900">
@@ -294,6 +361,7 @@ export function LabSubmissionV2({
                   )}
                 </div>
               )}
+
             {activeReview?.labOutcome !== "PASSED" && (
               <div className="flex justify-end pt-1">
                 <Button
@@ -310,13 +378,15 @@ export function LabSubmissionV2({
                         setAnswer(prior);
                         try {
                           window.localStorage.setItem(draftKey, prior);
-                        } catch {}
+                        } catch {
+                          // Ignore storage quota / private-mode restrictions
+                        }
                       }
                     }
                     setRevising(true);
                   }}
                 >
-                  {t("Revise and resubmit", "Sửa và nộp lại")}
+                  {t("Revise and resubmit", "Chỉnh sửa và nộp lại")}
                 </Button>
               </div>
             )}
@@ -328,25 +398,25 @@ export function LabSubmissionV2({
 
   return (
     <div id="lab-submit">
-      <DetailPanel title={t("3. Essay Assignment & Submission", "3. Bài tập tự luận & Nộp bài")}>
-        <div className="space-y-3">
-          {essayPrompt?.trim() ? (
-            <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3.5 text-sm">
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-                <FileText className="size-3.5 shrink-0" aria-hidden="true" />
-                {t("Essay prompt", "Đề bài tự luận")}
-              </p>
-              <MarkdownPreview markdown={essayPrompt} />
-            </div>
-          ) : (
-            <p className="flex items-start gap-2 text-sm text-muted-foreground">
-              <FileText className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              {studio
-                ? t(
-                    "Summarize what you observed in MAVIS Studio and connect it to the architecture concepts.",
-                    "Tổng hợp những gì bạn quan sát được trong MAVIS Studio và liên hệ với kiến thức kiến trúc phần mềm.",
-                  )
-                : hasReferenceArch
+      <DetailPanel
+        title={t("Review & Confirm Lab Submission", "Xem lại bài thực hành & Xác nhận nộp bài")}
+      >
+        <div className="space-y-4">
+          {studioPracticeSummary}
+
+          {!studio &&
+            (essayPrompt?.trim() ? (
+              <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3.5 text-sm">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                  <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+                  {t("Assignment prompt", "Đề bài")}
+                </p>
+                <MarkdownPreview markdown={essayPrompt} />
+              </div>
+            ) : (
+              <p className="flex items-start gap-2 text-sm text-muted-foreground">
+                <FileText className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                {hasReferenceArch
                   ? t(
                       "Summarize the architecture boundaries and key design trade-offs from the sample repository.",
                       "Tổng hợp cấu trúc kiến trúc và các đánh đổi thiết kế chính từ kho mã nguồn tham chiếu.",
@@ -355,24 +425,30 @@ export function LabSubmissionV2({
                       "Summarize the core concepts from this Module in your own words.",
                       "Tổng hợp các ý chính của Module bằng ngôn ngữ của bạn.",
                     )}
-            </p>
-          )}
-          <ul className="flex flex-wrap gap-1.5 text-xs">
-            {rubricProfile.items.map((promptItem) => (
-              <li
-                key={promptItem}
-                className="rounded-md border border-border/70 bg-muted/40 px-2.5 py-1 text-muted-foreground"
-              >
-                {promptItem}
-              </li>
+              </p>
             ))}
-          </ul>
-          <label className="block space-y-1 text-sm">
-            <span className="font-medium">
-              {t("Your essay response", "Bài làm tự luận của bạn")}
+
+          {visualMediaGallery}
+
+          <label className="block space-y-1.5 text-sm">
+            <span className="font-semibold text-foreground">
+              {studio
+                ? t(
+                    "Lab observation & explanation (sent to Lecturer)",
+                    "Mô tả & giải thích kết quả bài làm (gửi cho Giảng viên chấm)",
+                  )
+                : t("Your response", "Nội dung bài làm của bạn")}
             </span>
             <textarea
-              className="min-h-40 w-full rounded-md border bg-background p-3 text-sm"
+              className="min-h-36 w-full rounded-lg border bg-background p-3 text-sm"
+              placeholder={
+                studio
+                  ? t(
+                      "Explain what happened in your Docker experiment, why affected services behaved that way, and what your screenshots/video show…",
+                      "Mô tả quá trình thực hành trong Studio, nguyên nhân hệ thống phản hồi như vậy và giải thích ảnh chụp / video minh chứng của bạn…",
+                    )
+                  : t("Write your explanation here…", "Nhập nội dung giải thích của bạn tại đây…")
+              }
               value={answer}
               maxLength={20000}
               onChange={(event) => {
@@ -381,38 +457,23 @@ export function LabSubmissionV2({
                 try {
                   if (next) window.localStorage.setItem(draftKey, next);
                   else window.localStorage.removeItem(draftKey);
-                } catch {}
+                } catch {
+                  // Ignore storage quota / private-mode restrictions
+                }
               }}
-              aria-label={t("Module essay response", "Nội dung bài tự luận")}
+              aria-label={t("Module essay response", "Nội dung giải thích bài làm")}
             />
           </label>
-          {capturedSnapshots.length > 0 && (
-            <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3 text-xs">
-              <p className="font-semibold text-muted-foreground">
-                {t(
-                  `Captured snapshots included (${capturedSnapshots.length})`,
-                  `Ảnh chụp thực hành sẽ gửi kèm (${capturedSnapshots.length})`,
-                )}
-              </p>
-              <ul className="space-y-1">
-                {capturedSnapshots.map((snap, index) => (
-                  <li key={snap.id} className="text-muted-foreground">
-                    #{index + 1}
-                    {snap.explanation?.trim() ? `: ${snap.explanation}` : ""}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {studio && runtimeSessionId && (
+
+          {studio && runtimeSessionId && !missingStudioSnapshot && (
             <p
               role="status"
               className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-medium text-emerald-800 dark:text-emerald-200"
             >
               <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />
               {t(
-                "Studio Live session verified — your runtime results will be attached automatically.",
-                "Phiên Studio Live đã hoàn thành — kết quả thực hành sẽ được đính kèm tự động khi nộp.",
+                "Studio Live evidence is ready — your snapshots/video and session log will be submitted for Lecturer grading.",
+                "Minh chứng Studio Live đã sẵn sàng — ảnh chụp/video và thông tin phiên sẽ được gửi thẳng cho Giảng viên chấm điểm.",
               )}
             </p>
           )}
@@ -434,14 +495,14 @@ export function LabSubmissionV2({
             >
               <span>
                 {t(
-                  "Missing requirement: Capture at least one Snapshot with your note in Studio.",
-                  "Cần hoàn thành: Chụp ít nhất 1 ảnh Snapshot kèm ghi chú trong Studio.",
+                  "Missing requirement: Capture at least one Snapshot or record a Video in Studio.",
+                  "Cần hoàn thành: Chụp ít nhất 1 ảnh Snapshot hoặc quay Video trong Studio.",
                 )}
               </span>
               {runtimeEvidenceHref && (
                 <Button asChild size="sm" variant="outline">
                   <Link href={runtimeEvidenceHref}>
-                    {t("Capture Snapshot in Studio", "Mở Studio để chụp Snapshot")}
+                    {t("Capture Snapshot in Studio", "Mở Studio để chụp ảnh / quay video")}
                   </Link>
                 </Button>
               )}
@@ -460,7 +521,11 @@ export function LabSubmissionV2({
               </span>
               {!canSubmit && answer.trim().length === 0 && (
                 <span className="ml-2 text-amber-700 dark:text-amber-300">
-                  · {t("Enter your summary to enable submission", "Nhập nội dung tổng hợp để nộp bài")}
+                  ·{" "}
+                  {t(
+                    "Enter your explanation to confirm submission",
+                    "Nhập phần giải thích để xác nhận nộp bài",
+                  )}
                 </span>
               )}
             </div>
@@ -488,7 +553,7 @@ export function LabSubmissionV2({
                         snapshotId: `lab-analysis-${assignmentId}`,
                         step: "STEP_4",
                         title: labTitle || "Architecture & Studio Analysis",
-                        targetViewOrService: rubricProfile.c2Target,
+                        targetViewOrService: smartPlan?.primaryService || "studio-lab",
                         writtenExplanation: trimmed,
                         capturedAt: nowIso,
                       },
@@ -508,7 +573,9 @@ export function LabSubmissionV2({
                     onSuccess: () => {
                       try {
                         window.localStorage.removeItem(draftKey);
-                      } catch {}
+                      } catch {
+                        // Ignore storage cleanup errors
+                      }
                       setAnswer("");
                       setRevising(false);
                       void cache.invalidateQueries({ queryKey: ["api", "submissions"] });
@@ -528,7 +595,9 @@ export function LabSubmissionV2({
                 );
               }}
             >
-              {submit.isPending ? t("Submitting…", "Đang nộp…") : t("Submit", "Nộp bài")}
+              {submit.isPending
+                ? t("Submitting…", "Đang nộp bài…")
+                : t("Confirm & Submit for Grading", "Xác nhận nộp bài")}
             </Button>
           </div>
         </div>

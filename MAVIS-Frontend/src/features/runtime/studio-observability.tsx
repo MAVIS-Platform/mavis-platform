@@ -32,6 +32,7 @@ import {
   type StudioThreeNode,
 } from "./studio-three-stage";
 import { parseMemoryMiB, summarizeServiceStats } from "./live-sandbox-parity";
+import type { SmartSnapshotOverlay } from "./studio-smart-snapshot";
 
 type Studio = Response<"studioState">;
 
@@ -4065,6 +4066,142 @@ function stampSnapshotWatermark(
   ctx.restore();
 }
 
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function stampSmartSnapshotHud(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  overlay?: SmartSnapshotOverlay,
+): void {
+  if (!overlay) return;
+  const includeStats = overlay.includeStats !== false && overlay.stats.length > 0;
+  const padX = Math.max(12, Math.round(width * 0.014));
+  const topBarH = Math.max(28, Math.min(40, Math.round(height * 0.044)));
+  const statsRowH = includeStats ? Math.max(36, Math.min(48, Math.round(height * 0.056))) : 0;
+  const totalH = topBarH + (includeStats ? statsRowH + 8 : 0);
+
+  ctx.save();
+  // Translucent top header backdrop (compact so the centered 3D architecture stays unobstructed)
+  ctx.fillStyle = "rgba(15, 23, 42, 0.86)";
+  ctx.fillRect(0, 0, width, totalH);
+  ctx.fillStyle = overlay.accentColor || "#0ea5e9";
+  ctx.fillRect(0, 0, width, 3);
+  ctx.fillStyle = "rgba(148, 163, 184, 0.25)";
+  ctx.fillRect(0, totalH - 1, width, 1);
+
+  const badgeFont = Math.max(10, Math.min(13, Math.round(topBarH * 0.35)));
+  const midTopY = topBarH / 2 + 1.5;
+
+  // Exercise badge pill on top-left
+  ctx.font = `700 ${badgeFont}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
+  const badgeText = overlay.badge.toUpperCase();
+  const badgeW = Math.min(width * 0.34, ctx.measureText(badgeText).width + 18);
+  const badgeH = Math.max(18, Math.round(topBarH * 0.62));
+  const badgeY = (topBarH - badgeH) / 2 + 1;
+  ctx.fillStyle = overlay.accentColor || "#0ea5e9";
+  drawRoundedRect(ctx, padX, badgeY, badgeW, badgeH, 6);
+  ctx.fill();
+  ctx.fillStyle = "#0f172a";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(badgeText, padX + 9, midTopY, badgeW - 14);
+
+  // Focus summary beside badge
+  const focusX = padX + badgeW + 10;
+  const focusText =
+    overlay.autoFocus !== false ? overlay.focusSummary : `${overlay.focusSummary} (Wide)`;
+  ctx.font = `600 ${Math.max(10, badgeFont)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.fillStyle = "#e2e8f0";
+  const rightBudget = overlay.autoCheckSummary ? width * 0.32 : padX;
+  const focusMaxW = Math.max(80, width - focusX - rightBudget - 12);
+  ctx.fillText(focusText, focusX, midTopY, focusMaxW);
+
+  // Optional advisory Auto-check pill on top-right
+  if (overlay.autoCheckSummary) {
+    const chkText = overlay.autoCheckSummary.text;
+    ctx.font = `700 ${Math.max(10, badgeFont - 0.5)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    const chkW = Math.min(width * 0.3, ctx.measureText(chkText).width + 18);
+    const chkX = width - padX - chkW;
+    ctx.fillStyle = overlay.autoCheckSummary.passed
+      ? "rgba(16, 185, 129, 0.22)"
+      : "rgba(245, 158, 11, 0.22)";
+    drawRoundedRect(ctx, chkX, badgeY, chkW, badgeH, 6);
+    ctx.fill();
+    ctx.strokeStyle = overlay.autoCheckSummary.passed
+      ? "rgba(52, 211, 153, 0.7)"
+      : "rgba(251, 191, 36, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = overlay.autoCheckSummary.passed ? "#6ee7b7" : "#fde68a";
+    ctx.textAlign = "center";
+    ctx.fillText(chkText, chkX + chkW / 2, midTopY, chkW - 12);
+  }
+
+  // Exercise-specific KPI cards row
+  if (includeStats) {
+    const items = overlay.stats.slice(0, 4);
+    const gap = Math.max(8, Math.round(width * 0.008));
+    const cardW = (width - padX * 2 - gap * (items.length - 1)) / items.length;
+    const cardY = topBarH + 2;
+    const cardH = statsRowH - 2;
+    const lblSize = Math.max(9, Math.min(11, Math.round(cardH * 0.25)));
+    const valSize = Math.max(11, Math.min(14, Math.round(cardH * 0.33)));
+
+    items.forEach((stat, idx) => {
+      const cx = padX + idx * (cardW + gap);
+      ctx.fillStyle = "rgba(30, 41, 59, 0.82)";
+      drawRoundedRect(ctx, cx, cardY, cardW, cardH, 7);
+      ctx.fill();
+      ctx.strokeStyle =
+        stat.tone === "bad"
+          ? "rgba(244, 63, 94, 0.55)"
+          : stat.tone === "warn"
+            ? "rgba(245, 158, 11, 0.55)"
+            : stat.tone === "good"
+              ? "rgba(16, 185, 129, 0.5)"
+              : "rgba(148, 163, 184, 0.28)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.font = `600 ${lblSize}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillText(stat.label.toUpperCase(), cx + 9, cardY + 5, cardW - 16);
+
+      ctx.textBaseline = "bottom";
+      ctx.font = `700 ${valSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+      ctx.fillStyle =
+        stat.tone === "bad"
+          ? "#fda4af"
+          : stat.tone === "warn"
+            ? "#fcd34d"
+            : stat.tone === "good"
+              ? "#6ee7b7"
+              : "#f8fafc";
+      ctx.fillText(stat.value, cx + 9, cardY + cardH - 5, cardW - 16);
+    });
+  }
+  ctx.restore();
+}
+
 function encodeSnapshotCanvas(canvas: HTMLCanvasElement): string {
   // Prefer WebP (quality 0.92) to retain full 1600px sharpness well under the 440 KB cap; fallback to PNG.
   const webp = canvas.toDataURL("image/webp", 0.92);
@@ -4084,7 +4221,12 @@ export async function captureStudioImage(
   svg: SVGSVGElement,
   wholeDiagram = false,
   watermark?: StudioSnapshotWatermark,
+  smartOverlay?: SmartSnapshotOverlay,
 ): Promise<string> {
+  const focusServices =
+    smartOverlay?.autoFocus !== false && (smartOverlay?.focusServices?.length ?? 0) > 0
+      ? smartOverlay?.focusServices
+      : undefined;
   const styles = getComputedStyle(svg);
   const webglCanvas = svg.parentElement?.querySelector<HTMLCanvasElement>(
     "canvas[data-studio-webgl-canvas]",
@@ -4098,24 +4240,35 @@ export async function captureStudioImage(
     webglCanvas.offsetParent !== null &&
     !glCtx?.isContextLost()
   ) {
-    const naturalW = webglCanvas.width;
-    const naturalH = webglCanvas.height;
-    const longest = Math.max(naturalW, naturalH);
     const bgFill =
       styles.backgroundColor && styles.backgroundColor !== "rgba(0, 0, 0, 0)"
         ? styles.backgroundColor
         : "#f3f8ff";
+    const renderResult = (
+      webglCanvas as HTMLCanvasElement & {
+        __mavisRenderNow?: (
+          focus?: readonly string[],
+          options?: { maxAspect?: number; captureWidth?: number; captureHeight?: number },
+        ) => { focusedIds: string[]; restore?: () => void } | void;
+      }
+    ).__mavisRenderNow?.(focusServices, { maxAspect: 1.85, captureWidth: 1440, captureHeight: 860 });
+    const naturalW = webglCanvas.width;
+    const naturalH = webglCanvas.height;
+    const longest = Math.max(naturalW, naturalH);
     // Perform a single GPU->2D readback once, then downscale purely on 2D canvas to avoid WebGL context loss.
     const sourceScale = Math.min(1, SNAPSHOT_MAX_EDGES[0] / longest);
     const sourceCanvas = document.createElement("canvas");
     sourceCanvas.width = Math.max(1, Math.round(naturalW * sourceScale));
     sourceCanvas.height = Math.max(1, Math.round(naturalH * sourceScale));
     const sourceCtx = sourceCanvas.getContext("2d");
-    if (!sourceCtx) throw new Error("Could not render Studio snapshot");
-    sourceCtx.fillStyle = bgFill;
-    sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-    (webglCanvas as HTMLCanvasElement & { __mavisRenderNow?: () => void }).__mavisRenderNow?.();
-    sourceCtx.drawImage(webglCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height);
+    try {
+      if (!sourceCtx) throw new Error("Could not render Studio snapshot");
+      sourceCtx.fillStyle = bgFill;
+      sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+      sourceCtx.drawImage(webglCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height);
+    } finally {
+      renderResult?.restore?.();
+    }
 
     const outCanvas = document.createElement("canvas");
     for (const maxEdge of SNAPSHOT_MAX_EDGES) {
@@ -4127,6 +4280,7 @@ export async function captureStudioImage(
       context.fillStyle = bgFill;
       context.fillRect(0, 0, outCanvas.width, outCanvas.height);
       context.drawImage(sourceCanvas, 0, 0, outCanvas.width, outCanvas.height);
+      stampSmartSnapshotHud(context, outCanvas.width, outCanvas.height, smartOverlay);
       stampSnapshotWatermark(context, outCanvas.width, outCanvas.height, watermark);
       const dataUrl = encodeSnapshotCanvas(outCanvas);
       if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
@@ -4134,7 +4288,9 @@ export async function captureStudioImage(
     throw new Error("Snapshot image too large");
   }
   const url = URL.createObjectURL(
-    new Blob([serializeStudioGraph(svg, wholeDiagram)], { type: "image/svg+xml;charset=utf-8" }),
+    new Blob([serializeStudioGraph(svg, wholeDiagram || Boolean(focusServices), false, focusServices)], {
+      type: "image/svg+xml;charset=utf-8",
+    }),
   );
   try {
     const image = new Image();
@@ -4156,6 +4312,7 @@ export async function captureStudioImage(
       context.fillStyle = styles.backgroundColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      stampSmartSnapshotHud(context, canvas.width, canvas.height, smartOverlay);
       stampSnapshotWatermark(context, canvas.width, canvas.height, watermark);
       const dataUrl = encodeSnapshotCanvas(canvas);
       if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
@@ -4170,6 +4327,7 @@ export function serializeStudioGraph(
   svg: SVGSVGElement,
   wholeDiagram = false,
   preserveMotion = false,
+  focusServices?: readonly string[],
 ): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   const overlayClone = clone.querySelector("[data-studio-svg-overlay]");
@@ -4188,19 +4346,32 @@ export function serializeStudioGraph(
     const scene = svg.querySelector<SVGGElement>("[data-studio-scene]");
     const sceneClone = clone.querySelector<SVGGElement>("[data-studio-scene]");
     if (scene && sceneClone) {
-      const boxes = Array.from(scene.children)
-        .filter((child): child is SVGGraphicsElement =>
-          child instanceof SVGGraphicsElement &&
-          !child.matches("[data-studio-background], [data-studio-link-preview], [data-studio-cut-wire]"),
-        )
+      const focusSet = focusServices && focusServices.length > 0 ? new Set(focusServices) : null;
+      const focusedElements = focusSet
+        ? Array.from(scene.querySelectorAll<SVGGraphicsElement>("[data-studio-node]")).filter((el) =>
+            focusSet.has(el.getAttribute("data-studio-node") ?? ""),
+          )
+        : [];
+      const targetElements =
+        focusedElements.length > 0
+          ? focusedElements
+          : Array.from(scene.children).filter(
+              (child): child is SVGGraphicsElement =>
+                child instanceof SVGGraphicsElement &&
+                !child.matches(
+                  "[data-studio-background], [data-studio-link-preview], [data-studio-cut-wire]",
+                ),
+            );
+      const boxes = targetElements
         .map((child) => child.getBBox())
         .filter((box) => box.width || box.height);
       if (boxes.length) {
-        const padding = 36;
+        const padding = focusedElements.length > 0 ? 96 : 36;
+        const topExtra = focusedElements.length > 0 ? 48 : 0;
         const x = Math.min(...boxes.map((box) => box.x)) - padding;
-        const y = Math.min(...boxes.map((box) => box.y)) - padding;
-        const width = Math.max(...boxes.map((box) => box.x + box.width)) + padding - x;
-        const height = Math.max(...boxes.map((box) => box.y + box.height)) + padding - y;
+        const y = Math.min(...boxes.map((box) => box.y)) - padding - topExtra;
+        const width = Math.max(420, Math.max(...boxes.map((box) => box.x + box.width)) + padding - x);
+        const height = Math.max(280, Math.max(...boxes.map((box) => box.y + box.height)) + padding - y);
         const scale = Math.min(2, 1920 / Math.max(width, height));
         clone.setAttribute("viewBox", `${x} ${y} ${width} ${height}`);
         clone.setAttribute("width", String(Math.ceil(width * scale)));

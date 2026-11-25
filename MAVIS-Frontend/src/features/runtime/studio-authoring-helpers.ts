@@ -528,15 +528,14 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
   if (resolvedType === "CHANGE_IMPACT") {
     const svc = targetAction?.service || "target-service";
     const act = targetAction?.action === "STOP" ? "STOP" : "PAUSE";
-    const f1Pct = Math.round((minImpactF1 ?? 0.7) * 100);
+    void minImpactF1;
     if (isVi) {
       const actLabel = act === "STOP" ? "dừng hẳn (STOP)" : "tạm dừng (PAUSE)";
       const step1 = predictionRequired
         ? `1. Quan sát sơ đồ phụ thuộc 3D, chọn các service gọi ngược vào ${svc} sẽ bị kéo lỗi và bấm Khóa dự đoán.`
         : `1. Quan sát sơ đồ phụ thuộc 3D để nắm các nhánh đang gọi vào ${svc} ở trạng thái bình thường.`;
-      const step3 = predictionRequired
-        ? `3. Chụp snapshot Trước/Sau (Before/After) làm bằng chứng rồi bấm Hoàn thành để hệ thống tự kiểm tra độ chính xác (F1 >= ${f1Pct}%) và nộp bài cho giảng viên chấm.`
-        : `3. Chụp snapshot Trước/Sau (Before/After) làm bằng chứng và giải thích phạm vi ảnh hưởng rồi bấm Hoàn thành.`;
+      const step3 =
+        "3. Chụp snapshot Trước/Sau hoặc quay video làm bằng chứng rồi bấm Kết thúc Studio để nộp bài cho giảng viên chấm.";
       return [
         `Mục tiêu: Kiểm chứng phạm vi lan truyền sự cố khi ${actLabel} service ${svc}.`,
         step1,
@@ -548,9 +547,8 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
     const step1 = predictionRequired
       ? `1. Inspect the 3D dependency graph, select every upstream service affected if ${svc} fails, and lock your prediction.`
       : `1. Inspect the 3D dependency graph to identify callers depending on ${svc} under healthy traffic.`;
-    const step3 = predictionRequired
-      ? `3. Capture Before/After snapshots as evidence and click Finish to run the automated F1 check (>= ${f1Pct}%) and submit for lecturer grading.`
-      : `3. Capture Before/After snapshots as evidence and summarize the observed blast radius before finishing.`;
+    const step3 =
+      "3. Capture Before/After snapshots or record a video as evidence, then click Finish Studio to submit for lecturer grading.";
     return [
       `Goal: Verify the blast radius when ${svc} is ${actVerb}.`,
       step1,

@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { contracts, type Response as ApiResponse } from "@/lib/api/contracts";
 import { captureStudioImage } from "./studio-observability";
+import type { SmartSnapshotOverlay } from "./studio-smart-snapshot";
 
 type StudioAction =
   | "START"
@@ -422,8 +423,17 @@ export function useStudioSession(sessionId: string) {
     }
   }
 
-  async function captureSnapshot(graph: SVGSVGElement | null) {
-    if (!data || !explanation.trim()) return;
+  async function captureSnapshot(
+    graph: SVGSVGElement | null,
+    options?: {
+      smartOverlay?: SmartSnapshotOverlay;
+      explanationOverride?: string;
+      videoData?: string;
+      posterImageData?: string;
+    },
+  ) {
+    const finalExplanation = (options?.explanationOverride ?? explanation).trim();
+    if (!data || !finalExplanation) return;
     setCapturing(true);
     setDownloadError(null);
     const task = (async () => {
@@ -440,15 +450,30 @@ export function useStudioSession(sessionId: string) {
           sessionId,
           capturedAt: new Date().toISOString(),
         };
-        const imageData = graph
-          ? await captureStudioImage(graph, false, watermark).catch(() => undefined)
-          : undefined;
-        await capture.mutateAsync({
+        const imageData =
+          options?.posterImageData ??
+          (graph
+            ? await captureStudioImage(graph, false, watermark, options?.smartOverlay).catch(
+                () => undefined,
+              )
+            : undefined);
+        const created = await capture.mutateAsync({
           sessionId,
-          explanation: explanation.trim(),
+          explanation: finalExplanation,
           ...(imageData ? { imageData } : {}),
+          ...(options?.videoData ? { videoData: options.videoData } : {}),
           observedAt: data.telemetry?.observedAt,
         });
+        const createdId =
+          created && typeof created["id"] === "string" ? (created["id"] as string) : null;
+        if (createdId && (imageData || options?.videoData)) {
+          // Seed immutable snapshot cache so the captured image/video renders immediately in Studio with zero extra round-trip.
+          queryClient.setQueryData(["api", "studioSnapshot", { sessionId, snapshotId: createdId }], {
+            ...created,
+            ...(imageData ? { imageData } : {}),
+            ...(options?.videoData ? { videoData: options.videoData, hasVideo: true } : {}),
+          });
+        }
         setExplanation("");
         await queryClient.invalidateQueries({ queryKey: ["api", "studioState", { sessionId }] });
         void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });

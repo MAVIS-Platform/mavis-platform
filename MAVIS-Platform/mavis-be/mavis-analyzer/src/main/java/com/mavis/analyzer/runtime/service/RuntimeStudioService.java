@@ -68,8 +68,10 @@ public class RuntimeStudioService {
     public record TelemetryRequest(@NotNull UUID sessionId, @NotBlank String resourceProject,
                                    @NotNull JsonNode telemetry) {}
     public record CaptureRequest(@NotBlank @Size(max=4000) String explanation,
-        @Size(max=450000) String imageData, @Size(max=100) String observedAt) {
-        public CaptureRequest(String explanation) {this(explanation,null,null);}
+        @Size(max=450000) String imageData, @Size(max=100) String observedAt,
+        @Size(max=3500000) String videoData) {
+        public CaptureRequest(String explanation) {this(explanation,null,null,null);}
+        public CaptureRequest(String explanation, String imageData, String observedAt) {this(explanation,imageData,observedAt,null);}
     }
     @Transactional(readOnly = true)
     public JsonNode receipt(UUID id) {
@@ -189,6 +191,15 @@ public class RuntimeStudioService {
                 validateSnapshotImage(request.imageData());
                 evidence.put("imageData",request.imageData());
             } catch(IllegalArgumentException invalid) {throw error(ErrorCode.BAD_REQUEST,"Snapshot image must be a bounded PNG or WebP.");}
+        }
+        if (request.videoData() != null && !request.videoData().isBlank()) {
+            try {
+                validateSnapshotVideo(request.videoData());
+                evidence.put("videoData", request.videoData());
+                evidence.put("hasVideo", true);
+            } catch (IllegalArgumentException invalid) {
+                throw error(ErrorCode.BAD_REQUEST, "Recorded Studio video must be a bounded WebM or MP4 clip.");
+            }
         }
         try {
             evidence.put("digest", com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils.computeDigest(evidence));
@@ -650,7 +661,7 @@ public class RuntimeStudioService {
         if (!result.has("finishRequested") || !result.get("finishRequested").isBoolean()) result.put("finishRequested", false);
         if (!result.has("actions") || !result.get("actions").isArray()) result.putArray("actions");
         for(JsonNode snapshot:result.withArray("snapshots"))
-            ((ObjectNode)snapshot).remove(java.util.List.of("telemetry","actions","imageData"));
+            ((ObjectNode)snapshot).remove(java.util.List.of("telemetry","actions","imageData","videoData"));
         String execution = session.getExecutionStatus() == null ? "UNKNOWN" : session.getExecutionStatus();
         boolean terminal = Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT").contains(execution);
         if (terminal)
@@ -1018,6 +1029,28 @@ public class RuntimeStudioService {
             throw new IllegalArgumentException();
         }
         if (width < 1 || height < 1 || width > 2000 || height > 2000) throw new IllegalArgumentException();
+    }
+
+    private static void validateSnapshotVideo(String videoData) {
+        if (videoData.length() > 3_500_000) throw new IllegalArgumentException();
+        int comma = videoData.indexOf(',');
+        if (comma < 0) throw new IllegalArgumentException();
+        String header = videoData.substring(0, comma + 1).toLowerCase(java.util.Locale.ROOT);
+        boolean isWebm = header.startsWith("data:video/webm") && header.endsWith(";base64,");
+        boolean isMp4 = header.startsWith("data:video/mp4") && header.endsWith(";base64,");
+        if (!isWebm && !isMp4) throw new IllegalArgumentException();
+        byte[] bytes = java.util.Base64.getDecoder().decode(videoData.substring(comma + 1));
+        if (bytes.length < 16 || bytes.length > 2_700_000) throw new IllegalArgumentException();
+        if (isWebm) {
+            if ((bytes[0] & 0xFF) != 0x1A || (bytes[1] & 0xFF) != 0x45
+                    || (bytes[2] & 0xFF) != 0xDF || (bytes[3] & 0xFF) != 0xA3) {
+                throw new IllegalArgumentException();
+            }
+        } else {
+            if (bytes[4] != 'f' || bytes[5] != 't' || bytes[6] != 'y' || bytes[7] != 'p') {
+                throw new IllegalArgumentException();
+            }
+        }
     }
 
     private static BusinessException error(ErrorCode code, String message) { return new BusinessException(code, message); }

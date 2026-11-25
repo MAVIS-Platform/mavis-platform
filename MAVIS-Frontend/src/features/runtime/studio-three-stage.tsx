@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type * as THREE from "three";
 import { STUDIO_STYLES, type StudioNodeVisualPalette, type StudioStyleId } from "./studio-styles";
+import { computeFocusCameraFraming } from "./studio-smart-snapshot";
 
 export type StudioThreeNode = {
   id: string;
@@ -2265,11 +2266,6 @@ export function StudioThreeStage({
         renderer.setSize(width, height, false);
 
         const perspCam = new T.PerspectiveCamera(34, width / height, 0.1, 140);
-        // Synchronous on-demand render hook used by captureStudioImage() without preserveDrawingBuffer GPU copy penalty
-        (canvas as HTMLCanvasElement & { __mavisRenderNow?: () => void }).__mavisRenderNow = () => {
-          if (contextLost || renderer.getContext().isContextLost()) return;
-          renderer.render(scene, perspCam);
-        };
 
         const hemi = new T.HemisphereLight(0xffffff, 0xcbd5e1, 1.15);
         scene.add(hemi);
@@ -2349,89 +2345,10 @@ export function StudioThreeStage({
           return !overlaps;
         }
 
-        const animate = (now: number) => {
-          if (cancelled) return;
-          rafId = requestAnimationFrame(animate);
-          const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
-          lastTime = now;
-
-          // Frame-rate independent exponential inertial damping (OrbitControls-grade silky glide)
-          const target = targetCamRef.current;
-          const live = liveCamRef.current;
-          const isWheeling = now < wheelActiveUntilRef.current;
-          const smooth = dragRef.current
-            ? 1 - Math.exp(-dt * 20)
-            : isWheeling
-              ? 1 - Math.exp(-dt * 18)
-              : 1 - Math.exp(-dt * 11);
-          live.yaw += (target.yaw - live.yaw) * smooth;
-          live.pitch += (target.pitch - live.pitch) * smooth;
-          live.zoom += (target.zoom - live.zoom) * smooth;
-          live.panX += (target.panX - live.panX) * smooth;
-          live.panY += (target.panY - live.panY) * smooth;
-
-          const clampedPitch = Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, live.pitch));
-          const deck = deckRigRef.current;
-          const stageSpan = deck ? Math.max(deck.baseW, deck.baseD * 1.15) : 7.5;
-          const baseDist = Math.max(13.0, stageSpan * 1.32);
-          const dist = baseDist / Math.max(0.4, Math.min(2.2, live.zoom));
-          const panScale = 0.0085;
-          const lookX = -live.panX * panScale;
-          const lookZ = -live.panY * panScale;
-          const camX = lookX + dist * Math.cos(clampedPitch) * Math.sin(live.yaw);
-          const camY = 0.32 + dist * Math.sin(clampedPitch);
-          const camZ = lookZ + dist * Math.cos(clampedPitch) * Math.cos(live.yaw);
-
-          perspCam.position.set(camX, camY, camZ);
-          perspCam.lookAt(lookX, 0.32, lookZ);
-          perspCam.updateMatrixWorld();
-
-          // Living 60fps diorama animations (zero per-frame allocations)
-          const tSec = now * 0.001;
-          for (const pkt of packetsRef.current) {
-            const u = (tSec * pkt.speed + pkt.phase) % 1;
-            pkt.curve.getPoint(u, pkt.mesh.position);
-          }
+        function layoutLabelsForCamera(camYaw: number, camPitch: number, camZoom: number) {
           rigDepths.clear();
-          const lpBase = computeNodeLabelPlacement(live.yaw, clampedPitch, live.zoom, 0);
+          const lpBase = computeNodeLabelPlacement(camYaw, camPitch, camZoom, 0);
           for (const rig of nodeRigsRef.current) {
-            if (rig.halo) {
-              const pulse = 1 + Math.sin(tSec * 3.2 + rig.phase) * 0.028;
-              rig.halo.scale.set(pulse, pulse, 1);
-            }
-            for (const rotor of rig.rotors) {
-              if (rotor.axis === "y") rotor.obj.rotation.y += rotor.speed * dt;
-              else if (rotor.axis === "x") rotor.obj.rotation.x += rotor.speed * dt;
-              else rotor.obj.rotation.z += rotor.speed * dt;
-            }
-            for (const hc of rig.hoverCores) {
-              hc.obj.position.y = hc.baseY + Math.sin(tSec * hc.speed + rig.phase) * hc.amp;
-            }
-            for (const pm of rig.pulseMaterials) {
-              pm.mat.emissiveIntensity = Math.max(
-                0.08,
-                pm.baseIntensity + Math.sin(tSec * pm.speed + rig.phase) * pm.amp,
-              );
-            }
-            for (const sc of rig.streamCapsules) {
-              const u = (tSec * sc.speed + sc.phase) % 1;
-              sc.obj.position.x = sc.minX + (sc.maxX - sc.minX) * u;
-            }
-            if (rig.stasisRing) {
-              rig.stasisRing.rotation.z += 0.65 * dt;
-            }
-            for (const sp of rig.smokeParticles) {
-              const u = (tSec * sp.speed + sp.phase) % 1;
-              sp.mesh.position.set(
-                sp.baseX + Math.sin(tSec * 2.0 + sp.phase * 6) * 0.05 * u,
-                sp.baseY + u * sp.maxRise,
-                sp.baseZ + Math.cos(tSec * 1.7 + sp.phase * 6) * 0.05 * u,
-              );
-              const s = 0.65 + u * 0.9;
-              sp.mesh.scale.set(s, s, s);
-              const m = sp.mesh.material as THREE.MeshBasicMaterial;
-              m.opacity = (1 - u) * 0.55;
-            }
             // Distance-compensated billboard sizing keeps foreground & background pills visually uniform.
             scratchVec.set(
               rig.group.position.x + lpBase.x,
@@ -2455,8 +2372,8 @@ export function StudioThreeStage({
             return (rigDepths.get(a) ?? 12) - (rigDepths.get(b) ?? 12);
           });
 
-          const rightX = Math.cos(live.yaw);
-          const rightZ = -Math.sin(live.yaw);
+          const rightX = Math.cos(camYaw);
+          const rightZ = -Math.sin(camYaw);
           const candidates: ReadonlyArray<readonly [number, number]> = [
             [0, 0],
             [0, 0.2],
@@ -2521,6 +2438,194 @@ export function StudioThreeStage({
               }
             }
           }
+        }
+
+        // Synchronous on-demand render hook used by captureStudioImage(), with optional smart exercise auto-focus
+        // and ultrawide aspect normalization (prevents squished ribbon snapshots when the bottom drawer is open).
+        (
+          canvas as HTMLCanvasElement & {
+            __mavisRenderNow?: (
+              focusServices?: readonly string[],
+              options?: { maxAspect?: number; captureWidth?: number; captureHeight?: number },
+            ) => { focusedIds: string[]; restore?: (() => void) | undefined } | void;
+          }
+        ).__mavisRenderNow = (
+          focusServices?: readonly string[],
+          options?: { maxAspect?: number; captureWidth?: number; captureHeight?: number },
+        ) => {
+          if (contextLost || renderer.getContext().isContextLost()) return undefined;
+          const prevW = viewportSizeRef.current.w;
+          const prevH = viewportSizeRef.current.h;
+          const prevAspect = perspCam.aspect;
+          const prevDpr = renderer.getPixelRatio();
+          const maxAspect = options?.maxAspect ?? 1.85;
+          let resizedForCapture = false;
+          if (
+            options?.captureWidth &&
+            options?.captureHeight &&
+            prevW > 0 &&
+            prevH > 0 &&
+            prevW / prevH > maxAspect
+          ) {
+            const capW = options.captureWidth;
+            const capH = options.captureHeight;
+            renderer.setPixelRatio(1);
+            renderer.setSize(capW, capH, false);
+            perspCam.aspect = capW / capH;
+            perspCam.updateProjectionMatrix();
+            resizedForCapture = true;
+          }
+          const restore = resizedForCapture
+            ? () => {
+                if (contextLost || renderer.getContext().isContextLost()) return;
+                renderer.setPixelRatio(prevDpr);
+                renderer.setSize(prevW, prevH, false);
+                perspCam.aspect = prevAspect;
+                perspCam.updateProjectionMatrix();
+                layoutLabelsForCamera(
+                  liveCamRef.current.yaw,
+                  Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, liveCamRef.current.pitch)),
+                  liveCamRef.current.zoom,
+                );
+                renderer.render(scene, perspCam);
+              }
+            : undefined;
+          if (focusServices && focusServices.length > 0 && nodeRigsRef.current.length > 0) {
+            const deck = deckRigRef.current;
+            const stageSpan = deck ? Math.max(deck.baseW, deck.baseD * 1.15) : 7.5;
+            const baseDist = Math.max(13.0, stageSpan * 1.32);
+            const framing = computeFocusCameraFraming(
+              nodeRigsRef.current.map((rig) => ({
+                id: rig.id,
+                x: rig.group.position.x,
+                z: rig.group.position.z,
+              })),
+              focusServices,
+              {
+                aspect: perspCam.aspect,
+                fovDeg: perspCam.fov,
+                currentYaw: liveCamRef.current.yaw,
+                baseDist,
+              },
+            );
+            if (framing) {
+              const fCamX = framing.lookX + framing.dist * Math.cos(framing.pitch) * Math.sin(framing.yaw);
+              const fCamY = 0.32 + framing.dist * Math.sin(framing.pitch);
+              const fCamZ = framing.lookZ + framing.dist * Math.cos(framing.pitch) * Math.cos(framing.yaw);
+              perspCam.position.set(fCamX, fCamY, fCamZ);
+              perspCam.lookAt(framing.lookX, 0.32, framing.lookZ);
+              perspCam.updateMatrixWorld();
+              layoutLabelsForCamera(framing.yaw, framing.pitch, framing.zoom);
+              renderer.render(scene, perspCam);
+
+              // Glide the live viewport to match the smart focused framing so the user sees the focus confirmation.
+              targetCamRef.current = {
+                yaw: framing.yaw,
+                pitch: framing.pitch,
+                zoom: framing.zoom,
+                panX: framing.panX,
+                panY: framing.panY,
+              };
+              callbacksRef.current.onCameraChange({ yaw: framing.yaw, pitch: framing.pitch });
+              callbacksRef.current.onZoomChange(framing.zoom);
+              callbacksRef.current.onPanChange({ x: framing.panX, y: framing.panY });
+              return { focusedIds: framing.focusedIds, restore };
+            }
+          }
+          if (resizedForCapture) {
+            layoutLabelsForCamera(
+              liveCamRef.current.yaw,
+              Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, liveCamRef.current.pitch)),
+              liveCamRef.current.zoom,
+            );
+          }
+          renderer.render(scene, perspCam);
+          return restore ? { focusedIds: [], restore } : undefined;
+        };
+
+        const animate = (now: number) => {
+          if (cancelled) return;
+          rafId = requestAnimationFrame(animate);
+          const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+          lastTime = now;
+
+          // Frame-rate independent exponential inertial damping (OrbitControls-grade silky glide)
+          const target = targetCamRef.current;
+          const live = liveCamRef.current;
+          const isWheeling = now < wheelActiveUntilRef.current;
+          const smooth = dragRef.current
+            ? 1 - Math.exp(-dt * 20)
+            : isWheeling
+              ? 1 - Math.exp(-dt * 18)
+              : 1 - Math.exp(-dt * 11);
+          live.yaw += (target.yaw - live.yaw) * smooth;
+          live.pitch += (target.pitch - live.pitch) * smooth;
+          live.zoom += (target.zoom - live.zoom) * smooth;
+          live.panX += (target.panX - live.panX) * smooth;
+          live.panY += (target.panY - live.panY) * smooth;
+
+          const clampedPitch = Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, live.pitch));
+          const deck = deckRigRef.current;
+          const stageSpan = deck ? Math.max(deck.baseW, deck.baseD * 1.15) : 7.5;
+          const baseDist = Math.max(13.0, stageSpan * 1.32);
+          const dist = baseDist / Math.max(0.4, Math.min(2.2, live.zoom));
+          const panScale = 0.0085;
+          const lookX = -live.panX * panScale;
+          const lookZ = -live.panY * panScale;
+          const camX = lookX + dist * Math.cos(clampedPitch) * Math.sin(live.yaw);
+          const camY = 0.32 + dist * Math.sin(clampedPitch);
+          const camZ = lookZ + dist * Math.cos(clampedPitch) * Math.cos(live.yaw);
+
+          perspCam.position.set(camX, camY, camZ);
+          perspCam.lookAt(lookX, 0.32, lookZ);
+          perspCam.updateMatrixWorld();
+
+          // Living 60fps diorama animations (zero per-frame allocations)
+          const tSec = now * 0.001;
+          for (const pkt of packetsRef.current) {
+            const u = (tSec * pkt.speed + pkt.phase) % 1;
+            pkt.curve.getPoint(u, pkt.mesh.position);
+          }
+          for (const rig of nodeRigsRef.current) {
+            if (rig.halo) {
+              const pulse = 1 + Math.sin(tSec * 3.2 + rig.phase) * 0.028;
+              rig.halo.scale.set(pulse, pulse, 1);
+            }
+            for (const rotor of rig.rotors) {
+              if (rotor.axis === "y") rotor.obj.rotation.y += rotor.speed * dt;
+              else if (rotor.axis === "x") rotor.obj.rotation.x += rotor.speed * dt;
+              else rotor.obj.rotation.z += rotor.speed * dt;
+            }
+            for (const hc of rig.hoverCores) {
+              hc.obj.position.y = hc.baseY + Math.sin(tSec * hc.speed + rig.phase) * hc.amp;
+            }
+            for (const pm of rig.pulseMaterials) {
+              pm.mat.emissiveIntensity = Math.max(
+                0.08,
+                pm.baseIntensity + Math.sin(tSec * pm.speed + rig.phase) * pm.amp,
+              );
+            }
+            for (const sc of rig.streamCapsules) {
+              const u = (tSec * sc.speed + sc.phase) % 1;
+              sc.obj.position.x = sc.minX + (sc.maxX - sc.minX) * u;
+            }
+            if (rig.stasisRing) {
+              rig.stasisRing.rotation.z += 0.65 * dt;
+            }
+            for (const sp of rig.smokeParticles) {
+              const u = (tSec * sp.speed + sp.phase) % 1;
+              sp.mesh.position.set(
+                sp.baseX + Math.sin(tSec * 2.0 + sp.phase * 6) * 0.05 * u,
+                sp.baseY + u * sp.maxRise,
+                sp.baseZ + Math.cos(tSec * 1.7 + sp.phase * 6) * 0.05 * u,
+              );
+              const s = 0.65 + u * 0.9;
+              sp.mesh.scale.set(s, s, s);
+              const m = sp.mesh.material as THREE.MeshBasicMaterial;
+              m.opacity = (1 - u) * 0.55;
+            }
+          }
+          layoutLabelsForCamera(live.yaw, clampedPitch, live.zoom);
 
           if (!contextLost && !renderer.getContext().isContextLost()) {
             renderer.render(scene, perspCam);

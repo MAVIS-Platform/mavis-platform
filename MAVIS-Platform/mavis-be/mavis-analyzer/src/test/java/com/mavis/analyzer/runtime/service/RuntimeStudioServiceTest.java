@@ -76,6 +76,25 @@ class RuntimeStudioServiceTest {
         var badWebpEx = assertThrows(BusinessException.class, () -> service.capture(id,
             new RuntimeStudioService.CaptureRequest("Corrupt WebP", invalidWebp, "2026-11-23T00:00:00Z")));
         assertEquals(com.mavis.common.exception.ErrorCode.BAD_REQUEST, badWebpEx.getErrorCode());
+
+        // Valid WebM video clip is accepted, persisted with hasVideo=true, and stripped from lightweight state summary
+        byte[] validWebmBytes = new byte[] {
+            0x1A, 0x45, (byte) 0xDF, (byte) 0xA3, 0x01, 0x00, 0x00, 0x00,
+            0x42, (byte) 0x86, (byte) 0x81, 0x01, 0x42, (byte) 0xF7, (byte) 0x81, 0x01
+        };
+        String validWebm = "data:video/webm;base64," + java.util.Base64.getEncoder().encodeToString(validWebmBytes);
+        var videoCap = service.capture(id,
+            new RuntimeStudioService.CaptureRequest("Recorded 3D clip", validWebp, "2026-11-23T00:00:00Z", validWebm));
+        assertEquals(validWebm, videoCap.path("videoData").asText());
+        assertTrue(videoCap.path("hasVideo").asBoolean());
+        var stateSnap = service.state(id).path("snapshots").get(1);
+        assertTrue(stateSnap.path("videoData").isMissingNode());
+        assertTrue(stateSnap.path("hasVideo").asBoolean());
+
+        String invalidWebm = "data:video/webm;base64," + java.util.Base64.getEncoder().encodeToString("not-a-webm-clip-0123456789".getBytes());
+        var badWebmEx = assertThrows(BusinessException.class, () -> service.capture(id,
+            new RuntimeStudioService.CaptureRequest("Corrupt WebM", null, "2026-11-23T00:00:00Z", invalidWebm)));
+        assertEquals(com.mavis.common.exception.ErrorCode.BAD_REQUEST, badWebmEx.getErrorCode());
     }
 
     @Test void preparedProfileAllowsOnlyDeclaredScaleTargets() throws Exception {

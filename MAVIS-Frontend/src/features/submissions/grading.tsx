@@ -98,30 +98,38 @@ export function GradingPanel({
                 </Badge>
               )}
             </div>
-            {query.data.snapshotGrades && query.data.snapshotGrades.length > 0 && (
-              <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3 text-xs">
-                <p className="font-medium">
-                  {t("Per-snapshot grading results (> 5.0 / 10 required)")}
-                </p>
-                {query.data.snapshotGrades.map((g, idx) => (
-                  <div
-                    key={`${g.snapshotId}-${idx}`}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium">{formatGradeRowTitle(g.title || g.snapshotId, locale)}</p>
-                      {g.comment && <p className="text-muted-foreground">{g.comment}</p>}
+            {query.data.snapshotGrades &&
+              query.data.snapshotGrades.length > 0 &&
+              (new Set(query.data.snapshotGrades.map((g) => g.score)).size > 1 ||
+                query.data.snapshotGrades.some((g) => Boolean(g.comment?.trim()))) && (
+                <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3 text-xs">
+                  <p className="font-medium">
+                    {t("Per-item grading breakdown (> 5.0 / 10 required)", "Chi tiết điểm từng mục (> 5.0 / 10 đạt)")}
+                  </p>
+                  {query.data.snapshotGrades.map((g, idx) => (
+                    <div
+                      key={`${g.snapshotId}-${idx}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {formatGradeRowTitle(g.title || g.snapshotId, locale)}
+                        </p>
+                        {g.comment && <p className="text-muted-foreground">{g.comment}</p>}
+                      </div>
+                      <Badge variant={g.score > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
+                        {g.score.toFixed(2)} / 10
+                      </Badge>
                     </div>
-                    <Badge variant={g.score > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
-                      {g.score.toFixed(2)} / 10
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
             {query.data.status === "PENDING" && (
               <p className="text-sm text-muted-foreground">
-                {t("Awaiting lecturer review. Inline feedback may be available below.")}
+                {t(
+                  "Awaiting lecturer review. Enter a score (0–10) and feedback below.",
+                  "Bài đang chờ chấm. Nhập điểm (0–10) và nhận xét bên dưới.",
+                )}
               </p>
             )}
             {query.data.summary && stripLegacySubmissionNoise(query.data.summary) && (
@@ -253,7 +261,14 @@ export function GradeForm({
   const [snapshotRows, setSnapshotRows] = useState<EditableSnapshotGrade[]>(() =>
     buildInitialSnapshotGrades(review, studentSnapshots),
   );
-  const [bulkScore, setBulkScore] = useState("");
+  const [bulkScore, setBulkScore] = useState(() => {
+    const initialRows = buildInitialSnapshotGrades(review, studentSnapshots);
+    const nonEmpty = initialRows.map((r) => r.score.trim()).filter(Boolean);
+    if (nonEmpty.length === initialRows.length && new Set(nonEmpty).size === 1) {
+      return nonEmpty[0] ?? "";
+    }
+    return review.score === null ? "" : String(Number((review.score / 10).toFixed(2)));
+  });
   const [score, setScore] = useState(() =>
     review.score === null ? "" : String(Number((review.score / 10).toFixed(2))),
   );
@@ -261,11 +276,17 @@ export function GradeForm({
 
   const applyScoreToAllSnapshots = (valueStr: string) => {
     const trimmed = valueStr.trim();
-    if (!trimmed) return;
-    const num = Number(trimmed);
-    if (!/^\d+(\.\d{1,2})?$/.test(trimmed) || !Number.isFinite(num) || num < 0 || num > 10) return;
     setDirty(true);
-    setBulkScore(trimmed);
+    setBulkScore(valueStr);
+    if (!trimmed) {
+      setSnapshotRows((prev) => prev.map((item) => ({ ...item, score: "" })));
+      return;
+    }
+    const num = Number(trimmed);
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed) || !Number.isFinite(num) || num < 0 || num > 10) {
+      setSnapshotRows((prev) => prev.map((item) => ({ ...item, score: trimmed })));
+      return;
+    }
     setSnapshotRows((prev) => prev.map((item) => ({ ...item, score: trimmed })));
   };
 
@@ -371,7 +392,8 @@ export function GradeForm({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {t(
-            "Every required snapshot must score above 5.0 / 10 with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
+            "Score above 5.0 / 10 with feedback to pass and unlock the next Lab; 5.0 or lower marks NEEDS REVISION.",
+            "Chấm điểm > 5.0 / 10 kèm nhận xét để ĐẠT và mở khóa Lab kế tiếp; ≤ 5.0 sẽ đánh dấu CẦN SỬA LẠI.",
           )}
         </p>
         {!guidedLab && (
@@ -397,146 +419,122 @@ export function GradeForm({
         </p>
       )}
       {usePerSnapshot ? (
-        <div className="space-y-2.5 rounded-lg border bg-muted/20 p-3">
-          {snapshotRows.length > 1 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-indigo-500/25 bg-indigo-500/5 px-2.5 py-2 text-xs">
-              <span className="font-medium text-foreground">
-                {t(
-                  `Quick score (apply to all ${snapshotRows.length} snapshots):`,
-                  `Chấm nhanh (áp cho cả ${snapshotRows.length} snapshot):`,
-                )}
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {["9.5", "8.5", "7.0", "5.0"].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    className="rounded border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
-                    onClick={() => applyScoreToAllSnapshots(preset)}
-                  >
-                    {preset}/10
-                  </button>
-                ))}
-                <Input
-                  type="number"
-                  min={0}
-                  max={10}
-                  step="0.01"
-                  aria-label={t("Overall score for all snapshots", "Điểm chung cho mọi snapshot")}
-                  placeholder="0–10"
-                  value={bulkScore}
-                  onChange={(e) => setBulkScore(e.target.value)}
-                  className="h-7 w-20 text-xs"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-2 text-[11px]"
-                  disabled={!/^\d+(\.\d{1,2})?$/.test(bulkScore.trim()) || Number(bulkScore) > 10}
-                  onClick={() => applyScoreToAllSnapshots(bulkScore)}
-                >
-                  {t("Apply all", "Áp dụng tất cả")}
-                </Button>
-              </div>
+        <div className="space-y-3">
+          <div className="space-y-2 rounded-xl border bg-muted/20 p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label htmlFor="mavis-simple-score" className="text-xs font-semibold text-foreground">
+                {t("Score (0–10, > 5.0 pass)", "Điểm chấm (thang 0–10, > 5.0 đạt)")}
+              </label>
+              {computedTenScale !== null && (
+                <span className="mavis-tabular text-xs font-semibold text-foreground">
+                  {computedTenScale.toFixed(2)} / 10
+                </span>
+              )}
             </div>
-          )}
-          {snapshotRows.map((row, idx) => {
-            const num = row.score.trim() === "" ? null : Number(row.score);
-            const isValidCell =
-              num !== null &&
-              Number.isFinite(num) &&
-              num >= 0 &&
-              num <= 10 &&
-              /^\d+(\.\d{1,2})?$/.test(row.score.trim());
-            const writtenExplanation = studentSnapshots?.find(
-              (item) => item.snapshotId === row.snapshotId,
-            )?.writtenExplanation;
-            const cleanedExplanation = writtenExplanation
-              ? stripLegacySubmissionNoise(writtenExplanation)
-              : "";
-            const displayTitle = formatGradeRowTitle(row.title, locale);
-            return (
-              <div
-                key={`${row.snapshotId}-${idx}`}
-                className="space-y-2 rounded-md border bg-background p-3"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold">{displayTitle}</span>
-                  {isValidCell && (
-                    <Badge variant={num! > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
-                      {num! > SNAPSHOT_PASS_EXCLUSIVE
-                        ? t("PASS (> 5.0)")
-                        : t("NEEDS REVISION (<= 5.0)")}
-                    </Badge>
-                  )}
-                </div>
-                {cleanedExplanation && (
-                  <p
-                    title={cleanedExplanation}
-                    className="line-clamp-2 whitespace-pre-wrap rounded border bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground"
-                  >
-                    {cleanedExplanation}
-                  </p>
-                )}
-                <div className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={10}
-                    step="0.01"
-                    aria-label={`${t("Score", "Điểm")} — ${row.title}`}
-                    placeholder="0.0 – 10.0"
-                    value={row.score}
-                    onChange={(e) => {
-                      setDirty(true);
-                      setSnapshotRows((prev) =>
-                        prev.map((item, i) =>
-                          i === idx ? { ...item, score: e.target.value } : item,
-                        ),
-                      );
-                    }}
-                  />
-                  <Input
-                    aria-label={`${t("Snapshot comment (optional)")} — ${row.title}`}
-                    placeholder={t("Optional comment", "Nhận xét (tùy chọn)")}
-                    maxLength={2000}
-                    value={row.comment}
-                    onChange={(e) => {
-                      setDirty(true);
-                      setSnapshotRows((prev) =>
-                        prev.map((item, i) =>
-                          i === idx ? { ...item, comment: e.target.value } : item,
-                        ),
-                      );
-                    }}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {["9.5", "8.0", "6.5", "4.0"].map((preset) => (
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                id="mavis-simple-score"
+                type="number"
+                min={0}
+                max={10}
+                step="0.01"
+                aria-label={t("Overall score for all snapshots", "Điểm chấm bài nộp")}
+                placeholder="0.0 – 10.0"
+                value={bulkScore}
+                onChange={(e) => applyScoreToAllSnapshots(e.target.value)}
+                className="w-32 bg-background font-mono text-sm font-semibold"
+              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                {["9.5", "8.5", "7.0", "5.0"].map((preset) => {
+                  const active = bulkScore.trim() === preset;
+                  return (
                     <button
                       key={preset}
                       type="button"
-                      className="rounded border px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={() => {
-                        setDirty(true);
-                        setSnapshotRows((prev) =>
-                          prev.map((item, i) => (i === idx ? { ...item, score: preset } : item)),
-                        );
-                      }}
+                      className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                        active
+                          ? "border-indigo-500 bg-indigo-600 text-white"
+                          : "bg-background text-foreground hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                      }`}
+                      onClick={() => applyScoreToAllSnapshots(preset)}
                     >
-                      {preset}/10
+                      {preset}
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            );
-          })}
-          {computedTenScale !== null && (
-            <p className="text-xs text-muted-foreground">
-              {t("Computed rubric score (0–10)", "Tổng điểm Rubric (thang 0–10)")}:{" "}
-              <strong>{computedTenScale.toFixed(2)} / 10</strong>
-            </p>
+            </div>
+          </div>
+
+          {snapshotRows.length > 1 && (
+            <details className="rounded-lg border bg-muted/10 px-3 py-2 text-xs">
+              <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">
+                {t(
+                  `Optional: grade each item separately (${snapshotRows.length})`,
+                  `Tùy chọn: chấm riêng từng mục (${snapshotRows.length})`,
+                )}
+              </summary>
+              <div className="mt-2.5 space-y-2">
+                {snapshotRows.map((row, idx) => {
+                  const num = row.score.trim() === "" ? null : Number(row.score);
+                  const isValidCell =
+                    num !== null &&
+                    Number.isFinite(num) &&
+                    num >= 0 &&
+                    num <= 10 &&
+                    /^\d+(\.\d{1,2})?$/.test(row.score.trim());
+                  const displayTitle = formatGradeRowTitle(row.title, locale);
+                  return (
+                    <div
+                      key={`${row.snapshotId}-${idx}`}
+                      className="space-y-1.5 rounded-md border bg-background p-2.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-medium">{displayTitle}</span>
+                        {isValidCell && (
+                          <Badge variant={num! > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
+                            {num! > SNAPSHOT_PASS_EXCLUSIVE ? t("PASS", "ĐẠT") : t("REVISE", "SỬA")}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)]">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={10}
+                          step="0.01"
+                          aria-label={`${t("Score", "Điểm")} — ${row.title}`}
+                          placeholder="0.0 – 10.0"
+                          value={row.score}
+                          onChange={(e) => {
+                            setDirty(true);
+                            setSnapshotRows((prev) =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, score: e.target.value } : item,
+                              ),
+                            );
+                          }}
+                        />
+                        <Input
+                          aria-label={`${t("Snapshot comment (optional)")} — ${row.title}`}
+                          placeholder={t("Optional comment", "Nhận xét riêng (tùy chọn)")}
+                          maxLength={2000}
+                          value={row.comment}
+                          onChange={(e) => {
+                            setDirty(true);
+                            setSnapshotRows((prev) =>
+                              prev.map((item, i) =>
+                                i === idx ? { ...item, comment: e.target.value } : item,
+                              ),
+                            );
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
           )}
         </div>
       ) : guidedLab ? null : (
@@ -579,16 +577,16 @@ export function GradeForm({
         <div className="flex flex-wrap gap-1.5">
           {[
             {
-              en: "Good C4 boundaries and accurate 3E evidence.",
-              vi: "Phân tách ranh giới C4 tốt và bằng chứng 3E chính xác.",
+              en: "Accurate analysis and clear Studio evidence.",
+              vi: "Phân tích đúng nguyên nhân và minh chứng Studio rõ ràng.",
             },
             {
-              en: "Needs clearer service separation and container links.",
-              vi: "Cần làm rõ tách biệt giữa các service và liên kết container.",
+              en: "Lab actions and observations meet the requirements.",
+              vi: "Thao tác thực hành và quan sát đạt yêu cầu bài Lab.",
             },
             {
-              en: "Studio Live scale/stop proof incomplete — please re-verify.",
-              vi: "Minh chứng scale/stop trên Studio Live chưa đầy đủ — vui lòng kiểm tra lại.",
+              en: "Evidence is incomplete — please capture clearer proof and resubmit.",
+              vi: "Minh chứng chưa đầy đủ — vui lòng chụp/quay rõ hơn và nộp lại.",
             },
           ].map((item) => {
             const text = t(item.en, item.vi);
@@ -608,10 +606,15 @@ export function GradeForm({
           })}
         </div>
       </div>
-      <FormField label={t("Overall review / changes requested", "Nhận xét tổng thể / yêu cầu chỉnh sửa")}>
+      <FormField label={t("Feedback for student", "Nhận xét & phản hồi cho sinh viên")}>
         {(props) => (
           <Textarea
             {...props}
+            rows={4}
+            placeholder={t(
+              "Write brief feedback on the student's snapshots, video, and explanation...",
+              "Nhập nhận xét ngắn gọn về ảnh chụp, video và phần giải thích của sinh viên...",
+            )}
             value={summary}
             maxLength={10000}
             onChange={(e) => {

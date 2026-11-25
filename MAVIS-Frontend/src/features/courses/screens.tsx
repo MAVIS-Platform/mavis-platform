@@ -2260,230 +2260,16 @@ function StepContent({
       {step === 3 && (
         <div
           className="space-y-4"
-          aria-label={t("Summary and submission", "Tổng hợp và nộp bài")}
+          aria-label={t("Summary and submission", "Xem lại và xác nhận nộp bài")}
         >
-          {!preview && labMode !== "LEGACY" && (
-            <DetailPanel title={t("1. Module Completion Progress", "1. Tiến độ hoàn thành Module")}>
-              <div className="grid gap-3 text-sm md:grid-cols-2">
-                <div className="space-y-1.5">
-                  <RuntimeEvidenceStatus
-                    complete={(moduleTheoryItems?.length ?? 0) > 0 || hasSubmittedLab}
-                    label={t("Module Theory", "Lý thuyết Module")}
-                    detail={
-                      (moduleTheoryItems?.length ?? 0) > 0
-                        ? t(
-                            `${moduleTheoryItems?.length ?? 0} theory lesson(s) included in this Module.`,
-                            `Gồm ${moduleTheoryItems?.length ?? 0} bài lý thuyết trong Module.`,
-                          )
-                        : t("Included in Module syllabus.", "Xem lại bài đọc trong Lộ trình khóa học.")
-                    }
-                  />
-                  {!((moduleTheoryItems?.length ?? 0) > 0 || hasSubmittedLab) && (
-                    <Link
-                      href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}${moduleId ? `&module=${encodeURIComponent(moduleId)}` : ""}`}
-                      className="inline-block text-xs font-medium text-primary hover:underline"
-                    >
-                      {t("Continue →", "Quay lại làm tiếp →")}
-                    </Link>
-                  )}
-                </div>
-                {hasReferenceArch && (
-                  <div className="space-y-1.5">
-                    <RuntimeEvidenceStatus
-                      complete={Boolean(modelId || activeModel)}
-                      label={t(
-                        "Architecture Diagrams (C1–C3 & Dependency Graph)",
-                        "Sơ đồ Kiến trúc (C1–C3 & Dependency Graph)",
-                      )}
-                      detail={t(
-                        "Reference architecture diagrams are ready for review.",
-                        "Sơ đồ kiến trúc tham chiếu đã sẵn sàng để đối chiếu.",
-                      )}
-                    />
-                    {!Boolean(modelId || activeModel) && (
-                      <Link
-                        href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
-                        className="inline-block text-xs font-medium text-primary hover:underline"
-                      >
-                        {t("Continue →", "Quay lại làm tiếp →")}
-                      </Link>
-                    )}
-                  </div>
-                )}
-                {!isTheoryOnlyLab && (
-                  <div className="space-y-1.5">
-                    <RuntimeEvidenceStatus
-                      complete={studentContext?.quiz == null || quizPassed}
-                      label={t("Knowledge Check Quiz", "Bài kiểm tra trắc nghiệm")}
-                      detail={
-                        studentContext?.quiz
-                          ? quizPassed
-                            ? quizCorrectCount != null && quizTotalQuestions
-                              ? t(
-                                  `Passed (${quizCorrectCount}/${quizTotalQuestions} correct · pass ${studentContext.quiz.passPercent ?? 70}%).`,
-                                  `Đã đạt (${quizCorrectCount}/${quizTotalQuestions} câu đúng · chuẩn ${studentContext.quiz.passPercent ?? 70}%).`,
-                                )
-                              : t(
-                                  `Passed (passing score ${studentContext.quiz.passPercent ?? 70}%).`,
-                                  `Đã đạt bài kiểm tra (điểm đạt ${studentContext.quiz.passPercent ?? 70}%).`,
-                                )
-                            : t(
-                                `Pass score: ${studentContext.quiz.passPercent ?? 70}%. Complete Quiz to continue.`,
-                                `Điểm đạt: ${studentContext.quiz.passPercent ?? 70}%. Mở bài Quiz để hoàn thành.`,
-                              )
-                          : t("No Quiz required for this Module.", "Module này không yêu cầu Quiz.")
-                      }
-                    />
-                    {studentContext?.quiz != null && !quizPassed && (
-                      <Link
-                        href={moduleQuizHref}
-                        className="inline-block text-xs font-medium text-primary hover:underline"
-                      >
-                        {t("Continue →", "Quay lại làm tiếp →")}
-                      </Link>
-                    )}
-                  </div>
-                )}
-                {requiresRuntime && (
-                  <div className="space-y-1.5">
-                    <RuntimeEvidenceStatus
-                      complete={
-                        hasSubmittedLab ||
-                        (liveStudioVerified && (runtimeEvidence?.snapshots?.length ?? 0) > 0)
-                      }
-                      label={t("MAVIS Studio Live", "Thực hành MAVIS Studio Live")}
-                      detail={
-                        liveStudioVerified
-                          ? t(
-                              `Completed session · ${runtimeEvidence?.snapshots?.length ?? 0} snapshot(s) saved.`,
-                              `Đã hoàn thành phiên · đã lưu ${runtimeEvidence?.snapshots?.length ?? 0} ảnh chụp Studio.`,
-                            )
-                          : t(
-                              "Run MAVIS Studio Live and capture at least one Snapshot.",
-                              "Mở MAVIS Studio Live và chụp ít nhất 1 ảnh minh họa.",
-                            )
-                      }
-                    />
-                    {!(
-                      hasSubmittedLab ||
-                      (liveStudioVerified && (runtimeEvidence?.snapshots?.length ?? 0) > 0)
-                    ) && (
-                      <Link
-                        href={runtimeEvidenceHref}
-                        className="inline-block text-xs font-medium text-primary hover:underline"
-                      >
-                        {t("Continue →", "Quay lại làm tiếp →")}
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button asChild size="sm" variant="outline">
-                  <Link
-                    href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}${moduleId ? `&module=${encodeURIComponent(moduleId)}` : ""}`}
-                  >
-                    {t("Open Module Theory", "Mở bài Lý thuyết")}
-                  </Link>
-                </Button>
-                {hasReferenceArch && (
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
-                    >
-                      {t("Review Static Diagrams", "Xem lại Sơ đồ tĩnh")}
-                    </Link>
-                  </Button>
-                )}
-                {!isTheoryOnlyLab && (
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={moduleQuizHref}>
-                      {t("Open Quiz", "Mở bài Quiz")}
-                    </Link>
-                  </Button>
-                )}
-                {requiresRuntime && (
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={runtimeEvidenceHref}>
-                      {t("Open MAVIS Studio", "Mở MAVIS Studio")}
-                    </Link>
-                  </Button>
-                )}
-              </div>
-            </DetailPanel>
-          )}
-          {!isTheoryOnlyLab && !preview && labMode !== "LEGACY" && (
-            <DetailPanel title={t("2. Quiz Results", "2. Kết quả bài kiểm tra (Quiz)")}>
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={quizPassed ? "success" : "secondary"}>
-                      {quizPassed
-                        ? t("Passed", "Đã đạt")
-                        : studentContext?.quiz?.latestStatus === "NEEDS_RETRY"
-                          ? t("Needs retry", "Cần làm lại")
-                          : t("Not completed", "Chưa hoàn thành")}
-                    </Badge>
-                    {quizCorrectCount != null && quizTotalQuestions ? (
-                      <span className="text-sm font-semibold tabular-nums text-foreground">
-                        {quizCorrectCount}/{quizTotalQuestions} {t("correct", "câu đúng")} (
-                        {Math.round((quizCorrectCount / quizTotalQuestions) * 100)}%)
-                      </span>
-                    ) : quizPassed ? (
-                      <span className="text-sm font-semibold text-foreground">
-                        {t(
-                          `Passed (minimum ${studentContext?.quiz?.passPercent ?? 70}%)`,
-                          `Đã đạt chuẩn (${studentContext?.quiz?.passPercent ?? 70}%)`,
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">
-                        {t(
-                          `Minimum passing score: ${studentContext?.quiz?.passPercent ?? 70}%`,
-                          `Điểm đạt tối thiểu: ${studentContext?.quiz?.passPercent ?? 70}%`,
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {quizPassed
-                      ? t(
-                          "Your passing Quiz result is saved and recorded with this Module.",
-                          "Kết quả đạt bài trắc nghiệm đã được ghi nhận cho Module này.",
-                        )
-                      : t(
-                          "Complete the Quiz to record your score for this Module.",
-                          "Hoàn thành bài kiểm tra trắc nghiệm để ghi nhận điểm cho Module này.",
-                        )}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={moduleQuizHref}>
-                      {quizPassed
-                        ? t("Review Quiz", "Xem lại bài")
-                        : t("Take Quiz", "Làm bài Quiz")}
-                    </Link>
-                  </Button>
-                  {studentContext?.quiz && (studentContext.quiz.latestSubmittedAt || quizPassed) && (
-                    <Button asChild size="sm" variant="ghost">
-                      <Link href={moduleQuizHref}>
-                        {t("Retake Quiz", "Làm lại bài")}
-                      </Link>
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </DetailPanel>
-          )}
           {requiresRuntime && !liveStudioVerified && !preview ? (
             <DetailPanel
               title={t("Studio practice required", "Hoàn thành phiên thực hành MAVIS Studio")}
             >
               <p className="text-sm leading-6 text-muted-foreground">
                 {t(
-                  "Complete the MAVIS Studio Live session and capture a snapshot before submitting.",
-                  "Hãy hoàn tất phiên thực hành MAVIS Studio Live và chụp ít nhất một ảnh minh họa trước khi nộp bài.",
+                  "Complete the MAVIS Studio Live session and capture a snapshot or video before submitting.",
+                  "Hãy hoàn tất phiên thực hành MAVIS Studio Live và chụp ảnh hoặc quay video minh chứng trước khi nộp bài.",
                 )}
               </p>
               <Button asChild size="sm" variant="outline" className="mt-4">
@@ -2493,32 +2279,32 @@ function StepContent({
               </Button>
             </DetailPanel>
           ) : !preview && labMode !== "LEGACY" ? (
-            <>
-              <LabSubmissionV2
-                workspaceId={workspaceId}
-                assignmentId={labId}
-                labOrder={labOrder}
-                labTitle={labTitle}
-                labMode={labMode}
-                essayPrompt={labInstructions}
-                capturedSnapshots={requiresRuntime ? (runtimeEvidence?.snapshots ?? []) : []}
-                runtimeSessionId={verifiedSessionForSubmit}
-                capturedSnapshotCount={
-                  requiresRuntime ? (runtimeEvidence?.snapshots?.length ?? 0) : undefined
-                }
-                studioStateLoading={requiresRuntime && isStudioEvidenceLoading}
-                runtimeEvidenceHref={requiresRuntime ? runtimeEvidenceHref : undefined}
-                initialSubmission={studentContext?.latestSubmission}
-                initialReview={studentContext?.latestReview}
-                hasReferenceArch={hasReferenceArch}
-                quizSummary={quizSummary}
-                nextModuleHref={nextModuleHref}
-                nextModuleTitle={nextModuleTitle}
-                onRequestHelp={(reason) => openPhaseIssue(reason)}
-              />
-            </>
+            <LabSubmissionV2
+              workspaceId={workspaceId}
+              assignmentId={labId}
+              labOrder={labOrder}
+              labTitle={labTitle}
+              labMode={labMode}
+              essayPrompt={labInstructions}
+              studioInstructions={studentContext?.studioExercise?.instructions ?? undefined}
+              studioSessionData={requiresRuntime ? runtimeEvidence : undefined}
+              capturedSnapshots={requiresRuntime ? (runtimeEvidence?.snapshots ?? []) : []}
+              runtimeSessionId={verifiedSessionForSubmit}
+              capturedSnapshotCount={
+                requiresRuntime ? (runtimeEvidence?.snapshots?.length ?? 0) : undefined
+              }
+              studioStateLoading={requiresRuntime && isStudioEvidenceLoading}
+              runtimeEvidenceHref={requiresRuntime ? runtimeEvidenceHref : undefined}
+              initialSubmission={studentContext?.latestSubmission}
+              initialReview={studentContext?.latestReview}
+              hasReferenceArch={hasReferenceArch}
+              quizSummary={quizSummary}
+              nextModuleHref={nextModuleHref}
+              nextModuleTitle={nextModuleTitle}
+              onRequestHelp={(reason) => openPhaseIssue(reason)}
+            />
           ) : (
-            <DetailPanel title={t("Summary & Submit", "Tổng hợp & Nộp bài")}>
+            <DetailPanel title={t("Review & Submit Lab", "Xem lại & Xác nhận nộp bài")}>
               <p className="text-sm text-muted-foreground">
                 {t(
                   "Preview mode does not create submissions.",

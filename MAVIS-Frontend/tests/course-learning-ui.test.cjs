@@ -541,8 +541,9 @@ test("Evidence & Submit receives the verified Runtime Studio session", () => {
     /const runtimeEvidenceSatisfied = Boolean\(verifiedStudioSession\) \|\| hasSubmitted/,
   );
   assert.match(lab, /Complete the MAVIS Studio Live session and capture a snapshot/);
-  assert.ok(lab.includes("1. Tiến độ hoàn thành Module"));
-  assert.ok(lab.includes("2. Kết quả bài kiểm tra (Quiz)"));
+  assert.ok(!lab.includes("1. Tiến độ hoàn thành Module"));
+  assert.ok(!lab.includes("2. Kết quả bài kiểm tra (Quiz)"));
+  assert.match(lab, /studioSessionData=\{requiresRuntime \? runtimeEvidence : undefined\}/);
   assert.doesNotMatch(lab, /Telemetry & service interactions/);
   assert.doesNotMatch(lab, /Before \/ After studio actions/);
   assert.match(lab, /\(step === 2 \|\| step === 3\)/);
@@ -563,7 +564,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
   assert.ok(composer.includes("(guided && !hasWrittenExplanation)"));
 
   assert.ok(grading.includes("const SNAPSHOT_PASS_EXCLUSIVE = 5.0"));
-  assert.ok(grading.includes("Per-snapshot grading results (> 5.0 / 10 required)"));
+  assert.ok(grading.includes("Per-item grading breakdown (> 5.0 / 10 required)"));
   assert.ok(frozen.includes("Student work & explanation"));
   assert.ok(runtimeScreens.includes('t("Step 2: Test Scenarios")'));
 
@@ -1290,8 +1291,8 @@ test("GradeForm renders student snapshot explanations and preserves dirty draft 
     ),
   );
 
-  assert.ok(html.includes("Theory explanation"));
-  assert.ok(html.includes("Orders route controller delegates cleanly to payment."));
+  assert.ok(html.includes('id="mavis-simple-score"'));
+  assert.ok(html.includes("9.5") && html.includes("8.5") && html.includes("7.0"));
 });
 
 test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isolate classes strictly by workspaceId", () => {
@@ -1558,7 +1559,8 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   const recording = read("src/features/runtime/studio-recording.ts");
   const evidence = read("src/features/runtime/studio-evidence.tsx");
   assert.match(obs, /preserveMotion = false/);
-  assert.match(recording, /serializeStudioGraph\(svg, true, true\)/);
+  assert.match(recording, /canvas\[data-studio-webgl-canvas\]/);
+  assert.match(recording, /video\/webm;codecs=vp8/);
   assert.match(evidence, /aria-label="Step traffic flows"/);
   assert.match(live, /Capture evidence snapshot[\s\S]*Screenshot PNG[\s\S]*Record runtime replay/);
   assert.match(live, /aria-label="Runtime traffic flows"/);
@@ -2419,7 +2421,7 @@ test("Commit #06: Module Summary & Submit fixes stuck studioStateQuery.isPending
   assert.match(screens, /quizSummary=\{quizSummary\}/);
   assert.match(screens, /nextModuleHref=\{nextModuleHref\}/);
   assert.match(access, /latestCorrectCount\?:\s*number \| null/);
-  assert.match(subV2, /t\("Submit", "Nộp bài"\)/);
+  assert.match(subV2, /t\("Confirm & Submit for Grading", "Xác nhận nộp bài"\)/);
   assert.match(subV2, /Revise and resubmit/);
 });
 
@@ -2455,12 +2457,13 @@ test("Sprint 2 #01: learning pages unlock window scroll and use concise Previous
 });
 
 
-test("Sprint 2 #03 Module Submit: structures step=3 into 3 clean sections without telemetry clutter or 0/12 passed quiz fallback", () => {
+test("Sprint 2 #03 Module Submit: streamlines step=3 to Lab review, visual media gallery, and confirmation without redundant Module/Quiz sections", () => {
   const lab = read("src/features/courses/screens.tsx");
   const subV2 = read("src/features/courses/lab-submission-v2.tsx");
-  assert.ok(lab.includes("1. Tiến độ hoàn thành Module"));
-  assert.ok(lab.includes("2. Kết quả bài kiểm tra (Quiz)"));
-  assert.ok(subV2.includes("3. Bài tập tự luận & Nộp bài"));
+  assert.ok(!lab.includes("1. Tiến độ hoàn thành Module"));
+  assert.ok(!lab.includes("2. Kết quả bài kiểm tra (Quiz)"));
+  assert.ok(subV2.includes("Review & Confirm Lab Submission"));
+  assert.ok(subV2.includes("StudioSnapshotPreviewCard"));
   assert.doesNotMatch(lab, /Telemetry & service interactions|Before \/ After studio actions|Verified Studio session/);
   assert.doesNotMatch(subV2, /4\. Kết quả nộp bài/);
 });

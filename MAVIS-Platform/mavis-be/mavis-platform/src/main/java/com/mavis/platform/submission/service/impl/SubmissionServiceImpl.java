@@ -1012,7 +1012,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                             COALESCE(
                               (SELECT jsonb_agg(
                                  CASE WHEN jsonb_typeof(snap) = 'object'
-                                      THEN snap - 'telemetry' - 'actions' - 'imageData'
+                                      THEN snap - 'telemetry' - 'actions' - 'imageData' - 'videoData'
                                       ELSE snap END
                                ) FROM jsonb_array_elements(s.studio_evidence->'snapshots') AS snap),
                               '[]'::jsonb

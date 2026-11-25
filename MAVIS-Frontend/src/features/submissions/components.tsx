@@ -125,48 +125,50 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
   }
 
   return (
-    <DetailPanel title={t("Submitted snapshot", "Bài đã nộp")}>
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge
-          status={t("Submitted", "Bài đã nộp")}
-          preserveCase
-          variant="source"
-        />
-        {isTheoryOnly ? (
-          <StatusBadge
-            status={t("Theory Only", "Chỉ lý thuyết")}
-            preserveCase
-            variant="outline"
-          />
-        ) : submission.labMode ? (
-          <StatusBadge
-            status={formatLabModeLabel(submission.labMode, t)}
-            preserveCase
-            variant="outline"
-          />
-        ) : null}
-        {(submission.runtime?.studioVerified || Boolean(submission.studioEvidence)) && (
-          <StatusBadge
-            status={t("Studio Live Verified", "Đã xác minh Studio Live")}
-            preserveCase
-            variant="success"
-          />
-        )}
-        {studioF1 !== null && (
-          <StatusBadge
-            status={`Impact F1: ${studioF1}%`}
-            preserveCase
-            variant={studioF1 >= 70 ? "success" : "warning"}
-          />
-        )}
-      </div>
-
-      <div className="space-y-1">
-        <p className="text-base font-semibold text-foreground">{labLabel}</p>
-        <p className="text-xs text-muted-foreground">
-          {submission.studentName || submission.studentId} · {t("Submitted", "Đã nộp")}{" "}
-          {formattedSubmittedAt}
-        </p>
+    <DetailPanel title={t("Submission overview", "Thông tin bài nộp")}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge
+              status={t("Submitted", "Bài đã nộp")}
+              preserveCase
+              variant="source"
+            />
+            {isTheoryOnly ? (
+              <StatusBadge
+                status={t("Theory Only", "Chỉ lý thuyết")}
+                preserveCase
+                variant="outline"
+              />
+            ) : submission.labMode ? (
+              <StatusBadge
+                status={formatLabModeLabel(submission.labMode, t)}
+                preserveCase
+                variant="outline"
+              />
+            ) : null}
+            {(submission.runtime?.studioVerified || Boolean(submission.studioEvidence)) && (
+              <StatusBadge
+                status={t("Studio Live Verified", "Đã xác minh Studio Live")}
+                preserveCase
+                variant="success"
+              />
+            )}
+            {studioF1 !== null && (
+              <StatusBadge
+                status={`Impact F1: ${studioF1}%`}
+                preserveCase
+                variant={studioF1 >= 70 ? "success" : "warning"}
+              />
+            )}
+          </div>
+          <p className="text-base font-semibold text-foreground">{labLabel}</p>
+          <p className="text-xs text-muted-foreground">
+            {submission.studentName || submission.studentId} · {t("Submitted", "Đã nộp")}{" "}
+            {formattedSubmittedAt}
+          </p>
+        </div>
+        <SubmissionExport submissionId={submission.id} />
       </div>
 
       <div className="flex flex-wrap gap-2 text-xs">
@@ -195,11 +197,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
               ? t("View verified Studio session", "Xem phiên thực hành Studio")
               : t("View Runtime session", "Xem phiên chạy Runtime")}
           </Link>
-        ) : submission.studioEvidence ? (
-          <span className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-800 dark:text-emerald-300">
-            {t("Verified Studio evidence attached", "Đã đính kèm minh chứng Studio xác minh")}
-          </span>
-        ) : requiresRuntime ? (
+        ) : !submission.studioEvidence && requiresRuntime ? (
           <span className="inline-flex items-center rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-medium text-amber-800 dark:text-amber-300">
             {t("No runtime evidence attached", "Chưa đính kèm minh chứng Runtime")}
           </span>
@@ -211,10 +209,6 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
           {displayNotes}
         </p>
       )}
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <SubmissionExport submissionId={submission.id} />
-      </div>
     </DetailPanel>
   );
 }

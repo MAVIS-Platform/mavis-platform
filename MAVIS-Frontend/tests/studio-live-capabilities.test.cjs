@@ -562,7 +562,8 @@ test("Batch 2: Admin Studio Setup points to /workspaces and grading evidence dis
     path.join(__dirname, "../src/features/submissions/studio-evidence.tsx"),
     "utf8",
   );
-  assert.ok(evidenceSrc.includes("Auto-check (grading hint, not a score)"));
+  assert.ok(evidenceSrc.includes("Automated grading assistant (hint only)"));
+  assert.ok(evidenceSrc.includes("canReview && evidence.success"));
   assert.match(evidenceSrc, /exerciseEvaluation:\s*exerciseEvaluationSchema/);
   assert.match(evidenceSrc, /\{\s*enabled:\s*available\s*\}/);
 });
@@ -1864,7 +1865,8 @@ test("Smart endpoint auto-picker, structured 3-step student instructions, and go
     locale: "vi",
   });
   assert.ok(ciVi.includes("1.") && ciVi.includes("2.") && ciVi.includes("3."));
-  assert.ok(ciVi.includes("payment-service") && ciVi.includes("PAUSE") && ciVi.includes("70%"));
+  assert.ok(ciVi.includes("payment-service") && ciVi.includes("PAUSE"));
+  assert.ok(!ciVi.includes("F1"), "Student instructions must not advertise auto-grading F1 thresholds");
   assert.ok(!ciVi.includes("api-gateway") && !ciVi.includes("order-service"), "Must not spoil prediction answers");
 
   const scaleEn = buildStudentExerciseInstructions({
@@ -2142,7 +2144,7 @@ test("3D SE block polish + authoring & reliability fixes: distance-compensated l
   assert.ok(standalone.includes("stateless.find((s) => /payment|billing/i.test(s))"));
   assert.ok(labStudio.includes('baselineRequest.path !== "/api/gateway/orders"'));
   assert.ok(grading.includes("formatGradeRowTitle"));
-  assert.ok(grading.includes("line-clamp-2"));
+  assert.ok(grading.includes('id="mavis-simple-score"'));
   assert.ok(proxyRoute.includes("canRetrySocketReset"));
 
   // WF-03/WF-04 wording consistency: Studio runtime criteria use Auto-Check (grading hint), never Auto-Grade
@@ -2222,4 +2224,249 @@ test("Studio crisp 3D labels, MSSV snapshot watermark, WebP encoding, and struct
   assert.ok(obs.includes("stampSnapshotWatermark"));
   assert.ok(obs.includes('toDataURL("image/webp", 0.92)'));
   assert.ok(evidence.includes("data:image/webp;base64,"));
+});
+
+test("Smart Snapshot auto-detects exercise type, selects focused services & tailored KPI stats, and computes 3D focus framing", () => {
+  const {
+    buildSmartSnapshotPlan,
+    computeFocusCameraFraming,
+  } = require("../src/features/runtime/studio-smart-snapshot.ts");
+
+  const baseData = {
+    sessionId: "550e8400-e29b-41d4-a716-446655440000",
+    interactive: true,
+    services: ["api-gateway", "order-service", "payment-service", "catalog-service", "inventory-service"],
+    finishRequested: false,
+    executionStatus: "RUNNING",
+    cleanupStatus: "PENDING",
+    actions: [],
+    telemetry: {
+      observedAt: "2026-11-25T23:00:00Z",
+      services: [
+        { service: "api-gateway", replicas: 1, runningReplicas: 1, stats: [{ containerId: "c1", cpu: "4.2%", memory: "96MiB / 256MiB", network: null }], logs: "" },
+        { service: "order-service", replicas: 2, runningReplicas: 2, stats: [{ containerId: "c2", cpu: "22.5%", memory: "128MiB / 256MiB", network: null }], logs: "" },
+        { service: "payment-service", replicas: 1, runningReplicas: 0, stats: [], logs: "" },
+        { service: "catalog-service", replicas: 1, runningReplicas: 1, stats: [{ containerId: "c4", cpu: "3.0%", memory: "80MiB / 256MiB", network: null }], logs: "" },
+        { service: "inventory-service", replicas: 1, runningReplicas: 1, stats: [{ containerId: "c5", cpu: "3.1%", memory: "84MiB / 256MiB", network: null }], logs: "" },
+      ],
+      spans: [],
+      interactions: [
+        { traceId: "t1", fromService: "api-gateway", toService: "order-service", parentSpanId: "p1", childSpanId: "c1" },
+        { traceId: "t1", fromService: "order-service", toService: "payment-service", parentSpanId: "p2", childSpanId: "c2" },
+      ],
+      probe: { rps: 18.4, targetRps: 20, requests: 180, errors: 36, errorRatePercent: 20, p95Ms: 245 },
+      serviceGraph: [
+        { client: "api-gateway", server: "order-service", rps: 18.4, errorsPerSec: 3.6, errorRatePercent: 20, p95Ms: 245 },
+        { client: "order-service", server: "payment-service", rps: 18.4, errorsPerSec: 18.4, errorRatePercent: 100, p95Ms: 120 },
+      ],
+    },
+  };
+
+  // 1. CHANGE_IMPACT: focuses target + observed affected callers; student default hides auto-check F1 spoilers
+  const ciStudentPlan = buildSmartSnapshotPlan(
+    {
+      ...baseData,
+      exerciseCriteria: {
+        exerciseType: "CHANGE_IMPACT",
+        targetChangeAction: { action: "PAUSE", service: "payment-service" },
+        minF1: 0.7,
+      },
+      exerciseEvaluation: {
+        exerciseType: "CHANGE_IMPACT",
+        predictionRequired: true,
+        predictionLocked: true,
+        predictedServices: ["order-service", "api-gateway"],
+        observedAffectedServices: ["order-service", "api-gateway"],
+        impact: { truePositives: ["order-service", "api-gateway"], falsePositives: [], falseNegatives: [], precision: 1, recall: 1, f1Score: 1 },
+        rules: [{ id: "r1", label: "Change Impact F1 >= 70%", metric: "f1", target: "global", operator: ">=", threshold: 0.7, observedValue: 1, passed: true, reason: "OK" }],
+        passedRules: 1,
+        totalRules: 1,
+        evaluated: true,
+        autoScorePercent: 100,
+        passed: true,
+      },
+      actions: [{ actionId: "a1", action: "PAUSE", service: "payment-service", status: "CONFIRMED", result: { metricsBefore: { errorRatePercent: 0, p95LatencyMs: 42 }, metricsAfter: { errorRatePercent: 20, p95LatencyMs: 245 }, replicasBefore: 1, replicasAfter: 0 } }],
+    },
+    { locale: "vi" },
+  );
+  assert.equal(ciStudentPlan.exerciseType, "CHANGE_IMPACT");
+  assert.equal(ciStudentPlan.badge, "PHÂN TÍCH ẢNH HƯỞNG");
+  assert.deepEqual(ciStudentPlan.focusServices, ["payment-service", "order-service", "api-gateway"]);
+  assert.equal(ciStudentPlan.autoCheckSummary, null, "Student snapshot plan must hide auto-check badge");
+  assert.ok(
+    !ciStudentPlan.stats.some((s) => s.value.includes("F1")),
+    "Student snapshot plan must not expose F1 auto-check score",
+  );
+
+  // Lecturer mode explicitly opts in to auto-check summary
+  const ciPlan = buildSmartSnapshotPlan(
+    {
+      ...baseData,
+      exerciseCriteria: {
+        exerciseType: "CHANGE_IMPACT",
+        targetChangeAction: { action: "PAUSE", service: "payment-service" },
+        minF1: 0.7,
+      },
+      exerciseEvaluation: {
+        exerciseType: "CHANGE_IMPACT",
+        predictionRequired: true,
+        predictionLocked: true,
+        predictedServices: ["order-service", "api-gateway"],
+        observedAffectedServices: ["order-service", "api-gateway"],
+        impact: { truePositives: ["order-service", "api-gateway"], falsePositives: [], falseNegatives: [], precision: 1, recall: 1, f1Score: 1 },
+        rules: [{ id: "r1", label: "Change Impact F1 >= 70%", metric: "f1", target: "global", operator: ">=", threshold: 0.7, observedValue: 1, passed: true, reason: "OK" }],
+        passedRules: 1,
+        totalRules: 1,
+        evaluated: true,
+        autoScorePercent: 100,
+        passed: true,
+      },
+      actions: [{ actionId: "a1", action: "PAUSE", service: "payment-service", status: "CONFIRMED", result: { metricsBefore: { errorRatePercent: 0, p95LatencyMs: 42 }, metricsAfter: { errorRatePercent: 20, p95LatencyMs: 245 }, replicasBefore: 1, replicasAfter: 0 } }],
+    },
+    { locale: "vi", includeAutoCheck: true },
+  );
+  assert.ok(ciPlan.stats.some((s) => s.value.includes("F1 100%")));
+  assert.ok(ciPlan.autoCheckSummary?.passed === true);
+
+  // 2. SCALE_UNDER_LOAD: focuses scaled service + upstream caller, includes replica delta & RPS
+  const scalePlan = buildSmartSnapshotPlan(
+    {
+      ...baseData,
+      exerciseCriteria: {
+        exerciseType: "SCALE_UNDER_LOAD",
+        targetChangeAction: { action: "SCALE", service: "order-service", replicas: 2, targetRps: 20 },
+      },
+      actions: [
+        { actionId: "a1", action: "SET_LOAD", service: "order-service", targetRps: 20, status: "CONFIRMED", result: { metricsBefore: { p95LatencyMs: 420, errorRatePercent: 8 }, metricsAfter: { p95LatencyMs: 420, errorRatePercent: 8 } } },
+        { actionId: "a2", action: "SCALE", service: "order-service", replicas: 2, status: "CONFIRMED", result: { replicasBefore: 1, replicasAfter: 2, metricsBefore: { p95LatencyMs: 420 }, metricsAfter: { p95LatencyMs: 95, errorRatePercent: 0 } } },
+      ],
+    },
+    { locale: "vi" },
+  );
+  assert.equal(scalePlan.exerciseType, "SCALE_UNDER_LOAD");
+  assert.deepEqual(scalePlan.focusServices, ["order-service", "api-gateway"]);
+  assert.ok(scalePlan.stats.some((s) => s.value.includes("1 → 2×")));
+  assert.ok(scalePlan.stats.some((s) => s.value.includes("18.4 req/s")));
+
+  // 3. CONFIG_REGRESSION (CPU throttle): focuses throttled service + upstream, shows CPU quota & p95
+  const cpuPlan = buildSmartSnapshotPlan(
+    {
+      ...baseData,
+      exerciseCriteria: {
+        exerciseType: "CONFIG_REGRESSION",
+        targetChangeAction: { action: "THROTTLE_CPU", service: "order-service", cpuPercent: 25 },
+      },
+      actions: [{ actionId: "a1", action: "THROTTLE_CPU", service: "order-service", cpuPercent: 25, status: "CONFIRMED", result: { metricsBefore: { p95LatencyMs: 40 }, metricsAfter: { p95LatencyMs: 510, errorRatePercent: 5 } } }],
+    },
+    { locale: "vi" },
+  );
+  assert.equal(cpuPlan.exerciseType, "CONFIG_REGRESSION");
+  assert.ok(cpuPlan.stats.some((s) => s.value.includes("Quota 25%")));
+
+  // 4. 3D camera framing centers on focused cluster and zooms closer than full baseDist
+  const nodes = [
+    { id: "api-gateway", x: -4.2, z: 0 },
+    { id: "order-service", x: -1.4, z: 0 },
+    { id: "payment-service", x: 1.4, z: -1.6 },
+    { id: "catalog-service", x: 1.4, z: 1.8 },
+    { id: "inventory-service", x: 4.2, z: 1.8 },
+  ];
+  const singleFrame = computeFocusCameraFraming(nodes, ["payment-service"], {
+    aspect: 1.6,
+    fovDeg: 34,
+    currentYaw: 0.6,
+    baseDist: 16,
+  });
+  assert.ok(singleFrame !== null);
+  assert.equal(singleFrame.lookX, 1.4);
+  assert.equal(singleFrame.lookZ, -1.6);
+  assert.ok(singleFrame.dist < 12, `Expected close-up dist < 12, got ${singleFrame.dist}`);
+  assert.deepEqual(singleFrame.focusedIds, ["payment-service"]);
+
+  // Focusing every node of a 5+ service graph returns null to keep normal full overview
+  const fullSkip = computeFocusCameraFraming(nodes, nodes.map((n) => n.id), {
+    aspect: 1.6,
+    fovDeg: 34,
+    currentYaw: 0.6,
+    baseDist: 16,
+  });
+  assert.equal(fullSkip, null);
+
+  // 5. Verify Studio preview card, HUD renderer, and instant image cache wiring
+  const workbench = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const hook = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/use-studio-session.ts"),
+    "utf8",
+  );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  assert.ok(workbench.includes("StudioSnapshotPreviewCard"));
+  assert.ok(workbench.includes("buildSmartSnapshotPlan"));
+  assert.ok(hook.includes('"studioSnapshot"'));
+  assert.ok(obsSrc.includes("stampSmartSnapshotHud"));
+});
+
+test("End-to-end Studio -> Lab Review & Submit -> Simplified Lecturer Grading refactor guards", () => {
+  const exercisePanel = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-exercise-panel.tsx"),
+    "utf8",
+  );
+  const recording = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-recording.ts"),
+    "utf8",
+  );
+  const workbench = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const stage = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const labScreens = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/screens.tsx"),
+    "utf8",
+  );
+  const labSubmit = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/lab-submission-v2.tsx"),
+    "utf8",
+  );
+  const subEvidence = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/studio-evidence.tsx"),
+    "utf8",
+  );
+  const grading = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/grading.tsx"),
+    "utf8",
+  );
+
+  // Pillar 1: Student Studio hides auto-check scores, FP/Missed spoilers, and PASS CRITERIA
+  assert.doesNotMatch(exercisePanel, /PASS CRITERIA|autoScorePercent|\(FP\)|\(Missed\)|F1\s+\$/);
+  assert.match(exercisePanel, /Lock prediction|Khóa dự đoán/);
+
+  // Pillar 2: Real 3D WebGL video recording (single player, no duplicate SVG replay) + aspect normalization
+  assert.match(recording, /canvas\[data-studio-webgl-canvas\]/);
+  assert.match(recording, /video\/webm;codecs=vp8/);
+  assert.match(recording, /blobToDataUrl/);
+  assert.match(workbench, /replayItem\.video && replayItem\.video\.size > 0 \? \([\s\S]*?<StudioVideo/);
+  assert.match(stage, /captureWidth/);
+
+  // Pillar 3: Lab Submit removes Sections 1 & 2 and previews captured images & videos
+  assert.ok(!labScreens.includes("1. Tiến độ hoàn thành Module"));
+  assert.ok(!labScreens.includes("2. Kết quả bài kiểm tra (Quiz)"));
+  assert.match(labSubmit, /StudioSnapshotPreviewCard/);
+  assert.match(labSubmit, /includeAutoCheck:\s*false/);
+
+  // Pillar 4: Lecturer-only automated grading assistant + video/lightbox evidence + simple manual score
+  assert.match(subEvidence, /const canReview = usePermission\("submission:review"\)/);
+  assert.match(subEvidence, /canReview && evidence\.success/);
+  assert.match(subEvidence, /<video/);
+  assert.match(subEvidence, /data:video\/webm/);
+  assert.match(grading, /id="mavis-simple-score"/);
+  assert.match(grading, /<details/);
 });
