@@ -99,6 +99,22 @@ test("Active Lecturer courses lock Overview authoring but keep Grades, Students 
   assert.match(courseBuilder, /status: "ACTIVE"/);
 });
 
+test("Add content uses a modal for Lesson, Quiz and Runtime Practice with event errors", () => {
+  const courseBuilder = read("src/features/courses/course-builder.tsx");
+  assert.match(courseBuilder, /function AddContentDialog/);
+  assert.match(courseBuilder, /Add content to this milestone/);
+  assert.match(courseBuilder, /Practice · Studio Lab/);
+  assert.match(courseBuilder, /C1–C3 Architecture Theory/);
+  assert.match(courseBuilder, /referenceVersions/);
+  assert.match(courseBuilder, /Select Quiz/);
+  assert.match(courseBuilder, /assignment\.requireRuntimeTrace/);
+  assert.match(courseBuilder, /Require a student explanation/);
+  assert.match(courseBuilder, /role="alert"/);
+  assert.match(courseBuilder, /toast\.success/);
+  assert.match(courseBuilder, /toast\.error/);
+  assert.doesNotMatch(courseBuilder, /isDraft && addingItemModule \? \(/);
+});
+
 test("Global Lecturer workspace hides its sidebar and uses a single Course Management heading", () => {
   const shell = read("src/components/app-shell.tsx");
   const workspace = read("src/features/workspaces/screens.tsx");

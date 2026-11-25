@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   BookOpen,
   ChevronDown,
@@ -35,8 +37,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { api } from "@/lib/mainflow-api";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
 import { labTierMeta, resolveLabTier } from "@/features/assignments/requirements";
 
@@ -126,6 +137,39 @@ type AssignmentRow = {
   aiPolicy?: unknown;
 };
 
+type TheoryAssetRow = {
+  id: string;
+  title: string;
+  body: string;
+  source: string;
+  version: number;
+};
+
+type QuizAssetRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  passPercent: number;
+  questions: InlineQuizQuestion[];
+};
+
+type ReferenceVersionRow = {
+  id: string;
+  snapshot: {
+    id: string;
+    name: string;
+    branchName?: string | null;
+    commitSha?: string | null;
+  };
+  model: {
+    id: string;
+    label: string;
+    revision: number;
+    elements: Array<{ id: string; name: string; description: string }>;
+    edges: Array<{ id: string; from: string; to: string; protocol: string }>;
+  };
+};
+
 type InlineQuizQuestion = {
   prompt: string;
   options: string[];
@@ -146,10 +190,20 @@ type ItemDraft = {
   assignmentId: string;
   estimatedMinutes: string;
   required: boolean;
+  lessonKind: "THEORY" | "ARCHITECTURE";
+  theoryAssetId: string;
+  referenceVersionId: string;
+  referenceModelId: string;
+  quizAssetId: string;
+  practiceRequirements: string;
+  explanationRequired: boolean;
+  explanationPrompt: string;
+  explanationMinLength: string;
+  evaluationCriteria: string;
 };
 
 const emptyDraft = (): ItemDraft => ({
-  type: "IMPACT_LAB",
+  type: "THEORY",
   title: "",
   description: "",
   body: "",
@@ -160,6 +214,16 @@ const emptyDraft = (): ItemDraft => ({
   assignmentId: "",
   estimatedMinutes: "",
   required: true,
+  lessonKind: "THEORY",
+  theoryAssetId: "",
+  referenceVersionId: "",
+  referenceModelId: "",
+  quizAssetId: "",
+  practiceRequirements: "",
+  explanationRequired: false,
+  explanationPrompt: "",
+  explanationMinLength: "",
+  evaluationCriteria: "",
 });
 
 function parseRubric(value: string) {
@@ -192,12 +256,40 @@ function rubricText(rubric: unknown) {
 function contentFromDraft(draft: ItemDraft): Record<string, unknown> {
   const mins = Number.parseInt(draft.estimatedMinutes, 10);
   const meta = Number.isFinite(mins) && mins > 0 && mins <= 600 ? { estimatedMinutes: mins } : {};
-  if (draft.type === "THEORY") return { ...meta, body: draft.body.trim() };
+  if (draft.type === "THEORY")
+    return {
+      ...meta,
+      body: draft.body.trim(),
+      theoryAssetId: draft.theoryAssetId,
+      lessonKind: draft.lessonKind,
+      ...(draft.lessonKind === "ARCHITECTURE"
+        ? {
+            referenceVersionId: draft.referenceVersionId,
+            referenceModelId: draft.referenceModelId,
+          }
+        : {}),
+    };
   if (draft.type === "ESSAY")
     return { ...meta, prompt: draft.prompt.trim(), rubric: parseRubric(draft.rubric) };
   if (draft.type === "QUIZ")
-    return { ...meta, passPercent: draft.passPercent, questions: draft.quizQuestions };
-  return meta;
+    return {
+      ...meta,
+      quizAssetId: draft.quizAssetId,
+      passPercent: draft.passPercent,
+      questions: draft.quizQuestions,
+    };
+  return {
+    ...meta,
+    practiceRequirements: draft.practiceRequirements.trim(),
+    explanationRequired: draft.explanationRequired,
+    ...(draft.explanationRequired
+      ? {
+          explanationPrompt: draft.explanationPrompt.trim(),
+          explanationMinLength: Number.parseInt(draft.explanationMinLength, 10) || 0,
+          evaluationCriteria: draft.evaluationCriteria.trim(),
+        }
+      : {}),
+  };
 }
 
 function draftFromItem(item: Item): ItemDraft {
@@ -220,16 +312,41 @@ function draftFromItem(item: Item): ItemDraft {
         ? String(content["estimatedMinutes"])
         : "",
     required: item.required,
+    lessonKind: content["lessonKind"] === "ARCHITECTURE" ? "ARCHITECTURE" : "THEORY",
+    theoryAssetId: typeof content["theoryAssetId"] === "string" ? content["theoryAssetId"] : "",
+    referenceVersionId:
+      typeof content["referenceVersionId"] === "string" ? content["referenceVersionId"] : "",
+    referenceModelId:
+      typeof content["referenceModelId"] === "string" ? content["referenceModelId"] : "",
+    quizAssetId: typeof content["quizAssetId"] === "string" ? content["quizAssetId"] : "",
+    practiceRequirements:
+      typeof content["practiceRequirements"] === "string" ? content["practiceRequirements"] : "",
+    explanationRequired: content["explanationRequired"] === true,
+    explanationPrompt:
+      typeof content["explanationPrompt"] === "string" ? content["explanationPrompt"] : "",
+    explanationMinLength:
+      typeof content["explanationMinLength"] === "number"
+        ? String(content["explanationMinLength"])
+        : "",
+    evaluationCriteria:
+      typeof content["evaluationCriteria"] === "string" ? content["evaluationCriteria"] : "",
   };
 }
 
 function draftValid(draft: ItemDraft) {
   if (!draft.title.trim()) return false;
-  if (draft.type === "THEORY" && !draft.body.trim()) return false;
+  if (
+    draft.type === "THEORY" &&
+    (!draft.body.trim() ||
+      (draft.lessonKind === "THEORY" ? !draft.theoryAssetId : !draft.referenceModelId))
+  ) {
+    return false;
+  }
   if (draft.type === "ESSAY" && !draft.prompt.trim()) return false;
   if (
     draft.type === "QUIZ" &&
-    (draft.quizQuestions.length < 1 ||
+    (!draft.quizAssetId ||
+      draft.quizQuestions.length < 1 ||
       draft.quizQuestions.some(
         (question) =>
           !question.prompt.trim() ||
@@ -243,6 +360,14 @@ function draftValid(draft: ItemDraft) {
   if (
     ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(draft.type) &&
     !draft.assignmentId
+  ) {
+    return false;
+  }
+  if (draft.type === "RUNTIME_LAB" && !draft.practiceRequirements.trim()) return false;
+  if (
+    draft.type === "RUNTIME_LAB" &&
+    draft.explanationRequired &&
+    !draft.explanationPrompt.trim()
   ) {
     return false;
   }
@@ -525,6 +650,357 @@ function ItemFields({
   );
 }
 
+function AddContentDialog({
+  open,
+  onOpenChange,
+  module,
+  draft,
+  onChange,
+  theoryAssets,
+  quizAssets,
+  referenceVersions,
+  assignments,
+  loading,
+  loadError,
+  submitError,
+  saving,
+  onSubmit,
+  t,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  module: Module | null;
+  draft: ItemDraft;
+  onChange: (patch: Partial<ItemDraft>) => void;
+  theoryAssets: TheoryAssetRow[];
+  quizAssets: QuizAssetRow[];
+  referenceVersions: ReferenceVersionRow[];
+  assignments: AssignmentRow[];
+  loading: boolean;
+  loadError: string | null;
+  submitError: string | null;
+  saving: boolean;
+  onSubmit: (event: React.FormEvent) => void;
+  t: (en: string, vi: string) => string;
+}) {
+  const contentKind = draft.type === "THEORY" ? "LESSON" : draft.type === "QUIZ" ? "QUIZ" : "PRACTICE";
+  const studioLabs = assignments.filter((assignment) => assignment.requireRuntimeTrace);
+  const selectedTheory = theoryAssets.find((asset) => asset.id === draft.theoryAssetId);
+  const selectedReference = referenceVersions.find(
+    (version) => version.id === draft.referenceVersionId,
+  );
+  const selectedQuiz = quizAssets.find((asset) => asset.id === draft.quizAssetId);
+  const selectedLab = studioLabs.find((assignment) => assignment.id === draft.assignmentId);
+  const submitLabel =
+    contentKind === "LESSON"
+      ? t("Add Lesson to milestone", "Thêm Lesson vào mốc")
+      : contentKind === "QUIZ"
+        ? t("Add Quiz to milestone", "Thêm Quiz vào mốc")
+        : t("Add Practice to milestone", "Thêm Practice vào mốc");
+
+  const selectKind = (kind: "LESSON" | "QUIZ" | "PRACTICE") => {
+    if (kind === "LESSON") {
+      onChange({ ...emptyDraft(), type: "THEORY" });
+    } else if (kind === "QUIZ") {
+      onChange({ ...emptyDraft(), type: "QUIZ" });
+    } else {
+      onChange({ ...emptyDraft(), type: "RUNTIME_LAB" });
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
+      <DialogContent className="max-w-3xl p-0">
+        <form onSubmit={onSubmit}>
+          <DialogHeader className="border-b px-6 py-5">
+            <DialogTitle>{t("Add content to this milestone", "Thêm nội dung vào mốc")}</DialogTitle>
+            <DialogDescription>
+              {module
+                ? `${t("Module", "Chương")} ${module.position} · ${module.title}`
+                : t("Select content for this Module.", "Chọn nội dung cho Chương này.")}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[70svh] space-y-5 overflow-y-auto px-6 py-5">
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-semibold">{t("Content type", "Loại nội dung")}</legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([
+                  ["LESSON", BookOpen, t("Lesson", "Lesson")],
+                  ["QUIZ", HelpCircle, t("Quiz", "Quiz")],
+                  ["PRACTICE", Play, t("Practice · Studio Lab", "Practice · Studio Lab")],
+                ] as const).map(([kind, Icon, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => selectKind(kind)}
+                    className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-left text-sm font-semibold transition-colors ${
+                      contentKind === kind
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "hover:border-primary/50 hover:bg-muted/40"
+                    }`}
+                  >
+                    <Icon className="size-4" aria-hidden="true" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            {loading && (
+              <div role="status" className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                {t("Loading available content…", "Đang tải nội dung có sẵn…")}
+              </div>
+            )}
+            {loadError && (
+              <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                {loadError}
+              </div>
+            )}
+
+            {contentKind === "LESSON" && (
+              <div className="space-y-4">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([
+                    ["THEORY", t("Theory", "Theory")],
+                    ["ARCHITECTURE", t("C1–C3 Architecture Theory", "Lý thuyết sơ đồ C1–C3")],
+                  ] as const).map(([kind, label]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() =>
+                        onChange({
+                          lessonKind: kind,
+                          theoryAssetId: "",
+                          referenceVersionId: "",
+                          referenceModelId: "",
+                          title: "",
+                          body: "",
+                          description: "",
+                        })
+                      }
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+                        draft.lessonKind === kind ? "border-primary bg-primary/10 text-primary" : ""
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <label className="block space-y-1.5 text-sm font-medium">
+                  <span>
+                    {draft.lessonKind === "ARCHITECTURE"
+                      ? t("Select analyzed Repository version", "Chọn phiên bản Repository đã phân tích")
+                      : t("Select Lesson", "Chọn Lesson")}
+                  </span>
+                  {draft.lessonKind === "ARCHITECTURE" ? (
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2.5"
+                      value={draft.referenceVersionId}
+                      onChange={(event) => {
+                        const version = referenceVersions.find((entry) => entry.id === event.target.value);
+                        const model = version?.model;
+                        const body = model
+                          ? [
+                              `# ${model.label}`,
+                              "",
+                              `## C1–C3 Architecture Model`,
+                              `${model.elements.length} elements · ${model.edges.length} dependencies · Revision ${model.revision}`,
+                              "",
+                              "## Components",
+                              ...model.elements.slice(0, 50).map((element) => `- **${element.name}** — ${element.description || "Architecture element"}`),
+                              "",
+                              "## Dependency Graph",
+                              ...model.edges.slice(0, 80).map((edge) => `- ${edge.from} → ${edge.to}${edge.protocol ? ` (${edge.protocol})` : ""}`),
+                            ].join("\n")
+                          : "";
+                        onChange({
+                          referenceVersionId: event.target.value,
+                          referenceModelId: model?.id ?? "",
+                          theoryAssetId: "",
+                          title: model?.label ?? "",
+                          body,
+                          description: model
+                            ? t(
+                                `C1–C3 architecture and dependency graph · revision ${model.revision}`,
+                                `Kiến trúc C1–C3 và dependency graph · phiên bản ${model.revision}`,
+                              )
+                            : "",
+                        });
+                      }}
+                    >
+                      <option value="">{t("Choose an analyzed version…", "Chọn phiên bản đã phân tích…")}</option>
+                      {referenceVersions.map((version) => (
+                        <option key={version.id} value={version.id}>
+                          {version.model.label} · r{version.model.revision} · {version.snapshot.branchName || version.snapshot.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2.5"
+                      value={draft.theoryAssetId}
+                      onChange={(event) => {
+                        const asset = theoryAssets.find((entry) => entry.id === event.target.value);
+                        onChange({
+                          theoryAssetId: event.target.value,
+                          referenceVersionId: "",
+                          referenceModelId: "",
+                          title: asset?.title ?? "",
+                          body: asset?.body ?? "",
+                          description: asset ? asset.body.replace(/[#*_`>\n]/g, " ").trim().slice(0, 160) : "",
+                        });
+                      }}
+                    >
+                      <option value="">{t("Choose a Lesson…", "Chọn một Lesson…")}</option>
+                      {theoryAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>{asset.title} · v{asset.version}</option>
+                      ))}
+                    </select>
+                  )}
+                </label>
+                {draft.lessonKind === "ARCHITECTURE" && !loading && referenceVersions.length === 0 && (
+                  <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+                    {t(
+                      "No generated C1–C3 theory is available. Analyze a Repository first.",
+                      "Chưa có lý thuyết C1–C3 được sinh. Hãy phân tích Repository trước.",
+                    )}
+                  </p>
+                )}
+                {(selectedTheory || selectedReference) && (
+                  <div className="max-h-48 overflow-y-auto rounded-xl border bg-muted/20 p-4">
+                    <MarkdownPreview markdown={draft.body} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {contentKind === "QUIZ" && (
+              <div className="space-y-4">
+                <label className="block space-y-1.5 text-sm font-medium">
+                  <span>{t("Select Quiz", "Chọn Quiz")}</span>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2.5"
+                    value={draft.quizAssetId}
+                    onChange={(event) => {
+                      const asset = quizAssets.find((entry) => entry.id === event.target.value);
+                      onChange({
+                        quizAssetId: event.target.value,
+                        title: asset?.title ?? "",
+                        description: asset?.description ?? "",
+                        passPercent: asset?.passPercent ?? 70,
+                        quizQuestions: asset?.questions ?? [],
+                      });
+                    }}
+                  >
+                    <option value="">{t("Choose a Quiz…", "Chọn một Quiz…")}</option>
+                    {quizAssets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>{asset.title}</option>
+                    ))}
+                  </select>
+                </label>
+                {selectedQuiz && (
+                  <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
+                    <p className="text-sm"><strong>{t("Questions", "Số câu hỏi")}:</strong> {selectedQuiz.questions.length}</p>
+                    <p className="text-sm"><strong>{t("Pass percentage", "Điểm đạt")}:</strong> {selectedQuiz.passPercent}%</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {contentKind === "PRACTICE" && (
+              <div className="space-y-4">
+                <label className="block space-y-1.5 text-sm font-medium">
+                  <span>{t("Select Studio Lab", "Chọn Studio Lab")}</span>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2.5"
+                    value={draft.assignmentId}
+                    onChange={(event) => {
+                      const lab = studioLabs.find((entry) => entry.id === event.target.value);
+                      onChange({
+                        assignmentId: event.target.value,
+                        title: lab?.title ?? "",
+                        description: lab?.instructions?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 160) ?? "",
+                        practiceRequirements: lab?.instructions ?? "",
+                      });
+                    }}
+                  >
+                    <option value="">{t("Choose a Runtime/Studio Lab…", "Chọn Lab có Runtime/Studio…")}</option>
+                    {studioLabs.map((lab) => <option key={lab.id} value={lab.id}>{lab.title}</option>)}
+                  </select>
+                </label>
+                {!loading && studioLabs.length === 0 && (
+                  <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+                    {t("No Runtime/Studio Lab is ready. Configure Studio Live first.", "Chưa có Lab Runtime/Studio. Hãy cấu hình Studio Live trước.")}
+                  </p>
+                )}
+                {selectedLab && (
+                  <label className="block space-y-1.5 text-sm font-medium">
+                    <span>{t("Assignment requirements", "Yêu cầu đề bài")}</span>
+                    <Textarea rows={4} value={draft.practiceRequirements} onChange={(event) => onChange({ practiceRequirements: event.target.value })} />
+                  </label>
+                )}
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <input type="checkbox" className="size-4 accent-primary" checked={draft.explanationRequired} onChange={(event) => onChange({ explanationRequired: event.target.checked })} />
+                  {t("Require a student explanation", "Yêu cầu sinh viên giải thích thêm")}
+                </label>
+                {draft.explanationRequired && (
+                  <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+                    <label className="block space-y-1 text-sm font-medium">
+                      <span>{t("Explanation prompt", "Câu hỏi giải thích")}</span>
+                      <Textarea rows={3} value={draft.explanationPrompt} onChange={(event) => onChange({ explanationPrompt: event.target.value })} />
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block space-y-1 text-sm font-medium">
+                        <span>{t("Minimum length", "Độ dài tối thiểu")}</span>
+                        <Input type="number" min={0} max={5000} value={draft.explanationMinLength} onChange={(event) => onChange({ explanationMinLength: event.target.value })} />
+                      </label>
+                      <label className="block space-y-1 text-sm font-medium">
+                        <span>{t("Evaluation criteria", "Tiêu chí đánh giá")}</span>
+                        <Input value={draft.evaluationCriteria} onChange={(event) => onChange({ evaluationCriteria: event.target.value })} />
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+              <label className="block space-y-1 text-sm font-medium">
+                <span>{t("Display title", "Tên hiển thị")}</span>
+                <Input required maxLength={255} value={draft.title} onChange={(event) => onChange({ title: event.target.value })} />
+              </label>
+              <label className="block space-y-1 text-sm font-medium">
+                <span>{t("Duration (min)", "Thời lượng (phút)")}</span>
+                <Input type="number" min={5} max={600} step={5} placeholder="45" value={draft.estimatedMinutes} onChange={(event) => onChange({ estimatedMinutes: event.target.value })} />
+              </label>
+            </div>
+            <label className="block space-y-1 text-sm font-medium">
+              <span>{t("Short description", "Mô tả ngắn")}</span>
+              <Input value={draft.description} onChange={(event) => onChange({ description: event.target.value })} />
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" className="size-4 accent-primary" checked={draft.required} onChange={(event) => onChange({ required: event.target.checked })} />
+              {t("Required learning item", "Nội dung học bắt buộc")}
+            </label>
+
+            {submitError && (
+              <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                {submitError}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="border-t px-6 py-4">
+            <Button type="button" variant="ghost" disabled={saving} onClick={() => onOpenChange(false)}>{t("Cancel", "Hủy")}</Button>
+            <Button disabled={saving || loading}>{saving ? t("Adding…", "Đang thêm…") : submitLabel}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function CourseBuilder({
   workspaceId,
   workspaceName,
@@ -565,6 +1041,27 @@ export function CourseBuilder({
 
   const [addingItemModuleId, setAddingItemModuleId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
+  const [addContentError, setAddContentError] = useState<string | null>(null);
+  const referenceVersions = useApiQuery(
+    "referenceVersions",
+    { workspaceId },
+    { enabled: Boolean(workspaceId && addingItemModuleId) },
+  );
+
+  const theoryAssets = useQuery({
+    queryKey: ["api", "theory-assets", workspaceId],
+    queryFn: ({ signal }) =>
+      api<TheoryAssetRow[]>(`workspaces/${workspaceId}/theory-assets`, { signal }),
+    enabled: Boolean(workspaceId && addingItemModuleId),
+    retry: false,
+  });
+  const quizAssets = useQuery({
+    queryKey: ["api", "quiz-assets", workspaceId],
+    queryFn: ({ signal }) =>
+      api<QuizAssetRow[]>(`workspaces/${workspaceId}/quiz-assets`, { signal }),
+    enabled: Boolean(workspaceId && addingItemModuleId),
+    retry: false,
+  });
 
   const [editingItem, setEditingItem] = useState<{
     moduleId: string;
@@ -802,9 +1299,12 @@ export function CourseBuilder({
 
   const openAddItem = (moduleId: string) => {
     clearRightEditors();
+    setDrafts((current) => ({ ...current, [moduleId]: emptyDraft() }));
+    setAddContentError(null);
+    course.addItem.reset();
     setAddingItemModuleId(moduleId);
     setCollapsedModules((prev) => ({ ...prev, [moduleId]: false }));
-    setDrawerOpen(true);
+    setDrawerOpen(false);
   };
 
   const openEditItem = (moduleId: string, item: Item) => {
@@ -862,7 +1362,45 @@ export function CourseBuilder({
   const addItem = (moduleId: string, event: React.FormEvent) => {
     event.preventDefault();
     const draft = draftFor(moduleId);
-    if (!draftValid(draft)) return;
+    setAddContentError(null);
+    if (!draft.title.trim()) {
+      setAddContentError(t("Enter a display title.", "Hãy nhập tên hiển thị."));
+      return;
+    }
+    if (
+      draft.type === "THEORY" &&
+      (draft.lessonKind === "THEORY" ? !draft.theoryAssetId : !draft.referenceModelId)
+    ) {
+      setAddContentError(
+        draft.lessonKind === "ARCHITECTURE"
+          ? t(
+              "Select an analyzed Repository version.",
+              "Hãy chọn phiên bản Repository đã phân tích.",
+            )
+          : t("Select a Lesson from the library.", "Hãy chọn Lesson từ thư viện."),
+      );
+      return;
+    }
+    if (draft.type === "QUIZ" && !draft.quizAssetId) {
+      setAddContentError(t("Select a Quiz from the library.", "Hãy chọn Quiz từ thư viện."));
+      return;
+    }
+    if (draft.type === "RUNTIME_LAB" && !draft.assignmentId) {
+      setAddContentError(t("Select a Runtime/Studio Lab.", "Hãy chọn Lab có Runtime/Studio."));
+      return;
+    }
+    if (draft.type === "RUNTIME_LAB" && !draft.practiceRequirements.trim()) {
+      setAddContentError(t("Enter the Practice requirements.", "Hãy nhập yêu cầu đề bài Practice."));
+      return;
+    }
+    if (draft.explanationRequired && !draft.explanationPrompt.trim()) {
+      setAddContentError(t("Enter the student explanation prompt.", "Hãy nhập câu hỏi yêu cầu sinh viên giải thích."));
+      return;
+    }
+    if (!draftValid(draft)) {
+      setAddContentError(t("Complete all required content fields.", "Hãy hoàn thành các trường nội dung bắt buộc."));
+      return;
+    }
     const body: {
       moduleId: string;
       type: ItemType;
@@ -883,7 +1421,18 @@ export function CourseBuilder({
     course.addItem.mutate(body, {
       onSuccess: () => {
         setDrafts((current) => ({ ...current, [moduleId]: emptyDraft() }));
-        closeDrawer();
+        setAddingItemModuleId(null);
+        setAddContentError(null);
+        const label = draft.type === "THEORY" ? "Lesson" : draft.type === "QUIZ" ? "Quiz" : "Practice";
+        toast.success(t(`${label} added to the milestone.`, `Đã thêm ${label} vào mốc.`));
+      },
+      onError: (cause) => {
+        const message =
+          cause instanceof Error
+            ? cause.message
+            : t("Could not add this content. Try again.", "Không thể thêm nội dung. Hãy thử lại.");
+        setAddContentError(message);
+        toast.error(message);
       },
     });
   };
@@ -917,11 +1466,17 @@ export function CourseBuilder({
   const addingItemModule = addingItemModuleId
     ? (modules.find((mod) => mod.id === addingItemModuleId) ?? null)
     : null;
+  const contentLibraryError =
+    theoryAssets.isError || quizAssets.isError || assignments.isError || referenceVersions.isError
+      ? t(
+          "Some content libraries could not be loaded. Close the popup and try again.",
+          "Không tải được một số thư viện nội dung. Hãy đóng popup và thử lại.",
+        )
+      : null;
 
   const isDrawerVisible = Boolean(
     (isDraft && canCreateModules && showAddModule) ||
       (isDraft && editingModule) ||
-      (isDraft && addingItemModule) ||
       (isDraft && editingItem) ||
       (drawerOpen && inspectedItem),
   );
@@ -1696,58 +2251,6 @@ export function CourseBuilder({
                       </Button>
                     </div>
                   </form>
-                ) : isDraft && addingItemModule ? (
-                  <form
-                    onSubmit={(event) => addItem(addingItemModule.id, event)}
-                    className="flex min-h-0 flex-1 flex-col"
-                  >
-                    <div className="flex items-center justify-between gap-2 border-b bg-card/60 px-5 py-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-primary">
-                          {t("Add Lab to Module", "Thêm bài Lab vào Chương")}{" "}
-                          {addingItemModule.position}
-                        </p>
-                        <h3 className="truncate text-sm font-semibold">{addingItemModule.title}</h3>
-                      </div>
-                      <Button
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                        onClick={closeDrawer}
-                      >
-                        <X className="size-4" aria-hidden="true" />
-                        <span className="sr-only">{t("Close", "Đóng")}</span>
-                      </Button>
-                    </div>
-                    <div ref={inspectorBodyRef} className="min-h-0 flex-1 overflow-y-auto p-5">
-                      <ItemFields
-                        draft={draftFor(addingItemModule.id)}
-                        onChange={(patch) => updateDraft(addingItemModule.id, patch)}
-                        assignments={assignmentRows}
-                        t={t}
-                      />
-                    </div>
-                    <div className="flex items-center justify-end gap-2 border-t bg-muted/15 px-5 py-3">
-                      <Button
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                        onClick={closeDrawer}
-                      >
-                        {t("Cancel", "Hủy")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={busy || !draftValid(draftFor(addingItemModule.id))}
-                      >
-                        {course.addItem.isPending
-                          ? t("Saving…", "Đang lưu…")
-                          : draftFor(addingItemModule.id).type === "THEORY"
-                            ? t("Add lesson to module", "Thêm bài học vào Chương")
-                            : t("Add Lab to module", "Gắn bài Lab vào Chương")}
-                      </Button>
-                    </div>
-                  </form>
                 ) : isDraft && editingItem ? (
                   <form onSubmit={saveItem} className="flex min-h-0 flex-1 flex-col">
                     <div className="flex items-center justify-between gap-2 border-b bg-card/60 px-5 py-3">
@@ -1995,6 +2498,43 @@ export function CourseBuilder({
           )}
         </div>
       )}
+
+      <AddContentDialog
+        open={Boolean(isDraft && addingItemModule)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAddingItemModuleId(null);
+            setAddContentError(null);
+            course.addItem.reset();
+          }
+        }}
+        module={addingItemModule}
+        draft={addingItemModule ? draftFor(addingItemModule.id) : emptyDraft()}
+        onChange={(patch) => {
+          if (addingItemModule) {
+            updateDraft(addingItemModule.id, patch);
+            setAddContentError(null);
+          }
+        }}
+        theoryAssets={theoryAssets.data ?? []}
+        quizAssets={quizAssets.data ?? []}
+        referenceVersions={(referenceVersions.data ?? []) as ReferenceVersionRow[]}
+        assignments={assignmentRows}
+        loading={
+          theoryAssets.isPending ||
+          quizAssets.isPending ||
+          assignments.isPending ||
+          referenceVersions.isPending
+        }
+        loadError={contentLibraryError}
+        submitError={addContentError}
+        saving={course.addItem.isPending}
+        onSubmit={(event) => {
+          if (addingItemModule) addItem(addingItemModule.id, event);
+          else event.preventDefault();
+        }}
+        t={t}
+      />
 
       {/* Compact Immutable Version History Footer */}
       {data && (
