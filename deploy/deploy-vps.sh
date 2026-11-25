@@ -91,6 +91,21 @@ compose() {
   shift 3
   IMAGE_PREFIX="$image_prefix" IMAGE_TAG="$image_tag" docker compose --project-name mavis --env-file /opt/mavis/.env.production -f "$file" "$@"
 }
+pull_release_images() {
+  local attempt delay
+  for attempt in 1 2 3 4; do
+    if compose "$prefix" "$tag" "$incoming/compose.production.yml" pull; then
+      return 0
+    fi
+    if [ "$attempt" -eq 4 ]; then
+      echo "Failed to pull release images after $attempt attempts" >&2
+      return 1
+    fi
+    delay=$((attempt * 10))
+    echo "Image pull attempt $attempt failed; retrying in ${delay}s" >&2
+    sleep "$delay"
+  done
+}
 healthy() {
   for attempt in $(seq 1 45); do
     if docker exec mavis-frontend-1 node -e '
@@ -103,7 +118,7 @@ healthy() {
   return 1
 }
 compose "$prefix" "$tag" "$incoming/compose.production.yml" config --quiet
-compose "$prefix" "$tag" "$incoming/compose.production.yml" pull
+pull_release_images
 migration="$incoming/V26__Course_Lab_Access.sql"
 schema_tool="$incoming/apply-course-schema.py"
 if [ -e "$migration" ] || [ -e "$schema_tool" ]; then
