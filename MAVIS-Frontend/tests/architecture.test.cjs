@@ -1818,6 +1818,9 @@ test("profile renders real account data, compact statistics and a modal password
   for (const text of [user.email, "Lecturer", "Full Name", "Email", "Role", "Change Password"])
     assert.ok(html.includes(text), text);
   assert.ok(html.includes("overflow-wrap:anywhere"));
+  assert.ok(html.includes('data-testid="profile-responsive-layout"'));
+  assert.ok(html.includes("xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]"));
+  assert.ok(!html.includes("lg:grid-cols-[340px_minmax(0,1fr)]"));
   assert.equal((html.match(/<form/g) || []).length, 1);
   assert.ok(
     !html.includes('id="current-password"'),

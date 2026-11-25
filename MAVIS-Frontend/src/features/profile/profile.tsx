@@ -49,11 +49,16 @@ export function Profile() {
         ? "/workspaces"
         : "/courses";
   return (
-    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6">
+    <div className="mx-auto w-full min-w-0 max-w-6xl space-y-4 sm:space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="mb-2">
-            <Button asChild variant="ghost" size="sm" className="-ml-2 h-8 gap-1.5 text-muted-foreground">
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="-ml-2 h-8 gap-1.5 text-muted-foreground"
+            >
               <Link href={homeHref}>
                 <ArrowLeft className="size-4" aria-hidden="true" />
                 {t("Back", "Quay lại")}
@@ -122,21 +127,24 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
     <div className="mt-5 space-y-5 border-t pt-5">
       <dl
         aria-label={t("Account statistics")}
-        className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 lg:grid-cols-1"
+        className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 xl:grid-cols-1"
       >
         {[
           [t("Projects", "Dự án"), value(projects, projectList.length)],
-          [t("Workspaces joined", "Lớp đã tham gia"), value(workspaces, workspaces.data?.length ?? 0)],
+          [
+            t("Workspaces joined", "Lớp đã tham gia"),
+            value(workspaces, workspaces.data?.length ?? 0),
+          ],
           [t("Submissions", "Bài nộp"), value(submissions, submissions.data?.length ?? 0)],
         ].map(([label, amount]) => (
           <div
             key={String(label)}
-            className="min-w-0 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 lg:flex lg:items-center lg:justify-between lg:gap-3"
+            className="min-w-0 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 xl:flex xl:items-center xl:justify-between xl:gap-3"
           >
             <dt className="break-normal [overflow-wrap:normal] text-xs font-medium leading-4 text-muted-foreground">
               {label}
             </dt>
-            <dd className="mavis-tabular mt-1 break-normal [overflow-wrap:normal] text-base font-bold text-foreground lg:mt-0">
+            <dd className="mavis-tabular mt-1 break-normal [overflow-wrap:normal] text-base font-bold text-foreground xl:mt-0">
               {amount}
             </dd>
           </div>
@@ -289,14 +297,14 @@ export function ProfileDetails({ user }: { user: User }) {
         aria-label={t("Social profile header", "Ảnh bìa và đại diện")}
         className="overflow-hidden rounded-2xl border bg-card shadow-sm"
       >
-        <div className="relative h-36 bg-gradient-to-r from-sky-600 via-teal-600 to-indigo-600 dark:from-slate-900 dark:via-teal-900 dark:to-indigo-950">
+        <div className="relative h-28 bg-gradient-to-r from-sky-600 via-teal-600 to-indigo-600 dark:from-slate-900 dark:via-teal-900 dark:to-indigo-950 sm:h-36">
           <div
             aria-hidden="true"
             className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_60%)]"
           />
         </div>
-        <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+        <div className="flex min-w-0 flex-col gap-4 px-4 pb-4 sm:flex-row sm:items-end sm:justify-between sm:px-6 sm:pb-5">
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
             <div className="relative -mt-14 inline-flex w-fit shrink-0">
               {canUploadPhoto ? (
                 <button
@@ -305,10 +313,7 @@ export function ProfileDetails({ user }: { user: User }) {
                     "Click to change or remove photo",
                     "Bấm để đổi hoặc xóa ảnh đại diện",
                   )}
-                  title={t(
-                    "Click to change or remove photo",
-                    "Bấm để đổi hoặc xóa ảnh đại diện",
-                  )}
+                  title={t("Click to change or remove photo", "Bấm để đổi hoặc xóa ảnh đại diện")}
                   onClick={() => setAvatarDialogOpen(true)}
                   className="group relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
@@ -343,25 +348,30 @@ export function ProfileDetails({ user }: { user: User }) {
                   {t(roleLabels[user.role])}
                 </Badge>
               </div>
-              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground">
                 <Mail className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 break-all">{user.email || t("Email not available")}</span>
+                <span className="min-w-0 max-w-full break-all">
+                  {user.email || t("Email not available")}
+                </span>
                 {user.email && (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
                     <ShieldCheck className="size-3" aria-hidden="true" />
                     {t("Verified", "Đã xác minh")}
                   </span>
                 )}
-              </p>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
+      <div
+        data-testid="profile-responsive-layout"
+        className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] xl:items-start"
+      >
         <section
           aria-label={t("Profile summary")}
-          className="min-w-0 overflow-hidden rounded-2xl border bg-card p-5 shadow-sm [overflow-wrap:anywhere]"
+          className="min-w-0 overflow-hidden rounded-2xl border bg-card p-4 shadow-sm sm:p-5 [overflow-wrap:anywhere]"
         >
           <div className="space-y-4">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-muted/25 px-2.5 py-1.5 text-xs text-muted-foreground">
@@ -410,10 +420,10 @@ export function ProfileDetails({ user }: { user: User }) {
 
           <section
             aria-labelledby="profile-information"
-            className="min-w-0 rounded-2xl border bg-card p-5 shadow-sm sm:p-6 [overflow-wrap:anywhere]"
+            className="min-w-0 rounded-2xl border bg-card p-4 shadow-sm sm:p-6 [overflow-wrap:anywhere]"
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
-              <div>
+              <div className="min-w-0">
                 <h2 id="profile-information" className="text-lg font-semibold text-foreground">
                   {t("Personal Information")}
                 </h2>
@@ -428,7 +438,7 @@ export function ProfileDetails({ user }: { user: User }) {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="gap-2"
+                className="w-full gap-2 sm:w-auto"
                 disabled={api.mode !== "backend" || update.isPending || !user.name.trim()}
                 onClick={() => setPasswordDialogOpen(true)}
               >
@@ -459,7 +469,11 @@ export function ProfileDetails({ user }: { user: User }) {
                     }}
                   />
                   {nameError && (
-                    <p id="profile-name-error" role="alert" className="mt-2 text-sm text-destructive">
+                    <p
+                      id="profile-name-error"
+                      role="alert"
+                      className="mt-2 text-sm text-destructive"
+                    >
                       {t(nameError)}
                     </p>
                   )}
@@ -485,7 +499,7 @@ export function ProfileDetails({ user }: { user: User }) {
                 </div>
               </div>
 
-              <dl className="grid min-w-0 gap-4 rounded-xl border border-border/60 bg-muted/15 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <dl className="grid min-w-0 gap-4 rounded-xl border border-border/60 bg-muted/15 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:p-4">
                 <div className="min-w-0">
                   <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {t("Email")}
