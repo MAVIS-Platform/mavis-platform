@@ -1112,6 +1112,7 @@ export function LiveTerminalConsole({
             <div className="p-2 pb-0">
               <TraceWaterfallPanel
                 spans={spans}
+                interactions={data.telemetry?.interactions}
                 traceId={activeTraceId}
                 isLight={isLight}
                 onClose={() => setActiveTraceId(null)}

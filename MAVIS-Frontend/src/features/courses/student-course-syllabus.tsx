@@ -37,7 +37,11 @@ import {
   toggleCompletedTheoryId,
 } from "@/lib/coursera-ui-helpers";
 import { useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
-import { ChapterQuizRunner, parseInlineQuizQuestions } from "./chapter-quiz-runner";
+import {
+  attemptStorageKey,
+  ChapterQuizRunner,
+  parseInlineQuizQuestions,
+} from "./chapter-quiz-runner";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
 import {
   buildCourseraModulesWithLabLinks,
@@ -666,7 +670,26 @@ export function StudentCourseSyllabus({
                         hasAssignmentGate && item.assignmentId
                           ? labs.find((l) => l.assignmentId === item.assignmentId)
                           : undefined;
-                      const isPassed = linkedLab?.state === "PASSED";
+                      const isStandaloneQuizPassed = (() => {
+                        if (item.type !== "QUIZ" || item.assignmentId || typeof window === "undefined") {
+                          return false;
+                        }
+                        const titles = [formatSyllabusItemTitle(item, t), item.title];
+                        for (const candidate of titles) {
+                          try {
+                            const raw = window.localStorage.getItem(
+                              attemptStorageKey(session.data?.user?.id, workspaceId, null, candidate),
+                            );
+                            if (raw && (JSON.parse(raw) as { passed?: boolean })?.passed === true) {
+                              return true;
+                            }
+                          } catch {
+                            // Ignore private-mode / malformed localStorage entry
+                          }
+                        }
+                        return false;
+                      })();
+                      const isPassed = linkedLab?.state === "PASSED" || isStandaloneQuizPassed;
                       const isTheoryDone = item.type === "THEORY" && isTheoryCompleted(item.id);
                       const lockedLabRecord = lockedLabForItem(item);
                       const isLocked = isItemLocked(item);

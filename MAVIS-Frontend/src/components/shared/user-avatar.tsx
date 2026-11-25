@@ -14,7 +14,15 @@ const AVATAR_GRADIENTS = [
 ] as const;
 
 export function getUserInitials(name: string | null | undefined): string {
-  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  const cleaned = (name ?? "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .trim();
+  const allParts = cleaned.split(/\s+/).filter(Boolean);
+  const letterParts = allParts
+    .map((part) => part.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter((part) => /^\p{L}/u.test(part));
+  const parts = letterParts.length > 0 ? letterParts : allParts;
   if (parts.length > 1) {
     return `${parts[0]?.charAt(0) ?? ""}${parts.at(-1)?.charAt(0) ?? ""}`.toUpperCase();
   }

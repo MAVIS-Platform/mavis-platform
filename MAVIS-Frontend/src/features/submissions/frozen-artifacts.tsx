@@ -117,13 +117,13 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
           })}
         </div>
       )}
-      {showQuiz && quizEv && (
+      {showQuiz && quizEv && quizEv.status !== "PASSED" && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/15 px-3.5 py-2.5 text-sm">
           <span className="font-medium text-foreground">
             {t("Lab Quiz Result", "Kết quả Quiz của Lab")}
           </span>
           <span className="text-muted-foreground">
-            {quizEv.status === "PASSED" ? t("Passed", "Đạt") : t("Not passed", "Chưa đạt")} ·{" "}
+            {t("Not passed", "Chưa đạt")} ·{" "}
             {quizCorrect}/{quizTotal} ({quizScorePercent}%
             {quizEv.passPercent != null
               ? ` · ${t("pass", "yêu cầu")} ≥ ${quizEv.passPercent}%`

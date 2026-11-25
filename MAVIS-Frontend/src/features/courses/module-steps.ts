@@ -92,14 +92,15 @@ function buildLabModuleSequence(
           ]
         : [];
 
+  const labLabel = (linkedAssignment?.title ?? labItem.title).trim();
   const sequence: OutlineItemData[] = [];
   if (hasReferenceArch) {
     sequence.push({
       id: `static-view:${assignmentId}`,
       type: "STATIC_LAB",
       title: isVi
-        ? "Khám phá Sơ đồ Tĩnh (C1–C3 & Dependency Graph)"
-        : "Explore Static Diagrams (C1–C3 & Dependency Graph)",
+        ? `Khám phá Sơ đồ Tĩnh · ${labLabel}`
+        : `Explore Static Diagrams · ${labLabel}`,
       description: isVi
         ? "Xem sơ đồ C1–C3, đồ thị phụ thuộc và hỏi trợ lý AI trước khi làm Quiz."
         : "Inspect C1–C3 diagrams, service dependencies, and ask MAVIS AI before the Quiz.",
@@ -116,8 +117,8 @@ function buildLabModuleSequence(
       id: `runtime-studio:${assignmentId}`,
       type: "RUNTIME_LAB",
       title: isVi
-        ? "Thực hành MAVIS Studio (Sơ đồ Động & Bài tập)"
-        : "MAVIS Studio Practice (Dynamic Diagrams & Tasks)",
+        ? `Thực hành MAVIS Studio · ${labLabel}`
+        : `MAVIS Studio Practice · ${labLabel}`,
       description:
         labItem.description ??
         (isVi
@@ -131,7 +132,7 @@ function buildLabModuleSequence(
   sequence.push({
     id: `module-submit:${assignmentId}`,
     type: "IMPACT_LAB",
-    title: isVi ? "Tổng hợp & Nộp bài Module" : "Module Summary & Submit",
+    title: isVi ? `Tổng hợp & Nộp bài · ${labLabel}` : `Summary & Submit · ${labLabel}`,
     description: isVi
       ? "Kiểm tra lại toàn bộ tiến độ và gửi bài tổng hợp cho Giảng viên."
       : "Review your progress and submit your final reflection for grading.",

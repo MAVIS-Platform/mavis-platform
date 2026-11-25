@@ -681,7 +681,7 @@ test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints a
   const sessId = "33333333-3333-3333-3333-333333333333";
 
   assert.ok(course.includes("const referenceModelQuery ="));
-  assert.ok(course.includes("Jump to Submission Box"));
+  assert.ok(!course.includes("Jump to Submission Box"));
   assert.ok(course.includes('document.getElementById("lab-submit")'));
   assert.ok(course.includes('scrollIntoView({ behavior: "smooth", block: "start" })'));
   assert.ok(course.includes("Runtime Studio is not configured"));
@@ -1233,7 +1233,7 @@ test("FrozenArtifacts renders digest, quiz proof and snapshot explanations for L
 
   assert.ok(html.includes("Student work &amp; explanation"));
   assert.ok(!html.includes("sha256:"));
-  assert.ok(html.includes("Lab Quiz Result"));
+  assert.ok(!html.includes("Lab Quiz Result"));
   assert.ok(html.includes("Student explanation"));
   assert.ok(html.includes("Isolated databases preserve service autonomy."));
   assert.ok(!html.includes("No diagram artifact required for this Lab mode."));
@@ -1552,9 +1552,9 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(parity, /Drag onto block/);
   assert.doesNotMatch(parity, /Scale ×8 Max Load/);
   assert.doesNotMatch(live, /Preview · Select a block/);
-  assert.match(live, /Cluster Overview[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
+  assert.match(live, /Cluster Overview[\s\S]*<StudioRedCharts[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
   assert.doesNotMatch(live, /Decrease \$\{service\} replicas|Increase \$\{service\} replicas/);
-  assert.match(live, /Service Telemetry[\s\S]*Net I\/O[\s\S]*Req \/ Err%[\s\S]*detailed telemetry/);
+  assert.match(live, /Service Telemetry[\s\S]*p95 \/ Traffic & Err%[\s\S]*detailed telemetry/);
   assert.match(live, /<LiveTerminalConsole/);
   const recording = read("src/features/runtime/studio-recording.ts");
   const evidence = read("src/features/runtime/studio-evidence.tsx");
@@ -1562,7 +1562,7 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(recording, /canvas\[data-studio-webgl-canvas\]/);
   assert.match(recording, /video\/webm;codecs=vp8/);
   assert.match(evidence, /aria-label="Step traffic flows"/);
-  assert.match(live, /Capture evidence snapshot[\s\S]*Screenshot PNG[\s\S]*Record runtime replay/);
+  assert.match(live, /Capture evidence snapshot[\s\S]*Record 3D video/);
   assert.match(live, /aria-label="Runtime traffic flows"/);
   const exerciseEditor = read("src/features/assignments/studio-exercise-editor.tsx");
   const apiErrors = read("src/lib/errors/api-error.ts");

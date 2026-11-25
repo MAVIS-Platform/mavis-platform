@@ -997,87 +997,58 @@ export function LiveSandboxParity({
               );
             })()}
 
-            {/* 5. Compact Lab Setup Shortcuts */}
-            {(authoring || data.executionStatus === "RUNNING") && (
+            {/* 5. Compact Lab Setup Shortcuts (Author only — Student uses unified Right Inspector) */}
+            {authoring && (
               <div
                 className={`space-y-1 border-t pt-3 ${
                   isLight ? "border-slate-200" : "border-slate-800/80"
                 }`}
               >
                 <p className="px-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  {authoring ? t("Lab Setup", "Thiết lập Lab") : t("Practice", "Thực hành")}
+                  {t("Lab Setup", "Thiết lập Lab")}
                 </p>
-                {authoring && (
-                  <div className="space-y-0.5">
-                    <button
-                      type="button"
-                      onClick={() => onSelectSetupPanel?.("presets")}
-                      className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
-                        activeSetupPanel === "presets"
-                          ? isLight
-                            ? "bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-300"
-                            : "bg-amber-500/12 text-amber-200 ring-1 ring-inset ring-amber-500/35"
-                          : isLight
-                            ? "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-                            : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
-                      }`}
-                    >
-                      <span className="truncate">{t("Visual Builder", "Thiết kế 3D")}</span>
-                      <ChevronRight
-                        aria-hidden="true"
-                        className={`size-3.5 shrink-0 ${isLight ? "text-slate-400" : "text-slate-600"}`}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onSelectSetupPanel?.("mission")}
-                      className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
-                        activeSetupPanel === "mission"
-                          ? isLight
-                            ? "bg-sky-50 text-sky-900 ring-1 ring-inset ring-sky-300"
-                            : "bg-sky-500/12 text-sky-200 ring-1 ring-inset ring-sky-500/35"
-                          : isLight
-                            ? "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
-                            : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
-                      }`}
-                    >
-                      <span className="truncate">
-                        {t("Mission & Advanced", "Đề bài & Nâng cao")}
-                      </span>
-                      <ChevronRight
-                        aria-hidden="true"
-                        className={`size-3.5 shrink-0 ${isLight ? "text-slate-400" : "text-slate-600"}`}
-                      />
-                    </button>
-                  </div>
-                )}
-                {!authoring && data.executionStatus === "RUNNING" && (
+                <div className="space-y-0.5">
                   <button
                     type="button"
-                    onClick={() => onSelectSetupPanel?.("drills")}
+                    onClick={() => onSelectSetupPanel?.("presets")}
                     className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
-                      activeSetupPanel === "drills"
+                      activeSetupPanel === "presets"
                         ? isLight
-                          ? "bg-emerald-50 text-emerald-900 ring-1 ring-inset ring-emerald-300"
-                          : "bg-emerald-500/12 text-emerald-200 ring-1 ring-inset ring-emerald-500/35"
+                          ? "bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-300"
+                          : "bg-amber-500/12 text-amber-200 ring-1 ring-inset ring-amber-500/35"
                         : isLight
                           ? "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                           : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
                     }`}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <RotateCcw
-                        aria-hidden="true"
-                        className={`size-3.5 shrink-0 ${isLight ? "text-emerald-600" : "text-emerald-400"}`}
-                      />
-                      <span className="truncate">{t("Quick Live Drills", "Bài tập nhanh")}</span>
+                    <span className="truncate">{t("Visual Builder", "Thiết kế 3D")}</span>
+                    <ChevronRight
+                      aria-hidden="true"
+                      className={`size-3.5 shrink-0 ${isLight ? "text-slate-400" : "text-slate-600"}`}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSelectSetupPanel?.("mission")}
+                    className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
+                      activeSetupPanel === "mission"
+                        ? isLight
+                          ? "bg-sky-50 text-sky-900 ring-1 ring-inset ring-sky-300"
+                          : "bg-sky-500/12 text-sky-200 ring-1 ring-inset ring-sky-500/35"
+                        : isLight
+                          ? "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+                          : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100"
+                    }`}
+                  >
+                    <span className="truncate">
+                      {t("Mission & Advanced", "Đề bài & Nâng cao")}
                     </span>
                     <ChevronRight
                       aria-hidden="true"
                       className={`size-3.5 shrink-0 ${isLight ? "text-slate-400" : "text-slate-600"}`}
                     />
                   </button>
-                )}
+                </div>
               </div>
             )}
           </section>

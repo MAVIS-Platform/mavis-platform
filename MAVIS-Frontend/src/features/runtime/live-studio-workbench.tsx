@@ -62,7 +62,6 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 import {
   StudioObservability,
-  captureStudioImage,
   serializeStudioGraph,
   type StudioAuthorHighlights,
   type StudioQuickAction,
@@ -89,7 +88,6 @@ import {
   StudioSnapshotPreviewCard,
   StudioVideo,
   deleteStudioEvidence,
-  downloadStudioEvidence,
   loadStudioEvidence,
   storeStudioEvidence,
   type EvidenceFrame,
@@ -365,6 +363,7 @@ function metric(value: unknown) {
 export function resolveTelemetryServiceStatus({
   isPreview,
   running,
+  paused = false,
   executionStatus,
   lastSessionFailed,
   isTimedOut,
@@ -372,6 +371,7 @@ export function resolveTelemetryServiceStatus({
 }: {
   isPreview: boolean;
   running: number | undefined;
+  paused?: boolean | undefined;
   executionStatus: string;
   lastSessionFailed: boolean;
   isTimedOut: boolean;
@@ -381,6 +381,9 @@ export function resolveTelemetryServiceStatus({
     return running === 0
       ? { label: "Starts Down", textClass: "text-amber-300", dotClass: "bg-amber-400" }
       : { label: "Prepared", textClass: "text-sky-300", dotClass: "bg-sky-400" };
+  }
+  if (paused) {
+    return { label: "Paused", textClass: "text-amber-300", dotClass: "bg-amber-400" };
   }
   if (running !== undefined) {
     return running === 0
@@ -442,6 +445,7 @@ export function LiveStudioWorkbench({
     minReplicas?: Array<{ service?: string; count?: number }> | null | undefined;
     stoppedServices?: string[] | null | undefined;
     requiredTraceEdge?: { from?: string; to?: string } | null | undefined;
+    allowedActions?: readonly string[] | null | undefined;
     submitHref?: string | null | undefined;
     verified?: boolean | undefined;
   } | undefined;
@@ -656,6 +660,10 @@ export function LiveStudioWorkbench({
   const [frontPanel, setFrontPanel] = useState<"right" | "mission">("right");
   const [bottomHeight, setBottomHeight] = useState(256);
   const [bottomCollapsed, setBottomCollapsed] = useState(true);
+  useEffect(() => {
+    // Reclaim 3D canvas height whenever the bottom drawer opens.
+    if (!bottomCollapsed) setMissionCollapsed(true);
+  }, [bottomCollapsed]);
   const leftAsideRef = useRef<HTMLElement>(null);
   const bottomDrawerRef = useRef<HTMLDivElement>(null);
   const rightCardRef = useRef<HTMLElement>(null);
@@ -971,7 +979,6 @@ export function LiveStudioWorkbench({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [savingReplay, setSavingReplay] = useState(false);
   const queryClient = useQueryClient();
-  const [capturingScreen, setCapturingScreen] = useState(false);
   const [smartAutoFocus, setSmartAutoFocus] = useState(true);
   const [smartIncludeStats, setSmartIncludeStats] = useState(true);
   const [replayError, setReplayError] = useState("");
@@ -1008,11 +1015,16 @@ export function LiveStudioWorkbench({
   useEffect(() => {
     if (!recordingSteps) return;
     const started = replayCaptureRef.current?.started ?? performance.now();
-    const timer = window.setInterval(
-      () => setRecordingSeconds(Math.floor((performance.now() - started) / 1000)),
-      1000,
-    );
+    const timer = window.setInterval(() => {
+      const secs = Math.floor((performance.now() - started) / 1000);
+      setRecordingSeconds(secs);
+      // Auto-stop cleanly at 20s so 1.5 Mbps HD video always stays safely below the 4.9 MB server upload cap.
+      if (secs >= 20 && !savingReplay) {
+        void stopAndSaveLiveReplay();
+      }
+    }, 1000);
     return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingSteps > 0]);
 
   useEffect(
@@ -1048,13 +1060,20 @@ export function LiveStudioWorkbench({
   ]);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded && !settingsPopoverOpen && !stylePopoverOpen && !telemetryPopoverOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
+      if (event.key !== "Escape") return;
+      if (settingsPopoverOpen || stylePopoverOpen || telemetryPopoverOpen) {
+        setSettingsPopoverOpen(false);
+        setStylePopoverOpen(false);
+        setTelemetryPopoverOpen(false);
+      } else if (expanded) {
+        setExpanded(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [expanded]);
+  }, [expanded, settingsPopoverOpen, stylePopoverOpen, telemetryPopoverOpen]);
 
   const confirmedActions = data.actions.filter((item) => item.status === "CONFIRMED" && item.result);
   const firstConfirmed = confirmedActions[0];
@@ -1295,63 +1314,6 @@ export function LiveStudioWorkbench({
     }
   }, [confirmedActions, data.telemetry?.observedAt, data.telemetry?.interactions.length, runtimeFlows, captureLiveReplayFrame]);
 
-  async function captureCanvasScreenshot() {
-    const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
-    const frame = captureLiveReplayFrame("Canvas screenshot", 0);
-    if (!svg || !frame) {
-      setReplayError("Render the topology canvas before taking a screenshot.");
-      return;
-    }
-    setCapturingScreen(true);
-    setReplayError("");
-    try {
-      const sessionUser = queryClient.getQueryData<Response<"session">>([
-        "api",
-        "session",
-        {},
-      ])?.user;
-      const imageData = await captureStudioImage(
-        svg,
-        true,
-        {
-          studentName: sessionUser?.name,
-          studentEmail: sessionUser?.email,
-          snapshotIndex: liveReplays.length + 1,
-          sessionId: evidenceScopeId,
-          capturedAt: new Date().toISOString(),
-        },
-        activeSmartOverlay,
-      );
-      const digestBytes = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(JSON.stringify({ sessionId: evidenceScopeId, frame })),
-      );
-      const digest =
-        "sha256:" +
-        Array.from(new Uint8Array(digestBytes), (b) => b.toString(16).padStart(2, "0")).join("");
-      const saved: LiveRuntimeReplay = {
-        id: crypto.randomUUID(),
-        sessionId: evidenceScopeId,
-        kind: "LIVE_SCREENSHOT",
-        capturedAt: new Date().toISOString(),
-        explanation:
-          explanation.trim() ||
-          `${projectName || "Studio Live"} screenshot · ${blocks.length} services · ${totalRunningReplicas} pods`,
-        digest,
-        frame,
-        replay: [frame],
-        imageData,
-      };
-      await storeStudioEvidence(saved).catch(() => undefined);
-      setLiveReplays((prev) => [saved, ...prev]);
-      setTab("snapshots");
-    } catch (cause) {
-      setReplayError(cause instanceof Error ? cause.message : "Could not capture screenshot.");
-    } finally {
-      setCapturingScreen(false);
-    }
-  }
-
   function startLiveReplayRecording() {
     setReplayError("");
     const frame = captureLiveReplayFrame("Initial live state", 0);
@@ -1392,19 +1354,6 @@ export function LiveStudioWorkbench({
     setRecordingSteps(1);
   }
 
-  function addLiveReplayCheckpoint() {
-    const rec = replayCaptureRef.current;
-    if (!rec || rec.frames.length >= 39) return;
-    const frame = captureLiveReplayFrame(
-      `Checkpoint #${rec.frames.length + 1}`,
-      performance.now() - rec.started,
-    );
-    if (frame) {
-      rec.frames.push(frame);
-      setRecordingSteps(rec.frames.length);
-    }
-  }
-
   async function stopAndSaveLiveReplay() {
     const rec = replayCaptureRef.current;
     if (!rec) return;
@@ -1423,6 +1372,7 @@ export function LiveStudioWorkbench({
 
       // Attach recorded 3D WebGL video directly as verified Lab evidence so it appears on Submit & Lecturer Grading.
       let attachedToSession = false;
+      let fallbackReason = "";
       if (
         !isPreviewMode &&
         data.executionStatus === "RUNNING" &&
@@ -1442,7 +1392,17 @@ export function LiveStudioWorkbench({
             smartOverlay: activeSmartOverlay,
           });
           attachedToSession = true;
+        } else if (videoData && videoData.length > 4_900_000) {
+          fallbackReason = t(
+            "Video exceeded the 20s / 3.7 MB upload limit — saved locally only (not attached to Lab submission). Record a shorter clip (<= 18s) to submit.",
+            "Video vượt giới hạn dung lượng nộp bài (~20 giây / 3.7 MB) nên chỉ lưu tạm trên trình duyệt (chưa đính kèm bài nộp). Hãy quay clip ngắn hơn (<= 18s) để gửi Giảng viên.",
+          );
         }
+      } else if (!isPreviewMode && (data.snapshots?.length ?? 0) >= 8) {
+        fallbackReason = t(
+          "Maximum 8 verified snapshots/videos reached for this session — video saved locally only.",
+          "Đã đạt tối đa 8 ảnh/video xác thực trong phiên này — video chỉ lưu tạm trên trình duyệt.",
+        );
       }
 
       if (!attachedToSession) {
@@ -1467,6 +1427,7 @@ export function LiveStudioWorkbench({
         };
         await storeStudioEvidence(saved).catch(() => undefined);
         setLiveReplays((prev) => [saved, ...prev]);
+        if (fallbackReason) setReplayError(fallbackReason);
       }
       replayCaptureRef.current = null;
       setRecordingSteps(0);
@@ -1852,13 +1813,14 @@ export function LiveStudioWorkbench({
   const faultedServices = [...stoppedServiceNames, ...pausedServiceNames];
   const snapshotCount = data.snapshots?.length ?? 0;
   const healthyCount = Math.max(0, services.length - faultedServices.length);
+  const isPredictionRequired = Boolean(
+    (data.exerciseCriteria as { predictionRequired?: boolean } | null | undefined)
+      ?.predictionRequired || data.exerciseEvaluation?.predictionRequired,
+  );
   const needsPrediction =
     !isPreviewMode &&
     !authoring &&
-    Boolean(
-      (data.exerciseCriteria as { predictionRequired?: boolean } | null | undefined)
-        ?.predictionRequired || data.exerciseEvaluation?.predictionRequired,
-    ) &&
+    isPredictionRequired &&
     !(data.prediction?.predictedServices?.length) &&
     !hasConfirmedAction &&
     data.executionStatus === "RUNNING";
@@ -1870,10 +1832,6 @@ export function LiveStudioWorkbench({
     setRightCardMode("service");
     setShowRight(true);
   }, [needsPrediction, sessionId]);
-  const parsedAuthorMaxErr =
-    authoring?.maxErrorRatePercent && Number.isFinite(Number(authoring.maxErrorRatePercent))
-      ? Number(authoring.maxErrorRatePercent)
-      : null;
   const effectiveMissionInstructions =
     missionCard?.instructions?.trim() ||
     authoring?.instructions?.trim() ||
@@ -1881,13 +1839,6 @@ export function LiveStudioWorkbench({
       "Click any live microservice on the canvas to inject faults, scale replicas, observe live Change Impact, and capture a Snapshot.",
       "Bấm vào bất kỳ microservice đang chạy nào trên sơ đồ để tiêm lỗi, scale replica, quan sát Change Impact trực tiếp và chụp Snapshot.",
     );
-  const missionMaxErr: number | null = missionCard?.maxErrorRatePercent ?? parsedAuthorMaxErr;
-  const missionMaxP95: number | null = missionCard?.maxP95Ms ?? null;
-  const missionMinReplicas: Array<{ service?: string; count?: number }> | null =
-    missionCard?.minReplicas ??
-    (authoring?.replicaService
-      ? [{ service: authoring.replicaService, count: Number(authoring.replicaCount) || 1 }]
-      : null);
 
   return (
     <div
@@ -2047,7 +1998,7 @@ export function LiveStudioWorkbench({
           </div>
 
           {/* Compact Live Metrics Summary & Session Switcher Popover */}
-          <div data-tour="studio-telemetry-hud" className="relative hidden shrink-0 lg:block">
+          <div data-tour="studio-telemetry-hud" className="relative shrink-0">
             <button
               type="button"
               onClick={() => {
@@ -2070,8 +2021,8 @@ export function LiveStudioWorkbench({
                 />
                 {healthyCount}/{services.length || 0}
               </span>
-              <span className={isLight ? "text-slate-300" : "text-slate-600"}>·</span>
-              <span className="font-mono">
+              <span className={`hidden sm:inline ${isLight ? "text-slate-300" : "text-slate-600"}`}>·</span>
+              <span className="hidden font-mono sm:inline">
                 {liveRps != null ? `${liveRps} rps` : `${totalRunningReplicas} pods`}
               </span>
               {liveP95Ms != null && (
@@ -2079,7 +2030,7 @@ export function LiveStudioWorkbench({
               )}
               {liveErrorPct != null && (
                 <span
-                  className={`font-mono font-semibold ${
+                  className={`hidden font-mono font-semibold md:inline ${
                     liveErrorPct > 0
                       ? isLight ? "text-rose-600" : "text-rose-300"
                       : isLight ? "text-emerald-700" : "text-emerald-300"
@@ -2093,10 +2044,12 @@ export function LiveStudioWorkbench({
 
             {telemetryPopoverOpen && (
               <div
-                className={`absolute right-0 top-full z-40 mt-2 w-80 space-y-3 p-4 ${styleCfg.floatingCardClass}`}
+                className={`absolute right-0 top-full z-40 mt-2 w-72 space-y-2.5 p-3.5 ${styleCfg.floatingCardClass}`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold">{t("Live Runtime Telemetry", "Thông số Runtime trực tiếp")}</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    {t("Runtime Session", "Phiên Docker & Cụm")}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setTelemetryPopoverOpen(false)}
@@ -2106,26 +2059,10 @@ export function LiveStudioWorkbench({
                     <X className="size-3.5" aria-hidden="true" />
                   </button>
                 </div>
-                <dl className="grid grid-cols-2 gap-2 text-xs">
-                  <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
-                    <dt className="text-muted-foreground">{t("Running Pods", "Pod đang chạy")}</dt>
-                    <dd className="mt-0.5 font-mono text-sm font-bold">{totalRunningReplicas}</dd>
-                  </div>
-                  <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
-                    <dt className="text-muted-foreground">{t("Snapshots", "Snapshot đã lưu")}</dt>
-                    <dd className="mt-0.5 font-mono text-sm font-bold">{snapshotCount}</dd>
-                  </div>
-                  <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
-                    <dt className="text-muted-foreground">P95 Latency</dt>
-                    <dd className="mt-0.5 font-mono text-sm font-bold">{liveP95Ms != null ? `${liveP95Ms} ms` : "—"}</dd>
-                  </div>
-                  <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
-                    <dt className="text-muted-foreground">{t("Error Rate", "Tỉ lệ lỗi")}</dt>
-                    <dd className={`mt-0.5 font-mono text-sm font-bold ${liveErrorPct && liveErrorPct > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                      {liveErrorPct != null ? `${liveErrorPct}%` : "—"}
-                    </dd>
-                  </div>
-                </dl>
+                <p className="font-mono text-[11.5px] text-muted-foreground">
+                  {totalRunningReplicas} {t("running pods", "pod chạy")} · {snapshotCount}{" "}
+                  {t("snapshots", "minh chứng")}
+                </p>
                 {(!authoring || !isPreviewMode || isBooting) && (
                   <label className="block space-y-1 text-xs">
                     <span className="font-medium text-muted-foreground">{t("Runtime session", "Phiên chạy Docker")}</span>
@@ -2216,11 +2153,11 @@ export function LiveStudioWorkbench({
             {stylePopoverOpen && (
               <div
                 aria-label={t("Choose Studio Style", "Chọn phong cách Studio")}
-                className={`absolute right-0 top-full z-40 mt-2 w-[340px] space-y-2.5 p-3.5 ${styleCfg.floatingCardClass}`}
+                className={`absolute right-0 top-full z-40 mt-2 w-[300px] space-y-2.5 p-3 ${styleCfg.floatingCardClass}`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    {t("Studio Style", "Phong cách Studio")}
+                    {t("Studio Theme", "Giao diện Studio")}
                   </span>
                   <button
                     type="button"
@@ -2232,7 +2169,7 @@ export function LiveStudioWorkbench({
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  {STUDIO_STYLE_LIST.map((id) => {
+                  {STUDIO_STYLE_LIST.filter((id) => id === "daylight" || id === "control").map((id) => {
                     const item = STUDIO_STYLES[id];
                     const active = studioStyle === id;
                     return (
@@ -2256,27 +2193,7 @@ export function LiveStudioWorkbench({
                           style={{ background: item.canvasBgCss }}
                           className="relative flex h-14 w-full items-center justify-center overflow-hidden border-b border-black/10 px-2"
                         >
-                          {id === "blueprint" ? (
-                            <div className="flex items-center gap-2">
-                              <div className="h-6 w-12 rounded-[3px] border border-blue-500 bg-white px-1 py-0.5 font-mono text-[7px] font-bold text-blue-900 shadow-2xs">
-                                API
-                              </div>
-                              <div className="h-px w-4 bg-blue-500" />
-                              <div className="h-6 w-12 rounded-[3px] border border-blue-500 bg-white px-1 py-0.5 font-mono text-[7px] font-bold text-emerald-700 shadow-2xs">
-                                DB
-                              </div>
-                            </div>
-                          ) : id === "pop" ? (
-                            <div className="flex items-center gap-2">
-                              <div className="h-6 w-12 rounded-md border-2 border-slate-900 bg-sky-100 px-1 py-0.5 text-[7px] font-extrabold text-slate-900 shadow-[2px_2px_0_#0f172a]">
-                                API
-                              </div>
-                              <div className="h-0.5 w-3 bg-slate-900" />
-                              <div className="h-6 w-12 rounded-md border-2 border-slate-900 bg-emerald-100 px-1 py-0.5 text-[7px] font-extrabold text-slate-900 shadow-[2px_2px_0_#0f172a]">
-                                DB
-                              </div>
-                            </div>
-                          ) : id === "control" ? (
+                          {id === "control" ? (
                             <div className="flex items-center gap-2">
                               <div className="h-6 w-12 overflow-hidden rounded-md border border-sky-400/50 bg-slate-900/95 shadow">
                                 <div className="h-1 w-full bg-sky-400" />
@@ -2475,7 +2392,16 @@ export function LiveStudioWorkbench({
                       disabled={cancel.isPending}
                       onClick={() => {
                         setSettingsPopoverOpen(false);
-                        void cancelStudio();
+                        if (
+                          window.confirm(
+                            t(
+                              "Stop and cancel this live Docker session? Unsaved container state will be discarded.",
+                              "Dừng và hủy phiên Docker đang chạy? Trạng thái chưa lưu trong container sẽ bị hủy bỏ.",
+                            ),
+                          )
+                        ) {
+                          void cancelStudio();
+                        }
                       }}
                       className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
                     >
@@ -2671,6 +2597,18 @@ export function LiveStudioWorkbench({
                 onDisconnect={disconnect}
                 onQuickAction={quickAction}
               />
+            ) : isBooting ? (
+              <div className="grid h-full place-items-center p-6 text-center">
+                <div className={`max-w-sm space-y-2.5 p-5 ${styleCfg.floatingCardClass}`}>
+                  <RefreshCw aria-hidden="true" className="mx-auto size-7 animate-spin text-primary" />
+                  <p className="text-sm font-bold">
+                    {t("Starting Docker Studio containers…", "Đang khởi động các container Docker Studio…")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("Live 3D topology will appear automatically once containers are ready.", "Sơ đồ 3D trực tiếp sẽ tự động hiển thị ngay khi container sẵn sàng.")}
+                  </p>
+                </div>
+              </div>
             ) : (
               <div className="grid h-full place-items-center p-6 text-center">
                 <div className={`max-w-md space-y-3 p-6 ${styleCfg.floatingCardClass}`}>
@@ -2679,11 +2617,11 @@ export function LiveStudioWorkbench({
                     {t("No live Docker session running yet", "Chưa có phiên Docker chạy trực tiếp")}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {t("Start the live sandbox to boot the real microservices on this canvas.", "Bấm Run để khởi động các microservice thật ngay trên sơ đồ này.")}
+                    {t("Start the live sandbox to boot the real microservices on this canvas.", "Bấm Chạy Docker để khởi động các microservice thật ngay trên sơ đồ này.")}
                   </p>
                   {onStartSession ? (
                     <Button type="button" size="sm" disabled={isBooting} onClick={onStartSession}>
-                      {isBooting ? "Starting Studio session…" : "Start Studio Live session"}
+                      {t("Start Studio Live session", "Chạy phiên Studio Live")}
                     </Button>
                   ) : (
                     <Button asChild size="sm">
@@ -2818,9 +2756,9 @@ export function LiveStudioWorkbench({
                 type="button"
                 title={t("Logs & Traces", "Log & Trace")}
                 aria-label={t("Logs & Traces", "Log & Trace")}
-                aria-pressed={!bottomCollapsed && tab !== "snapshots"}
+                aria-pressed={!bottomCollapsed && tab === "logs"}
                 onClick={() => {
-                  if (!bottomCollapsed && tab !== "snapshots") {
+                  if (!bottomCollapsed && tab === "logs") {
                     setBottomCollapsed(true);
                   } else {
                     setTab("logs");
@@ -2828,7 +2766,7 @@ export function LiveStudioWorkbench({
                   }
                 }}
                 className={`relative grid size-9 place-items-center transition ${
-                  !bottomCollapsed && tab !== "snapshots"
+                  !bottomCollapsed && tab === "logs"
                     ? styleCfg.railActiveClass
                     : styleCfg.railIdleClass
                 }`}
@@ -2994,67 +2932,48 @@ export function LiveStudioWorkbench({
                         </span>
                       </p>
                     )}
-                    <ul className="space-y-1.5 pt-0.5 text-[12.5px]">
-                      <li className="flex items-center justify-between gap-2">
-                        <span className="text-muted-foreground">{t("Run a live Docker action", "Thực hiện 1 thao tác Docker")}</span>
-                        <span className={`font-bold ${hasConfirmedAction ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"}`}>
-                          {hasConfirmedAction ? "✓" : "○"}
-                        </span>
-                      </li>
-                      <li className="flex items-center justify-between gap-2">
-                        <span className="text-muted-foreground">{t("Capture evidence Snapshot", "Chụp Snapshot minh chứng")}</span>
-                        <span className={`font-mono font-bold ${snapshotCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"}`}>
-                          {snapshotCount > 0 ? `${snapshotCount} ✓` : "0/1"}
-                        </span>
-                      </li>
-                      {missionMaxErr != null && (
+                    {!authoring && (
+                      <ul className="space-y-1.5 pt-0.5 text-[12.5px]">
+                        {isPredictionRequired && (
+                          <li className="flex items-center justify-between gap-2">
+                            <span className="text-muted-foreground">
+                              {t("Lock impact prediction", "Khóa dự đoán tác động")}
+                            </span>
+                            <span
+                              className={`font-bold ${
+                                data.prediction ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"
+                              }`}
+                            >
+                              {data.prediction ? "✓" : "○"}
+                            </span>
+                          </li>
+                        )}
                         <li className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground">{t(`Error rate ≤ ${missionMaxErr}%`, `Tỉ lệ lỗi ≤ ${missionMaxErr}%`)}</span>
+                          <span className="text-muted-foreground">
+                            {t("Run a live Docker action", "Thực hiện 1 thao tác Docker")}
+                          </span>
                           <span
-                            className={`font-mono font-bold ${
-                              liveErrorPct == null
-                                ? "opacity-50"
-                                : liveErrorPct <= missionMaxErr
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-rose-600 dark:text-rose-400"
+                            className={`font-bold ${
+                              hasConfirmedAction ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"
                             }`}
                           >
-                            {liveErrorPct != null ? `${liveErrorPct}% ${liveErrorPct <= missionMaxErr ? "✓" : "✕"}` : "—"}
+                            {hasConfirmedAction ? "✓" : "○"}
                           </span>
                         </li>
-                      )}
-                      {missionMaxP95 != null && (
                         <li className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground">{t(`P95 latency ≤ ${missionMaxP95} ms`, `Độ trễ P95 ≤ ${missionMaxP95} ms`)}</span>
+                          <span className="text-muted-foreground">
+                            {t("Capture Snapshot / Video", "Chụp Snapshot / Quay video")}
+                          </span>
                           <span
                             className={`font-mono font-bold ${
-                              liveP95Ms == null
-                                ? "opacity-50"
-                                : liveP95Ms <= missionMaxP95
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-rose-600 dark:text-rose-400"
+                              snapshotCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"
                             }`}
                           >
-                            {liveP95Ms != null ? `${liveP95Ms}ms ${liveP95Ms <= missionMaxP95 ? "✓" : "✕"}` : "—"}
+                            {snapshotCount > 0 ? `${snapshotCount} ✓` : "0/1"}
                           </span>
                         </li>
-                      )}
-                      {missionMinReplicas && missionMinReplicas.length > 0 &&
-                        missionMinReplicas.map((req, idx) => {
-                          const svc = req.service ?? "";
-                          const targetCount = req.count ?? 1;
-                          const cur = runningFor(data, svc) ?? 0;
-                          const ok = cur >= targetCount;
-                          return (
-                            <li key={`${svc}-${idx}`} className="flex items-center justify-between gap-2">
-                              <span className="truncate font-mono text-muted-foreground">{svc} ≥ {targetCount}x</span>
-                              <span className={`font-mono font-bold ${ok ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                                {cur}x {ok ? "✓" : "✕"}
-                              </span>
-                            </li>
-                          );
-                        })}
-                    </ul>
+                      </ul>
+                    )}
                   </div>
                 )}
 
@@ -3201,16 +3120,18 @@ export function LiveStudioWorkbench({
                       onClick={() => {
                         setTab("snapshots");
                         setBottomCollapsed(false);
-                        if (explanation.trim() && !waiting) {
+                        const effectiveNote = explanation.trim() || smartSnapshotPlan.suggestedNote;
+                        if (!explanation.trim()) setExplanation(effectiveNote);
+                        if (!waiting) {
                           void captureSnapshot(
                             graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ??
                               null,
-                            { smartOverlay: activeSmartOverlay },
+                            {
+                              explanationOverride: effectiveNote,
+                              smartOverlay: activeSmartOverlay,
+                            },
                           );
                         } else {
-                          if (!explanation.trim()) {
-                            setExplanation(smartSnapshotPlan.suggestedNote);
-                          }
                           requestAnimationFrame(() => snapshotNoteRef.current?.focus());
                         }
                       }}
@@ -3390,6 +3311,23 @@ export function LiveStudioWorkbench({
               ))}
               </div>
               <div className="flex shrink-0 items-center gap-1.5 pl-1 text-[11px] text-muted-foreground">
+                {data.executionStatus !== "RUNNING" && onStartSession && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    data-testid="drawer-run-docker-btn"
+                    className="h-6 rounded-full bg-[#0056D2] px-2.5 text-[11.5px] font-semibold text-white hover:bg-[#00419E] disabled:opacity-60"
+                    disabled={isBooting || isCancelling || cancel.isPending}
+                    onClick={onStartSession}
+                  >
+                    {isBooting ? (
+                      <RefreshCw aria-hidden="true" className="mr-1 size-3 animate-spin" />
+                    ) : (
+                      <Play aria-hidden="true" className="mr-1 size-3 fill-current" />
+                    )}
+                    {isBooting ? t("Booting…", "Đang khởi động…") : t("Run", "Chạy Docker")}
+                  </Button>
+                )}
                 {showLiveSessionControls && data.executionStatus === "RUNNING" && (
                   <span className="inline-flex" title={finishDisabledReason}>
                     <Button
@@ -3617,11 +3555,13 @@ export function LiveStudioWorkbench({
             const avgCpuPct = cpuSamples > 0 ? totalCpuPct / cpuSamples : 0;
             const maxPoolVcpu = Math.max(totalVcpuAllocated, blocks.length * 2, 4);
             const ramPoolMiB = Math.max(totalRamLimitMiB, blocks.length * 1024, 1024);
-            const cpuBarPct = cpuSamples > 0
-              ? Math.min(100, Math.max(2, totalCpuPct / Math.max(1, totalVcpuAllocated)))
-              : Math.min(100, (totalVcpuAllocated / maxPoolVcpu) * 100);
+            // Never show a fake 50-100% CPU usage bar in Preview before real container docker stats arrive.
+            const cpuBarPct =
+              cpuSamples > 0
+                ? Math.min(100, Math.max(2, totalCpuPct / Math.max(1, totalVcpuAllocated)))
+                : 0;
             const ramBarPct = Math.min(100, (totalRamUsedMiB / ramPoolMiB) * 100);
-            const latestAction = observedData.actions[observedData.actions.length - 1];
+            const hasLiveRedHistory = (observedData.telemetryHistory?.length ?? 0) >= 2;
             const leaseSeconds =
               observedData.limits?.sessionTimeoutSeconds ?? observedData.limits?.timeoutSeconds;
             const leaseLabel =
@@ -3674,147 +3614,7 @@ export function LiveStudioWorkbench({
                   </dl>
                 </header>
 
-                {/* Row 2: Full-Width Unified KPI + Capacity Strip */}
-                <div
-                  className={`grid gap-2.5 rounded-xl border px-3 py-2 lg:grid-cols-[minmax(0,1.55fr)_minmax(260px,1fr)] lg:items-center ${
-                    isLight
-                      ? "border-slate-200 bg-slate-50/70"
-                      : "border-slate-800 bg-slate-900/75"
-                  }`}
-                >
-                  <section aria-label="Traffic & reliability">
-                    <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-                      <h3 className={`text-[10.5px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                        {locale === "vi" ? "Lưu lượng & Độ ổn định" : <>Traffic &amp; reliability</>}
-                      </h3>
-                      {reqNum === null && (
-                        <span className="text-[10.5px] text-muted-foreground">
-                          {observedData.executionStatus === "RUNNING"
-                            ? t("Live Docker running — awaiting probe traffic", "Docker đang chạy — chờ lưu lượng probe")
-                            : isBooting
-                              ? t("Booting Live Docker…", "Đang khởi động Docker…")
-                              : t("Start Live Docker to measure", "Bấm Chạy Docker để đo thông số thật")}
-                        </span>
-                      )}
-                    </div>
-                    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                      {[
-                        {
-                          label: t("Throughput", "Lưu lượng"),
-                          value: liveRps !== null ? metric(liveRps) : "—",
-                          unit: liveRps !== null ? "rps" : "",
-                          warning: false,
-                        },
-                        {
-                          label: "Requests",
-                          value: reqNum !== null ? reqNum.toLocaleString() : "—",
-                          unit: reqNum !== null ? "req" : "",
-                          warning: false,
-                        },
-                        {
-                          label: "E2E p95",
-                          value: p95Num !== null ? metric(p95Num) : "—",
-                          unit: p95Num !== null ? "ms" : "",
-                          warning: p95Num !== null && p95Num > 500,
-                        },
-                        {
-                          label: t("Error rate", "Tỉ lệ lỗi"),
-                          value: errNum !== null ? metric(errNum) : "—",
-                          unit: errNum !== null ? "%" : "",
-                          warning: errNum !== null && errNum > 0,
-                        },
-                        {
-                          label: "Spans",
-                          value: spanCount.toLocaleString(),
-                          unit: "",
-                          warning: false,
-                        },
-                      ].map(({ label, value, unit, warning }) => (
-                        <div
-                          key={label}
-                          className={`rounded-lg border px-2.5 py-1.5 ${
-                            isLight
-                              ? "border-slate-200/80 bg-white"
-                              : "border-slate-800 bg-slate-950/60"
-                          }`}
-                        >
-                          <dt className={`text-[10px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                            {label}
-                          </dt>
-                          <dd
-                            className={`font-mono text-sm font-bold tabular-nums ${
-                              warning
-                                ? isLight ? "text-rose-600" : "text-rose-300"
-                                : isLight ? "text-slate-900" : "text-slate-100"
-                            }`}
-                          >
-                            {value}
-                            {unit && (
-                              <span className={`ml-0.5 text-[10px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                                {unit}
-                              </span>
-                            )}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </section>
-
-                  <section
-                    aria-label="Resource capacity"
-                    className={`space-y-1.5 border-t pt-2 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-3 ${
-                      isLight ? "border-slate-200" : "border-slate-800"
-                    }`}
-                  >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <h3 className={`text-[10.5px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                        {locale === "vi" ? "Tài nguyên cấp phát" : "Resource capacity"}
-                      </h3>
-                      {peakCpuService && cpuSamples > 0 && (
-                        <span className={`text-[10px] ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                          {t("Peak:", "Cao nhất:")}{" "}
-                          <span className="font-mono font-medium">{peakCpuService}</span>
-                        </span>
-                      )}
-                    </div>
-                    {[
-                      {
-                        label: "CPU",
-                        rightText: `${Number(totalVcpuAllocated.toFixed(1))}/${maxPoolVcpu} vCPU${
-                          cpuSamples > 0 ? ` · ${avgCpuPct.toFixed(1)}%` : ""
-                        }`,
-                        pct: cpuBarPct,
-                      },
-                      {
-                        label: "RAM",
-                        rightText: `${Math.round(totalRamUsedMiB).toLocaleString()} / ${Math.round(ramPoolMiB).toLocaleString()} MiB`,
-                        pct: ramBarPct,
-                      },
-                    ].map(({ label, rightText, pct }) => (
-                      <div key={label} className="space-y-0.5">
-                        <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                          <span className={`font-semibold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                            {label}
-                          </span>
-                          <span className={`font-mono tabular-nums ${isLight ? "text-slate-600" : "text-slate-300"}`}>
-                            {rightText}
-                          </span>
-                        </div>
-                        <div
-                          className={`h-1.5 overflow-hidden rounded-full ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
-                          aria-hidden="true"
-                        >
-                          <div
-                            className="h-full rounded-full bg-sky-500 transition-all"
-                            style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </section>
-                </div>
-
-                {/* Row 3: Live RED Charts + Collapsible Service Edges & Action History */}
+                {/* Row 2: Live RED Charts + Before/After + Service-to-Service Edges (primary observability surface) */}
                 <StudioRedCharts
                   history={observedData.telemetryHistory}
                   actions={observedData.actions}
@@ -3827,66 +3627,147 @@ export function LiveStudioWorkbench({
                   }}
                 />
 
-                {/* Row 4: Collapsible Light/Dark Action Log */}
-                {observedData.actions.length > 0 && (
-                  <details
-                    className={`rounded-lg border text-[11px] ${
-                      isLight
-                        ? "border-slate-200 bg-slate-50/75 text-slate-700"
-                        : "border-slate-800 bg-slate-900/65 text-slate-300"
+                {/* Row 3: Resource Capacity (and compact Traffic KPI fallback only before RED charts populate) */}
+                <div
+                  className={`grid gap-2.5 rounded-xl border px-3 py-2 ${
+                    !hasLiveRedHistory ? "lg:grid-cols-[minmax(0,1.45fr)_minmax(260px,1fr)] lg:items-center" : ""
+                  } ${
+                    isLight
+                      ? "border-slate-200 bg-slate-50/70"
+                      : "border-slate-800 bg-slate-900/75"
+                  }`}
+                >
+                  {!hasLiveRedHistory && (
+                    <section aria-label="Traffic & reliability">
+                      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className={`text-[10.5px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                          {locale === "vi" ? "Lưu lượng & Độ ổn định" : <>Traffic &amp; reliability</>}
+                        </h3>
+                        {reqNum === null && (
+                          <span className="text-[10.5px] text-muted-foreground">
+                            {observedData.executionStatus === "RUNNING"
+                              ? t("Live Docker running — awaiting probe traffic", "Docker đang chạy — chờ lưu lượng probe")
+                              : isBooting
+                                ? t("Booting Live Docker…", "Đang khởi động Docker…")
+                                : t("Start Live Docker to measure", "Bấm Chạy Docker để đo thông số thật")}
+                          </span>
+                        )}
+                      </div>
+                      <dl className="grid grid-cols-3 gap-2">
+                        {[
+                          {
+                            label: t("Throughput", "Lưu lượng"),
+                            value: liveRps !== null ? metric(liveRps) : "—",
+                            unit: liveRps !== null ? "rps" : "",
+                            warning: false,
+                          },
+                          {
+                            label: "E2E p95",
+                            value: p95Num !== null ? metric(p95Num) : "—",
+                            unit: p95Num !== null ? "ms" : "",
+                            warning: p95Num !== null && p95Num > 500,
+                          },
+                          {
+                            label: t("Error rate", "Tỉ lệ lỗi"),
+                            value: errNum !== null ? metric(errNum) : "—",
+                            unit: errNum !== null ? "%" : "",
+                            warning: errNum !== null && errNum > 0,
+                          },
+                        ].map(({ label, value, unit, warning }) => (
+                          <div
+                            key={label}
+                            className={`rounded-lg border px-2.5 py-1.5 ${
+                              isLight
+                                ? "border-slate-200/80 bg-white"
+                                : "border-slate-800 bg-slate-950/60"
+                            }`}
+                          >
+                            <dt className={`text-[10px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                              {label}
+                            </dt>
+                            <dd
+                              className={`font-mono text-sm font-bold tabular-nums ${
+                                warning
+                                  ? isLight ? "text-rose-600" : "text-rose-300"
+                                  : isLight ? "text-slate-900" : "text-slate-100"
+                              }`}
+                            >
+                              {value}
+                              {unit && (
+                                <span className={`ml-0.5 text-[10px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                                  {unit}
+                                </span>
+                              )}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+                  )}
+
+                  <section
+                    aria-label="Resource capacity"
+                    className={`space-y-1.5 ${
+                      !hasLiveRedHistory
+                        ? `border-t pt-2 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-3 ${
+                            isLight ? "border-slate-200" : "border-slate-800"
+                          }`
+                        : ""
                     }`}
                   >
-                    <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-1.5 font-medium select-none">
-                      <span className="inline-flex flex-wrap items-center gap-1.5 font-mono">
-                        <span className={isLight ? "font-sans font-semibold text-slate-800" : "font-sans font-semibold text-slate-100"}>
-                          {t("Action history", "Lịch sử thao tác")} ({observedData.actions.length})
+                    <div className="flex items-baseline justify-between gap-2">
+                      <h3 className={`text-[10.5px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                        {locale === "vi" ? "Tài nguyên cụm Docker" : "Docker Resource Usage"}
+                      </h3>
+                      {peakCpuService && cpuSamples > 0 && (
+                        <span className={`text-[10px] ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                          {t("Peak CPU:", "CPU cao nhất:")}{" "}
+                          <span className="font-mono font-medium">{peakCpuService}</span>
                         </span>
-                        {latestAction && (
-                          <>
-                            <span aria-hidden="true" className="opacity-40">·</span>
-                            <span>
-                              {latestAction.action} {latestAction.service}
-                              {latestAction.replicas ? ` → ${latestAction.replicas}` : ""}
+                      )}
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {[
+                        {
+                          label: "CPU",
+                          rightText:
+                            cpuSamples > 0
+                              ? `${avgCpuPct.toFixed(1)}% · ${Number(totalVcpuAllocated.toFixed(1))}/${maxPoolVcpu} vCPU`
+                              : t("Awaiting live Docker", "Chờ Docker chạy"),
+                          pct: cpuBarPct,
+                        },
+                        {
+                          label: "RAM",
+                          rightText:
+                            totalRamUsedMiB > 0
+                              ? `${Math.round(totalRamUsedMiB).toLocaleString()} / ${Math.round(ramPoolMiB).toLocaleString()} MiB`
+                              : t("Awaiting live Docker", "Chờ Docker chạy"),
+                          pct: ramBarPct,
+                        },
+                      ].map(({ label, rightText, pct }) => (
+                        <div key={label} className="space-y-0.5">
+                          <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                            <span className={`font-semibold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                              {label}
                             </span>
-                            {latestAction.result && (
-                              <span className="text-muted-foreground">
-                                ({latestAction.result.replicasBefore}→{latestAction.result.replicasAfter}× · p95{" "}
-                                {metric(latestAction.result.metricsAfter["p95LatencyMs"])}ms · err{" "}
-                                {metric(latestAction.result.metricsAfter["errorRatePercent"])}%)
-                              </span>
-                            )}
-                          </>
-                        )}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">{t("History", "Chi tiết")} ▾</span>
-                    </summary>
-                    <ol
-                      className={`divide-y border-t px-3 ${
-                        isLight ? "divide-slate-200/80 border-slate-200 bg-white" : "divide-slate-800 border-slate-800 bg-slate-950/50"
-                      }`}
-                    >
-                      {observedData.actions.map((item) => (
-                        <li key={item.actionId} className="flex flex-wrap items-center justify-between gap-2 py-1.5 font-mono">
-                          <span>
-                            <strong className={isLight ? "text-slate-900" : "text-slate-100"}>
-                              {item.action} {item.service}
-                              {item.replicas ? ` → ${item.replicas}` : ""}
-                            </strong>
-                            <span className="ml-1.5 text-muted-foreground">· {item.status}</span>
-                          </span>
-                          {item.result && (
-                            <span className="mavis-tabular text-muted-foreground">
-                              {item.result.replicasBefore}→{item.result.replicasAfter}× · req{" "}
-                              {metric(item.result.metricsAfter["requestCount"])} · p95{" "}
-                              {metric(item.result.metricsAfter["p95LatencyMs"])} ms · err{" "}
-                              {metric(item.result.metricsAfter["errorRatePercent"])}%
+                            <span className={`font-mono tabular-nums ${isLight ? "text-slate-600" : "text-slate-300"}`}>
+                              {rightText}
                             </span>
-                          )}
-                        </li>
+                          </div>
+                          <div
+                            className={`h-1.5 overflow-hidden rounded-full ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
+                            aria-hidden="true"
+                          >
+                            <div
+                              className="h-full rounded-full bg-sky-500 transition-all"
+                              style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                            />
+                          </div>
+                        </div>
                       ))}
-                    </ol>
-                  </details>
-                )}
+                    </div>
+                  </section>
+                </div>
               </section>
             );
           })()}
@@ -3916,6 +3797,31 @@ export function LiveStudioWorkbench({
                         : t("Preview · Live metrics populate when Docker runs", "Xem trước · Thông số thật sẽ hiện khi chạy Docker")
                       : t("Waiting for container telemetry", "Đang chờ telemetry từ container");
 
+            const localizeTelemetryStatus = (raw: string) => {
+              switch (raw) {
+                case "Starts Down":
+                  return t("Starts Down", "Tắt sẵn");
+                case "Prepared":
+                  return t("Prepared", "Sẵn sàng");
+                case "Paused":
+                  return t("Paused", "Tạm dừng");
+                case "Down":
+                  return t("Down", "Đang tắt");
+                case "Running":
+                  return t("Running", "Đang chạy");
+                case "Timed Out":
+                  return t("Timed Out", "Hết thời gian");
+                case "Failed":
+                  return t("Failed", "Gặp lỗi");
+                case "Stopped":
+                  return t("Stopped", "Đã dừng");
+                case "Booting":
+                  return t("Booting", "Đang khởi động");
+                default:
+                  return t("Waiting", "Đang chờ");
+              }
+            };
+
             const rows = observedData.services.map((service) => {
               const telemetry = observedData.telemetry?.services.find(
                 (item) => item.service === service,
@@ -3923,17 +3829,17 @@ export function LiveStudioWorkbench({
               const agg = summarizeServiceStats(telemetry?.stats);
               const running = runningFor(observedData, service);
               const desired = telemetry?.replicas;
+              const phase = servicePhase(observedData, service);
+              const isPaused = phase === "paused";
               const result = lastResultFor(observedData, service);
               const svcLimit = observedData.limits?.services?.[service];
-              const netStats = (telemetry?.stats ?? [])
-                .map((st) => st.network?.trim())
-                .filter((v): v is string => Boolean(v));
-              const netIo =
-                netStats.length === 0
-                  ? "—"
-                  : netStats.length === 1
-                    ? netStats[0]!
-                    : `${netStats[0]} (+${netStats.length - 1})`;
+              const throttleAction = [...observedData.actions]
+                .reverse()
+                .find((a) => a.service === service && a.status === "CONFIRMED" && a.action === "THROTTLE_CPU");
+              const cpuQuotaPct =
+                typeof throttleAction?.cpuPercent === "number" && throttleAction.cpuPercent < 100
+                  ? throttleAction.cpuPercent
+                  : null;
               const serviceSpans = (observedData.telemetry?.spans ?? []).filter(
                 (span) => span.runtimeService === service,
               );
@@ -3959,10 +3865,31 @@ export function LiveStudioWorkbench({
                 spanDurationsMs.length > 0
                   ? spanDurationsMs.reduce((sum, ms) => sum + ms, 0) / spanDurationsMs.length
                   : undefined;
+              // Compute real per-service RPS & Error % from OTel serviceGraph (inbound traffic) + OTel spans.
+              const inboundEdges = (observedData.telemetry?.serviceGraph ?? []).filter(
+                (edge) => edge.server === service,
+              );
+              const outboundEdges = (observedData.telemetry?.serviceGraph ?? []).filter(
+                (edge) => edge.client === service,
+              );
+              const edgePool = inboundEdges.length > 0 ? inboundEdges : outboundEdges;
+              const graphRps =
+                edgePool.length > 0
+                  ? edgePool.reduce((sum, edge) => sum + (edge.rps ?? 0), 0)
+                  : undefined;
+              const graphErrRps =
+                edgePool.length > 0
+                  ? edgePool.reduce((sum, edge) => sum + (edge.errorsPerSec ?? 0), 0)
+                  : undefined;
+              const graphErrPct =
+                graphRps !== undefined && graphRps > 0 && graphErrRps !== undefined
+                  ? Math.min(100, (graphErrRps / graphRps) * 100)
+                  : undefined;
+              const spanErrPct =
+                serviceSpans.length > 0 ? (errorSpanCount / serviceSpans.length) * 100 : undefined;
               const rawP95 = result?.metricsAfter["p95LatencyMs"];
               const e2eP95Ms =
                 typeof rawP95 === "number" && Number.isFinite(rawP95) ? rawP95 : undefined;
-              // Prefer per-service OTel span p95; only fall back to action E2E workload p95 when no spans exist.
               const p95Ms = spanP95Ms ?? e2eP95Ms;
               const p95SampleNote =
                 spanP95Ms !== undefined
@@ -3970,38 +3897,36 @@ export function LiveStudioWorkbench({
                   : e2eP95Ms !== undefined
                     ? "E2E"
                     : undefined;
-              const rawReq = result?.metricsAfter["requestCount"];
-              const reqCount =
-                typeof rawReq === "number" && Number.isFinite(rawReq) ? rawReq : undefined;
-              const rawErr = result?.metricsAfter["errorRatePercent"];
-              const errRate =
-                typeof rawErr === "number" && Number.isFinite(rawErr) ? rawErr : undefined;
+              const errRate = graphErrPct ?? spanErrPct;
               const {
-                label: statusLabel,
+                label: statusRawLabel,
                 textClass: statusClass,
                 dotClass,
               } = resolveTelemetryServiceStatus({
                 isPreview: isTelemetryPreview,
                 running,
+                paused: isPaused,
                 executionStatus: observedData.executionStatus,
                 lastSessionFailed,
                 isTimedOut,
                 isBooting,
               });
+              const statusLabel = localizeTelemetryStatus(statusRawLabel);
               return {
                 service,
                 telemetry,
                 agg,
                 running,
                 desired,
+                isPaused,
+                cpuQuotaPct,
                 svcLimit,
-                netIo,
                 serviceSpans,
                 errorSpanCount,
                 spanAvgMs,
                 p95Ms,
                 p95SampleNote,
-                reqCount,
+                graphRps,
                 errRate,
                 statusLabel,
                 statusClass,
@@ -4034,6 +3959,7 @@ export function LiveStudioWorkbench({
                   </span>
                 </div>
 
+                {/* Clean 6-column table: every column maps directly to one of the 4 exercise types with zero horizontal overflow */}
                 <div className={`max-w-full overflow-x-auto rounded-xl border ${isLight ? "border-slate-200 bg-white" : "border-slate-800"}`}>
                   <table className="mavis-tabular w-full whitespace-nowrap text-left text-xs">
                     <thead className={isLight ? "bg-slate-50 text-[11px] text-slate-600" : "bg-slate-900 text-[11px] text-slate-400"}>
@@ -4041,13 +3967,10 @@ export function LiveStudioWorkbench({
                         {[
                           t("Service", "Service"),
                           t("Status", "Trạng thái"),
-                          t("Replicas", "Replica"),
+                          t("Replicas", "Bản sao"),
                           "CPU",
                           "RAM",
-                          t("Net I/O", "Net I/O"),
-                          "p95",
-                          t("Req / Err%", "Req / Lỗi%"),
-                          "Spans",
+                          t("p95 / Traffic & Err%", "p95 / Lưu lượng & Lỗi%"),
                         ].map((heading) => (
                           <th key={heading} scope="col" className="px-2.5 py-2 font-semibold">
                             {heading}
@@ -4092,7 +4015,19 @@ export function LiveStudioWorkbench({
                                 )}
                               </button>
                             </td>
-                            <td className={`px-2.5 py-1.5 font-semibold ${isLight ? (row.running === 0 ? "text-rose-600" : row.running && row.running > 0 ? "text-emerald-700" : "text-slate-600") : row.statusClass}`}>
+                            <td
+                              className={`px-2.5 py-1.5 font-semibold ${
+                                isLight
+                                  ? row.isPaused
+                                    ? "text-amber-700"
+                                    : row.running === 0
+                                      ? "text-rose-600"
+                                      : row.running && row.running > 0
+                                        ? "text-emerald-700"
+                                        : "text-slate-600"
+                                  : row.statusClass
+                              }`}
+                            >
                               <span className="inline-flex items-center gap-1.5">
                                 <span
                                   aria-hidden="true"
@@ -4106,74 +4041,64 @@ export function LiveStudioWorkbench({
                                 ? "—"
                                 : row.desired !== undefined && row.desired !== row.running
                                   ? `${row.running}/${row.desired}`
-                                  : row.running}
+                                  : `×${row.running}`}
                               {row.agg.containers > 1 && (
                                 <span className="ml-1 text-[10px] text-muted-foreground">
-                                  ({row.agg.containers} active)
+                                  ({row.agg.containers} pod)
                                 </span>
                               )}
                             </td>
                             <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
-                              {row.agg.cpu}
+                              <span>{row.agg.cpu}</span>
+                              {row.cpuQuotaPct !== null && (
+                                <span
+                                  className={`ml-1.5 rounded px-1 py-0.5 text-[10px] font-bold ${
+                                    isLight
+                                      ? "bg-amber-100 text-amber-800"
+                                      : "bg-amber-500/20 text-amber-200"
+                                  }`}
+                                >
+                                  Quota {row.cpuQuotaPct}%
+                                </span>
+                              )}
                             </td>
                             <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
                               {row.agg.memory}
                             </td>
-                            <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-700" : "text-slate-300"}`}>
-                              {row.netIo}
-                            </td>
                             <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
-                              {row.p95Ms !== undefined ? (
+                              <span className="inline-flex flex-wrap items-center gap-1.5">
                                 <span>
-                                  {metric(row.p95Ms)} ms
-                                  {row.p95SampleNote && (
-                                    <span className="ml-1 text-[10px] text-slate-500">
-                                      ({row.p95SampleNote})
-                                    </span>
-                                  )}
+                                  {row.p95Ms !== undefined ? `${metric(row.p95Ms)} ms` : "—"}
                                 </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-300">
-                              {row.reqCount !== undefined || row.errRate !== undefined ? (
-                                <span>
-                                  {row.reqCount !== undefined
-                                    ? `${row.reqCount.toLocaleString()} req`
-                                    : "—"}
-                                  {" · "}
-                                  <span
-                                    className={
-                                      row.errRate !== undefined && row.errRate > 0
-                                        ? "text-rose-300"
-                                        : "text-slate-300"
-                                    }
-                                  >
-                                    {row.errRate !== undefined
-                                      ? `${metric(row.errRate)}%`
-                                      : "—"}
+                                {row.graphRps !== undefined && row.graphRps > 0 && (
+                                  <span className="text-[10.5px] text-muted-foreground">
+                                    · {metric(row.graphRps)} rps
                                   </span>
-                                </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-300">
-                              <span>{row.serviceSpans.length}</span>
-                              {row.errorSpanCount > 0 && (
-                                <span className="ml-1 text-rose-300">
-                                  ({row.errorSpanCount} err)
-                                </span>
-                              )}
+                                )}
+                                {row.errRate !== undefined && (
+                                  <span
+                                    className={`rounded px-1 py-0.5 text-[10.5px] font-semibold ${
+                                      row.errRate > 0
+                                        ? isLight
+                                          ? "bg-rose-100 text-rose-700"
+                                          : "bg-rose-500/20 text-rose-200"
+                                        : isLight
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : "bg-emerald-500/15 text-emerald-300"
+                                    }`}
+                                  >
+                                    {metric(row.errRate)}% {t("err", "lỗi")}
+                                  </span>
+                                )}
+                              </span>
                             </td>
                           </tr>
                         );
                       })}
                       {rows.length === 0 && (
                         <tr>
-                          <td colSpan={9} className="px-3 py-3 text-center text-slate-500">
-                            Start a Live session to observe container telemetry.
+                          <td colSpan={6} className="px-3 py-3 text-center text-muted-foreground">
+                            {t("Start a Live session to observe container telemetry.", "Chạy Docker để quan sát thông số container thật.")}
                           </td>
                         </tr>
                       )}
@@ -4181,29 +4106,36 @@ export function LiveStudioWorkbench({
                   </table>
                 </div>
 
+                {/* Compact Theme-Aware Service Detail Card (shows only unique per-container & dependency details) */}
                 {activeRow && (
                   <div
                     aria-label={`${activeRow.service} detailed telemetry`}
-                    className="space-y-2 rounded-lg border border-slate-800 bg-slate-900/70 p-3"
+                    className={`space-y-2 rounded-xl border p-3 text-xs ${
+                      isLight
+                        ? "border-slate-200 bg-slate-50/85 text-slate-900"
+                        : "border-slate-800 bg-slate-900/75 text-slate-100"
+                    }`}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+                    <div
+                      className={`flex flex-wrap items-center justify-between gap-2 border-b pb-1.5 ${
+                        isLight ? "border-slate-200" : "border-slate-800/80"
+                      }`}
+                    >
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-xs font-semibold text-slate-100">
-                          {activeRow.service}
-                        </span>
-                        <span className={`text-[11px] font-medium ${activeRow.statusClass}`}>
+                        <span className="font-mono font-bold">{activeRow.service}</span>
+                        <span className={`text-[11px] font-semibold ${isLight ? "text-slate-600" : activeRow.statusClass}`}>
                           {activeRow.statusLabel}
                         </span>
                         {activeRow.svcLimit && (
-                          <span className="font-mono text-[11px] text-slate-400">
+                          <span className="font-mono text-[11px] text-muted-foreground">
                             :{activeRow.svcLimit.containerPort} {activeRow.svcLimit.readinessPath}
                           </span>
                         )}
                       </div>
-                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
                         {observedData.limits?.cpus !== undefined && (
                           <span className="font-mono">
-                            Quota: {observedData.limits.cpus} vCPU
+                            {t("Quota:", "Hạn mức:")} {observedData.limits.cpus} vCPU
                             {observedData.limits.memoryMiB !== undefined
                               ? ` · ${observedData.limits.memoryMiB} MiB`
                               : ""}
@@ -4212,88 +4144,51 @@ export function LiveStudioWorkbench({
                         <button
                           type="button"
                           onClick={() => studio.setService("")}
-                          className="text-slate-400 hover:text-slate-200"
+                          className={`font-medium hover:underline ${isLight ? "text-slate-600 hover:text-slate-900" : "text-slate-300 hover:text-white"}`}
                         >
-                          Clear
+                          {t("Close", "Đóng")}
                         </button>
                       </div>
                     </div>
 
-                    <dl className="mavis-tabular grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4 lg:grid-cols-6">
-                      {[
-                        [
-                          "Replicas",
-                          activeRow.running === undefined
-                            ? "—"
-                            : activeRow.desired !== undefined
-                              ? `${activeRow.running} / ${activeRow.desired} ready`
-                              : String(activeRow.running),
-                        ],
-                        ["CPU", activeRow.agg.cpu],
-                        ["RAM", activeRow.agg.memory],
-                        ["Net I/O", activeRow.netIo],
-                        [
-                          "Latency (p95 / avg)",
-                          activeRow.p95Ms !== undefined
-                            ? `${metric(activeRow.p95Ms)} ms${
-                                activeRow.spanAvgMs !== undefined
-                                  ? ` / ${metric(activeRow.spanAvgMs)} ms`
-                                  : ""
-                              }`
-                            : "—",
-                        ],
-                        [
-                          "Spans / Errors",
-                          `${activeRow.serviceSpans.length} / ${activeRow.errorSpanCount}`,
-                        ],
-                      ].map(([k, v]) => (
-                        <div
-                          key={k}
-                          className="rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5"
-                        >
-                          <dt className="text-[10px] text-slate-400">{k}</dt>
-                          <dd className="mt-0.5 font-mono text-xs text-slate-100">{v}</dd>
-                        </div>
-                      ))}
-                    </dl>
-
                     {(activeRow.telemetry?.stats.length ?? 0) > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                          Containers ({activeRow.telemetry!.stats.length})
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {activeRow.telemetry!.stats.map((st, idx) => (
-                            <span
-                              key={st.containerId ?? idx}
-                              className="rounded border border-slate-800 bg-slate-950/70 px-2 py-1 font-mono text-[10.5px] text-slate-300"
-                            >
-                              {st.containerId ? st.containerId.slice(0, 12) : `pod-${idx + 1}`}
-                              {" · CPU "}
-                              {st.cpu?.trim() || "—"}
-                              {" · RAM "}
-                              {st.memory?.trim() || "—"}
-                              {st.network?.trim() ? ` · Net ${st.network.trim()}` : ""}
-                            </span>
-                          ))}
-                        </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {t("Pods", "Container")} ({activeRow.telemetry!.stats.length}):
+                        </span>
+                        {activeRow.telemetry!.stats.map((st, idx) => (
+                          <span
+                            key={st.containerId ?? idx}
+                            className={`rounded border px-2 py-0.5 font-mono text-[10.5px] ${
+                              isLight
+                                ? "border-slate-200 bg-white text-slate-700"
+                                : "border-slate-800 bg-slate-950/70 text-slate-300"
+                            }`}
+                          >
+                            {st.containerId ? st.containerId.slice(0, 12) : `pod-${idx + 1}`}
+                            {" · CPU "}
+                            {st.cpu?.trim() || "—"}
+                            {" · RAM "}
+                            {st.memory?.trim() || "—"}
+                          </span>
+                        ))}
                       </div>
                     )}
 
                     {(outboundPeers.length > 0 || inboundPeers.length > 0) && (
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
                         {outboundPeers.length > 0 && (
                           <span>
-                            Calls →{" "}
-                            <span className="font-mono text-slate-200">
+                            {t("Calls →", "Gọi tới →")}{" "}
+                            <span className={`font-mono font-medium ${isLight ? "text-slate-800" : "text-slate-200"}`}>
                               {outboundPeers.join(", ")}
                             </span>
                           </span>
                         )}
                         {inboundPeers.length > 0 && (
                           <span>
-                            Called by ←{" "}
-                            <span className="font-mono text-slate-200">
+                            {t("Called by ←", "Được gọi bởi ←")}{" "}
+                            <span className={`font-mono font-medium ${isLight ? "text-slate-800" : "text-slate-200"}`}>
                               {inboundPeers.join(", ")}
                             </span>
                           </span>
@@ -4416,7 +4311,7 @@ export function LiveStudioWorkbench({
                     <button
                       type="button"
                       onClick={buildAutoObservationNote}
-                      title="Auto-fill summary"
+                      title={t("Auto-fill suggested note", "Tự điền ghi chú gợi ý")}
                       className={`absolute right-1.5 inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition ${
                         isLight
                           ? "bg-slate-100 text-slate-700 hover:bg-sky-50 hover:text-sky-700"
@@ -4424,34 +4319,41 @@ export function LiveStudioWorkbench({
                       }`}
                     >
                       <Sparkles aria-hidden="true" className="size-3 text-sky-500" />
-                      Auto-fill
+                      {t("Suggest note", "Gợi ý ghi chú")}
                     </button>
                   )}
                 </div>
 
+                {/* Primary 1-click verified snapshot capture (auto-fills suggested note if blank so there is zero double-click friction) */}
                 <Button
                   type="button"
                   size="sm"
                   disabled={
                     isPreviewMode ||
                     !data.telemetry ||
-                    !explanation.trim() ||
                     capture.isPending ||
                     capturing ||
                     waiting ||
                     (data.snapshots?.length ?? 0) >= 8
                   }
-                  onClick={() =>
+                  onClick={() => {
+                    const effectiveNote = explanation.trim() || smartSnapshotPlan.suggestedNote;
+                    if (!explanation.trim()) setExplanation(effectiveNote);
                     void captureSnapshot(
                       graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ??
                         null,
-                      { smartOverlay: activeSmartOverlay },
-                    )
-                  }
+                      {
+                        explanationOverride: effectiveNote,
+                        smartOverlay: activeSmartOverlay,
+                      },
+                    );
+                  }}
                   className="h-9 bg-[#0056D2] px-3.5 text-xs font-semibold text-white hover:bg-[#00419E] disabled:opacity-45"
                 >
                   <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
-                  {t("Capture evidence snapshot", "Chụp Snapshot minh chứng")}
+                  {capturing || capture.isPending
+                    ? t("Capturing…", "Đang chụp…")
+                    : t("Capture evidence snapshot", "Chụp Snapshot minh chứng")}
                 </Button>
 
                 <div
@@ -4460,22 +4362,6 @@ export function LiveStudioWorkbench({
                 />
 
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={capturingScreen || blocks.length === 0}
-                    onClick={() => void captureCanvasScreenshot()}
-                    className={`h-8 px-2.5 text-xs font-medium disabled:opacity-40 ${
-                      isLight
-                        ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                        : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
-                    }`}
-                  >
-                    <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
-                    {capturingScreen ? t("Capturing…", "Đang chụp…") : t("Screenshot PNG", "Chụp ảnh PNG")}
-                  </Button>
-
                   {recordingSteps === 0 ? (
                     <Button
                       type="button"
@@ -4485,29 +4371,29 @@ export function LiveStudioWorkbench({
                       title={
                         isPreviewMode || data.executionStatus !== "RUNNING"
                           ? t(
-                              "Start Live Docker first to record live runtime service-to-service traffic",
-                              "Hãy chạy Docker thật trước để quay lại luồng gọi giữa các service",
+                              "Start Live Docker first to record a 3D video clip (max 20s)",
+                              "Hãy chạy Docker thật trước để quay video 3D (tối đa 20 giây)",
                             )
                           : t(
-                              "Record live canvas video + traffic flow timeline",
-                              "Quay video sơ đồ trực tiếp + dòng thời gian lưu lượng",
+                              "Record crisp 3D HD video attached to your Lab submission (max 20s)",
+                              "Quay video 3D HD đính kèm bài nộp cho Giảng viên (tối đa 20 giây)",
                             )
                       }
                       onClick={startLiveReplayRecording}
-                      className={`h-8 px-2.5 text-xs font-medium disabled:opacity-40 ${
+                      className={`h-9 px-3 text-xs font-medium disabled:opacity-40 ${
                         isLight
-                          ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                           : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
                       }`}
                     >
                       <Video aria-hidden="true" className="mr-1.5 size-3.5" />
-                      {t("Record runtime replay", "Quay replay trực tiếp")}
+                      {t("Record 3D video", "Quay video 3D")}
                     </Button>
                   ) : (
                     <>
                       <span
                         role="status"
-                        className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2 font-mono text-[11px] font-medium ${
+                        className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 font-mono text-[11px] font-medium ${
                           isLight
                             ? "border-rose-300 bg-rose-50 text-rose-700"
                             : "border-rose-500/40 bg-rose-500/15 text-rose-200"
@@ -4517,34 +4403,19 @@ export function LiveStudioWorkbench({
                           aria-hidden="true"
                           className="size-1.5 animate-pulse rounded-full bg-rose-500"
                         />
-                        {recordingSeconds}s · {recordingSteps}f
+                        REC {recordingSeconds}s / 20s
                       </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={savingReplay}
-                        onClick={addLiveReplayCheckpoint}
-                        className={`h-8 px-2.5 text-xs ${
-                          isLight
-                            ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                            : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
-                        }`}
-                      >
-                        <Plus aria-hidden="true" className="mr-1 size-3" />
-                        Add checkpoint ({recordingSteps})
-                      </Button>
                       <Button
                         type="button"
                         size="sm"
                         disabled={savingReplay}
                         onClick={() => void stopAndSaveLiveReplay()}
-                        className="h-8 bg-rose-600 px-2.5 text-xs text-white hover:bg-rose-500"
+                        className="h-9 bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-500"
                       >
                         <Square aria-hidden="true" className="mr-1.5 size-3 fill-current" />
                         {savingReplay
-                          ? "Saving replay…"
-                          : `Stop & save replay (${recordingSeconds}s)`}
+                          ? t("Saving video…", "Đang lưu video…")
+                          : `${t("Stop & save video", "Dừng & lưu video")} (${recordingSeconds}s)`}
                       </Button>
                     </>
                   )}
@@ -4554,26 +4425,28 @@ export function LiveStudioWorkbench({
                       type="button"
                       size="sm"
                       variant="outline"
-                      className={`h-8 px-2.5 text-xs font-medium ${
+                      className={`h-9 px-2.5 text-xs font-medium ${
                         isLight
                           ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                           : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
                       }`}
                       onClick={() => void downloadReceipt()}
                     >
-                      {data.receiptSignature ? "Download signed receipt" : "Download receipt"}
+                      {data.receiptSignature
+                        ? t("Download signed receipt", "Tải biên lai xác thực")
+                        : t("Download receipt", "Tải biên lai JSON")}
                     </Button>
                   )}
                 </div>
               </div>
 
               {(downloadError || replayError) && (
-                <p role="alert" className={`text-xs ${isLight ? "text-rose-700" : "text-rose-300"}`}>
+                <p role="alert" className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium ${isLight ? "border-rose-200 bg-rose-50 text-rose-700" : "border-rose-500/35 bg-rose-500/10 text-rose-200"}`}>
                   {downloadError?.message ?? replayError}
                 </p>
               )}
 
-              {/* Slim Collapsible Metrics & Traffic Context (collapsed by default so Snapshots stays clean) */}
+              {/* Slim Collapsible Metrics & Traffic Context (pairs replica delta on the same service to avoid cross-service mismatch) */}
               {(runtimeFlows.length > 0 || (firstConfirmed?.result && lastConfirmed?.result)) && (
                 <details
                   className={`rounded-lg border text-xs ${
@@ -4587,7 +4460,7 @@ export function LiveStudioWorkbench({
                       {firstConfirmed?.result && lastConfirmed?.result ? (
                         <>
                           <span className={isLight ? "font-sans font-semibold text-slate-800" : "font-sans font-semibold text-slate-100"}>
-                            Before → After:
+                            {t("Before → After:", "Trước → Sau:")}
                           </span>
                           <span>
                             p95 {metric(firstConfirmed.result.metricsBefore["p95LatencyMs"])}→
@@ -4595,12 +4468,12 @@ export function LiveStudioWorkbench({
                           </span>
                           <span aria-hidden="true" className="opacity-40">·</span>
                           <span>
-                            err {metric(firstConfirmed.result.metricsBefore["errorRatePercent"])}%→
+                            {t("err", "lỗi")} {metric(firstConfirmed.result.metricsBefore["errorRatePercent"])}%→
                             {metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%
                           </span>
                           <span aria-hidden="true" className="opacity-40">·</span>
                           <span>
-                            {lastConfirmed.result.service} {firstConfirmed.result.replicasBefore}→
+                            {lastConfirmed.result.service} {lastConfirmed.result.replicasBefore}→
                             {lastConfirmed.result.replicasAfter}×
                           </span>
                         </>
@@ -4611,7 +4484,7 @@ export function LiveStudioWorkbench({
                       )}
                     </span>
                     <span className="text-[11px] text-muted-foreground">
-                      {runtimeFlows.length} {runtimeFlows.length === 1 ? "flow" : "flows"} ▾
+                      {runtimeFlows.length} {t(runtimeFlows.length === 1 ? "flow" : "flows", "luồng")} ▾
                     </span>
                   </summary>
 
@@ -4630,23 +4503,23 @@ export function LiveStudioWorkbench({
                           </span>
                         </div>
                         <div>
-                          <span className="block text-[10px] text-muted-foreground">p95 latency</span>
+                          <span className="block text-[10px] text-muted-foreground">{t("p95 latency", "Độ trễ p95")}</span>
                           <span>
                             {metric(firstConfirmed.result.metricsBefore["p95LatencyMs"])} ms →{" "}
                             {metric(lastConfirmed.result.metricsAfter["p95LatencyMs"])} ms
                           </span>
                         </div>
                         <div>
-                          <span className="block text-[10px] text-muted-foreground">Error rate</span>
+                          <span className="block text-[10px] text-muted-foreground">{t("Error rate", "Tỉ lệ lỗi")}</span>
                           <span>
                             {metric(firstConfirmed.result.metricsBefore["errorRatePercent"])}% →{" "}
                             {metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%
                           </span>
                         </div>
                         <div>
-                          <span className="block text-[10px] text-muted-foreground">Replicas</span>
+                          <span className="block text-[10px] text-muted-foreground">{t("Replicas", "Bản sao")}</span>
                           <span>
-                            {firstConfirmed.result.service}: {firstConfirmed.result.replicasBefore} →{" "}
+                            {lastConfirmed.result.service}: {lastConfirmed.result.replicasBefore} →{" "}
                             {lastConfirmed.result.replicasAfter}
                           </span>
                         </div>
@@ -4687,7 +4560,7 @@ export function LiveStudioWorkbench({
                 </details>
               )}
 
-              {/* Signed Evidence Snapshots & Recorded Videos */}
+              {/* Signed Evidence Snapshots & Recorded Videos (frozen Smart HUD is stamped directly onto each image, avoiding live-drift pill mismatch) */}
               {(data.snapshots?.length ?? 0) > 0 && (
                 <div className="grid gap-3 md:grid-cols-2">
                   {data.snapshots?.map((snapshot, idx) => (
@@ -4699,15 +4572,13 @@ export function LiveStudioWorkbench({
                       isLight={isLight}
                       exerciseBadge={smartSnapshotPlan.badge}
                       accentColor={smartSnapshotPlan.accentColor}
-                      missionGoal={missionCard?.instructions || authoring?.instructions}
-                      exerciseStats={smartSnapshotPlan.stats}
                       onDownloadEvidence={(id) => void downloadSnapshot(id)}
                     />
                   ))}
                 </div>
               )}
 
-              {/* Local Screenshots & Runtime Replays */}
+              {/* Local Fallback Replays (clearly labeled as Local-only / Not Submitted) */}
               {liveReplays.length > 0 && (
                 <div className="grid gap-2.5 lg:grid-cols-2">
                   {liveReplays.map((replayItem) => {
@@ -4717,8 +4588,8 @@ export function LiveStudioWorkbench({
                         key={replayItem.id}
                         className={`space-y-2 rounded-xl border p-3 text-xs ${
                           isLight
-                            ? "border-slate-200 bg-slate-50/70 text-slate-900"
-                            : "border-slate-800 bg-slate-900/75 text-slate-100"
+                            ? "border-amber-200 bg-amber-50/40 text-slate-900"
+                            : "border-amber-500/30 bg-slate-900/75 text-slate-100"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -4726,20 +4597,15 @@ export function LiveStudioWorkbench({
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span
                                 className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
-                                  isScreenshot
-                                    ? isLight
-                                      ? "bg-emerald-100 text-emerald-800"
-                                      : "bg-emerald-500/15 text-emerald-300"
-                                    : isLight
-                                      ? "bg-sky-100 text-sky-800"
-                                      : "bg-sky-500/15 text-sky-300"
+                                  isLight
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-amber-500/20 text-amber-200"
                                 }`}
                               >
-                                {isScreenshot ? "PNG" : "REPLAY"}
+                                {t("LOCAL ONLY · NOT SUBMITTED", "LƯU TẠM · CHƯA NỘP")}
                               </span>
                               <span className="text-[11px] text-muted-foreground">
                                 {new Date(replayItem.capturedAt).toLocaleTimeString()}
-                                {!isScreenshot && ` · ${replayItem.replay.length} frames`}
                                 {replayItem.durationMs
                                   ? ` · ${(replayItem.durationMs / 1000).toFixed(1)}s`
                                   : ""}
@@ -4750,7 +4616,7 @@ export function LiveStudioWorkbench({
                           <button
                             type="button"
                             onClick={() => void removeLiveReplay(replayItem.id)}
-                            aria-label={isScreenshot ? "Delete screenshot" : "Delete runtime replay"}
+                            aria-label={t("Delete local replay", "Xóa bản lưu tạm")}
                             className={`rounded p-1 transition ${
                               isLight
                                 ? "text-slate-400 hover:bg-slate-200/70 hover:text-rose-600"
@@ -4778,35 +4644,6 @@ export function LiveStudioWorkbench({
                         ) : (
                           <StudioEvidenceReplay frames={replayItem.replay} />
                         )}
-
-                        <div
-                          className={`flex flex-wrap items-center justify-end gap-1.5 border-t pt-2 ${
-                            isLight ? "border-slate-200" : "border-slate-800"
-                          }`}
-                        >
-                          {isScreenshot && replayItem.imageData && (
-                            <a
-                              href={replayItem.imageData}
-                              download={`mavis-screenshot-${replayItem.id.slice(0, 8)}.${replayItem.imageData.startsWith("data:image/webp;") ? "webp" : "png"}`}
-                              className={`inline-flex h-7 items-center rounded-md border px-2.5 text-[11px] font-medium transition ${
-                                isLight
-                                  ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                                  : "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
-                              }`}
-                            >
-                              {t("Download Image", "Tải ảnh")}
-                            </a>
-                          )}
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2.5 text-[11px]"
-                            onClick={() => downloadStudioEvidence(replayItem)}
-                          >
-                            {isScreenshot ? "Download HTML" : "Download Replay HTML"}
-                          </Button>
-                        </div>
                       </div>
                     );
                   })}
@@ -4822,8 +4659,8 @@ export function LiveStudioWorkbench({
                   }`}
                 >
                   {t(
-                    "No snapshots yet. Enter a short note above (or click Auto-fill) and press Capture evidence snapshot.",
-                    "Chưa có snapshot nào. Nhập ghi chú ngắn phía trên (hoặc bấm Auto-fill) rồi nhấn Capture evidence snapshot.",
+                    "No evidence yet. Click Capture evidence snapshot or Record 3D video above to save verified proof for grading.",
+                    "Chưa có minh chứng nào. Bấm Chụp Snapshot minh chứng hoặc Quay video 3D ở trên để lưu bằng chứng gửi Giảng viên chấm.",
                   )}
                 </div>
               )}
@@ -5100,7 +4937,7 @@ export function LiveStudioWorkbench({
                     </Button>
                   </div>
                 </section>
-              ) : isLight && !authoring ? (
+              ) : !authoring ? (
                 (() => {
                   const selSvc = canvasSelected || selected || services[0] || "";
                   const selRunning = selSvc ? runningFor(data, selSvc) : undefined;
@@ -5119,37 +4956,57 @@ export function LiveStudioWorkbench({
                   const selPaused = selPhase === "paused";
                   const selStopped = selRunning === 0 && !selPaused;
                   const canLiveAct = !isPreviewMode && data.executionStatus === "RUNNING" && Boolean(selSvc);
+                  const allowedSet =
+                    missionCard?.allowedActions && missionCard.allowedActions.length > 0
+                      ? new Set(missionCard.allowedActions.map((a) => a.toUpperCase()))
+                      : null;
+                  const isAllowed = (act: string) => !allowedSet || allowedSet.has(act);
+                  const disabledHint = (act: string) =>
+                    !isAllowed(act)
+                      ? t("Disabled by exercise configuration", "Thao tác bị tắt trong cấu hình đề bài")
+                      : undefined;
                   return (
-                    <section aria-label={t("Live Service Controls", "Điều khiển Service")} className="space-y-3.5 text-[13px] text-slate-900">
+                    <section
+                      aria-label={t("Live Service Controls", "Điều khiển Service")}
+                      className={`space-y-3.5 text-[13px] ${isLight ? "text-slate-900" : "dark text-slate-100"}`}
+                    >
                       {/* Service Picker & Status */}
                       <div className={`p-3 ${styleCfg.subSurfaceClass}`}>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="truncate font-mono text-sm font-bold text-slate-900">
+                          <span className={`truncate font-mono text-sm font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}>
                             {selSvc || t("No service selected", "Chưa chọn service")}
                           </span>
                           <span
                             className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold ${
                               selPaused
-                                ? "border-amber-300 bg-amber-50 text-amber-800"
+                                ? isLight
+                                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                                  : "border-amber-500/40 bg-amber-500/15 text-amber-200"
                                 : selStopped
-                                  ? "border-rose-300 bg-rose-50 text-rose-700"
+                                  ? isLight
+                                    ? "border-rose-300 bg-rose-50 text-rose-700"
+                                    : "border-rose-500/40 bg-rose-500/15 text-rose-200"
                                   : selRunning && selRunning > 0
-                                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                                    : "border-slate-300 bg-white text-slate-600"
+                                    ? isLight
+                                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                      : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+                                    : isLight
+                                      ? "border-slate-300 bg-white text-slate-600"
+                                      : "border-slate-700 bg-slate-900 text-slate-300"
                             }`}
                           >
                             {selPaused
-                              ? "PAUSED"
+                              ? t("PAUSED", "TẠM DỪNG")
                               : selStopped
-                                ? "CRASHED · 0x"
+                                ? t("CRASHED · 0x", "ĐANG TẮT · 0x")
                                 : selRunning != null
-                                  ? `RUNNING · ${selRunning}x`
-                                  : "STANDBY"}
+                                  ? `${t("RUNNING", "ĐANG CHẠY")} · ${selRunning}x`
+                                  : t("STANDBY", "CHỜ")}
                           </span>
                         </div>
                         <dl className="mavis-tabular mt-2.5 grid grid-cols-2 gap-1.5">
                           <div className={`flex items-center justify-between gap-1.5 border px-2.5 py-1.5 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}>
-                            <dt className={`shrink-0 text-[11px] ${styleCfg.subtleTextClass}`}>Replicas</dt>
+                            <dt className={`shrink-0 text-[11px] ${styleCfg.subtleTextClass}`}>{t("Replicas", "Bản sao")}</dt>
                             <dd className="whitespace-nowrap font-mono text-xs font-bold">
                               {selRunning ?? "—"}
                             </dd>
@@ -5165,14 +5022,14 @@ export function LiveStudioWorkbench({
                             className={`col-span-2 border px-2.5 py-1.5 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
                           >
                             <div className="flex items-baseline justify-between gap-2">
-                              <dt className="shrink-0 text-[11px] text-slate-500">RAM</dt>
-                              <dd className="whitespace-nowrap font-mono text-[11.5px] font-bold text-slate-900">
+                              <dt className={`shrink-0 text-[11px] ${styleCfg.subtleTextClass}`}>RAM</dt>
+                              <dd className={`whitespace-nowrap font-mono text-[11.5px] font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}>
                                 {ramLimit ? (
                                   <>
                                     {ramUsed}
-                                    <span className="font-medium text-slate-400"> / {ramLimit}</span>
+                                    <span className={`font-medium ${isLight ? "text-slate-400" : "text-slate-500"}`}> / {ramLimit}</span>
                                     {ramPct !== null && (
-                                      <span className="ml-1.5 text-[10.5px] font-semibold text-slate-500">
+                                      <span className={`ml-1.5 text-[10.5px] font-semibold ${styleCfg.subtleTextClass}`}>
                                         ({ramPct}%)
                                       </span>
                                     )}
@@ -5183,7 +5040,7 @@ export function LiveStudioWorkbench({
                               </dd>
                             </div>
                             {ramPct !== null && (
-                              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                              <div className={`mt-1.5 h-1.5 w-full overflow-hidden rounded-full ${isLight ? "bg-slate-100" : "bg-slate-800"}`}>
                                 <div
                                   className={`h-full rounded-full transition-all ${
                                     ramPct >= 85
@@ -5200,15 +5057,15 @@ export function LiveStudioWorkbench({
                         </dl>
                       </div>
 
-                      {/* Real Docker Lifecycle & Fault Injection Actions */}
+                      {/* Real Docker Lifecycle & Fault Injection Actions (Unified Light + Dark, enforces allowedActions) */}
                       <div className="space-y-2.5">
                         <div className="flex items-center justify-between">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          <p className={`text-[11px] font-bold uppercase tracking-wider ${styleCfg.subtleTextClass}`}>
                             {t("Live Docker Actions", "Thao tác Docker thật")}
                           </p>
                           {!canLiveAct && (
-                            <span className="text-[11px] font-medium text-amber-700">
-                              {t("Click Run to activate", "Bấm Run để bật")}
+                            <span className={`text-[11px] font-medium ${isLight ? "text-amber-700" : "text-amber-300"}`}>
+                              {t("Click Run to activate", "Bấm Chạy Docker để bật")}
                             </span>
                           )}
                         </div>
@@ -5217,58 +5074,102 @@ export function LiveStudioWorkbench({
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!canLiveAct || busy || selPhase !== "running"}
+                            title={disabledHint("STOP")}
+                            disabled={!canLiveAct || busy || selPhase !== "running" || !isAllowed("STOP")}
                             onClick={() => void dispatchCommand("STOP", selSvc)}
-                            className="h-9 whitespace-nowrap border-rose-300 bg-rose-50 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                            className={`h-9 whitespace-nowrap text-xs font-semibold disabled:opacity-40 ${
+                              isLight
+                                ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                : "border-rose-500/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25"
+                            }`}
                           >
                             <Square className="mr-1.5 size-3.5 fill-current" aria-hidden="true" />
-                            Stop
+                            {t("Stop", "Dừng")}
                           </Button>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!canLiveAct || busy || selPhase !== "stopped"}
+                            title={disabledHint("START")}
+                            disabled={!canLiveAct || busy || selPhase !== "stopped" || !isAllowed("START")}
                             onClick={() => void dispatchCommand("START", selSvc)}
-                            className="h-9 whitespace-nowrap border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                            className={`h-9 whitespace-nowrap text-xs font-semibold disabled:opacity-40 ${
+                              isLight
+                                ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                            }`}
                           >
                             <Play className="mr-1.5 size-3.5 fill-current" aria-hidden="true" />
-                            Start
+                            {t("Start", "Khởi động")}
                           </Button>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!canLiveAct || busy || selPhase !== "running"}
+                            title={disabledHint("PAUSE")}
+                            disabled={!canLiveAct || busy || selPhase !== "running" || !isAllowed("PAUSE")}
                             onClick={() => void studio.send("PAUSE", selSvc)}
-                            className="h-9 whitespace-nowrap border-amber-300 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                            className={`h-9 whitespace-nowrap text-xs font-semibold disabled:opacity-40 ${
+                              isLight
+                                ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                                : "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+                            }`}
                           >
-                            Pause
+                            {t("Pause", "Tạm dừng")}
                           </Button>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!canLiveAct || busy || selPhase !== "paused"}
+                            title={disabledHint("RESUME")}
+                            disabled={!canLiveAct || busy || selPhase !== "paused" || !isAllowed("RESUME")}
                             onClick={() => void studio.send("RESUME", selSvc)}
-                            className="h-9 whitespace-nowrap border-sky-300 bg-sky-50 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                            className={`h-9 whitespace-nowrap text-xs font-semibold disabled:opacity-40 ${
+                              isLight
+                                ? "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                                : "border-sky-500/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
+                            }`}
                           >
-                            Resume
+                            {t("Resume", "Tiếp tục")}
                           </Button>
                         </div>
 
-                        {/* Scale */}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={!canLiveAct || busy || !selCanScale || selPhase !== "running" || (selRunning ?? 1) >= 3}
-                          onClick={() => void dispatchCommand("SCALE", selSvc, Math.min(3, (selRunning ?? 1) + 1))}
-                          className={`h-8 w-full whitespace-nowrap border text-xs font-semibold disabled:opacity-45 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
-                        >
-                          <Plus className="mr-1 size-3.5" aria-hidden="true" />
-                          Scale +1
-                        </Button>
+                        {/* Scale Replicas (1..3) — supports both scale-up and scale-down */}
+                        <div className="space-y-1">
+                          <div className={`flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-wide ${styleCfg.subtleTextClass}`}>
+                            <span>{t("Scale Replicas (1–3)", "Nhân bản Replica (1–3)")}</span>
+                            {selRunning != null && selPhase === "running" && (
+                              <span className="font-mono font-bold text-foreground">×{selRunning}</span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {([1, 2, 3] as const).map((rep) => (
+                              <Button
+                                key={rep}
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                title={disabledHint("SCALE")}
+                                disabled={
+                                  !canLiveAct ||
+                                  busy ||
+                                  !selCanScale ||
+                                  selPhase !== "running" ||
+                                  !isAllowed("SCALE") ||
+                                  selRunning === rep
+                                }
+                                onClick={() => void dispatchCommand("SCALE", selSvc, rep)}
+                                className={`h-8 whitespace-nowrap border font-mono text-xs font-semibold disabled:opacity-45 ${styleCfg.controlRadiusClass} ${
+                                  selRunning === rep && selPhase === "running"
+                                    ? styleCfg.controlActiveClass
+                                    : styleCfg.controlIdleClass
+                                }`}
+                              >
+                                ×{rep}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
 
                         {/* CPU Throttle (cgroup) */}
                         <div className="space-y-1">
@@ -5282,7 +5183,8 @@ export function LiveStudioWorkbench({
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                disabled={!canLiveAct || busy || selPhase !== "running"}
+                                title={disabledHint("THROTTLE_CPU")}
+                                disabled={!canLiveAct || busy || selPhase !== "running" || !isAllowed("THROTTLE_CPU")}
                                 onClick={() => void studio.send("THROTTLE_CPU", selSvc, undefined, pct)}
                                 className={`h-8 whitespace-nowrap border font-mono text-xs font-semibold disabled:opacity-45 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
                               >
@@ -5307,7 +5209,8 @@ export function LiveStudioWorkbench({
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                disabled={!canLiveAct || busy}
+                                title={disabledHint("SET_LOAD")}
+                                disabled={!canLiveAct || busy || !isAllowed("SET_LOAD")}
                                 onClick={() =>
                                   void studio.send("SET_LOAD", selSvc, undefined, undefined, rps)
                                 }
@@ -5326,8 +5229,8 @@ export function LiveStudioWorkbench({
 
                       {/* Quick Service Switcher Chips */}
                       {services.length > 1 && (
-                        <div className="space-y-1.5 border-t border-slate-200 pt-2.5">
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <div className={`space-y-1.5 border-t pt-2.5 ${isLight ? "border-slate-200" : "border-slate-800"}`}>
+                          <p className={`text-[11px] font-bold uppercase tracking-wider ${styleCfg.subtleTextClass}`}>
                             {t("All Services", "Tất cả Service")} ({services.length})
                           </p>
                           <div className="flex flex-wrap gap-1.5">
@@ -5342,8 +5245,10 @@ export function LiveStudioWorkbench({
                                   onClick={() => studio.setService(svc)}
                                   className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[11.5px] font-semibold transition ${
                                     active
-                                      ? "border-primary bg-primary/10 text-primary"
-                                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                                      ? "border-primary bg-primary/15 text-primary"
+                                      : isLight
+                                        ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                                        : "border-slate-700 bg-slate-900 text-slate-200 hover:border-slate-600 hover:bg-slate-800"
                                   }`}
                                 >
                                   <span
@@ -5366,7 +5271,7 @@ export function LiveStudioWorkbench({
                         </div>
                       )}
 
-                      {/* Change Impact Exercise Panel (Prediction Lock & F1 Check) */}
+                      {/* Change Impact Exercise Panel (Prediction Lock & Prescribed Action) */}
                       {!isPreviewMode &&
                         studio.services.length > 0 &&
                         (data.executionStatus === "RUNNING" || Boolean(data.exerciseEvaluation)) && (
@@ -5386,7 +5291,7 @@ export function LiveStudioWorkbench({
                         )}
 
                       {/* Bottom Quick Shortcuts */}
-                      <div className="flex gap-2 border-t border-slate-200 pt-2.5">
+                      <div className={`flex gap-2 border-t pt-2.5 ${isLight ? "border-slate-200" : "border-slate-800"}`}>
                         <Button
                           type="button"
                           size="sm"
@@ -5408,7 +5313,7 @@ export function LiveStudioWorkbench({
                           }}
                         >
                           <Terminal className="mr-1.5 size-3.5" aria-hidden="true" />
-                          Logs
+                          {t("Logs & Traces", "Log & Trace")}
                         </Button>
                       </div>
                     </section>
@@ -5848,21 +5753,6 @@ export function LiveStudioWorkbench({
                                 )}
                               </p>
                             </div>
-
-                            <label className="flex cursor-pointer items-center justify-between gap-2 pt-0.5 text-[11px]">
-                              <span className={isLight ? "text-slate-700" : "text-slate-300"}>
-                                {t(
-                                  "Require student impact prediction before action",
-                                  "Yêu cầu sinh viên khóa dự đoán trước khi gây lỗi",
-                                )}
-                              </span>
-                              <input
-                                type="checkbox"
-                                checked={predictionRequiredDraft}
-                                onChange={(e) => setPredictionRequiredDraft(e.target.checked)}
-                                className={`size-4 rounded ${styleCfg.checkboxAccentClass}`}
-                              />
-                            </label>
                           </div>
                         )}
 
@@ -5916,8 +5806,8 @@ export function LiveStudioWorkbench({
                                 <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
                                   {t("Min replicas", "Số replica tối thiểu")}
                                 </span>
-                                <div className="grid grid-cols-3 gap-1">
-                                  {(["1", "2", "3"] as const).map((cnt) => (
+                                <div className="grid grid-cols-2 gap-1">
+                                  {(["2", "3"] as const).map((cnt) => (
                                     <button
                                       key={cnt}
                                       type="button"
@@ -6133,21 +6023,8 @@ export function LiveStudioWorkbench({
                           </p>
                         )}
 
-                        {/* Shared Technical Controls (Custom GET path, Allowed Actions, Sync Docker) */}
+                        {/* Shared Technical Controls (Allowed Actions, Sync Docker) */}
                         <div className={`space-y-2.5 border-t pt-2.5 ${styleCfg.dividerClass}`}>
-                          <label className="block space-y-1 text-[11px]">
-                            <span className={styleCfg.subtleTextClass}>
-                              {t("Custom GET path", "Đường dẫn GET tùy chỉnh")}
-                            </span>
-                            <Input
-                              value={baselineDraft}
-                              onChange={(e) => setBaselineDraft(e.target.value)}
-                              style={{ fontSize: 12 }}
-                              placeholder="/api/v1/storefront/live-flow"
-                              className={`h-7 font-mono ${styleCfg.inputClass}`}
-                            />
-                          </label>
-
                           <div className="space-y-1">
                             <p className={`text-[11px] ${styleCfg.subtleTextClass}`}>
                               {t("Allowed student actions", "Thao tác cho phép sinh viên")}
@@ -6191,7 +6068,13 @@ export function LiveStudioWorkbench({
                       </div>
                     </details>
 
-                    <div className="flex items-center justify-between gap-2 pt-1">
+                    <div
+                      className={`sticky bottom-0 z-10 -mx-3 -mb-3 flex items-center justify-between gap-2 border-t px-3 py-2.5 backdrop-blur-sm ${
+                        isLight
+                          ? "border-slate-200 bg-white/95"
+                          : "border-slate-800 bg-slate-950/95"
+                      }`}
+                    >
                       {authoring.saved && !missionDirty ? (
                         <span
                           className={`text-[11.5px] font-semibold ${isLight ? "text-emerald-700" : "text-emerald-400"}`}
@@ -7007,219 +6890,7 @@ export function LiveStudioWorkbench({
                   </section>
                 );
               })()
-            ) : setupPanel === "drills" && !authoring && data.executionStatus === "RUNNING" ? (
-              <section aria-label="Quick Live Drills setup" className="space-y-3 text-xs">
-                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-100">
-                    <RotateCcw aria-hidden="true" className="size-3.5 text-emerald-400" />
-                    <span>Quick Live Drills</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSetupPanel("service")}
-                    className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800 hover:text-white"
-                  >
-                    Service Setup
-                  </button>
-                </div>
-                {(() => {
-                  const stoppedBlock = blocks.find((b) => runningFor(data, b.service) === 0);
-                  const scalableBlock =
-                    blocks.find(
-                      (b) =>
-                        b.service === selected &&
-                        b.canScale &&
-                        (runningFor(data, b.service) ?? 0) > 0,
-                    ) ??
-                    blocks.find((b) => b.canScale && (runningFor(data, b.service) ?? 0) > 0);
-                  const stoppableBlock =
-                    blocks.find(
-                      (b) => b.service === selected && (runningFor(data, b.service) ?? 0) > 0,
-                    ) ??
-                    blocks.find(
-                      (b) =>
-                        !/gateway|edge|postgres|db|kafka/.test(b.service.toLowerCase()) &&
-                        (runningFor(data, b.service) ?? 0) > 0,
-                    );
-                  return (
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        disabled={busy || !stoppableBlock}
-                        onClick={() =>
-                          stoppableBlock && void dispatchCommand("STOP", stoppableBlock.service)
-                        }
-                        className="w-full rounded-lg border border-rose-500/35 bg-rose-500/10 p-2.5 text-left transition-colors hover:border-rose-400 disabled:opacity-40"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-rose-200">Inject Service Fault</span>
-                          <code className="font-mono text-[10px] text-rose-300">
-                            {stoppableBlock?.service ?? "—"}
-                          </code>
-                        </div>
-                        <p className="mt-1 text-[10.5px] text-slate-400">
-                          Stops the running Docker container to observe real error propagation.
-                        </p>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || !scalableBlock}
-                        onClick={() =>
-                          scalableBlock && void dispatchCommand("SCALE", scalableBlock.service, 2)
-                        }
-                        className="w-full rounded-lg border border-sky-500/35 bg-sky-500/10 p-2.5 text-left transition-colors hover:border-sky-400 disabled:opacity-40"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-sky-200">Scale Out ×2 Pods</span>
-                          <code className="font-mono text-[10px] text-sky-300">
-                            {scalableBlock?.service ?? "—"}
-                          </code>
-                        </div>
-                        <p className="mt-1 text-[10.5px] text-slate-400">
-                          Scales the service to 2 real replicas to compare p95 latency.
-                        </p>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || !stoppedBlock}
-                        onClick={() =>
-                          stoppedBlock && void dispatchCommand("START", stoppedBlock.service)
-                        }
-                        className="w-full rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-2.5 text-left transition-colors hover:border-emerald-400 disabled:opacity-40"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-emerald-200">Recover Stopped</span>
-                          <code className="font-mono text-[10px] text-emerald-300">
-                            {stoppedBlock?.service ?? "All up"}
-                          </code>
-                        </div>
-                        <p className="mt-1 text-[10.5px] text-slate-400">
-                          Restarts a stopped container and restores cluster health.
-                        </p>
-                      </button>
-                    </div>
-                  );
-                })()}
-              </section>
-            ) : (
-              <div className="space-y-3">
-                <LiveSandboxParity
-                  data={data}
-                  selected={selected}
-                  busy={isPreviewMode ? false : busy}
-                  onSelect={(svc) => {
-                    studio.setService(svc);
-                    setSetupPanel("service");
-                  }}
-                  onCommand={dispatchCommand}
-                  sections={["inspector", "hardware", "resilience", "load"]}
-                  compact
-                  label="Live inspector"
-                  authoring={authoringWithBlast}
-                />
-                {!isPreviewMode && selected && data.executionStatus === "RUNNING" && (() => {
-                  const darkPhase = servicePhase(data, selected);
-                  return (
-                  <section
-                    aria-label="Live Docker fault injection"
-                    className="space-y-2 rounded-lg border border-amber-500/25 bg-slate-900/70 p-2.5 text-xs"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-amber-200">Fault Injection (Docker)</span>
-                      <code className="font-mono text-[10px] text-slate-400">{selected}</code>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={busy || darkPhase !== "running"}
-                        onClick={() => void studio.send("PAUSE", selected)}
-                        className="h-7 whitespace-nowrap border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-200 hover:bg-amber-500/20"
-                      >
-                        Pause (Freeze)
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={busy || darkPhase !== "paused"}
-                        onClick={() => void studio.send("RESUME", selected)}
-                        className="h-7 whitespace-nowrap border-emerald-500/40 bg-emerald-500/10 text-[11px] text-emerald-200 hover:bg-emerald-500/20"
-                      >
-                        Resume
-                      </Button>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] uppercase tracking-wide text-slate-500">
-                        CPU Throttle (cgroup)
-                      </span>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {[25, 50, 100].map((pct) => (
-                          <Button
-                            key={pct}
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={busy || darkPhase !== "running"}
-                            onClick={() => void studio.send("THROTTLE_CPU", selected, undefined, pct)}
-                            className="h-7 whitespace-nowrap border-slate-700 bg-slate-950/60 font-mono text-[11px] text-slate-200 hover:border-sky-400"
-                          >
-                            {pct}%
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-1 border-t border-slate-800 pt-2">
-                      <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-500">
-                        <span>Live Probe Load (RPS)</span>
-                        <span className="font-mono text-sky-300">
-                          {data.telemetry?.probe?.targetRps ?? 5} RPS
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-4 gap-1">
-                        {[5, 15, 30, 50].map((rps) => (
-                          <Button
-                            key={rps}
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() =>
-                              void studio.send("SET_LOAD", selected, undefined, undefined, rps)
-                            }
-                            className={`h-7 whitespace-nowrap font-mono text-[11px] ${
-                              data.telemetry?.probe?.targetRps === rps
-                                ? "border-sky-400 bg-sky-500/20 text-sky-200"
-                                : "border-slate-700 bg-slate-950/60 text-slate-200 hover:border-sky-400"
-                            }`}
-                          >
-                            {rps}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  </section>
-                  );
-                })()}
-                {!isPreviewMode &&
-                  studio.services.length > 0 &&
-                  (data.executionStatus === "RUNNING" || Boolean(data.exerciseEvaluation)) && (
-                    <StudioExercisePanel
-                      data={data}
-                      services={studio.services}
-                      busy={busy}
-                      submittingPrediction={studio.prediction.isPending}
-                      onLockPrediction={(svcs, rationale) =>
-                        studio.submitPrediction(svcs, rationale)
-                      }
-                      onRunPrescribedChange={(kind, svc, rep, cpu, rps) =>
-                        studio.send(kind, svc, rep, cpu, rps)
-                      }
-                    />
-                  )}
-              </div>
-            )}
+            ) : null}
               </div>
               )}
             </div>

@@ -500,13 +500,17 @@ function CourseOutlineBody({
                 </p>
               )}
               <ul className="divide-y border-t">
-                {module.items.map((item, idx) => {
+                {(() => {
+                  let labOrder = 0;
+                  return module.items.map((item) => {
                   const effectiveType = resolveItemType(item);
                   const meta = TYPE_META[effectiveType] ?? { en: item.type, vi: item.type, icon: FileText };
                   const Icon = meta.icon;
                   const lab = item.assignmentId ? labs.get(item.assignmentId) : undefined;
                   const assignment = item.assignmentId ? assignmentById.get(item.assignmentId) : undefined;
                   const isLab = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(effectiveType);
+                  if (isLab) labOrder += 1;
+                  const labNumber = lab?.position ?? labOrder;
                   const status = isLab
                     ? statusForLab(lab?.state, canManage)
                     : item.type === "QUIZ" && item.assignmentId
@@ -554,9 +558,11 @@ function CourseOutlineBody({
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">
-                            Lab {idx + 1}
-                          </span>
+                          {isLab && (
+                            <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">
+                              Lab {labNumber}
+                            </span>
+                          )}
                           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             {t(meta.en, meta.vi)}
                           </span>
@@ -697,7 +703,8 @@ function CourseOutlineBody({
                       </div>
                     </li>
                   );
-                })}
+                  });
+                })()}
                 {module.items.length === 0 && (
                   <li className="px-4 py-3 text-sm text-muted-foreground">
                     {t("No learning items in this module yet.", "Chương này chưa có nội dung học.")}

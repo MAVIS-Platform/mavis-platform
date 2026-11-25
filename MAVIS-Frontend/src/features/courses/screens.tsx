@@ -1980,15 +1980,6 @@ function StepContent({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            {runtimeConfigurationMissing && isStudent && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setRuntimeConfigurationDialogOpen(false)}
-              >
-                {t("Close", "Đóng")}
-              </Button>
-            )}
             {runtimeConfigurationMissing && !isStudent && (
               <Button asChild>
                 <Link
@@ -2394,65 +2385,6 @@ function StepContent({
                               {studentContext.studioExercise.instructions}
                             </p>
                           )}
-                          <ul className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                            {!!studentContext.studioExercise.initialState?.stoppedServices
-                              ?.length && (
-                              <li>
-                                {t("Stopped services", "Service dừng sẵn")}:{" "}
-                                {studentContext.studioExercise.initialState.stoppedServices.join(
-                                  ", ",
-                                )}
-                              </li>
-                            )}
-                            {!!studentContext.studioExercise.initialState?.stoppedControllers
-                              ?.length && (
-                              <li>
-                                {t("Stopped controllers", "Controller dừng sẵn")}:{" "}
-                                {studentContext.studioExercise.initialState.stoppedControllers.join(
-                                  ", ",
-                                )}
-                              </li>
-                            )}
-                            {!!studentContext.studioExercise.allowedActions?.length && (
-                              <li>
-                                {t("Allowed actions", "Hành động được phép")}:{" "}
-                                {studentContext.studioExercise.allowedActions.join(", ")}
-                              </li>
-                            )}
-                            {studentContext.studioExercise.successCriteria?.maxErrorRatePercent !=
-                              null && (
-                              <li>
-                                {t("Max error rate", "Tỉ lệ lỗi tối đa")}:{" "}
-                                {studentContext.studioExercise.successCriteria.maxErrorRatePercent}%
-                              </li>
-                            )}
-                            {studentContext.studioExercise.successCriteria?.maxP95Ms != null && (
-                              <li>
-                                {t("Max p95", "p95 tối đa")}:{" "}
-                                {studentContext.studioExercise.successCriteria.maxP95Ms} ms
-                              </li>
-                            )}
-                            {studentContext.studioExercise.successCriteria?.requiredTraceEdge && (
-                              <li>
-                                {t("Required trace", "Trace bắt buộc")}:{" "}
-                                {
-                                  studentContext.studioExercise.successCriteria.requiredTraceEdge
-                                    .from
-                                }{" "}
-                                →{" "}
-                                {studentContext.studioExercise.successCriteria.requiredTraceEdge.to}
-                              </li>
-                            )}
-                            {!!studentContext.studioExercise.successCriteria?.minReplicas
-                              ?.length && (
-                              <li>
-                                {t("Minimum replicas", "Replica tối thiểu")}:{" "}
-                                {studentContext.studioExercise.successCriteria.minReplicas
-                                  .map((target) => `${target.service ?? ""} ×${target.count ?? 0}`)
-                                  .join(", ")}
-                              </li>
-                            )}
-                          </ul>
                         </section>
                       )}
                     </div>
@@ -2472,17 +2404,7 @@ function StepContent({
           </Link>
         </Button>
         {step === 3 ? (
-          !hasSubmittedLab && !preview ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={jumpToSubmissionBox}
-            >
-              <span>{t("Jump to Submission Box", "Đi tới khung nộp bài")}</span>
-              <ArrowRight className="ml-1 h-4 w-4 shrink-0" />
-            </Button>
-          ) : (
+          hasSubmittedLab || preview ? (
             <Button
               asChild
               size="sm"
@@ -2493,7 +2415,7 @@ function StepContent({
                 <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
               </Link>
             </Button>
-          )
+          ) : null
         ) : (
           <Button
             asChild={nextAvailable}

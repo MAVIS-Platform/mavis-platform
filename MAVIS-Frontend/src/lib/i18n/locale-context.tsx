@@ -95,7 +95,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Drop action here": "Thả công cụ vào đây",
   "Guided Lab Mission Checklist": "Lộ trình nhiệm vụ thực hành Lab",
   "Step 1: Capture baseline snapshot": "Bước 1: Chụp Snapshot Baseline ban đầu",
-  "Step 2: Scale replicas (4 → 8) or inject fault": "Bước 2: Nhân rộng (4 → 8) hoặc gây lỗi",
+  "Step 2: Scale replicas (1 → 3) or inject fault": "Bước 2: Nhân rộng (1 → 3) hoặc gây lỗi",
   "Step 3: Capture post-change snapshot & compare":
     "Bước 3: Chụp Snapshot sau thay đổi & đối chiếu",
   "Step 4: Finish Studio & seal HMAC receipt": "Bước 4: Kết thúc Studio & ký biên nhận HMAC",
@@ -1953,14 +1953,14 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Worker:": "Worker:",
   "Standalone Shared Workbench": "Không gian MAVIS Studio dùng chung (Độc lập)",
   "Use this shared MAVIS Studio directly without stepping through course labs or quizzes. Design topologies, drag & drop scaling actions, inject faults, or attach to any live Docker session.":
-    "Vào thẳng MAVIS Studio dùng chung mà không cần đi qua từng bước bài tập hay quiz. Thiết kế cấu trúc 2D/3D, kéo thả nhân bản 1 → 4 → 8 instance, tiêm lỗi hoặc gắn vào phiên Docker thực tế.",
+    "Vào thẳng MAVIS Studio dùng chung mà không cần đi qua từng bước bài tập hay quiz. Thiết kế cấu trúc 2D/3D, kéo thả nhân bản 1 → 3 instance, tiêm lỗi hoặc gắn vào phiên Docker thực tế.",
   "Interactive Studio Sandbox (Instant)": "Sandbox Studio tương tác tức thì",
   "Connect Live Docker Session": "Kết nối phiên Docker thực tế",
   "Select active or recent runtime session": "Chọn phiên chạy Docker đang mở hoặc gần đây",
   "No live Docker sessions found": "Chưa có phiên chạy Docker trực tiếp nào",
   "Switch to Instant Sandbox Builder": "Chuyển sang chế độ Sandbox dựng sẵn tức thì",
   "No live Docker session is currently active. Switch to Interactive Studio Sandbox above to test 2D/3D scaling and fault injection immediately.":
-    "Hiện chưa có phiên Docker trực tiếp nào đang mở. Hãy chuyển sang chế độ Sandbox Studio tương tác ở trên để test kéo thả 2D/3D và nhân bản 1 → 4 → 8 ngay lập tức.",
+    "Hiện chưa có phiên Docker trực tiếp nào đang mở. Hãy chuyển sang chế độ Sandbox Studio tương tác ở trên để test kéo thả 2D/3D và nhân bản 1 → 3 ngay lập tức.",
   "Architecture Preset Template": "Mẫu kiến trúc dự án dựng sẵn (Template)",
   "Custom Studio Block Builder & Chaos Controls": "Trình thêm khối 3D tùy chỉnh & Chaos Monkey",
   "Block name": "Tên khối Service / DB",

@@ -489,7 +489,7 @@ test("LiveStudioWorkbench left tool rail Snapshots & Logs buttons toggle closed 
   );
   assert.match(
     src,
-    /Logs & Traces[\s\S]{0,400}if \(!bottomCollapsed && tab !== "snapshots"\)\s*\{\s*setBottomCollapsed\(true\);/,
+    /Logs & Traces[\s\S]{0,400}if \(!bottomCollapsed && tab === "logs"\)\s*\{\s*setBottomCollapsed\(true\);/,
   );
 });
 
@@ -534,10 +534,10 @@ test("Batch 2: LiveStudioWorkbench auto-opens prediction, locks Finish on 0 snap
   // Task 2.3: shared servicePhase helper + Light/Dark parity for CPU [25, 50, 100], SET_LOAD [5, 15, 30, 50], Pause/Resume
   assert.match(src, /function servicePhase\(/);
   assert.ok(src.includes('selPhase !== "paused"'));
-  assert.ok(src.includes('darkPhase !== "paused"'));
+  assert.ok(!src.includes("darkPhase"));
   assert.ok(!src.includes("CPU 20%"));
   const cpuMatches = src.match(/\[25, 50, 100\]\.map/g) || [];
-  assert.ok(cpuMatches.length >= 2, "Both Light and Dark themes must expose CPU [25, 50, 100] presets");
+  assert.ok(cpuMatches.length >= 1, "Unified Student Inspector must expose CPU [25, 50, 100] presets");
   const loadMatches = src.match(/\[5, 15, 30, 50\]\.map/g) || [];
   assert.ok(loadMatches.length >= 2, "Both Light and Dark themes must expose SET_LOAD [5, 15, 30, 50] presets");
 });
@@ -1096,12 +1096,12 @@ test("Stats tab shows only Cluster Overview metrics without 4-step checklist or 
     "utf8",
   );
   const start = src.indexOf('aria-labelledby="live-cluster-overview"');
-  const end = src.indexOf("<StudioRedCharts", start);
+  const end = src.indexOf('tab === "telemetry"', start);
   const statsHeaderAndKpis = src.slice(start, end);
   assert.doesNotMatch(src, /Step 1: Capture baseline snapshot/);
   assert.doesNotMatch(statsHeaderAndKpis, /Timed out/);
   assert.doesNotMatch(statsHeaderAndKpis, /Setup preview/);
-  assert.match(statsHeaderAndKpis, /Cluster Overview[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
+  assert.match(statsHeaderAndKpis, /Cluster Overview[\s\S]*<StudioRedCharts[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
 });
 
 test("3D service tag shifts smoothly toward the block's back-top rim and shrinks on close zoom so top-deck stats stay unobstructed", () => {
@@ -1975,9 +1975,9 @@ test("HyperMesh Audit P0-1..P1-9: multi-lab auto-link, receipt sealing & cache s
   assert.ok(workbench.includes('? "FINISHING"'));
   assert.ok(workbench.includes("!isTerminalExecution && !data.finishRequested"));
 
-  // P1-4: Author mode live test exposes SET_LOAD [5, 15, 30, 50] RPS controls
+  // P1-4: Unified Student Inspector (Light & Dark) and Author mode live test expose SET_LOAD [5, 15, 30, 50] RPS controls
   const loadMatches = workbench.match(/\[5, 15, 30, 50\]\.map/g) || [];
-  assert.ok(loadMatches.length >= 3, "Light, Dark, and Author modes must all expose SET_LOAD [5, 15, 30, 50]");
+  assert.ok(loadMatches.length >= 2, "Unified Student Inspector and Author mode must both expose SET_LOAD [5, 15, 30, 50]");
 
   // P1-5: Launchpad Step 2 ignores default seeded revision-1 placeholder instructions; Step 3 polls in-flight sessions
   assert.ok(!labStudio.includes("exercise.data?.instructions?.trim(),"));
@@ -2522,4 +2522,101 @@ test("3D Sharpness Overhaul + Remaining UX Fixes: 2D vector tags, 1.5x SSAA, 1.5
   assert.ok(standalone.includes("putExerciseOnce(latestExercise ?? curEx)"));
   assert.ok(standalone.includes('"maxErrorRatePercent" in cur.successCriteria'));
   assert.ok(sonner.includes('position="top-center"'));
+});
+
+test("Critical Audit 26 P0/P1/P2 Overhaul: initials, watermark, waterfall peers, unified inspector, 1-click snapshot, role-safe grading & space recovery", () => {
+  const { getUserInitials } = require("../src/components/shared/user-avatar.tsx");
+  const { formatSnapshotWatermark } = require("../src/features/runtime/studio-observability.tsx");
+  const { buildTraceWaterfall } = require("../src/features/runtime/studio-red-charts.tsx");
+
+  // P2: Clean user initials without punctuation or numeric suffixes
+  assert.equal(getUserInitials("Nguyễn Văn Audit (SE199926)"), "NA");
+  assert.equal(getUserInitials("Giảng viên Audit 26"), "GA");
+  assert.equal(getUserInitials("Minh"), "MI");
+
+  // P2: Snapshot watermark strips parenthesized student code cleanly without empty ()
+  const wm = formatSnapshotWatermark({
+    studentName: "Nguyễn Văn Audit (SE199926)",
+    studentEmail: "sv.audit26@mavis.edu.vn",
+    snapshotIndex: 1,
+  });
+  assert.equal(wm.left, "MSSV: SE199926 · Nguyễn Văn Audit · Ảnh #1");
+  assert.ok(!wm.left.includes("()"));
+
+  // P0: Trace Waterfall resolves downstream peer service and avoids duplicated HTTP 200 200
+  const wf = buildTraceWaterfall(
+    [
+      {
+        traceId: "tr-1",
+        spanId: "sp-root",
+        serviceName: "api-gateway",
+        operationName: "GET /api/v1/storefront/live-flow",
+        startTimeUnixNano: "1000000000",
+        durationNanoseconds: "85000000",
+        httpStatusCode: 200,
+      },
+      {
+        traceId: "tr-1",
+        spanId: "sp-child",
+        parentSpanId: "sp-root",
+        serviceName: "order-service",
+        operationName: "HTTP 200",
+        httpMethod: "GET",
+        route: "/pricing",
+        startTimeUnixNano: "1015000000",
+        durationNanoseconds: "32000000",
+        httpStatusCode: 200,
+      },
+    ],
+    "tr-1",
+    [
+      {
+        traceId: "tr-1",
+        fromService: "order-service",
+        toService: "pricing-service",
+        childSpanId: "sp-child",
+        latencyMs: 31,
+      },
+    ],
+  );
+  assert.equal(wf.rows.length, 2);
+  const childRow = wf.rows.find((r) => r.spanId === "sp-child");
+  assert.ok(childRow);
+  assert.equal(childRow.targetService, "pricing-service");
+  assert.equal(childRow.label, "GET /pricing");
+  assert.ok(!/HTTP\s+200/i.test(childRow.label));
+
+  const readSrc = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+  const workbench = readSrc("src/features/runtime/live-studio-workbench.tsx");
+  const obs = readSrc("src/features/runtime/studio-observability.tsx");
+  const panel = readSrc("src/features/runtime/studio-exercise-panel.tsx");
+  const subV2 = readSrc("src/features/courses/lab-submission-v2.tsx");
+  const grading = readSrc("src/features/submissions/grading.tsx");
+  const subScreens = readSrc("src/features/submissions/screens.tsx");
+  const subComponents = readSrc("src/features/submissions/components.tsx");
+  const subEvidence = readSrc("src/features/submissions/studio-evidence.tsx");
+  const courseOutline = readSrc("src/features/courses/course-outline.tsx");
+
+  // P0/P1 Studio invariants
+  assert.ok(obs.includes("const [cameraFormOpen, setCameraFormOpen] = useState(false);"));
+  assert.ok(workbench.includes("if (!bottomCollapsed) setMissionCollapsed(true);"));
+  assert.ok(workbench.includes("window.confirm("));
+  assert.ok(workbench.includes('data-testid="drawer-run-docker-btn"'));
+  assert.ok(workbench.includes("explanationOverride: effectiveNote"));
+  assert.ok(!workbench.includes("Screenshot PNG"));
+  assert.ok(!workbench.includes("Add checkpoint"));
+  assert.ok(workbench.includes("missionCard?.allowedActions"));
+  assert.ok(panel.includes("prediction.rationale"));
+  assert.ok(subV2.includes("Fill from Snapshot notes"));
+  assert.ok(subV2.includes("NEEDS_REVISION"));
+  assert.ok(subEvidence.includes("Student hypothesis:"));
+  assert.ok(subScreens.includes("Back to my submissions"));
+  const studentHeaderBranch = subComponents.slice(
+    subComponents.indexOf("if (!canReview)"),
+    subComponents.indexOf('t("Submission overview"'),
+  );
+  assert.ok(!studentHeaderBranch.includes("<SubmissionExport"));
+  assert.ok(subComponents.includes("<SubmissionExport"));
+  assert.ok(grading.includes("Return for revision"));
+  assert.ok(courseOutline.includes("{isLab && ("));
 });

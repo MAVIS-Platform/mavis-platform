@@ -246,6 +246,12 @@ export function LabSubmissionV2({
                   </span>
                 ))}
               </div>
+              {studioSessionData?.prediction?.rationale?.trim() && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">{t("Hypothesis:", "Giả thuyết:")} </span>
+                  {studioSessionData.prediction.rationale.trim()}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -286,8 +292,6 @@ export function LabSubmissionV2({
             isLight
             exerciseBadge={smartPlan?.badge}
             accentColor={smartPlan?.accentColor}
-            missionGoal={effectiveDescription || undefined}
-            exerciseStats={smartPlan?.stats}
           />
         ))}
       </div>
@@ -339,16 +343,25 @@ export function LabSubmissionV2({
 
             {activeReview &&
               activeReview.status !== "PENDING" &&
-              activeReview.status !== "DRAFT" && (
+              activeReview.status !== "DRAFT" && (() => {
+                const needsRevision =
+                  activeReview.status === "RETURNED" || activeReview.labOutcome === "NEEDS_REVISION";
+                return (
                 <div className="space-y-2 rounded-md border bg-background p-3 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={activeReview.status === "RETURNED" ? "warning" : "success"}>
-                      {activeReview.status === "RETURNED"
-                        ? t("Returned for revision", "Cần chỉnh sửa & nộp lại")
+                    <Badge variant={needsRevision ? "warning" : "success"}>
+                      {needsRevision
+                        ? t("Needs revision — resubmit", "Cần chỉnh sửa & nộp lại")
                         : t("Graded by Lecturer", "Giảng viên đã chấm điểm")}
                     </Badge>
                     {activeReview.score !== null && (
-                      <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-900">
+                      <span
+                        className={`rounded-md px-2 py-0.5 font-bold ${
+                          needsRevision
+                            ? "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"
+                            : "bg-emerald-100 text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-200"
+                        }`}
+                      >
                         {formatTenScaleScore(
                           activeReview.score,
                           "scoreTenScale" in activeReview ? activeReview.scoreTenScale : undefined,
@@ -360,7 +373,8 @@ export function LabSubmissionV2({
                     <p className="whitespace-pre-wrap">{activeReview.summary}</p>
                   )}
                 </div>
-              )}
+                );
+              })()}
 
             {activeReview?.labOutcome !== "PASSED" && (
               <div className="flex justify-end pt-1">
@@ -431,13 +445,39 @@ export function LabSubmissionV2({
           {visualMediaGallery}
 
           <label className="block space-y-1.5 text-sm">
-            <span className="font-semibold text-foreground">
-              {studio
-                ? t(
-                    "Lab observation & explanation (sent to Lecturer)",
-                    "Mô tả & giải thích kết quả bài làm (gửi cho Giảng viên chấm)",
-                  )
-                : t("Your response", "Nội dung bài làm của bạn")}
+            <span className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-semibold text-foreground">
+                {studio
+                  ? t(
+                      "Lab observation & explanation (sent to Lecturer)",
+                      "Mô tả & giải thích kết quả bài làm (gửi cho Giảng viên chấm)",
+                    )
+                  : t("Your response", "Nội dung bài làm của bạn")}
+              </span>
+              {studio && capturedSnapshots && capturedSnapshots.length > 0 && !answer.trim() && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const notes = capturedSnapshots
+                      .map((snap, idx) => {
+                        const text = snap.explanation?.trim();
+                        return text ? `${idx + 1}. ${text}` : "";
+                      })
+                      .filter(Boolean)
+                      .join("\n");
+                    if (!notes) return;
+                    setAnswer(notes);
+                    try {
+                      window.localStorage.setItem(draftKey, notes);
+                    } catch {
+                      // Ignore storage quota / private-mode restrictions
+                    }
+                  }}
+                  className="rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs font-medium text-primary transition hover:bg-primary/10"
+                >
+                  {t("Fill from Snapshot notes", "Điền từ ghi chú Snapshot")}
+                </button>
+              )}
             </span>
             <textarea
               className="min-h-36 w-full rounded-lg border bg-background p-3 text-sm"

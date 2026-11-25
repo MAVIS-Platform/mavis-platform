@@ -973,9 +973,27 @@ function StandaloneStudioContent() {
                   })),
                 }
               : undefined;
+            const isRecoveryMode =
+              exercise.data?.successCriteria?.exerciseType === "CIRCUIT_BREAKER" ||
+              (!isController && nextStoppedServices.length > 0 && currentTargetAction?.action === "START");
+            const nextRecoveryTarget = nextStoppedServices[0];
             saveVisualExercise.mutate({
               stoppedServices: nextStoppedServices,
               stoppedControllers: nextStoppedControllers,
+              ...(isRecoveryMode && nextRecoveryTarget
+                ? {
+                    exerciseType: "CIRCUIT_BREAKER" as const,
+                    targetChangeAction: { action: "START" as const, service: nextRecoveryTarget },
+                    baselinePath: pickSmartPath(nextRecoveryTarget),
+                    instructions: buildStudentExerciseInstructions({
+                      exerciseType: "CIRCUIT_BREAKER",
+                      targetAction: { action: "START", service: nextRecoveryTarget },
+                      stoppedServices: nextStoppedServices,
+                      maxErrorRatePercent: exercise.data?.successCriteria?.maxErrorRatePercent ?? 0,
+                      locale,
+                    }),
+                  }
+                : {}),
               ...(nextTopology ? { nextTopology } : {}),
             });
           },
@@ -1199,6 +1217,7 @@ function StandaloneStudioContent() {
               const nextStopped = isDown
                 ? initialStoppedServices.filter((s) => s !== service)
                 : [...initialStoppedServices, service];
+              const primaryDown = !isDown ? service : nextStopped[0];
               const nextTopology = previewTopology
                 ? {
                     ...previewTopology,
@@ -1210,18 +1229,18 @@ function StandaloneStudioContent() {
                 : undefined;
               saveVisualExercise.mutate({
                 stoppedServices: nextStopped,
-                ...(!isDown
+                ...(primaryDown
                   ? {
                       exerciseType: "CIRCUIT_BREAKER" as const,
                       predictionRequired: false,
                       minImpactF1: "",
                       minReplicas: [],
-                      targetChangeAction: { action: "START" as const, service: nextStopped[0] ?? service },
+                      targetChangeAction: { action: "START" as const, service: primaryDown },
                       maxErrorRatePercent: "0",
-                      baselinePath: pickSmartPath(nextStopped[0] ?? service),
+                      baselinePath: pickSmartPath(primaryDown),
                       instructions: buildStudentExerciseInstructions({
                         exerciseType: "CIRCUIT_BREAKER",
-                        targetAction: { action: "START", service: nextStopped[0] ?? service },
+                        targetAction: { action: "START", service: primaryDown },
                         stoppedServices: nextStopped,
                         maxErrorRatePercent: 0,
                         locale,
@@ -1477,6 +1496,7 @@ function StandaloneStudioContent() {
               workspaceId={workspaceId}
               assignmentId={assignmentId}
               position={setupLab?.position}
+              topologyFrozen={Boolean(setupLab?.topologyFrozen)}
               sessionId={verifiedSession?.id}
             />
           )}
@@ -1550,6 +1570,7 @@ function StandaloneStudioContent() {
       minReplicas: studentExercise?.successCriteria?.minReplicas ?? null,
       stoppedServices: studentExercise?.initialState?.stoppedServices ?? null,
       requiredTraceEdge: studentExercise?.successCriteria?.requiredTraceEdge ?? null,
+      allowedActions: studentExercise?.allowedActions ?? null,
       submitHref,
       verified: liveStudioVerified,
     };

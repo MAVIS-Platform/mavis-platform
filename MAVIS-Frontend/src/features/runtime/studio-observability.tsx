@@ -1181,7 +1181,7 @@ export function StudioObservability({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState(DEFAULT_3D_CAMERA);
-  const [cameraFormOpen, setCameraFormOpen] = useState(true);
+  const [cameraFormOpen, setCameraFormOpen] = useState(false);
   const [webglReady, setWebglReady] = useState(false);
   const handleWebglReadyChange = useCallback((ready: boolean) => {
     setWebglReady(ready);
@@ -2013,14 +2013,6 @@ export function StudioObservability({
                   {t("3D Camera", "Góc nhìn 3D")}
                 </span>
                 <div className="flex items-center gap-1">
-                  {cameraFormOpen && (
-                    <span
-                      className={`font-mono text-[10px] whitespace-nowrap ${styleCfg.subtleTextClass}`}
-                    >
-                      {Math.round(((((camera.yaw * 180) / Math.PI) % 360) + 360) % 360)}°·
-                      {Math.round((clampedPitch * 180) / Math.PI)}°
-                    </span>
-                  )}
                   <button
                     type="button"
                     aria-expanded={cameraFormOpen}
@@ -4004,8 +3996,23 @@ export function formatSnapshotWatermark(watermark?: StudioSnapshotWatermark): {
 
   const cleanName = code
     ? rawName
-        .replace(new RegExp(`\\s*[·•|\\-–—]?\\s*(?:Sinh\\s*Vi[êe]n|Student|MSSV)?\\s*:?\\s*${code}\\b`, "ig"), "")
+        .replace(
+          new RegExp(
+            `\\s*\\(\\s*(?:Sinh\\s*Vi[êe]n|Student|MSSV)?\\s*:?\\s*${code}\\s*\\)`,
+            "ig",
+          ),
+          "",
+        )
+        .replace(
+          new RegExp(
+            `\\s*[·•|\\-–—]?\\s*(?:Sinh\\s*Vi[êe]n|Student|MSSV)?\\s*:?\\s*${code}\\b`,
+            "ig",
+          ),
+          "",
+        )
+        .replace(/\(\s*\)/g, "")
         .replace(/\s*[·•|\-–—]\s*$/, "")
+        .replace(/\s{2,}/g, " ")
         .trim()
     : rawName;
 

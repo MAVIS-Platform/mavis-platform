@@ -2100,12 +2100,12 @@ export const SCREEN_TOUR_CATALOG = {
         id: "studio-mission",
         selectors: ['[data-tour="studio-mission"]', '[data-tour="studio-tool-mission"]'],
         title: {
-          en: "1. Lab Mission & Pass Criteria",
-          vi: "1. Nhiệm vụ Lab & Tiêu chí đạt",
+          en: "1. Lab Mission & Progress",
+          vi: "1. Mục tiêu Lab & Tiến độ thực hành",
         },
         description: {
-          en: "Read your task checklist, pass thresholds, and lock your Change Impact prediction before running Docker actions. Drag or collapse anytime.",
-          vi: "Đọc đề bài, theo dõi checklist tiêu chí đạt và khóa dự đoán Change Impact trước khi thao tác Docker. Có thể kéo di chuyển hoặc thu gọn thẻ này.",
+          en: "Read your task steps, track your Docker action & evidence capture progress, and lock your Change Impact prediction when required. Drag or collapse anytime.",
+          vi: "Đọc hướng dẫn từng bước, theo dõi tiến độ thao tác Docker & chụp minh chứng, và khóa dự đoán Change Impact khi bài yêu cầu. Có thể kéo di chuyển hoặc thu gọn thẻ này.",
         },
       },
       {
@@ -2209,11 +2209,11 @@ export const SCREEN_TOUR_CATALOG = {
         selectors: ['[data-tour="studio-top-right-tools"]', '[data-tour="studio-style-picker"]'],
         title: {
           en: "10. Studio Themes & 3D Tag Settings",
-          vi: "10. 4 Phong cách & Cài đặt Nhãn 3D",
+          vi: "10. Giao diện Sáng/Tối & Cài đặt 3D",
         },
         description: {
-          en: "Pick from 4 Light/Dark themes and open Settings to show/hide 3D service/path tags, open the Service List sidebar, or Stop & Cancel your Docker session.",
-          vi: "Chọn 4 giao diện Sáng/Tối và mở Cài đặt để bật/tắt nhãn nổi 3D, mở Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
+          en: "Switch between Light and Dark themes and open Settings to show/hide 3D service/path tags, open the Service List sidebar, or Stop & Cancel your Docker session.",
+          vi: "Chuyển đổi giữa giao diện Sáng (Daylight Cloud) và Tối (Control Glass), mở Cài đặt để bật/tắt nhãn nổi 3D, mở Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
         },
       },
     ],
@@ -2237,8 +2237,8 @@ export const SCREEN_TOUR_CATALOG = {
           vi: "3 bước soạn bài trực quan",
         },
         description: {
-          en: "1. Pick a service & Exercise Goal → 2. Configure goal rules (click or drag onto 3D) → 3. Verify Mission & Endpoint, preview as Student, then click Done · Step 6.",
-          vi: "1. Chọn service & dạng bài → 2. Cấu hình thông số mục tiêu (bấm hoặc kéo thả lên 3D) → 3. Kiểm tra Đề bài & Endpoint, Thử vai SV rồi bấm Xong · Bước 6.",
+          en: "1. Pick a service & Exercise Goal → 2. Configure goal rules (click or drag onto 3D) → 3. Verify Mission & Endpoint, preview as Student, then click Done · Course Outline.",
+          vi: "1. Chọn service & dạng bài → 2. Cấu hình thông số mục tiêu (bấm hoặc kéo thả lên 3D) → 3. Kiểm tra Đề bài & Endpoint, Thử vai SV rồi bấm Xong · Khung khóa học.",
         },
       },
       {
@@ -2367,23 +2367,23 @@ export const SCREEN_TOUR_CATALOG = {
         selectors: ['[data-tour="studio-top-right-tools"]', '[data-tour="studio-style-picker"]'],
         title: {
           en: "10. Themes & Studio Settings",
-          vi: "10. 4 Phong cách & Cài đặt 3D",
+          vi: "10. Giao diện Sáng/Tối & Cài đặt 3D",
         },
         description: {
-          en: "Switch between 4 Light/Dark themes and open Settings to toggle floating 3D service/path tags, open the Service List sidebar, or Stop & Cancel Docker.",
-          vi: "Chọn 4 giao diện Sáng/Tối và mở Cài đặt để bật/tắt nhãn nổi 3D, bật Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
+          en: "Switch between Light and Dark themes and open Settings to toggle floating 3D service/path tags, open the Service List sidebar, or Stop & Cancel Docker.",
+          vi: "Chuyển giữa giao diện Sáng/Tối và mở Cài đặt để bật/tắt nhãn nổi 3D, bật Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
         },
       },
       {
         id: "studio-author-finish",
         selectors: ['[data-tour="studio-author-actions"]', '[data-tour="studio-top-right-tools"]'],
         title: {
-          en: "11. Student Preview & Finish Step 6",
-          vi: "11. Thử vai Sinh viên & Hoàn tất Bước 6",
+          en: "11. Student Preview & Course Outline",
+          vi: "11. Thử vai Sinh viên & Hoàn tất Khung khóa học",
         },
         description: {
-          en: "Click Student view to inspect the exact student experience, then click Done · Step 6 to arrange modules and publish your Lab to the class.",
-          vi: "Bấm Thử vai SV để xem đúng giao diện sinh viên nhận được, sau đó bấm Xong · Bước 6 để sắp xếp Module và Publish bài cho lớp.",
+          en: "Click Student view to inspect the exact student experience, then click Done · Course Outline to arrange modules and publish your Lab to the class.",
+          vi: "Bấm Thử vai SV để xem đúng giao diện sinh viên nhận được, sau đó bấm Xong · Khung khóa học để sắp xếp Module và Publish bài cho lớp.",
         },
       },
     ],

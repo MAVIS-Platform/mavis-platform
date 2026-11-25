@@ -221,7 +221,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
           {(
             [
               ["Step 1: Capture baseline snapshot", (data.snapshots?.length ?? 0) >= 1],
-              ["Step 2: Scale replicas (4 → 8) or inject fault", hasConfirmedAction],
+              ["Step 2: Scale replicas (1 → 3) or inject fault", hasConfirmedAction],
               [
                 "Step 3: Capture post-change snapshot & compare",
                 (data.snapshots?.length ?? 0) >= 2,

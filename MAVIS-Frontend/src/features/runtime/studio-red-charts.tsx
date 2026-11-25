@@ -42,10 +42,13 @@ export type BeforeAfterWindow = {
   errorAfterPct: number | null;
 };
 
+type StudioInteraction = NonNullable<NonNullable<Studio["telemetry"]>["interactions"]>[number];
+
 export type WaterfallRow = {
   spanId: string;
   parentSpanId: string | null;
   runtimeService: string;
+  targetService?: string | null | undefined;
   label: string;
   depth: number;
   offsetPct: number;
@@ -152,9 +155,22 @@ export function computeBeforeAfterWindow(
 export function buildTraceWaterfall(
   spans: ReadonlyArray<StudioSpan> | null | undefined,
   traceId: string,
+  interactions?: ReadonlyArray<StudioInteraction> | null | undefined,
 ): { rows: WaterfallRow[]; totalMs: number } {
   const group = (spans ?? []).filter((s) => s.traceId === traceId);
   if (group.length === 0) return { rows: [], totalMs: 0 };
+
+  // Resolve downstream target service for outbound spans via OTel interactions so child bars show caller -> callee.
+  const targetBySpanId = new Map<string, string>();
+  for (const edge of interactions ?? []) {
+    if (edge.traceId && edge.traceId !== traceId) continue;
+    if (edge.parentSpanId && edge.toService && !targetBySpanId.has(edge.parentSpanId)) {
+      targetBySpanId.set(edge.parentSpanId, edge.toService);
+    }
+    if (edge.childSpanId && edge.toService && !targetBySpanId.has(edge.childSpanId)) {
+      targetBySpanId.set(edge.childSpanId, edge.toService);
+    }
+  }
 
   const parsed = group.map((span, idx) => {
     const startNs = span.startTimeUnixNano ? Number(span.startTimeUnixNano) : NaN;
@@ -164,10 +180,15 @@ export function buildTraceWaterfall(
     const status = span.spanStatus?.toUpperCase();
     const isError =
       status === "ERROR" || (typeof span.httpStatusCode === "number" && span.httpStatusCode >= 500) || span.circuitOpen === true;
+    const rawOp = span.operationName?.trim() || "";
+    const isGenericStatusOp = /^HTTP\s+\d{3}$/i.test(rawOp);
     const label =
-      span.operationName ||
+      (rawOp && !isGenericStatusOp ? rawOp : null) ||
       (span.route ? `${span.httpMethod ? `${span.httpMethod} ` : ""}${span.route}` : null) ||
-      (typeof span.httpStatusCode === "number" ? `HTTP ${span.httpStatusCode}` : "Trace span");
+      (span.httpMethod ? span.httpMethod : "HTTP");
+    const mappedTarget = targetBySpanId.get(span.spanId) ?? null;
+    const targetService =
+      mappedTarget && mappedTarget !== span.runtimeService ? mappedTarget : null;
     return {
       span,
       startNs: safeStart,
@@ -175,6 +196,7 @@ export function buildTraceWaterfall(
       durationMs: safeDur / 1e6,
       isError,
       label,
+      targetService,
     };
   });
 
@@ -206,6 +228,7 @@ export function buildTraceWaterfall(
         spanId: item.span.spanId,
         parentSpanId: item.span.parentSpanId ?? null,
         runtimeService: item.span.runtimeService,
+        targetService: item.targetService,
         label: item.label,
         depth: Math.min(depth, 6),
         offsetPct,
@@ -231,6 +254,7 @@ export function buildTraceWaterfall(
           spanId: item.span.spanId,
           parentSpanId: item.span.parentSpanId ?? null,
           runtimeService: item.span.runtimeService,
+          targetService: item.targetService,
           label: item.label,
           depth: 0,
           offsetPct,
@@ -571,17 +595,19 @@ export function StudioRedCharts({
 
 export function TraceWaterfallPanel({
   spans,
+  interactions,
   traceId,
   onClose,
   isLight = false,
 }: {
   spans: ReadonlyArray<StudioSpan> | null | undefined;
+  interactions?: ReadonlyArray<StudioInteraction> | null | undefined;
   traceId: string;
   onClose: () => void;
   isLight?: boolean | undefined;
 }) {
   const { t } = useLocale();
-  const { rows, totalMs } = buildTraceWaterfall(spans, traceId);
+  const { rows, totalMs } = buildTraceWaterfall(spans, traceId, interactions);
   if (rows.length === 0) return null;
 
   return (
@@ -621,18 +647,24 @@ export function TraceWaterfallPanel({
         </button>
       </div>
       <div className="space-y-1">
-        {rows.map((row) => (
-          <div key={row.spanId} className="grid grid-cols-[minmax(160px,38%)_1fr_64px] items-center gap-2">
+        {rows.map((row) => {
+          const svcDisplay = row.targetService
+            ? `${row.runtimeService} → ${row.targetService}`
+            : row.runtimeService;
+          const labelAlreadyHasStatus =
+            row.httpStatusCode != null && row.label.includes(String(row.httpStatusCode));
+          return (
+          <div key={row.spanId} className="grid grid-cols-[minmax(180px,42%)_1fr_64px] items-center gap-2">
             <div
               className={`truncate ${isLight ? "text-slate-900" : "text-slate-200"}`}
               style={{ paddingLeft: `${row.depth * 12}px` }}
-              title={`${row.runtimeService} — ${row.label}`}
+              title={`${svcDisplay} — ${row.label}${row.httpStatusCode != null ? ` (${row.httpStatusCode})` : ""}`}
             >
               <span className={`font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
-                {row.runtimeService}
+                {svcDisplay}
               </span>{" "}
               <span className={isLight ? "text-slate-600" : "text-slate-400"}>{row.label}</span>
-              {row.httpStatusCode != null && (
+              {row.httpStatusCode != null && !labelAlreadyHasStatus && (
                 <span
                   className={`ml-1 text-[10.5px] font-semibold ${
                     row.httpStatusCode >= 500
@@ -662,7 +694,8 @@ export function TraceWaterfallPanel({
               {fmt(row.durationMs, 1)} ms
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

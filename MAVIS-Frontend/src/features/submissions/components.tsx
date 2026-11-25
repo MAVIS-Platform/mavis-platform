@@ -55,18 +55,6 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
         stripLegacySubmissionNoise(snap.writtenExplanation) === cleanedNotes,
     );
   const displayNotes = isNotesDuplicated ? "" : cleanedNotes;
-  const studioEval =
-    submission.studioEvidence &&
-    typeof submission.studioEvidence["exerciseEvaluation"] === "object" &&
-    submission.studioEvidence["exerciseEvaluation"] !== null
-      ? (submission.studioEvidence["exerciseEvaluation"] as Record<string, unknown>)
-      : null;
-  const studioF1 =
-    studioEval && typeof studioEval["f1"] === "number"
-      ? Math.round(studioEval["f1"] * 100)
-      : studioEval && typeof studioEval["f1Score"] === "number"
-        ? Math.round(studioEval["f1Score"] * 100)
-        : null;
 
   if (!canReview) {
     return (
@@ -119,7 +107,6 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
           </p>
         )}
-        <SubmissionExport submissionId={submission.id} />
       </DetailPanel>
     );
   }
@@ -154,13 +141,6 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
                 variant="success"
               />
             )}
-            {studioF1 !== null && (
-              <StatusBadge
-                status={`Impact F1: ${studioF1}%`}
-                preserveCase
-                variant={studioF1 >= 70 ? "success" : "warning"}
-              />
-            )}
           </div>
           <p className="text-base font-semibold text-foreground">{labLabel}</p>
           <p className="text-xs text-muted-foreground">
@@ -185,19 +165,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             {t("Compliance", "Tuân thủ 3E")}: {submission.complianceScore}
           </span>
         )}
-        {submission.runtime ? (
-          <Link
-            className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-800 underline-offset-2 hover:underline dark:text-emerald-300"
-            href={`/sessions?${new URLSearchParams({
-              project: submission.runtime.projectId,
-              session: submission.runtime.id,
-            })}`}
-          >
-            {submission.runtime.studioVerified
-              ? t("View verified Studio session", "Xem phiên thực hành Studio")
-              : t("View Runtime session", "Xem phiên chạy Runtime")}
-          </Link>
-        ) : !submission.studioEvidence && requiresRuntime ? (
+        {!submission.runtime && !submission.studioEvidence && requiresRuntime ? (
           <span className="inline-flex items-center rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-medium text-amber-800 dark:text-amber-300">
             {t("No runtime evidence attached", "Chưa đính kèm minh chứng Runtime")}
           </span>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, Play, Target } from "lucide-react";
+import { CheckCircle2, Lock, Play, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -63,6 +63,18 @@ export function StudioExercisePanel({
   const predictionLocked = Boolean(prediction?.predictedServices?.length);
   const predictionRequired = Boolean(evaluation?.predictionRequired || criteria?.predictionRequired);
   const prescribed = criteria?.targetChangeAction ?? null;
+  const exerciseType = (criteria?.exerciseType ?? evaluation?.exerciseType ?? "").toUpperCase();
+  const isOutageRecovery = exerciseType === "CIRCUIT_BREAKER";
+  const prescribedCompleted = Boolean(
+    prescribed?.action &&
+      prescribed?.service &&
+      data.actions.some(
+        (a) =>
+          a.status === "CONFIRMED" &&
+          a.action.toUpperCase() === prescribed.action?.toUpperCase() &&
+          a.service === prescribed.service,
+      ),
+  );
   const canLockPrediction =
     !busy &&
     !submittingPrediction &&
@@ -112,7 +124,7 @@ export function StudioExercisePanel({
       </div>
 
       {/* Step 1: Student Change Impact Prediction (auto-check grading is reserved exclusively for Lecturer grading) */}
-      {(predictionRequired || predictionLocked || !prescribed?.action) &&
+      {(predictionRequired || predictionLocked) &&
         (predictionLocked ? (
           <div
             className={`space-y-1.5 rounded-lg border p-2.5 ${
@@ -148,6 +160,18 @@ export function StudioExercisePanel({
                 </span>
               ))}
             </div>
+            {prediction?.rationale?.trim() && (
+              <p
+                className={`rounded border px-2 py-1 text-[11px] leading-snug ${
+                  isLight
+                    ? "border-slate-200 bg-slate-50 text-slate-700"
+                    : "border-slate-700/80 bg-slate-900/70 text-slate-200"
+                }`}
+              >
+                <span className="font-semibold">{t("Hypothesis:", "Giả thuyết:")} </span>
+                {prediction.rationale.trim()}
+              </p>
+            )}
             <p className={`text-[10.5px] ${isLight ? "text-slate-600" : "text-slate-400"}`}>
               {t(
                 "Saved with your lab submission for Lecturer review.",
@@ -227,28 +251,54 @@ export function StudioExercisePanel({
           </div>
         ))}
 
-      {/* Step 2: 1-Click Prescribed Lecturer Change Action */}
-      {prescribed?.action && prescribed?.service && data.executionStatus === "RUNNING" && (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy || (predictionRequired && !predictionLocked)}
-          onClick={runPrescribed}
-          className={`h-auto min-h-8 w-full whitespace-normal px-2.5 py-1.5 text-center font-mono text-[11px] leading-snug ${
+      {/* Step 2: Outage Recovery asks students to diagnose & start the crashed service themselves; other types provide 1-click CTA */}
+      {data.executionStatus === "RUNNING" && isOutageRecovery ? (
+        <div
+          className={`rounded-lg border px-2.5 py-2 text-[11px] leading-snug ${
             isLight
-              ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
-              : "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+              ? "border-rose-200 bg-rose-50/70 text-rose-900"
+              : "border-rose-500/35 bg-rose-950/35 text-rose-200"
           }`}
         >
-          <Play className="mr-1.5 size-3 shrink-0" aria-hidden="true" />
-          <span>
-            {t("Apply", "Chạy")} {prescribed.action} {t("on", "trên")} {prescribed.service}
-            {prescribed.cpuPercent ? ` (${prescribed.cpuPercent}%)` : ""}
-            {prescribed.targetRps ? ` (${prescribed.targetRps} RPS)` : ""}
-            {prescribed.replicas ? ` (×${prescribed.replicas})` : ""}
-          </span>
-        </Button>
+          {t(
+            "Diagnose the crashed (0x) service on the 3D topology or Logs & Traces, select it, and click Start above to recover.",
+            "Quan sát khối đỏ (0x) trên sơ đồ 3D hoặc Log & Trace để xác định service đang gặp sự cố, chọn khối đó rồi bấm Khởi động ở trên để phục hồi.",
+          )}
+        </div>
+      ) : (
+        prescribed?.action &&
+        prescribed?.service &&
+        data.executionStatus === "RUNNING" && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy || (predictionRequired && !predictionLocked)}
+            onClick={runPrescribed}
+            className={`h-auto min-h-8 w-full whitespace-normal px-2.5 py-1.5 text-center font-mono text-[11px] leading-snug ${
+              prescribedCompleted
+                ? isLight
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                  : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                : isLight
+                  ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                  : "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+            }`}
+          >
+            {prescribedCompleted ? (
+              <CheckCircle2 className="mr-1.5 size-3.5 shrink-0" aria-hidden="true" />
+            ) : (
+              <Play className="mr-1.5 size-3 shrink-0" aria-hidden="true" />
+            )}
+            <span>
+              {prescribedCompleted ? t("Applied:", "Đã chạy:") : t("Apply", "Chạy")}{" "}
+              {prescribed.action} {t("on", "trên")} {prescribed.service}
+              {prescribed.cpuPercent ? ` (${prescribed.cpuPercent}%)` : ""}
+              {prescribed.targetRps ? ` (${prescribed.targetRps} RPS)` : ""}
+              {prescribed.replicas ? ` (×${prescribed.replicas})` : ""}
+            </span>
+          </Button>
+        )
       )}
 
       <p className={`text-[10.5px] leading-snug ${isLight ? "text-slate-600" : "text-slate-400"}`}>

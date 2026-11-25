@@ -107,6 +107,13 @@ const frozenStudio = z
                 })
                 .passthrough()
                 .nullish(),
+              prediction: z
+                .object({
+                  predictedServices: z.array(z.string()).optional(),
+                  rationale: z.string().nullish(),
+                })
+                .passthrough()
+                .nullish(),
               exerciseEvaluation: exerciseEvaluationSchema.nullish(),
             })
             .passthrough(),
@@ -135,6 +142,7 @@ function localizeRuleLabel(label: string, locale: string): string {
     .replace(/^Global p95 latency\b/i, "Độ trễ p95 toàn hệ thống")
     .replace(/^Replicas\(([^)]+)\)/i, "Số bản sao ($1)")
     .replace(/^Change Impact F1\b/i, "Độ chính xác dự đoán (F1)")
+    .replace(/^Required trace\b/i, "Luồng gọi bắt buộc")
     .replace(/<=/g, "≤")
     .replace(/>=/g, "≥");
 }
@@ -230,6 +238,31 @@ export function StudioSubmissionEvidence({
         .reverse()
         .find((snapshot) => snapshot.exerciseEvaluation)?.exerciseEvaluation ?? null
     : null;
+  const predictionRationale = evidence.success
+    ? [...snapshots]
+        .reverse()
+        .find((snapshot) => snapshot.prediction?.rationale?.trim())?.prediction?.rationale?.trim() ??
+      null
+    : null;
+  const throttleAction = actions.find((a) => a.action.toUpperCase() === "THROTTLE_CPU");
+  const displayRules =
+    latestEval?.rules && latestEval.rules.length > 0
+      ? latestEval.rules
+      : latestEval?.exerciseType?.toUpperCase() === "CONFIG_REGRESSION" && throttleAction
+        ? [
+            {
+              label: t(
+                `CPU throttle executed on ${throttleAction.service ?? throttleAction.serviceName ?? "service"}`,
+                `Đã áp dụng giới hạn CPU trên ${throttleAction.service ?? throttleAction.serviceName ?? "service"}`,
+              ),
+              passed: true,
+              reason:
+                typeof throttleAction.cpuPercent === "number"
+                  ? t(`Quota ${throttleAction.cpuPercent}% CPU`, `Giới hạn ${throttleAction.cpuPercent}% CPU`)
+                  : undefined,
+            },
+          ]
+        : [];
   const videoCount = snapshots.filter((s) => Boolean(s.videoData || s.hasVideo)).length;
   const imageCount = snapshots.length - videoCount;
   const exerciseTypeLabel = detectSupportedExerciseLabel(latestEval, actions, t);
@@ -290,6 +323,11 @@ export function StudioSubmissionEvidence({
               <span className="font-medium text-muted-foreground">
                 {t("Executed actions:", "Thao tác đã chạy:")}
               </span>
+              {actions.length > 6 && (
+                <span className="rounded-md border border-dashed px-2 py-0.5 font-mono text-[10.5px] text-muted-foreground">
+                  +{actions.length - 6} {t("earlier", "trước đó")}
+                </span>
+              )}
               {actions.slice(-6).map((act, idx) => {
                 const svc = act.service ?? act.serviceName ?? "";
                 const reps = act.replicas ?? act.targetReplicas;
@@ -349,12 +387,20 @@ export function StudioSubmissionEvidence({
                   </span>
                 ))}
               </div>
+              {predictionRationale && (
+                <p className="rounded border bg-muted/25 px-2.5 py-1.5 text-xs text-foreground">
+                  <span className="font-semibold text-muted-foreground">
+                    {t("Student hypothesis:", "Giả thuyết sinh viên:")}{" "}
+                  </span>
+                  {predictionRationale}
+                </p>
+              )}
             </div>
           )}
 
-          {latestEval?.rules && latestEval.rules.length > 0 && (
+          {displayRules.length > 0 && (
             <ul className="space-y-1.5 rounded-lg border bg-background p-3">
-              {latestEval.rules.map((rule, index) => (
+              {displayRules.map((rule, index) => (
                 <li
                   key={`${rule.label}-${index}`}
                   className="flex items-center justify-between gap-3 text-xs"
@@ -443,9 +489,6 @@ export function StudioSubmissionEvidence({
               const title = isVideo
                 ? t(`Studio Video #${index + 1}`, `Video Studio #${index + 1}`)
                 : t(`Snapshot #${index + 1}`, `Ảnh chụp #${index + 1}`);
-              const tel = snapshot.telemetry;
-              const errPct =
-                typeof tel?.errorRate === "number" ? Math.round(tel.errorRate * 100) : null;
 
               return (
                 <figure
@@ -471,22 +514,6 @@ export function StudioSubmissionEvidence({
                       <span className="text-muted-foreground">
                         {formatSnapshotTime(snapshot.capturedAt, locale)}
                       </span>
-                      {typeof tel?.p95LatencyMs === "number" && (
-                        <span className="rounded border bg-background px-1.5 py-0.5 font-mono text-[11px] text-foreground">
-                          p95 {Math.round(tel.p95LatencyMs)} ms
-                        </span>
-                      )}
-                      {errPct !== null && (
-                        <span
-                          className={`rounded border px-1.5 py-0.5 font-mono text-[11px] ${
-                            errPct > 0
-                              ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
-                              : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                          }`}
-                        >
-                          {errPct}% {t("err", "lỗi")}
-                        </span>
-                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {isVideo && snapshot.videoData && (
@@ -541,10 +568,6 @@ export function StudioSubmissionEvidence({
                           </Button>
                         </>
                       )}
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                        <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                        {t("Verified", "Đã xác thực")}
-                      </span>
                     </div>
                   </div>
 

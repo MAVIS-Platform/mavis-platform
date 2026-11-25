@@ -126,10 +126,15 @@ export function GradingPanel({
               )}
             {query.data.status === "PENDING" && (
               <p className="text-sm text-muted-foreground">
-                {t(
-                  "Awaiting lecturer review. Enter a score (0–10) and feedback below.",
-                  "Bài đang chờ chấm. Nhập điểm (0–10) và nhận xét bên dưới.",
-                )}
+                {canReview
+                  ? t(
+                      "Awaiting lecturer review. Enter a score (0–10) and feedback below.",
+                      "Bài đang chờ chấm. Nhập điểm (0–10) và nhận xét bên dưới.",
+                    )
+                  : t(
+                      "Your submission is awaiting Lecturer review.",
+                      "Bài làm của bạn đang chờ Giảng viên chấm điểm.",
+                    )}
               </p>
             )}
             {query.data.summary && stripLegacySubmissionNoise(query.data.summary) && (
@@ -137,10 +142,11 @@ export function GradingPanel({
                 {stripLegacySubmissionNoise(query.data.summary)}
               </p>
             )}
-            {query.data.status === "RETURNED" && (
+            {query.data.status === "RETURNED" && !canReview && (
               <p className="text-sm text-muted-foreground">
                 {t(
-                  "Apply the requested changes in your working project, save the new model/diagram revisions and submit again from the assignment. This submission remains unchanged.",
+                  "Open the Lab submission step to revise your explanation or Studio evidence and resubmit.",
+                  "Hãy mở lại bước nộp bài Lab để bổ sung giải thích hoặc minh chứng Studio và nộp lại.",
                 )}
               </p>
             )}
@@ -149,6 +155,17 @@ export function GradingPanel({
                 {query.data.lecturerName} · {new Date(query.data.updatedAt).toLocaleString()}
               </p>
             )}
+            {canReview &&
+              guidedLab &&
+              query.data.status === "GRADED" &&
+              query.data.labOutcome === "PASSED" && (
+                <p className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                  {t(
+                    "Passing grade locked — the next Lab has been unlocked for this student.",
+                    "Điểm Đạt đã được chốt và mở khóa bài Lab tiếp theo cho sinh viên.",
+                  )}
+                </p>
+              )}
             {canReview &&
               !(
                 guidedLab &&
@@ -697,6 +714,15 @@ export function GradeForm({
         >
           {t("Save grading draft", "Lưu nháp")}
         </Button>
+        {!canPublish && (
+          <Button
+            variant="outline"
+            disabled={save.isPending || !summary.trim()}
+            onClick={() => submit("RETURNED")}
+          >
+            {t("Return for revision", "Trả bài yêu cầu nộp lại")}
+          </Button>
+        )}
         <Button
           className="bg-emerald-600 text-white hover:bg-emerald-700"
           disabled={

@@ -886,7 +886,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
               className="border-slate-300 bg-card text-foreground hover:bg-accent dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:bg-slate-700/80"
             >
               <Link href={backHref}>
-                ← {t("Back to class submissions", "Quay lại bài nộp của lớp")}
+                ← {canReview ? t("Back to class submissions", "Quay lại bài nộp của lớp") : t("Back to my submissions", "Quay lại bài nộp của tôi")}
               </Link>
             </Button>
             {canReview && nextPending && (
