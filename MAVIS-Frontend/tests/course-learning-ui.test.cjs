@@ -2419,8 +2419,8 @@ test("Commit #06: Module Summary & Submit fixes stuck studioStateQuery.isPending
   assert.match(screens, /quizSummary=\{quizSummary\}/);
   assert.match(screens, /nextModuleHref=\{nextModuleHref\}/);
   assert.match(access, /latestCorrectCount\?:\s*number \| null/);
-  assert.match(subV2, /Next Module:/);
-  assert.match(subV2, /Sang Module tiếp theo/);
+  assert.match(subV2, /t\("Submit", "Nộp bài"\)/);
+  assert.match(subV2, /Revise and resubmit/);
 });
 
 test("Commit #07: Quiz timer renders as compact badge, Retake Quiz works across passed/failed states, and student copy removes bureaucratic jargon", () => {
@@ -2570,4 +2570,15 @@ test("Sprint 3 #03 Hero Banners: aligns top-row CTAs on /roadmap and two-row act
       lab.indexOf('id="lab-switcher"', labHero) > labHeading &&
       lab.indexOf('t("Submissions & Grades", "Bài nộp & Điểm")', labHero) > labHeading,
   );
+});
+
+
+test("Sprint 3 #04 Section 3 Essay Panel: streamlines to essay prompt, full student response, and bottom-right Submit", () => {
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
+  const screens = read("src/features/courses/screens.tsx");
+  assert.doesNotMatch(subV2, /Đã đính kèm dữ liệu Studio|Studio data attached/);
+  assert.doesNotMatch(subV2, /Sang Module tiếp theo|Next Module:|Xem bài nộp|View submission/);
+  assert.doesNotMatch(subV2, /line-clamp-4/);
+  assert.match(subV2, /essayPrompt\?: string \| undefined/);
+  assert.match(screens, /essayPrompt=\{labInstructions\}/);
 });

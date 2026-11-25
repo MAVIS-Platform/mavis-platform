@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, CheckCircle2, FileText } from "lucide-react";
+import { CheckCircle2, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { formatTenScaleScore } from "@/lib/format/course-display";
 import { DetailPanel } from "@/components/shared/data";
+import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { Badge } from "@/components/ui/badge";
 import type { StudentLabLatestReview } from "@/features/workspaces/course-access";
 
@@ -99,9 +100,11 @@ export function LabSubmissionV2({
   initialSubmission,
   initialReview,
   hasReferenceArch = true,
-  quizSummary,
-  nextModuleHref,
-  nextModuleTitle,
+  essayPrompt,
+  capturedSnapshots = [],
+  quizSummary: _quizSummary,
+  nextModuleHref: _nextModuleHref,
+  nextModuleTitle: _nextModuleTitle,
   onRequestHelp,
 }: {
   workspaceId: string;
@@ -124,6 +127,14 @@ export function LabSubmissionV2({
     | undefined;
   initialReview?: StudentLabLatestReview | null | undefined;
   hasReferenceArch?: boolean | undefined;
+  essayPrompt?: string | undefined;
+  capturedSnapshots?:
+    | Array<{
+        id: string;
+        capturedAt?: string;
+        explanation?: string;
+      }>
+    | undefined;
   quizSummary?:
     | {
         passed: boolean;
@@ -194,7 +205,7 @@ export function LabSubmissionV2({
     typeof capturedSnapshotCount === "number" &&
     capturedSnapshotCount === 0;
 
-  const submittedAnswerPreview =
+  const submittedAnswer =
     latest?.studentSnapshots?.[0]?.writtenExplanation?.trim() ||
     latest?.submissionNotes?.trim() ||
     "";
@@ -210,30 +221,55 @@ export function LabSubmissionV2({
                 {t("Submitted", "Đã nộp")}
                 {latest.submittedAt ? ` · ${new Date(latest.submittedAt).toLocaleString()}` : ""}
               </p>
-              <div className="flex flex-wrap items-center gap-2">
-                {quizSummary && (
-                  <Badge variant={quizSummary.passed ? "success" : "outline"} className="text-[11px]">
-                    {quizSummary.correctCount != null && quizSummary.totalQuestions
-                      ? `Quiz: ${quizSummary.correctCount}/${quizSummary.totalQuestions}`
-                      : quizSummary.passed
-                        ? t("Quiz passed", "Quiz: Đạt")
-                        : t("Quiz pending", "Quiz: Chưa đạt")}
-                  </Badge>
-                )}
-                {latest.evidencePackageDigest && (
-                  <Badge variant="outline" className="text-[11px]">
-                    {t("Studio data attached", "Đã đính kèm dữ liệu Studio")}
-                  </Badge>
-                )}
-                {(!activeReview ||
-                  activeReview.status === "PENDING" ||
-                  activeReview.status === "DRAFT") && (
-                  <Badge variant="secondary">
-                    {t("Pending Lecturer Review", "Đang chờ Giảng viên chấm")}
-                  </Badge>
-                )}
-              </div>
+              {(!activeReview ||
+                activeReview.status === "PENDING" ||
+                activeReview.status === "DRAFT") && (
+                <Badge variant="secondary">
+                  {t("Pending Lecturer Review", "Đang chờ Giảng viên chấm")}
+                </Badge>
+              )}
             </div>
+            {essayPrompt?.trim() && (
+              <div className="space-y-1.5 rounded-md border bg-background p-3 text-xs">
+                <p className="font-semibold text-muted-foreground">
+                  {t("Essay prompt", "Đề bài tự luận")}
+                </p>
+                <MarkdownPreview markdown={essayPrompt} />
+              </div>
+            )}
+            {submittedAnswer && (
+              <div className="space-y-1.5 rounded-md border bg-background/95 p-3 text-xs">
+                <p className="font-semibold text-muted-foreground">
+                  {t("Your submitted essay", "Nội dung bài tự luận đã nộp")}
+                </p>
+                <p className="whitespace-pre-wrap leading-5 text-foreground">{submittedAnswer}</p>
+              </div>
+            )}
+            {capturedSnapshots.length > 0 && (
+              <div className="space-y-1.5 rounded-md border bg-background/95 p-3 text-xs">
+                <p className="font-semibold text-muted-foreground">
+                  {t(
+                    `Attached practice snapshots (${capturedSnapshots.length})`,
+                    `Ảnh chụp thực hành đính kèm (${capturedSnapshots.length})`,
+                  )}
+                </p>
+                <ul className="space-y-1.5">
+                  {capturedSnapshots.map((snap, index) => (
+                    <li key={snap.id} className="rounded border bg-muted/20 px-2.5 py-1.5">
+                      <span className="font-medium text-foreground">
+                        #{index + 1}
+                        {snap.capturedAt ? ` · ${new Date(snap.capturedAt).toLocaleString()}` : ""}
+                      </span>
+                      {snap.explanation?.trim() ? (
+                        <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground">
+                          {snap.explanation}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {activeReview &&
               activeReview.status !== "PENDING" &&
               activeReview.status !== "DRAFT" && (
@@ -258,36 +294,12 @@ export function LabSubmissionV2({
                   )}
                 </div>
               )}
-            {submittedAnswerPreview && (
-              <div className="space-y-1 rounded-md border bg-background/90 p-3 text-xs">
-                <p className="font-medium text-muted-foreground">
-                  {t("Submitted response", "Nội dung bài đã nộp")}
-                </p>
-                <p className="line-clamp-4 whitespace-pre-wrap text-foreground">
-                  {submittedAnswerPreview}
-                </p>
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button asChild size="sm" className="bg-teal-600 text-white hover:bg-teal-700">
-                <Link
-                  href={nextModuleHref ?? `/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
-                >
-                  {nextModuleTitle
-                    ? t(`Next Module: ${nextModuleTitle}`, `Sang Module tiếp theo: ${nextModuleTitle}`)
-                    : t("Next Module", "Sang Module tiếp theo")}{" "}
-                  <ArrowRight className="ml-1 size-4" aria-hidden="true" />
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/submissions/${encodeURIComponent(latest.id)}`}>
-                  {t("View submission", "Xem bài nộp")}
-                </Link>
-              </Button>
-              {activeReview?.labOutcome !== "PASSED" && (
-                <button
+            {activeReview?.labOutcome !== "PASSED" && (
+              <div className="flex justify-end pt-1">
+                <Button
                   type="button"
-                  className="ml-auto text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  size="sm"
+                  variant="outline"
                   onClick={() => {
                     if (!answer.trim()) {
                       const prior =
@@ -305,9 +317,9 @@ export function LabSubmissionV2({
                   }}
                 >
                   {t("Revise and resubmit", "Sửa và nộp lại")}
-                </button>
-              )}
-            </div>
+                </Button>
+              </div>
+            )}
           </div>
         </DetailPanel>
       </div>
@@ -318,23 +330,33 @@ export function LabSubmissionV2({
     <div id="lab-submit">
       <DetailPanel title={t("3. Essay Assignment & Submission", "3. Bài tập tự luận & Nộp bài")}>
         <div className="space-y-3">
-          <p className="flex items-start gap-2 text-sm text-muted-foreground">
-            <FileText className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            {studio
-              ? t(
-                  "Summarize what you observed in MAVIS Studio and connect it to the architecture concepts.",
-                  "Tổng hợp những gì bạn quan sát được trong MAVIS Studio và liên hệ với kiến thức kiến trúc phần mềm.",
-                )
-              : hasReferenceArch
+          {essayPrompt?.trim() ? (
+            <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3.5 text-sm">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+                {t("Essay prompt", "Đề bài tự luận")}
+              </p>
+              <MarkdownPreview markdown={essayPrompt} />
+            </div>
+          ) : (
+            <p className="flex items-start gap-2 text-sm text-muted-foreground">
+              <FileText className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              {studio
                 ? t(
-                    "Summarize the architecture boundaries and key design trade-offs from the sample repository.",
-                    "Tổng hợp cấu trúc kiến trúc và các đánh đổi thiết kế chính từ kho mã nguồn tham chiếu.",
+                    "Summarize what you observed in MAVIS Studio and connect it to the architecture concepts.",
+                    "Tổng hợp những gì bạn quan sát được trong MAVIS Studio và liên hệ với kiến thức kiến trúc phần mềm.",
                   )
-                : t(
-                    "Summarize the core concepts from this Module in your own words.",
-                    "Tổng hợp các ý chính của Module bằng ngôn ngữ của bạn.",
-                  )}
-          </p>
+                : hasReferenceArch
+                  ? t(
+                      "Summarize the architecture boundaries and key design trade-offs from the sample repository.",
+                      "Tổng hợp cấu trúc kiến trúc và các đánh đổi thiết kế chính từ kho mã nguồn tham chiếu.",
+                    )
+                  : t(
+                      "Summarize the core concepts from this Module in your own words.",
+                      "Tổng hợp các ý chính của Module bằng ngôn ngữ của bạn.",
+                    )}
+            </p>
+          )}
           <ul className="flex flex-wrap gap-1.5 text-xs">
             {rubricProfile.items.map((promptItem) => (
               <li
@@ -347,7 +369,7 @@ export function LabSubmissionV2({
           </ul>
           <label className="block space-y-1 text-sm">
             <span className="font-medium">
-              {t("Your Module Reflection", "Bài viết tổng hợp của bạn")}
+              {t("Your essay response", "Bài làm tự luận của bạn")}
             </span>
             <textarea
               className="min-h-40 w-full rounded-md border bg-background p-3 text-sm"
@@ -361,9 +383,27 @@ export function LabSubmissionV2({
                   else window.localStorage.removeItem(draftKey);
                 } catch {}
               }}
-              aria-label={t("Module summary reflection", "Nội dung bài viết tổng hợp")}
+              aria-label={t("Module essay response", "Nội dung bài tự luận")}
             />
           </label>
+          {capturedSnapshots.length > 0 && (
+            <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3 text-xs">
+              <p className="font-semibold text-muted-foreground">
+                {t(
+                  `Captured snapshots included (${capturedSnapshots.length})`,
+                  `Ảnh chụp thực hành sẽ gửi kèm (${capturedSnapshots.length})`,
+                )}
+              </p>
+              <ul className="space-y-1">
+                {capturedSnapshots.map((snap, index) => (
+                  <li key={snap.id} className="text-muted-foreground">
+                    #{index + 1}
+                    {snap.explanation?.trim() ? `: ${snap.explanation}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {studio && runtimeSessionId && (
             <p
               role="status"
@@ -488,7 +528,7 @@ export function LabSubmissionV2({
                 );
               }}
             >
-              {submit.isPending ? t("Submitting…", "Đang nộp…") : t("Submit Module", "Nộp bài")}
+              {submit.isPending ? t("Submitting…", "Đang nộp…") : t("Submit", "Nộp bài")}
             </Button>
           </div>
         </div>

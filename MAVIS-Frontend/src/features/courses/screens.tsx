@@ -1200,7 +1200,21 @@ export function LabWorkspace() {
                 labOrder={lab.labOrder}
                 labTitle={lab.title}
                 labInstructions={
-                  lab.instructions || studentContext.data?.assignment?.description || ""
+                  moduleItems.find(
+                    (item) =>
+                      item.type === "ESSAY" &&
+                      typeof item.content?.["prompt"] === "string" &&
+                      String(item.content["prompt"]).trim().length > 0,
+                  )?.content?.["prompt"]
+                    ? String(
+                        moduleItems.find(
+                          (item) =>
+                            item.type === "ESSAY" &&
+                            typeof item.content?.["prompt"] === "string" &&
+                            String(item.content["prompt"]).trim().length > 0,
+                        )?.content?.["prompt"],
+                      ).trim()
+                    : lab.instructions || studentContext.data?.assignment?.description || ""
                 }
                 moduleTheoryItems={moduleItems
                   .filter((item) => item.type === "THEORY")
@@ -2486,6 +2500,8 @@ function StepContent({
                 labOrder={labOrder}
                 labTitle={labTitle}
                 labMode={labMode}
+                essayPrompt={labInstructions}
+                capturedSnapshots={requiresRuntime ? (runtimeEvidence?.snapshots ?? []) : []}
                 runtimeSessionId={verifiedSessionForSubmit}
                 capturedSnapshotCount={
                   requiresRuntime ? (runtimeEvidence?.snapshots?.length ?? 0) : undefined
