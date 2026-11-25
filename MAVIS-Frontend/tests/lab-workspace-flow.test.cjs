@@ -103,9 +103,9 @@ test("LabWorkspace uses zero-overlap ELK/MxGraph ArchitectureDiagrams for C1-C3 
 test("Bug #06: Step footer unifies prev/next links, lab switcher truncates cleanly, and AI tutor floats outside main content", () => {
   const screens = read("src/features/courses/screens.tsx");
   const syllabus = read("src/features/courses/student-course-syllabus.tsx");
-  assert.match(screens, /t\(`Prev: \$\{modulePrevNav\.label\}`, `Trước: \$\{modulePrevNav\.label\}`\)/);
+  assert.match(screens, /t\("Previous", "Trước"\)/);
   assert.match(screens, /Finish Studio to continue/);
-  assert.match(syllabus, /t\(`Prev: \$\{prevEntry\.item\.title\}`, `Trước: \$\{prevEntry\.item\.title\}`\)/);
+  assert.match(syllabus, /t\("Previous", "Trước"\)/);
   assert.doesNotMatch(screens, /fixed inset-x-4 bottom-4 z-50/);
   assert.match(screens, /id="lab-ai-tutor"/);
   assert.match(screens, /aiPanel=\{tutorAssistantPanel\}/);

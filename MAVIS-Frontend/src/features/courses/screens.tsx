@@ -2684,12 +2684,10 @@ function StepContent({
       )}
 
       <div className="mt-6 flex items-center justify-between gap-4 rounded-xl border bg-card p-3 shadow-xs sm:p-4">
-        <Button asChild size="sm" variant="outline" className="min-w-0 max-w-[46%]">
+        <Button asChild size="sm" variant="outline" title={modulePrevNav.label}>
           <Link href={modulePrevNav.href}>
             <ChevronLeft className="mr-1 h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">
-              {t(`Prev: ${modulePrevNav.label}`, `Trước: ${modulePrevNav.label}`)}
-            </span>
+            <span>{t("Previous", "Trước")}</span>
           </Link>
         </Button>
         {step === 3 ? (
@@ -2697,20 +2695,20 @@ function StepContent({
             <Button
               size="sm"
               variant="outline"
-              className="min-w-0 max-w-[46%] shrink-0"
+              className="shrink-0"
               onClick={jumpToSubmissionBox}
             >
-              <span className="truncate">
-                {t("Jump to Submission Box", "Đi tới Khung Nộp bài")}
-              </span>
+              <span>{t("Jump to Submission Box", "Đi tới khung nộp bài")}</span>
               <ArrowRight className="ml-1 h-4 w-4 shrink-0" />
             </Button>
           ) : (
-            <Button asChild size="sm" className="min-w-0 max-w-[46%]">
-              <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-                <span className="truncate">
-                  {t("Next: Course Syllabus", "Tiếp theo: Lộ trình khóa học")}
-                </span>
+            <Button
+              asChild
+              size="sm"
+              title={nextModuleTitle ?? t("Course Syllabus", "Lộ trình khóa học")}
+            >
+              <Link href={nextModuleHref ?? `/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+                <span>{t("Next", "Tiếp theo")}</span>
                 <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
               </Link>
             </Button>
@@ -2719,8 +2717,8 @@ function StepContent({
           <Button
             asChild={nextAvailable}
             size="sm"
-            className="min-w-0 max-w-[46%]"
             disabled={!nextAvailable}
+            title={moduleNextNav?.label}
           >
             {nextAvailable ? (
               <Link
@@ -2731,16 +2729,11 @@ function StepContent({
                     : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`)
                 }
               >
-                <span className="truncate">
-                  {t(
-                    `Next: ${moduleNextNav?.label ?? (step === 1 && requiresRuntime ? "MAVIS Studio" : "Summary & Submit")}`,
-                    `Tiếp theo: ${moduleNextNav?.label ?? (step === 1 && requiresRuntime ? "MAVIS Studio" : "Tổng hợp & Nộp bài")}`,
-                  )}
-                </span>
+                <span>{t("Next", "Tiếp theo")}</span>
                 <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
               </Link>
             ) : (
-              <span className="truncate">
+              <span>
                 {t("Finish Studio to continue", "Hoàn tất Studio để tiếp tục")}
               </span>
             )}

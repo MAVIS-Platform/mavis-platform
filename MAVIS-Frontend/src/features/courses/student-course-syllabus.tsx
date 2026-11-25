@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -239,7 +239,6 @@ export function StudentCourseSyllabus({
   const [tocOpen, setTocOpen] = useState<boolean>(false);
   const [practicePanel, setPracticePanel] = useState<"none" | "quiz" | "essay">("none");
   const isLearningWorkspace = selectedItemId !== "";
-  const learningContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setSelectedItemId("");
@@ -273,8 +272,8 @@ export function StudentCourseSyllabus({
   }, [flattenedItems, searchParams, syllabusModules]);
 
   useEffect(() => {
-    if (isLearningWorkspace) {
-      learningContentRef.current?.scrollTo({ top: 0 });
+    if (isLearningWorkspace && typeof window !== "undefined") {
+      window.scrollTo({ top: 0 });
     }
   }, [isLearningWorkspace, selectedItemId]);
 
@@ -582,14 +581,7 @@ export function StudentCourseSyllabus({
           </section>
         )}
 
-        <div
-          ref={isLearningWorkspace ? learningContentRef : undefined}
-          className={
-            isLearningWorkspace
-              ? "min-h-0 min-w-0 flex-1 overflow-y-scroll overscroll-contain pr-1 [scrollbar-gutter:stable]"
-              : "min-w-0 space-y-6"
-          }
-        >
+        <div className="min-w-0 space-y-6">
           {activeTab === "player" &&
             !isLearningWorkspace &&
             publishedCourse.isPending &&
@@ -1109,40 +1101,32 @@ export function StudentCourseSyllabus({
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="min-w-0 max-w-[46%]"
                       disabled={!prevEntry}
+                      title={prevEntry?.item.title}
                       onClick={() => prevEntry && selectCurriculumItem(prevEntry.item)}
                     >
                       <ChevronLeft className="mr-1 h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span className="truncate">
-                        {prevEntry
-                          ? t(`Prev: ${prevEntry.item.title}`, `Trước: ${prevEntry.item.title}`)
-                          : t("Prev", "Trước")}
-                      </span>
+                      <span>{t("Previous", "Trước")}</span>
                     </Button>
                     {nextEntry ? (
                       <Button
                         type="button"
                         size="sm"
-                        className="min-w-0 max-w-[46%]"
                         disabled={!nextEntry || isItemLocked(nextEntry.item)}
+                        title={
+                          isItemLocked(nextEntry.item)
+                            ? t(
+                                "Pass the previous Lab to unlock this step",
+                                "Hoàn thành bài Lab trước để mở khóa",
+                              )
+                            : nextEntry.item.title
+                        }
                         onClick={() => selectCurriculumItem(nextEntry.item)}
                       >
-                        <span className="truncate">
+                        <span>
                           {isItemLocked(nextEntry.item)
-                            ? t(
-                                "Locked · Pass previous Lab to unlock Quiz",
-                                "Đang khóa · Hoàn thành Lab trước để mở Quiz",
-                              )
-                            : nextEntry.item.type === "QUIZ"
-                              ? t(
-                                  `Continue to Quiz · ${nextEntry.item.title}`,
-                                  `Tiếp theo · ${nextEntry.item.title}`,
-                                )
-                              : t(
-                                  `Next: ${nextEntry.item.title}`,
-                                  `Tiếp theo: ${nextEntry.item.title}`,
-                                )}
+                            ? t("Locked", "Đang khóa")
+                            : t("Next", "Tiếp theo")}
                         </span>
                         {!isItemLocked(nextEntry.item) && (
                           <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />

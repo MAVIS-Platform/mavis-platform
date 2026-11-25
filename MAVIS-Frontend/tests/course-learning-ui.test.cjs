@@ -1985,7 +1985,7 @@ test("Bug #14: StudentCourseSyllabus fixes Module badge label, disables locked L
   assert.match(syllabus, /disabled=\{isLocked\}/);
   assert.match(syllabus, /Pass previous Lab to unlock/);
   assert.match(syllabus, /isItemLockedLab/);
-  assert.match(syllabus, /Continue to Quiz/);
+  assert.match(syllabus, /t\("Next", "Tiếp theo"\)/);
 });
 
 test("Bug #15: THEORY_ONLY labMode is preserved in contracts, submissionSchema and submission mapper", () => {
@@ -2385,7 +2385,7 @@ test("Commit #04: single-row bottom lesson nav removes clutter note and deduplic
 
   assert.doesNotMatch(screens, /Progress is saved directly in this Lab workspace\.|Tiến độ được lưu trực tiếp trong không gian Lab này\.|Clock3/);
   assert.match(screens, /flex items-center justify-between gap-4 rounded-xl border bg-card/);
-  assert.match(screens, /max-w-\[46%\]/);
+  assert.match(screens, /t\("Previous", "Trước"\)/);
   assert.doesNotMatch(syllabus, /onNextLesson=/);
   assert.match(syllabus, /flex items-center justify-between gap-4 border-t pt-4/);
   assert.doesNotMatch(runner, /Go to next lesson|Sang bài tiếp theo/);
@@ -2440,4 +2440,16 @@ test("Commit #07: Quiz timer renders as compact badge, Retake Quiz works across 
   assert.doesNotMatch(screens, /niêm phong|phần giải trình|seal the receipt/);
   assert.doesNotMatch(steps, /viết giải trình/);
   assert.doesNotMatch(subV2, /giải trình|niêm phong/);
+});
+
+test("Sprint 2 #01: learning pages unlock window scroll and use concise Previous/Next labels", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const screens = read("src/features/courses/screens.tsx");
+
+  assert.doesNotMatch(syllabus, /overflow-y-scroll|overscroll-contain|scrollbar-gutter:stable/);
+  assert.match(syllabus, /window\.scrollTo\(\{\s*top:\s*0\s*\}\)/);
+  assert.match(syllabus, /<span>\{t\("Previous", "Trước"\)\}<\/span>/);
+  assert.match(syllabus, /t\("Next", "Tiếp theo"\)/);
+  assert.match(screens, /<span>\{t\("Previous", "Trước"\)\}<\/span>/);
+  assert.match(screens, /<span>\{t\("Next", "Tiếp theo"\)\}<\/span>/);
 });
