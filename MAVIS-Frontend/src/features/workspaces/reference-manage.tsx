@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, FolderGit2, GitBranch, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery, usePermission } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
+  CourseSetupFlowFrame,
   courseSetupStepHref,
 } from "@/features/courses/course-setup-flow-navigation";
 
@@ -20,6 +21,8 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const allowed = usePermission("workspace:manage");
   const { t } = useLocale();
   const router = useRouter();
+  const params = useSearchParams();
+  const flowMode = params?.get("flow") === "setup" ? "setup" : "content";
   const [importOpen, setImportOpen] = useState(false);
   const [prefilledRepoUrl, setPrefilledRepoUrl] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
@@ -218,7 +221,14 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                           ),
                         );
                         redirectTimer.current = setTimeout(() => {
-                          router.push(courseSetupStepHref(workspaceId, "arrange", "repository"));
+                          router.push(
+                            courseSetupStepHref(
+                              workspaceId,
+                              flowMode === "setup" ? "lesson" : "arrange",
+                              "repository",
+                              flowMode,
+                            ),
+                          );
                         }, 900);
                       },
                       onError: () => {
@@ -268,5 +278,13 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
     </section>
   );
 
-  return content;
+  return (
+    <CourseSetupFlowFrame
+      workspaceId={workspaceId}
+      currentStep="repository"
+      flowMode={flowMode}
+    >
+      {content}
+    </CourseSetupFlowFrame>
+  );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileQuestion, Library, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import { emptyQuestion, type QuizDraft, type QuizQuestion } from "@/features/ass
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
+import { CourseSetupFlowFrame } from "./course-setup-flow-navigation";
 
 type QuizAsset = {
   id: string;
@@ -151,6 +153,8 @@ function staticDiagramQuizTemplate(t: (en: string, vi?: string) => string): Quiz
 }
 
 export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
+  const params = useSearchParams();
+  const flowMode = params?.get("flow") === "setup" ? "setup" : "content";
   const { t } = useLocale();
   const cache = useQueryClient();
   const course = useCourseAuthoring(workspaceId);
@@ -498,5 +502,9 @@ export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
     </section>
   );
 
-  return content;
+  return (
+    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="quiz" flowMode={flowMode}>
+      {content}
+    </CourseSetupFlowFrame>
+  );
 }

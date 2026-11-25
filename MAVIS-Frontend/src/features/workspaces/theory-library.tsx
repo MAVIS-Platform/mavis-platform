@@ -19,6 +19,7 @@ import { useSelection } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
+import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 import { smartFormatTheoryMarkdown } from "./theory-markdown";
 
 type TheoryAsset = {
@@ -118,6 +119,7 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
   const params = useSearchParams();
   const selection = useSelection();
   const workspaceId = params?.get("workspace") || selection.workspaceId;
+  const flowMode = params?.get("flow") === "setup" ? "setup" : "content";
   const cache = useQueryClient();
   const course = useCourseAuthoring(workspaceId);
   const [search, setSearch] = useState("");
@@ -815,5 +817,9 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
     </div>
   );
 
-  return content;
+  return embedded ? content : (
+    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lesson" flowMode={flowMode}>
+      {content}
+    </CourseSetupFlowFrame>
+  );
 }

@@ -19,6 +19,7 @@ import { ErrorState, LoadingState, RequestState } from "@/components/shared/requ
 import { useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
+import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
 import { Assignments } from "./screens";
 import { type Assignment } from "./requirements";
@@ -49,6 +50,7 @@ export function LabAuthoring() {
   const selection = useSelection();
   const session = useSession();
   const workspaceId = params?.get("workspace") || selection.workspaceId;
+  const flowMode = params?.get("flow") === "setup" ? "setup" : "content";
   const requestedSection = params?.get("section");
   const section: LabWorkspaceSection =
     requestedSection === "library"
@@ -372,14 +374,20 @@ export function LabAuthoring() {
     </div>
   );
 
+  const displayedContent = (
+    <CourseSetupFlowFrame workspaceId={workspaceId} currentStep="lab" flowMode={flowMode}>
+      {hubContent}
+    </CourseSetupFlowFrame>
+  );
+
   return (
     <RequestState query={workspaces} empty={!workspace}>
       {workspace ? (
         <CourseWorkspaceShell workspace={workspace} active="lab-authoring">
-          {hubContent}
+          {displayedContent}
         </CourseWorkspaceShell>
       ) : (
-        hubContent
+        displayedContent
       )}
     </RequestState>
   );

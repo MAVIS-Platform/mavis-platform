@@ -516,7 +516,7 @@ export function WorkspaceOverview() {
                 variant="outline"
                 className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
               >
-                <Link href={courseSetupStepHref(workspace.id, "repository")}>
+                <Link href={courseSetupStepHref(workspace.id, "repository", undefined, "setup")}>
                   <Plus className="mr-1.5 size-4" aria-hidden="true" />
                   {t("Start course setup", "Bắt đầu thiết lập khóa học")}
                 </Link>
@@ -552,6 +552,7 @@ export function WorkspaceOverview() {
                 workspaceId={workspace.id}
                 currentStep={requestedFlowStep}
                 contentStep={contentStep}
+                flowMode={params.get("flow") === "setup" ? "setup" : "content"}
               >
                 <CourseBuilder
                   workspaceId={workspace.id}
