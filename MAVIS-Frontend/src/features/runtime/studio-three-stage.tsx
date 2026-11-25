@@ -2034,6 +2034,8 @@ export function StudioThreeStage({
   const [isDragging, setIsDragging] = useState(false);
   const [dropHoverService, setDropHoverService] = useState<string | null>(null);
   const [engineReady, setEngineReady] = useState(false);
+  const [webglRecoveryEpoch, setWebglRecoveryEpoch] = useState(0);
+  const webglRecoveryCountRef = useRef(0);
 
   const threeRef = useRef<ThreeModule | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -2092,10 +2094,47 @@ export function StudioThreeStage({
   // Boot Three.js WebGL renderer once (dynamic import so non-3D routes pay 0 KB)
   useEffect(() => {
     let cancelled = false;
+    let contextLost = false;
     let rafId = 0;
     let resizeRafId = 0;
+    let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
     let resizeObserver: ResizeObserver | null = null;
     const boundCanvas = canvasRef.current;
+
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      setEngineReady(false);
+      onReadyChange?.(false);
+      // If browser does not restore WebGL automatically, re-boot once on a fresh canvas element.
+      if (webglRecoveryCountRef.current < 2 && !recoveryTimer) {
+        recoveryTimer = setTimeout(() => {
+          recoveryTimer = null;
+          if (!cancelled && contextLost && webglRecoveryCountRef.current < 2) {
+            webglRecoveryCountRef.current += 1;
+            setWebglRecoveryEpoch((epoch) => epoch + 1);
+          }
+        }, 1200);
+      }
+    };
+    const handleContextRestored = () => {
+      contextLost = false;
+      if (recoveryTimer) {
+        clearTimeout(recoveryTimer);
+        recoveryTimer = null;
+      }
+      const r = rendererRef.current;
+      const sc = sceneRef.current;
+      const cam = cameraRef.current;
+      if (r && sc && cam) {
+        r.shadowMap.needsUpdate = true;
+        r.render(sc, cam);
+      }
+      setEngineReady(true);
+      onReadyChange?.(true);
+    };
+    boundCanvas?.addEventListener("webglcontextlost", handleContextLost, false);
+    boundCanvas?.addEventListener("webglcontextrestored", handleContextRestored, false);
 
     // Native non-passive wheel listener: zero React re-renders mid-scroll, smooth delta-proportional zoom
     const handleWheel = (event: WheelEvent) => {
@@ -2179,6 +2218,7 @@ export function StudioThreeStage({
         const perspCam = new T.PerspectiveCamera(34, width / height, 0.1, 140);
         // Synchronous on-demand render hook used by captureStudioImage() without preserveDrawingBuffer GPU copy penalty
         (canvas as HTMLCanvasElement & { __mavisRenderNow?: () => void }).__mavisRenderNow = () => {
+          if (contextLost || renderer.getContext().isContextLost()) return;
           renderer.render(scene, perspCam);
         };
 
@@ -2217,14 +2257,18 @@ export function StudioThreeStage({
           if (resizeRafId) return;
           resizeRafId = requestAnimationFrame(() => {
             resizeRafId = 0;
-            if (cancelled) return;
-            const w = Math.max(1, container.clientWidth);
-            const h = Math.max(1, container.clientHeight);
+            if (cancelled || contextLost) return;
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            if (w < 16 || h < 16) return;
             if (w === viewportSizeRef.current.w && h === viewportSizeRef.current.h) return;
             viewportSizeRef.current = { w, h };
             renderer.setSize(w, h, false);
             perspCam.aspect = w / h;
             perspCam.updateProjectionMatrix();
+            if (!contextLost && !renderer.getContext().isContextLost()) {
+              renderer.render(scene, perspCam);
+            }
           });
         });
         resizeObserver.observe(container);
@@ -2364,7 +2408,9 @@ export function StudioThreeStage({
             }
           }
 
-          renderer.render(scene, perspCam);
+          if (!contextLost && !renderer.getContext().isContextLost()) {
+            renderer.render(scene, perspCam);
+          }
 
           // Update invisible projected bounding box for Guided Tour step 2 only once camera has settled (zero layout reflow during zoom/orbit)
           const isCameraSettling =
@@ -2425,7 +2471,10 @@ export function StudioThreeStage({
       cancelled = true;
       cancelAnimationFrame(rafId);
       if (resizeRafId) cancelAnimationFrame(resizeRafId);
+      if (recoveryTimer) clearTimeout(recoveryTimer);
       boundCanvas?.removeEventListener("wheel", handleWheel);
+      boundCanvas?.removeEventListener("webglcontextlost", handleContextLost);
+      boundCanvas?.removeEventListener("webglcontextrestored", handleContextRestored);
       if (zoomSyncTimerRef.current) {
         clearTimeout(zoomSyncTimerRef.current);
         zoomSyncTimerRef.current = null;
@@ -2455,7 +2504,7 @@ export function StudioThreeStage({
       liveNodePosRef.current.clear();
       lastSceneSigRef.current = "";
     };
-  }, [onReadyChange]);
+  }, [onReadyChange, webglRecoveryEpoch]);
 
   // Rebuild 3D meshes, deck, edges, and lights ONLY when visual scene signature actually changes
   useEffect(() => {
@@ -3139,6 +3188,7 @@ export function StudioThreeStage({
         className="pointer-events-none absolute"
       />
       <canvas
+        key={webglRecoveryEpoch}
         ref={canvasRef}
         data-testid="studio-3d-webgl"
         data-studio-webgl-canvas

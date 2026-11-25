@@ -802,6 +802,14 @@ public class CourseSetupService {
                     }
                 }
             }
+            String persistedDefault = profile.path("defaultBaselinePath").asText("").trim();
+            if (!persistedDefault.isBlank()) {
+                int score = scoreBaselineCandidate(persistedDefault, "api-gateway", 50);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestPath = persistedDefault;
+                }
+            }
         }
         if (bestPath != null && bestScore > 0) {
             return bestPath;

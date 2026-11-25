@@ -1918,4 +1918,17 @@ class RuntimePlanningServiceTest {
         assertThat(RuntimePlanningService.mapStackToRuntime("node")).isEqualTo("passthrough");
         assertThat(RuntimePlanningService.mapStackToRuntime("passthrough")).isEqualTo("passthrough");
     }
+
+    @Test
+    @DisplayName("pickSmartDefaultBaselinePath selects gateway live-flow GET over graphql, health, and templated paths")
+    void pickSmartDefaultBaselinePathPrefersGatewayLiveFlow() {
+        var picked = RuntimePlanningService.pickSmartDefaultBaselinePath(List.of(
+                PreflightCheckResponseDTO.DetectedEndpointDTO.builder().service("api-gateway").method("GET").path("/api/v1/graphql/storefront").build(),
+                PreflightCheckResponseDTO.DetectedEndpointDTO.builder().service("api-gateway").method("GET").path("/api/v1/checkout/live-flow").build(),
+                PreflightCheckResponseDTO.DetectedEndpointDTO.builder().service("order-service").method("GET").path("/api/v1/orders/{id}").build(),
+                PreflightCheckResponseDTO.DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/v1/checkout/live-flow").build(),
+                PreflightCheckResponseDTO.DetectedEndpointDTO.builder().service("api-gateway").method("GET").path("/health").build()
+        ));
+        assertThat(picked).isEqualTo("/api/v1/checkout/live-flow");
+    }
 }

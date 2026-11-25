@@ -429,6 +429,14 @@ class CourseSetupServiceTest {
         assertEquals("/api/v1/storefront/live-flow", picked);
     }
 
+    @Test void pickSmartDefaultBaselinePathUsesPersistedDefaultBaselinePathWhenDetectedEndpointsStripped() {
+        ObjectNode profile = mapper.createObjectNode();
+        profile.put("defaultBaselinePath", "/api/v1/checkout/live-flow");
+        String picked = CourseSetupService.pickSmartDefaultBaselinePath(
+                profile, java.util.Set.of("api-gateway", "order-service", "payment-service"));
+        assertEquals("/api/v1/checkout/live-flow", picked);
+    }
+
     private RuntimeConfiguration configuration(boolean withTopology) {
         ObjectNode profile = mapper.createObjectNode();
         var applications = profile.putObject("applications");

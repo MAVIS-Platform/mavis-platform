@@ -239,8 +239,12 @@ function StandaloneStudioContent() {
     Boolean(workspaceId && assignmentId),
   );
 
+  const courseReference = setup.data?.reference;
   const projectId = isAuthorMode
-    ? (assignment?.referenceSource?.projectId ?? exercise.data?.runtimeProjectId ?? null)
+    ? (assignment?.referenceSource?.projectId ??
+      exercise.data?.runtimeProjectId ??
+      courseReference?.projectId ??
+      null)
     : (studentContext.data?.assignment?.referenceSource?.projectId ??
       studentContext.data?.referenceArchitecture?.projectId ??
       null);
@@ -275,6 +279,7 @@ function StandaloneStudioContent() {
     runtimeConfig.data?.modelId ??
     assignment?.referenceSource?.modelId ??
     exercise.data?.runtimeModelId ??
+    courseReference?.modelId ??
     studentContext.data?.assignment?.referenceSource?.modelId ??
     undefined;
   const previewServiceMappings = useMemo(() => {
@@ -370,6 +375,51 @@ function StandaloneStudioContent() {
     !studentContext.data.quiz.runtimeUnlocked &&
     studentContext.data.assignment?.labMode !== "THEORY_ONLY",
   );
+
+  const autoLinkedLabRef = useRef<string | null>(null);
+  // Auto-link newly created Labs to the already-ready Course Docker runtime so lecturers never need manual Sync Docker per Lab.
+  useEffect(() => {
+    if (
+      !isAuthorMode ||
+      !workspaceId ||
+      !assignmentId ||
+      !projectId ||
+      !isRuntimeReady ||
+      assignments.isPending ||
+      exercise.isPending ||
+      autoStudio.isPending ||
+      autoLinkedLabRef.current === assignmentId
+    ) {
+      return;
+    }
+    const missingLink = !assignment?.referenceSource?.projectId || !exercise.data;
+    if (!missingLink) return;
+    autoLinkedLabRef.current = assignmentId;
+    autoStudio.mutate(undefined, {
+      onSuccess: () => {
+        setCanvasOpened(true);
+        void exercise.refetch();
+        void runtimeConfig.refetch();
+        void readiness.refetch();
+        void setup.refetch();
+      },
+    });
+  }, [
+    isAuthorMode,
+    workspaceId,
+    assignmentId,
+    projectId,
+    isRuntimeReady,
+    assignments.isPending,
+    exercise.isPending,
+    exercise.data,
+    assignment?.referenceSource?.projectId,
+    autoStudio,
+    exercise,
+    runtimeConfig,
+    readiness,
+    setup,
+  ]);
 
   const studioStateQuery = useApiQuery(
     "studioState",
@@ -630,9 +680,17 @@ function StandaloneStudioContent() {
       const runtimeProjectId =
         ref?.projectId ?? prevExercise?.runtimeProjectId ?? projectId ?? null;
       const runtimeModelId =
-        ref?.modelId ?? prevExercise?.runtimeModelId ?? prevConfig?.modelId ?? null;
+        ref?.modelId ??
+        prevExercise?.runtimeModelId ??
+        prevConfig?.modelId ??
+        courseReference?.modelId ??
+        null;
       const runtimeSnapshotId =
-        ref?.snapshotId ?? prevExercise?.runtimeSnapshotId ?? prevConfig?.snapshotId ?? null;
+        ref?.snapshotId ??
+        prevExercise?.runtimeSnapshotId ??
+        prevConfig?.snapshotId ??
+        courseReference?.snapshotId ??
+        null;
 
       // Apply optimistic cache update synchronously so goal/rule clicks feel instant (<16ms) with zero UI lock.
       const optimisticExercise = buildNextExercisePayload(prevExercise, input, {
@@ -672,9 +730,15 @@ function StandaloneStudioContent() {
           : runtimeConfig.data;
         const runtimeProjectId = ref?.projectId ?? curEx?.runtimeProjectId ?? projectId;
         const runtimeModelId =
-          ref?.modelId ?? curEx?.runtimeModelId ?? latestCachedCfg?.modelId;
+          ref?.modelId ??
+          curEx?.runtimeModelId ??
+          latestCachedCfg?.modelId ??
+          courseReference?.modelId;
         const runtimeSnapshotId =
-          ref?.snapshotId ?? curEx?.runtimeSnapshotId ?? latestCachedCfg?.snapshotId;
+          ref?.snapshotId ??
+          curEx?.runtimeSnapshotId ??
+          latestCachedCfg?.snapshotId ??
+          courseReference?.snapshotId;
 
         if (input.nextTopology && projectId) {
           const nextTopoJson = JSON.stringify(input.nextTopology);
@@ -1315,11 +1379,17 @@ function StandaloneStudioContent() {
   const showAuthorCanvas =
     isRuntimeReady || Boolean(previewTopology) || canvasOpened || sessionList.length > 0;
   const isInitialLoading =
-    workspaces.isPending || (isAuthorMode ? assignments.isPending : studentContext.isPending);
+    workspaces.isPending ||
+    (isAuthorMode ? assignments.isPending || (!projectId && setup.isPending) : studentContext.isPending);
+  const initialLoadError =
+    workspaces.error ??
+    (isAuthorMode ? assignments.error : studentContext.error) ??
+    null;
 
   const isWorkbenchActive =
     Boolean(workspaceId && assignmentId) &&
     !isInitialLoading &&
+    !initialLoadError &&
     !studentQuizLocked &&
     !(isAuthorMode && !projectId) &&
     !(isAuthorMode && !showAuthorCanvas);
@@ -1487,6 +1557,20 @@ function StandaloneStudioContent() {
           <div className="m-auto p-6">
             <LoadingState label={t("Loading Studio Live…", "Đang tải Studio Live…")} />
           </div>
+        ) : initialLoadError ? (
+          <div className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+            <ErrorState
+              error={initialLoadError}
+              onRetry={() => {
+                void workspaces.refetch();
+                if (isAuthorMode) void assignments.refetch();
+                else void studentContext.refetch();
+              }}
+            />
+            <Button asChild size="sm" variant="outline">
+              <Link href={returnHref}>{t("Return to MAVIS", "Quay lại MAVIS")}</Link>
+            </Button>
+          </div>
         ) : studentQuizLocked ? (
           <div className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
             <Lock className="mx-auto size-7 text-amber-500" aria-hidden="true" />
@@ -1508,15 +1592,15 @@ function StandaloneStudioContent() {
             <Lock className="mx-auto size-7 text-muted-foreground" aria-hidden="true" />
             <p className="text-sm text-foreground">
               {t(
-                "Import a repository with Docker Compose in Step 2 first.",
-                "Hãy nhập kho mã nguồn có Docker Compose ở Bước 2 trước.",
+                "Import a repository with Docker Compose in Step 1 (Repository) first.",
+                "Hãy nhập kho mã nguồn có Docker Compose ở Bước 1 (Repository) trước.",
               )}
             </p>
             <Button asChild size="sm" variant="outline">
               <Link
-                href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&tab=source`}
+                href={`/references?workspace=${encodeURIComponent(workspaceId)}&from=first-setup`}
               >
-                {t("Go to Step 2", "Về Bước 2")}
+                {t("Go to Step 1 (Repository)", "Về Bước 1 (Repository)")}
               </Link>
             </Button>
           </div>

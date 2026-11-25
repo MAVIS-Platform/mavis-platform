@@ -343,6 +343,10 @@ public class RuntimePlanningService {
 
   PreflightCheckResponseDTO pre=null;
   try{pre=runtime.runComposePreflight(snapshotId);}catch(Exception ignored){}
+  if(pre!=null&&pre.getDetectedEndpoints()!=null&&!pre.getDetectedEndpoints().isEmpty()){
+   String detectedBaseline=pickSmartDefaultBaselinePath(pre.getDetectedEndpoints());
+   if(detectedBaseline!=null&&!detectedBaseline.isBlank())p.put("defaultBaselinePath",detectedBaseline);
+  }
   if(pre!=null&&pre.getServiceImageOverrides()!=null&&!pre.getServiceImageOverrides().isEmpty()){
    pre.getServiceImageOverrides().forEach(imageOverrides::putIfAbsent);
    ObjectNode overridesNode=p.has("serviceImageOverrides")&&p.get("serviceImageOverrides").isObject()?(ObjectNode)p.get("serviceImageOverrides"):p.putObject("serviceImageOverrides");
@@ -450,6 +454,31 @@ public class RuntimePlanningService {
    .secretReferences(new ArrayList<>(secretRefs))
    .build());
   return p;
+ }
+
+ static String pickSmartDefaultBaselinePath(List<PreflightCheckResponseDTO.DetectedEndpointDTO> endpoints){
+  if(endpoints==null||endpoints.isEmpty())return null;
+  String bestPath=null;
+  int bestScore=Integer.MIN_VALUE;
+  for(var ep:endpoints){
+   if(ep==null)continue;
+   String method=ep.getMethod()==null?"GET":ep.getMethod().trim().toUpperCase(Locale.ROOT);
+   if(!"GET".equals(method)&&!"HEAD".equals(method))continue;
+   String path=ep.getPath()==null?"":ep.getPath().trim();
+   if(!path.startsWith("/")||path.length()>200||path.contains("{")||path.contains("*"))continue;
+   String lower=path.toLowerCase(Locale.ROOT);
+   String svcLower=ep.getService()==null?"":ep.getService().toLowerCase(Locale.ROOT);
+   int score=10;
+   if(svcLower.contains("gateway")||svcLower.contains("edge")||svcLower.contains("proxy")||svcLower.contains("bff"))score+=40;
+   if(lower.contains("live-flow")||lower.contains("checkout")||lower.contains("end-to-end"))score+=65;
+   else if(lower.contains("storefront")||lower.contains("overview"))score+=40;
+   if(lower.contains("graphql"))score-=15;
+   if(lower.contains("/api/"))score+=25;
+   if(lower.contains("order"))score+=15;
+   if("/".equals(lower)||"/health".equals(lower)||lower.contains("actuator")||"/version".equals(lower))score-=30;
+   if(score>bestScore){bestScore=score;bestPath=path;}
+  }
+  return bestScore>0?bestPath:null;
  }
 
  static String mapStackToRuntime(String stack){

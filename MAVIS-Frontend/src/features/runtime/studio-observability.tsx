@@ -3959,30 +3959,48 @@ export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = fals
   const webglCanvas = svg.parentElement?.querySelector<HTMLCanvasElement>(
     "canvas[data-studio-webgl-canvas]",
   );
+  const glCtx =
+    webglCanvas?.getContext("webgl2") ?? webglCanvas?.getContext("webgl") ?? null;
   if (
     webglCanvas &&
     webglCanvas.width > 0 &&
     webglCanvas.height > 0 &&
-    webglCanvas.offsetParent !== null
+    webglCanvas.offsetParent !== null &&
+    !glCtx?.isContextLost()
   ) {
     const naturalW = webglCanvas.width;
     const naturalH = webglCanvas.height;
     const longest = Math.max(naturalW, naturalH);
-    const canvas = document.createElement("canvas");
-    for (const maxEdge of SNAPSHOT_MAX_EDGES) {
+    const bgFill =
+      styles.backgroundColor && styles.backgroundColor !== "rgba(0, 0, 0, 0)"
+        ? styles.backgroundColor
+        : "#f3f8ff";
+    // Perform a single GPU->2D readback once, then downscale purely on 2D canvas to avoid WebGL context loss.
+    const sourceScale = Math.min(1, SNAPSHOT_MAX_EDGES[0] / longest);
+    const sourceCanvas = document.createElement("canvas");
+    sourceCanvas.width = Math.max(1, Math.round(naturalW * sourceScale));
+    sourceCanvas.height = Math.max(1, Math.round(naturalH * sourceScale));
+    const sourceCtx = sourceCanvas.getContext("2d");
+    if (!sourceCtx) throw new Error("Could not render Studio snapshot");
+    sourceCtx.fillStyle = bgFill;
+    sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+    (webglCanvas as HTMLCanvasElement & { __mavisRenderNow?: () => void }).__mavisRenderNow?.();
+    sourceCtx.drawImage(webglCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height);
+
+    const firstUrl = sourceCanvas.toDataURL("image/png");
+    if (firstUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return firstUrl;
+
+    const scaled = document.createElement("canvas");
+    for (const maxEdge of SNAPSHOT_MAX_EDGES.slice(1)) {
       const scale = Math.min(1, maxEdge / longest);
-      canvas.width = Math.max(1, Math.round(naturalW * scale));
-      canvas.height = Math.max(1, Math.round(naturalH * scale));
-      const context = canvas.getContext("2d");
+      scaled.width = Math.max(1, Math.round(naturalW * scale));
+      scaled.height = Math.max(1, Math.round(naturalH * scale));
+      const context = scaled.getContext("2d");
       if (!context) throw new Error("Could not render Studio snapshot");
-      context.fillStyle =
-        styles.backgroundColor && styles.backgroundColor !== "rgba(0, 0, 0, 0)"
-          ? styles.backgroundColor
-          : "#f3f8ff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      (webglCanvas as HTMLCanvasElement & { __mavisRenderNow?: () => void }).__mavisRenderNow?.();
-      context.drawImage(webglCanvas, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/png");
+      context.fillStyle = bgFill;
+      context.fillRect(0, 0, scaled.width, scaled.height);
+      context.drawImage(sourceCanvas, 0, 0, scaled.width, scaled.height);
+      const dataUrl = scaled.toDataURL("image/png");
       if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
     }
     throw new Error("Snapshot image too large");

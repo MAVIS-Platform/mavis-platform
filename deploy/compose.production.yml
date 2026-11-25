@@ -11,6 +11,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: cloud
       SERVER_PORT: "8080"
+      JAVA_TOOL_OPTIONS: ${MAVIS_JAVA_TOOL_OPTIONS:--XX:+UseG1GC -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError -XX:MaxGCPauseMillis=200}
       MAVIS_DB_URL: ${MAVIS_DB_URL:?Set MAVIS_DB_URL in deploy/.env}
       MAVIS_DB_USERNAME: ${MAVIS_DB_USERNAME:?Set MAVIS_DB_USERNAME in deploy/.env}
       MAVIS_DB_PASSWORD: ${MAVIS_DB_PASSWORD:?Set MAVIS_DB_PASSWORD in deploy/.env}

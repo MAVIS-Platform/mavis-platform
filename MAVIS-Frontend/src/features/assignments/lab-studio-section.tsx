@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, CheckCircle2, Circle, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -132,10 +132,49 @@ export function LabStudioSection({
       (item) => !(labSessions.data ?? []).some((labItem) => labItem.id === item.id),
     ),
   ];
-  const verifiedSession = sessionList.find(
-    (session) => session.assignmentId === assignment.id && session.studioVerified,
-  );
+  const verifiedSession =
+    sessionList.find(
+      (session) => session.assignmentId === assignment.id && session.studioVerified,
+    ) ?? (labSessions.data ?? []).find((session) => session.studioVerified);
   const isPreparing = prepareStage !== "idle" || buildImages.isPending || autoStudio.isPending;
+
+  const autoLinkedRef = useRef<string | null>(null);
+  // Auto-link newly created Labs to the already-ready Course Docker runtime so lecturers never need Sync Docker per Lab.
+  useEffect(() => {
+    if (
+      !projectId ||
+      !isRuntimeReady ||
+      exercise.isPending ||
+      autoStudio.isPending ||
+      buildImages.isPending ||
+      autoLinkedRef.current === assignment.id
+    ) {
+      return;
+    }
+    if (assignment.referenceSource?.projectId && exercise.data) return;
+    autoLinkedRef.current = assignment.id;
+    autoStudio.mutate(undefined, {
+      onSuccess: () => {
+        void exercise.refetch();
+        void runtimeConfig.refetch();
+        void readiness.refetch();
+        void setup.refetch();
+      },
+    });
+  }, [
+    projectId,
+    isRuntimeReady,
+    exercise.isPending,
+    exercise.data,
+    assignment.id,
+    assignment.referenceSource?.projectId,
+    autoStudio,
+    buildImages.isPending,
+    exercise,
+    runtimeConfig,
+    readiness,
+    setup,
+  ]);
 
   const returnTo = `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}&tab=studio`;
   const studioLiveHref = buildStudioLiveHref({
@@ -312,7 +351,9 @@ export function LabStudioSection({
       stoppedSet.size > 0 ||
       impactTarget ||
       minReplicaMap.size > 0 ||
-      exercise.data?.instructions?.trim(),
+      exercise.data?.successCriteria?.requiredTraceEdge ||
+      exercise.data?.successCriteria?.maxP95Ms != null ||
+      (exercise.data?.revision ?? 0) > 1,
   );
 
   const checklist = [

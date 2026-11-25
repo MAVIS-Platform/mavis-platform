@@ -596,6 +596,25 @@ export function CourseBuilder({
     }
   }, [isDraft]);
 
+  const anyDrawerStateOpen = Boolean(
+    drawerOpen || showAddModule || editingModule || addingItemModuleId || editingItem,
+  );
+  useEffect(() => {
+    if (!anyDrawerStateOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowAddModule(false);
+        setEditingModule(null);
+        setAddingItemModuleId(null);
+        setEditingItem(null);
+        setDrawerOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [anyDrawerStateOpen]);
+
   const editingItemId = editingItem?.itemId ?? null;
 
   useEffect(() => {
@@ -821,7 +840,7 @@ export function CourseBuilder({
         setModuleTitle("");
         setModuleDescription("");
         setModulePrerequisite("");
-        setShowAddModule(false);
+        closeDrawer();
       },
     });
   };
@@ -837,7 +856,7 @@ export function CourseBuilder({
     } = { moduleId: editingModule.id, title: editModuleTitle.trim() };
     if (editModuleDescription.trim()) body.description = editModuleDescription.trim();
     if (editModulePrerequisite) body.prerequisiteModuleId = editModulePrerequisite;
-    course.updateModule.mutate(body, { onSuccess: () => setEditingModule(null) });
+    course.updateModule.mutate(body, { onSuccess: () => closeDrawer() });
   };
 
   const addItem = (moduleId: string, event: React.FormEvent) => {
@@ -864,7 +883,7 @@ export function CourseBuilder({
     course.addItem.mutate(body, {
       onSuccess: () => {
         setDrafts((current) => ({ ...current, [moduleId]: emptyDraft() }));
-        setAddingItemModuleId(null);
+        closeDrawer();
       },
     });
   };
@@ -898,6 +917,14 @@ export function CourseBuilder({
   const addingItemModule = addingItemModuleId
     ? (modules.find((mod) => mod.id === addingItemModuleId) ?? null)
     : null;
+
+  const isDrawerVisible = Boolean(
+    (isDraft && canCreateModules && showAddModule) ||
+      (isDraft && editingModule) ||
+      (isDraft && addingItemModule) ||
+      (isDraft && editingItem) ||
+      (drawerOpen && inspectedItem),
+  );
 
   const inspectedResolvedType = inspectedItem ? resolveBuilderItemType(inspectedItem.item) : null;
   const inspectedMeta = inspectedResolvedType
@@ -1492,11 +1519,7 @@ export function CourseBuilder({
           </div>
 
           {/* SLIDE-OVER INSPECTOR & EDITOR DRAWER */}
-          {(drawerOpen ||
-            showAddModule ||
-            Boolean(editingModule) ||
-            Boolean(addingItemModuleId) ||
-            Boolean(editingItem)) && (
+          {isDrawerVisible && (
             <div
               className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-[1px]"
               onClick={(event) => {
@@ -1528,7 +1551,7 @@ export function CourseBuilder({
                         size="sm"
                         type="button"
                         variant="ghost"
-                        onClick={() => setShowAddModule(false)}
+                        onClick={closeDrawer}
                       >
                         <X className="size-4" aria-hidden="true" />
                         <span className="sr-only">{t("Close", "Đóng")}</span>
@@ -1586,7 +1609,7 @@ export function CourseBuilder({
                         size="sm"
                         type="button"
                         variant="ghost"
-                        onClick={() => setShowAddModule(false)}
+                        onClick={closeDrawer}
                       >
                         {t("Cancel", "Hủy")}
                       </Button>
@@ -1612,7 +1635,7 @@ export function CourseBuilder({
                         size="sm"
                         type="button"
                         variant="ghost"
-                        onClick={() => setEditingModule(null)}
+                        onClick={closeDrawer}
                       >
                         <X className="size-4" aria-hidden="true" />
                         <span className="sr-only">{t("Close", "Đóng")}</span>
@@ -1664,7 +1687,7 @@ export function CourseBuilder({
                         size="sm"
                         type="button"
                         variant="ghost"
-                        onClick={() => setEditingModule(null)}
+                        onClick={closeDrawer}
                       >
                         {t("Cancel", "Hủy")}
                       </Button>
@@ -1690,7 +1713,7 @@ export function CourseBuilder({
                         size="sm"
                         type="button"
                         variant="ghost"
-                        onClick={() => setAddingItemModuleId(null)}
+                        onClick={closeDrawer}
                       >
                         <X className="size-4" aria-hidden="true" />
                         <span className="sr-only">{t("Close", "Đóng")}</span>
@@ -1709,7 +1732,7 @@ export function CourseBuilder({
                         size="sm"
                         type="button"
                         variant="ghost"
-                        onClick={() => setAddingItemModuleId(null)}
+                        onClick={closeDrawer}
                       >
                         {t("Cancel", "Hủy")}
                       </Button>

@@ -455,7 +455,10 @@ public class CourseLabStudentService {
             }
         }
         if (stepsNode.isEmpty()) {
-            String defaultPath = primaryService.toLowerCase(Locale.ROOT).contains("gateway")
+            String persistedDefault = refProfile != null ? refProfile.path("defaultBaselinePath").asText("").trim() : "";
+            String defaultPath = persistedDefault.startsWith("/") && persistedDefault.length() <= 200
+                    ? persistedDefault
+                    : primaryService.toLowerCase(Locale.ROOT).contains("gateway")
                     && appsNode != null && appsNode.has("order-service")
                     ? "/api/gateway/orders"
                     : "/health";

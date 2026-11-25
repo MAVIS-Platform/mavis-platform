@@ -313,6 +313,7 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
     queryFn: ({ signal }) =>
       courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course`, { signal }),
     enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+    retry: false,
   });
   const save = useMutation({
     mutationFn: (body: { title: string; description: string }) =>
@@ -381,7 +382,13 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
           publishedAt: string;
         }>
       >(`workspaces/${workspaceId}/course/versions`, { signal }),
-    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+    enabled:
+      client.mode === "backend" &&
+      Boolean(workspaceId) &&
+      enabled &&
+      Boolean(query.data?.id) &&
+      (query.data?.publishedVersion ?? 0) > 0,
+    retry: false,
   });
   const published = useQuery({
     queryKey: ["api", "course-published", workspaceId],
@@ -700,6 +707,7 @@ export function useStudentLabContext(workspaceId: string, assignmentId: string, 
         { signal },
       ),
     enabled: client.mode === "backend" && enabled && Boolean(workspaceId && assignmentId),
+    refetchOnMount: "always",
     retry: false,
   });
 }
@@ -718,6 +726,23 @@ export function useStudentLabStudioSessions(
         { signal },
       ),
     enabled: client.mode === "backend" && enabled && Boolean(workspaceId && assignmentId),
+    refetchOnMount: "always",
+    refetchInterval: (query) => {
+      const items = query.state.data;
+      if (!Array.isArray(items)) return false;
+      const hasInFlight = items.some((item) =>
+        [
+          "PENDING",
+          "QUEUED",
+          "READY_FOR_DISPATCH",
+          "APPROVED",
+          "ALLOCATED",
+          "RUNNING",
+          "CANCELLING",
+        ].includes(String(item.executionStatus ?? "").toUpperCase()),
+      );
+      return hasInFlight ? 2500 : false;
+    },
     retry: false,
   });
 }

@@ -664,7 +664,9 @@ export function LabWorkspace() {
       lab &&
       !isTheoryOnlyLab &&
       roadmap.data?.guided &&
-      (session.data?.user?.role === "student" || isLecturer),
+      (session.data?.user?.role === "student" || isLecturer) &&
+      (client.mode !== "backend" ||
+        (studentContext.isSuccess && studentContext.data?.quiz != null)),
     ),
   );
   const quizNotPublished =
@@ -1285,7 +1287,12 @@ export function LabWorkspace() {
                   router.push(labHref(1, view));
                 }}
                 studentContext={studentContext.data}
-                studentContextLoading={studentContext.isLoading || studentStudioSessions.isLoading}
+                studentContextLoading={
+                  studentContext.isLoading ||
+                  studentContext.isFetching ||
+                  studentStudioSessions.isLoading ||
+                  studentStudioSessions.isFetching
+                }
               />
             </div>
           </div>
@@ -1932,6 +1939,16 @@ function StepContent({
     }
   })();
   useEffect(() => {
+    if (
+      phaseIssueDialogOpen &&
+      liveStudioVerified &&
+      (phaseIssue === "evidence-missing" || phaseIssue === "submission-runtime")
+    ) {
+      setPhaseIssueDialogOpen(false);
+    }
+  }, [phaseIssueDialogOpen, liveStudioVerified, phaseIssue]);
+
+  useEffect(() => {
     const automaticIssue =
       step === 1 && fallbackModelQuery.isError
         ? "static-data"
@@ -1942,7 +1959,8 @@ function StepContent({
               !liveStudioVerified &&
               !preview &&
               !studentContextLoading &&
-              !studioStateQuery.isLoading
+              !studioStateQuery.isLoading &&
+              !studioStateQuery.isFetching
             ? "evidence-missing"
             : null;
     if (!automaticIssue || shownAutomaticIssueKeys.current.has(`${step}:${automaticIssue}`)) return;
@@ -1957,6 +1975,7 @@ function StepContent({
     step,
     studentContextLoading,
     studioStateQuery.isLoading,
+    studioStateQuery.isFetching,
   ]);
 
   return (

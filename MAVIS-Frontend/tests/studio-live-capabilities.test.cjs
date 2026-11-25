@@ -1910,3 +1910,92 @@ test("Smart endpoint auto-picker, structured 3-step student instructions, and go
   assert.ok(standaloneSrc.includes("smartPickBaselineEndpoint"));
   assert.ok(standaloneSrc.includes("buildStudentExerciseInstructions"));
 });
+
+test("HyperMesh Audit P0-1..P1-9: multi-lab auto-link, receipt sealing & cache sync, SSE/LIVE shutdown, Author SET_LOAD, Launchpad checklist, WebGL recovery, CourseBuilder drawer, always-visible Finish, and 404 guards", () => {
+  const standalone = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  const labStudio = fs.readFileSync(
+    path.join(__dirname, "../src/features/assignments/lab-studio-section.tsx"),
+    "utf8",
+  );
+  const sessionHook = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/use-studio-session.ts"),
+    "utf8",
+  );
+  const courseAccess = fs.readFileSync(
+    path.join(__dirname, "../src/features/workspaces/course-access.tsx"),
+    "utf8",
+  );
+  const courseScreens = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/screens.tsx"),
+    "utf8",
+  );
+  const workbench = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const threeStage = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obs = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const builder = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/course-builder.tsx"),
+    "utf8",
+  );
+
+  // P0-1: courseReference fallback + auto-link + fixed Step 1 Repository link (no dead ?tab=source)
+  assert.ok(standalone.includes("courseReference?.projectId"));
+  assert.ok(standalone.includes("autoLinkedLabRef"));
+  assert.ok(!standalone.includes("&tab=source"));
+  assert.ok(standalone.includes("/references?workspace="));
+  assert.ok(labStudio.includes("autoLinkedRef"));
+
+  // P0-2: fresh refetchOnMount, sealing wait in modal, and isFetching guard + auto-dismiss on /lab?step=3
+  assert.ok(courseAccess.includes('refetchOnMount: "always"'));
+  assert.ok(courseScreens.includes("studentContext.isFetching"));
+  assert.ok(courseScreens.includes("studentStudioSessions.isFetching"));
+  assert.ok(workbench.includes("isReceiptSealed"));
+  assert.ok(workbench.includes('t("Studio Snapshots", "Ảnh chụp Studio")'));
+  assert.ok(workbench.includes('t("Waiting for receipt…", "Đang chờ niêm phong…")'));
+
+  // P0-3: close SSE & stop polling on finish/terminal, show FINISHING pill, suppress post-terminal error banner
+  assert.ok(sessionHook.includes("!finish.isPending"));
+  assert.ok(sessionHook.includes("!data?.finishRequested"));
+  assert.ok(sessionHook.includes("!isTerminalCached"));
+  assert.ok(workbench.includes('? "FINISHING"'));
+  assert.ok(workbench.includes("!isTerminalExecution && !data.finishRequested"));
+
+  // P1-4: Author mode live test exposes SET_LOAD [5, 15, 30, 50] RPS controls
+  const loadMatches = workbench.match(/\[5, 15, 30, 50\]\.map/g) || [];
+  assert.ok(loadMatches.length >= 3, "Light, Dark, and Author modes must all expose SET_LOAD [5, 15, 30, 50]");
+
+  // P1-5: Launchpad Step 2 ignores default seeded revision-1 placeholder instructions; Step 3 polls in-flight sessions
+  assert.ok(!labStudio.includes("exercise.data?.instructions?.trim(),"));
+  assert.ok(labStudio.includes("(exercise.data?.revision ?? 0) > 1"));
+  assert.ok(courseAccess.includes("hasInFlight ? 2500 : false"));
+
+  // P1-6: WebGL context loss/restore recovery + single GPU readback in captureStudioImage + no height transition thrash
+  assert.ok(threeStage.includes("webglcontextlost"));
+  assert.ok(threeStage.includes("webglcontextrestored"));
+  assert.ok(obs.includes("sourceCanvas"));
+  assert.ok(!workbench.includes("transition-[height] duration-150"));
+
+  // P1-7: CourseBuilder closes drawer cleanly after addModule/saveModule/addItem, supports Escape, never renders empty overlay
+  assert.ok(builder.includes("isDrawerVisible"));
+  assert.ok(builder.includes('event.key === "Escape"'));
+  assert.ok(builder.includes("onSuccess: () => closeDrawer()"));
+
+  // P1-8: Finish Studio button remains accessible in the expanded bottom drawer header bar
+  assert.ok(workbench.includes('data-testid="drawer-finish-studio-btn"'));
+
+  // P1-9: Noisy 404 guards on course/versions & unpublished quiz + initial load ErrorState on /studio-live
+  assert.ok(courseAccess.includes("Boolean(query.data?.id) &&"));
+  assert.ok(courseScreens.includes("studentContext.data?.quiz != null"));
+  assert.ok(standalone.includes("initialLoadError"));
+});

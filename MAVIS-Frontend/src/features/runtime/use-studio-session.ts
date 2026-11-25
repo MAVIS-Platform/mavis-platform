@@ -73,11 +73,16 @@ export function useStudioSession(sessionId: string) {
   const queryClient = useQueryClient();
   const [sseConnected, setSseConnected] = useState(false);
   const [cachedStatus, setCachedStatus] = useState("");
+  const isTerminalCached = TERMINAL_STUDIO_STATUSES.has(cachedStatus);
   const slowPoll = sseConnected && cachedStatus === "RUNNING";
   const state = useApiQuery(
     "studioState",
     { sessionId },
-    { enabled: !!sessionId, poll: true, ...(slowPoll ? { refreshMs: 8000 } : {}) },
+    {
+      enabled: !!sessionId,
+      poll: Boolean(sessionId) && !isTerminalCached,
+      ...(slowPoll ? { refreshMs: 8000 } : {}),
+    },
   );
   const action = useApiMutation("studioAction");
   const prediction = useApiMutation("studioPrediction");
@@ -175,6 +180,8 @@ export function useStudioSession(sessionId: string) {
   const streamEnabled =
     Boolean(sessionId) &&
     /^[a-f0-9-]{36}$/i.test(sessionId) &&
+    !finish.isPending &&
+    !data?.finishRequested &&
     !TERMINAL_STUDIO_STATUSES.has(executionStatus);
 
   // Subscribe to live SSE frames from the backend ring buffer; automatically falls back to polling if disconnected.
@@ -362,6 +369,14 @@ export function useStudioSession(sessionId: string) {
       void queryClient.invalidateQueries({ queryKey: ["api", "runtimeReadSessions"] });
       if (status === "COMPLETED" || data?.receiptDigest) {
         void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-context"] });
+        void queryClient.refetchQueries({
+          queryKey: ["api", "student-lab-studio-sessions"],
+          type: "all",
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["api", "student-lab-context"],
+          type: "all",
+        });
       }
     }
   }, [data?.executionStatus, data?.receiptDigest, queryClient]);
@@ -371,12 +386,29 @@ export function useStudioSession(sessionId: string) {
       await capturePromiseRef.current.catch(() => {});
     }
     try {
-      await finish.mutateAsync({ sessionId });
+      const finished = await finish.mutateAsync({ sessionId });
+      // Transition cached state out of LIVE immediately and close SSE before teardown begins.
+      if (finished && typeof finished === "object") {
+        queryClient.setQueryData<StudioState>(["api", "studioState", { sessionId }], (prev) =>
+          prev
+            ? {
+                ...prev,
+                ...(finished as Partial<StudioState>),
+                finishRequested: true,
+              }
+            : (finished as StudioState),
+        );
+      }
+      setCachedStatus((prev) =>
+        TERMINAL_STUDIO_STATUSES.has(prev) ? prev : "FINISHING",
+      );
     } finally {
       await state.refetch();
-      void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
-      void queryClient.invalidateQueries({ queryKey: ["api", "runtimeReadSessions"] });
-      void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-context"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] }),
+        queryClient.invalidateQueries({ queryKey: ["api", "runtimeReadSessions"] }),
+        queryClient.invalidateQueries({ queryKey: ["api", "student-lab-context"] }),
+      ]);
     }
   }
 

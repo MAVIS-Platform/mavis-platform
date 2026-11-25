@@ -1644,25 +1644,40 @@ export function LiveStudioWorkbench({
   );
 
   const isQueued = data.executionStatus.toUpperCase() === "QUEUED";
+  const isFinishing = Boolean(
+    data.executionStatus === "RUNNING" && (data.finishRequested || finish.isPending),
+  );
+  const isTerminalExecution = [
+    "COMPLETED",
+    "FAILED",
+    "CANCELLED",
+    "TIMED_OUT",
+    "TIMEDOUT",
+    "TIMEOUT",
+  ].includes(data.executionStatus.toUpperCase());
 
   const statusTone =
-    data.executionStatus === "RUNNING"
-      ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-      : isQueued || isCancelling
-        ? "border-amber-500/40 bg-amber-500/15 text-amber-200"
-        : isBooting
-          ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
-          : data.executionStatus === "COMPLETED"
-            ? "border-teal-500/40 bg-teal-500/15 text-teal-200"
-            : lastSessionFailed
-              ? "border-rose-500/40 bg-rose-500/15 text-rose-200"
-              : "border-slate-700 bg-slate-900 text-slate-300";
+    isFinishing
+      ? "border-amber-500/40 bg-amber-500/15 text-amber-200"
+      : data.executionStatus === "RUNNING"
+        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+        : isQueued || isCancelling
+          ? "border-amber-500/40 bg-amber-500/15 text-amber-200"
+          : isBooting
+            ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
+            : data.executionStatus === "COMPLETED"
+              ? "border-teal-500/40 bg-teal-500/15 text-teal-200"
+              : lastSessionFailed
+                ? "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                : "border-slate-700 bg-slate-900 text-slate-300";
 
   const statusLabel =
     data.executionStatus === "RUNNING"
-      ? waiting
-        ? "APPLYING"
-        : "LIVE"
+      ? isFinishing
+        ? "FINISHING"
+        : waiting
+          ? "APPLYING"
+          : "LIVE"
       : isQueued
         ? `QUEUED${data.queuePosition ? ` #${data.queuePosition}` : ""}`
         : isCancelling
@@ -1682,6 +1697,46 @@ export function LiveStudioWorkbench({
                   : "IDLE";
 
   const showLiveSessionControls = !authoring || !isPreviewMode || isBooting;
+  const finishDisabledReason =
+    data.finishRequested || finish.isPending
+      ? t(
+          "Finishing Studio session and sealing receipt…",
+          "Đang kết thúc phiên Studio và niêm phong biên nhận…",
+        )
+      : action.isPending || waiting
+        ? t(
+            "Wait for the current runtime action to complete",
+            "Vui lòng đợi thao tác runtime hiện tại hoàn tất",
+          )
+        : capturing || capture.isPending
+          ? t(
+              "Wait for the snapshot capture to finish",
+              "Vui lòng đợi quá trình chụp snapshot hoàn tất",
+            )
+          : !hasConfirmedAction
+            ? t(
+                "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
+                "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
+              )
+            : (data.snapshots?.length ?? 0) === 0
+              ? t(
+                  "Capture at least one evidence snapshot before finishing.",
+                  "Chụp ít nhất 1 snapshot bằng chứng trước khi kết thúc.",
+                )
+              : t(
+                  "Finish Studio and seal your verifiable RuntimeReceipt",
+                  "Kết thúc Studio và ký niêm phong RuntimeReceipt",
+                );
+  const finishDisabled =
+    finish.isPending ||
+    action.isPending ||
+    capturing ||
+    capture.isPending ||
+    waiting ||
+    !hasConfirmedAction ||
+    (data.snapshots?.length ?? 0) === 0 ||
+    data.finishRequested ||
+    data.executionStatus !== "RUNNING";
   const liveProbeMetrics = data.telemetry?.probe;
   const liveP95Ms =
     liveProbeMetrics?.p95Ms != null && Number.isFinite(liveProbeMetrics.p95Ms)
@@ -2459,7 +2514,7 @@ export function LiveStudioWorkbench({
           className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         >
           <div ref={graphRef} data-tour="studio-canvas" className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden">
-            {state.isError && state.data && (
+            {state.isError && state.data && !isTerminalExecution && !data.finishRequested && (
               <div
                 role="status"
                 className="absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-400/70 bg-amber-50 px-4 py-1.5 text-xs font-medium text-amber-900 shadow-lg dark:bg-amber-950/90 dark:text-amber-100"
@@ -3022,62 +3077,22 @@ export function LiveStudioWorkbench({
                       Snapshot
                     </Button>
 
-                    {(() => {
-                      const finishDisabledReason =
-                        data.finishRequested || finish.isPending
-                          ? t(
-                              "Finishing Studio session and sealing receipt…",
-                              "Đang kết thúc phiên Studio và niêm phong biên nhận…",
-                            )
-                          : action.isPending || waiting
-                            ? t(
-                                "Wait for the current runtime action to complete",
-                                "Vui lòng đợi thao tác runtime hiện tại hoàn tất",
-                              )
-                            : capturing || capture.isPending
-                              ? t(
-                                  "Wait for the snapshot capture to finish",
-                                  "Vui lòng đợi quá trình chụp snapshot hoàn tất",
-                                )
-                              : !hasConfirmedAction
-                                ? t(
-                                    "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
-                                    "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
-                                  )
-                                : (data.snapshots?.length ?? 0) === 0
-                                  ? t(
-                                      "Capture at least one evidence snapshot before finishing.",
-                                      "Chụp ít nhất 1 snapshot bằng chứng trước khi kết thúc.",
-                                    )
-                                  : t(
-                                      "Finish Studio and seal your verifiable RuntimeReceipt",
-                                      "Kết thúc Studio và ký niêm phong RuntimeReceipt",
-                                    );
-                      const finishDisabled =
-                        finish.isPending ||
-                        action.isPending ||
-                        capturing ||
-                        capture.isPending ||
-                        waiting ||
-                        !hasConfirmedAction ||
-                        (data.snapshots?.length ?? 0) === 0 ||
-                        data.finishRequested ||
-                        data.executionStatus !== "RUNNING";
-                      return (
-                        <span className="inline-flex" title={finishDisabledReason}>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-8 rounded-full bg-emerald-600 px-3.5 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
-                            disabled={finishDisabled}
-                            aria-label={finishDisabled ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})` : t("Finish Studio", "Kết thúc Studio")}
-                            onClick={() => void finishStudio()}
-                          >
-                            {t("Finish Studio", "Kết thúc Studio")}
-                          </Button>
-                        </span>
-                      );
-                    })()}
+                    <span className="inline-flex" title={finishDisabledReason}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 rounded-full bg-emerald-600 px-3.5 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
+                        disabled={finishDisabled}
+                        aria-label={
+                          finishDisabled
+                            ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})`
+                            : t("Finish Studio", "Kết thúc Studio")
+                        }
+                        onClick={() => void finishStudio()}
+                      >
+                        {t("Finish Studio", "Kết thúc Studio")}
+                      </Button>
+                    </span>
                   </>
                 )}
 
@@ -3176,9 +3191,7 @@ export function LiveStudioWorkbench({
           <div
             ref={bottomDrawerRef}
             style={{ height: bottomHeight }}
-            className={`flex min-w-0 shrink-0 flex-col overflow-hidden border-t ${styleCfg.drawerClass} ${
-              resizingAxis === "bottom" ? "" : "transition-[height] duration-150"
-            }`}
+            className={`flex min-w-0 shrink-0 flex-col overflow-hidden border-t ${styleCfg.drawerClass}`}
           >
             <div
               className={`flex h-10 shrink-0 items-center gap-1 border-b px-3 ${styleCfg.drawerTabBarClass}`}
@@ -3235,6 +3248,27 @@ export function LiveStudioWorkbench({
               ))}
               </div>
               <div className="flex shrink-0 items-center gap-1.5 pl-1 text-[11px] text-muted-foreground">
+                {showLiveSessionControls && data.executionStatus === "RUNNING" && (
+                  <span className="inline-flex" title={finishDisabledReason}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      data-testid="drawer-finish-studio-btn"
+                      className="h-6 rounded-full bg-emerald-600 px-2.5 text-[11.5px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
+                      disabled={finishDisabled}
+                      aria-label={
+                        finishDisabled
+                          ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})`
+                          : t("Finish Studio", "Kết thúc Studio")
+                      }
+                      onClick={() => void finishStudio()}
+                    >
+                      {isFinishing
+                        ? t("Sealing…", "Đang niêm phong…")
+                        : t("Finish Studio", "Kết thúc Studio")}
+                    </Button>
+                  </span>
+                )}
                 <span
                   className={`hidden whitespace-nowrap rounded-full border px-2 py-0.5 font-mono 2xl:inline-flex ${
                     isLight
@@ -6650,6 +6684,40 @@ export function LiveStudioWorkbench({
                               CPU 25%
                             </Button>
                           </div>
+                          {/* Live Probe Load (RPS) in Author mode so lecturers can test Scale-Out & CPU under load */}
+                          <div className="space-y-1 pt-1">
+                            <div
+                              style={{ fontSize: 10.5 }}
+                              className={`flex items-center justify-between font-semibold uppercase tracking-wide ${themeSubtleText}`}
+                            >
+                              <span>{t("Live Probe Load (RPS)", "Tải Probe trực tiếp (RPS)")}</span>
+                              <span className="font-mono font-bold">
+                                {data.telemetry?.probe?.targetRps ?? 5} RPS
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {[5, 15, 30, 50].map((rps) => (
+                                <Button
+                                  key={rps}
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void studio.send("SET_LOAD", svc, undefined, undefined, rps)
+                                  }
+                                  style={{ fontSize: 11.5 }}
+                                  className={`h-7 whitespace-nowrap border font-mono font-semibold disabled:opacity-45 ${themeRadius} ${
+                                    data.telemetry?.probe?.targetRps === rps
+                                      ? themeActiveBtn
+                                      : themeIdleBtn
+                                  }`}
+                                >
+                                  {rps}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -6973,7 +7041,13 @@ export function LiveStudioWorkbench({
       </div>
 
       {/* GONNACRASH-STYLE SESSION VERIFIED CELEBRATION MODAL */}
-      {verifiedModalOpen && (
+      {verifiedModalOpen && (() => {
+        const isReceiptSealed =
+          data.executionStatus === "COMPLETED" && Boolean(data.receiptDigest);
+        const isSealingFailed =
+          data.executionStatus === "FAILED" || data.executionStatus === "CANCELLED";
+        const isSealingPending = !isReceiptSealed && !isSealingFailed;
+        return (
         <div
           role="dialog"
           aria-modal="true"
@@ -6986,9 +7060,25 @@ export function LiveStudioWorkbench({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-700">
-                <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                {t("Verified", "Đã xác minh")}
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-0.5 text-xs font-bold ${
+                  isReceiptSealed
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : isSealingFailed
+                      ? "border-rose-300 bg-rose-50 text-rose-700"
+                      : "border-amber-300 bg-amber-50 text-amber-800"
+                }`}
+              >
+                {isSealingPending ? (
+                  <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                )}
+                {isReceiptSealed
+                  ? t("Verified", "Đã xác minh")
+                  : isSealingFailed
+                    ? t("Session ended", "Phiên đã kết thúc")
+                    : t("Sealing receipt…", "Đang niêm phong…")}
               </span>
               <button
                 type="button"
@@ -7000,17 +7090,43 @@ export function LiveStudioWorkbench({
               </button>
             </div>
             <div className="space-y-1.5">
-              <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
-                <CheckCircle2 className="size-8" aria-hidden="true" />
+              <div
+                className={`mx-auto grid size-14 place-items-center rounded-2xl ${
+                  isReceiptSealed
+                    ? "bg-emerald-100 text-emerald-700"
+                    : isSealingFailed
+                      ? "bg-rose-100 text-rose-700"
+                      : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {isSealingPending ? (
+                  <RefreshCw className="size-7 animate-spin" aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 className="size-8" aria-hidden="true" />
+                )}
               </div>
               <h3 className="text-xl font-bold tracking-tight">
-                {t("Runtime Evidence Sealed!", "Minh chứng Runtime đã niêm phong!")}
+                {isReceiptSealed
+                  ? t("Runtime Evidence Sealed!", "Minh chứng Runtime đã niêm phong!")
+                  : isSealingFailed
+                    ? t("Session Closed", "Phiên Studio đã đóng")
+                    : t("Sealing Runtime Evidence…", "Đang niêm phong minh chứng Runtime…")}
               </h3>
               <p className="text-sm text-slate-600">
-                {t(
-                  "Your live Docker session and OpenTelemetry receipt are ready to attach to your Lab submission.",
-                  "Phiên chạy Docker thật và biên nhận OpenTelemetry của bạn đã sẵn sàng để nộp bài Lab.",
-                )}
+                {isReceiptSealed
+                  ? t(
+                      "Your live Docker session and OpenTelemetry receipt are ready to attach to your Lab submission.",
+                      "Phiên chạy Docker thật và biên nhận OpenTelemetry của bạn đã sẵn sàng để nộp bài Lab.",
+                    )
+                  : isSealingFailed
+                    ? t(
+                        "The Runner closed this session without a verified receipt. Check Logs & Traces or run a new session.",
+                        "Runner đã đóng phiên mà chưa tạo được biên nhận xác minh. Hãy kiểm tra Log & Trace hoặc chạy phiên mới.",
+                      )
+                    : t(
+                        "Collecting final OpenTelemetry spans, signing the receipt, and cleaning up Docker containers (a few seconds)…",
+                        "Đang thu thập trace OpenTelemetry cuối, ký niêm phong biên nhận và dọn sạch container Docker (chỉ vài giây)…",
+                      )}
               </p>
             </div>
             <div className="grid grid-cols-3 gap-2.5 text-left">
@@ -7027,7 +7143,9 @@ export function LiveStudioWorkbench({
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs text-slate-500">Snapshots</p>
+                <p className="text-xs text-slate-500">
+                  {t("Studio Snapshots", "Ảnh chụp Studio")}
+                </p>
                 <p className="mt-0.5 font-mono text-sm font-bold text-emerald-700">
                   {snapshotCount}
                 </p>
@@ -7043,20 +7161,32 @@ export function LiveStudioWorkbench({
                 {t("Stay on Canvas", "Ở lại sơ đồ")}
               </Button>
               {missionCard?.submitHref && (
-                <Button
-                  asChild
-                  className="flex-1 rounded-xl bg-[#0056D2] font-semibold text-white hover:bg-[#00419E]"
-                >
-                  <Link href={missionCard.submitHref}>
-                    {t("Submit Lab", "Nộp bài Lab")}
-                    <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
-                  </Link>
-                </Button>
+                isReceiptSealed ? (
+                  <Button
+                    asChild
+                    className="flex-1 rounded-xl bg-[#0056D2] font-semibold text-white hover:bg-[#00419E]"
+                  >
+                    <Link href={missionCard.submitHref}>
+                      {t("Submit Lab", "Nộp bài Lab")}
+                      <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    disabled
+                    className="flex-1 rounded-xl bg-[#0056D2] font-semibold text-white disabled:opacity-55"
+                  >
+                    <RefreshCw className="mr-1.5 size-3.5 animate-spin" aria-hidden="true" />
+                    {t("Waiting for receipt…", "Đang chờ niêm phong…")}
+                  </Button>
+                )
               )}
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
