@@ -676,6 +676,7 @@ export type StudentLabContext = {
     latestStatus: "PASSED" | "NEEDS_RETRY" | "NOT_ATTEMPTED" | null;
     latestCorrectCount?: number | null;
     latestSubmittedAt?: string | null;
+    bestPassedCorrectCount?: number | null;
     questions?: Array<{ id?: string; prompt?: string }> | null;
     runtimeUnlocked: boolean;
   } | null;

@@ -30,6 +30,7 @@ type Quiz = {
   latestStatus: "PASSED" | "NEEDS_RETRY" | "NOT_ATTEMPTED" | null;
   latestCorrectCount?: number | null;
   latestSubmittedAt?: string | null;
+  bestPassedCorrectCount?: number | null;
   runtimeUnlocked: boolean;
   questions: Question[];
 };
@@ -184,8 +185,8 @@ function AttemptForm({
         } catch {
           // Ignore storage removal errors
         }
-        refreshReadiness();
       }
+      refreshReadiness();
     },
   });
   const handleRetake = () => {

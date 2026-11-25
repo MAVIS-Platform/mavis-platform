@@ -2493,3 +2493,19 @@ test("Sprint 2 #05 Banners & Nav: left-aligns all Back buttons, declutters hero 
   assert.doesNotMatch(dashboard, /Tiến Độ Khóa Học/);
   assert.doesNotMatch(lab, /Biên nhận Studio|Điều kiện khóa học/);
 });
+
+
+test("Sprint 3 #01 Quiz Scoring: grades exact latest attempt and never overwrites retake score with prior pass", () => {
+  const runner = read("src/features/courses/chapter-quiz-runner.tsx");
+  const courseQuiz = read("src/features/courses/course-quiz.tsx");
+  const screens = read("src/features/courses/screens.tsx");
+  const access = read("src/features/workspaces/course-access.tsx");
+
+  assert.doesNotMatch(runner, /activeAttempt\.scorePercent \?\? computedScore/);
+  assert.match(runner, /scorePercent: computedScore/);
+  assert.match(runner, /const recordedPassed = backendQuiz\.data\.latestStatus === "PASSED"/);
+  assert.match(runner, /cache\.setQueryData/);
+  assert.match(courseQuiz, /bestPassedCorrectCount\?: number \| null/);
+  assert.match(access, /bestPassedCorrectCount\?: number \| null/);
+  assert.match(screens, /bestPassedQuizCorrect/);
+});

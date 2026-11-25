@@ -172,8 +172,72 @@ export function ChapterQuizRunner({
     }
   };
 
+  const submitBackendAttempt = useMutation({
+    mutationFn: (nextAttempt: StoredQuizAttempt) =>
+      api<BackendQuizResult>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/attempts`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            attemptId: nextAttempt.attemptId,
+            version: backendQuiz.data?.version,
+            selections: (backendQuiz.data?.questions ?? []).map((question, index) =>
+              toSelectedIndexes(nextAttempt.answers[question.id ?? `question-${index}`]),
+            ),
+          }),
+        },
+      ),
+    onSuccess: (result, nextAttempt) => {
+      const submittedAtIso = new Date().toISOString();
+      const total = Math.max(result.totalQuestions, 1);
+      updateAttempt({
+        attemptId: nextAttempt.attemptId,
+        status: "SUBMITTED",
+        answers: nextAttempt.answers,
+        ...(nextAttempt.startedAt ? { startedAt: nextAttempt.startedAt } : {}),
+        ...(nextAttempt.durationSeconds ? { durationSeconds: nextAttempt.durationSeconds } : {}),
+        submittedAt: submittedAtIso,
+        correctCount: result.correctCount,
+        scorePercent: Math.round((result.correctCount / total) * 100),
+        passed: result.status === "PASSED",
+        questionResults: result.questionResults ?? [],
+      });
+      cache.setQueryData(
+        ["api", "course-quiz", workspaceId, assignmentId],
+        (prev: Record<string, unknown> | undefined) =>
+          prev
+            ? {
+                ...prev,
+                latestStatus: result.status,
+                latestCorrectCount: result.correctCount,
+                latestSubmittedAt: submittedAtIso,
+                passed: Boolean(prev["passed"]) || result.status === "PASSED",
+                runtimeUnlocked: Boolean(prev["runtimeUnlocked"]) || result.status === "PASSED",
+              }
+            : prev,
+      );
+      if (result.questionResults?.length) {
+        setShowFeedback(true);
+      }
+      void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, assignmentId] });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+      });
+      void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "workspace-gradebook", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
+    },
+  });
+
   useEffect(() => {
-    if (!backendQuizEnabled || !backendQuiz.data || attempt?.status === "IN_PROGRESS") return;
+    if (
+      !backendQuizEnabled ||
+      !backendQuiz.data ||
+      submitBackendAttempt.isPending ||
+      attempt?.status === "IN_PROGRESS"
+    ) {
+      return;
+    }
     const submitted =
       backendQuiz.data.latestStatus === "PASSED" || backendQuiz.data.latestStatus === "NEEDS_RETRY";
     if (!submitted) {
@@ -187,6 +251,14 @@ export function ChapterQuizRunner({
       }
       return;
     }
+    if (
+      attempt?.status === "SUBMITTED" &&
+      attempt.submittedAt &&
+      backendQuiz.data.latestSubmittedAt &&
+      Date.parse(backendQuiz.data.latestSubmittedAt) < Date.parse(attempt.submittedAt) - 2000
+    ) {
+      return;
+    }
     const total = backendQuiz.data.questions.length;
     const correct = backendQuiz.data.latestCorrectCount;
     const recordedScore =
@@ -197,6 +269,7 @@ export function ChapterQuizRunner({
     if (
       attempt?.status === "SUBMITTED" &&
       attempt.scorePercent === recordedScore &&
+      attempt.correctCount === (correct ?? attempt.correctCount) &&
       attempt.passed === recordedPassed &&
       attempt.submittedAt === (backendQuiz.data.latestSubmittedAt ?? attempt.submittedAt)
     ) {
@@ -214,46 +287,7 @@ export function ChapterQuizRunner({
     if (recordedScore !== undefined) recordedAttempt.scorePercent = recordedScore;
     if (correct !== null && correct !== undefined) recordedAttempt.correctCount = correct;
     updateAttempt(recordedAttempt);
-  }, [attempt, backendQuiz.data, backendQuizEnabled, storageKey]);
-
-  const submitBackendAttempt = useMutation({
-    mutationFn: (nextAttempt: StoredQuizAttempt) =>
-      api<BackendQuizResult>(
-        `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/attempts`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            attemptId: nextAttempt.attemptId,
-            version: backendQuiz.data?.version,
-            selections: (backendQuiz.data?.questions ?? []).map((question, index) =>
-              toSelectedIndexes(nextAttempt.answers[question.id ?? `question-${index}`]),
-            ),
-          }),
-        },
-      ),
-    onSuccess: (result, nextAttempt) => {
-      const total = Math.max(result.totalQuestions, 1);
-      updateAttempt({
-        ...nextAttempt,
-        status: "SUBMITTED",
-        submittedAt: new Date().toISOString(),
-        correctCount: result.correctCount,
-        scorePercent: Math.round((result.correctCount / total) * 100),
-        passed: result.status === "PASSED",
-        questionResults: result.questionResults ?? [],
-      });
-      if (result.questionResults?.length) {
-        setShowFeedback(true);
-      }
-      void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, assignmentId] });
-      void cache.invalidateQueries({
-        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
-      });
-      void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
-      void cache.invalidateQueries({ queryKey: ["api", "workspace-gradebook", workspaceId] });
-      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
-    },
-  });
+  }, [attempt, backendQuiz.data, backendQuizEnabled, storageKey, submitBackendAttempt.isPending]);
 
   const displayedQuestions = useMemo<RunnerQuestionData[]>(() => {
     if (hasAssignmentBackend && backendQuiz.data?.questions) {
@@ -344,18 +378,38 @@ export function ChapterQuizRunner({
     (activeAttempt.status === "IN_PROGRESS" ? new Date().toISOString() : undefined);
   const resolvedDurationSeconds = activeAttempt.durationSeconds ?? durationSeconds;
 
+  const isLocalQuestionCorrect = (question: RunnerQuestionData, selected: number[]) => {
+    const multiCorrect = (question as RunnerQuestionData & { correctOptions?: number[] }).correctOptions;
+    if (Array.isArray(multiCorrect) && multiCorrect.length > 0) {
+      return (
+        selected.length === multiCorrect.length &&
+        multiCorrect.every((idx) => selected.includes(idx))
+      );
+    }
+    return (
+      typeof question.correctOption === "number" &&
+      question.correctOption >= 0 &&
+      selected.length === 1 &&
+      selected[0] === question.correctOption
+    );
+  };
+
   const submitAttempt = () => {
-    const pickedCorrect = displayedQuestions.filter((question) => {
-      const selected = toSelectedIndexes(activeAttempt.answers[question.id]);
-      return selected.length === 1 && selected[0] === question.correctOption;
-    }).length;
+    const pickedCorrect = displayedQuestions.filter((question) =>
+      isLocalQuestionCorrect(question, toSelectedIndexes(activeAttempt.answers[question.id])),
+    ).length;
     const computedScore = Math.round((pickedCorrect / Math.max(1, displayedQuestions.length)) * 100);
-    const nextAttempt = {
-      ...activeAttempt,
+    const nextAttempt: StoredQuizAttempt = {
+      attemptId: activeAttempt.attemptId || makeAttemptId(),
       status: "SUBMITTED",
+      answers: activeAttempt.answers,
+      ...(activeAttempt.startedAt ? { startedAt: activeAttempt.startedAt } : {}),
+      ...(activeAttempt.durationSeconds ? { durationSeconds: activeAttempt.durationSeconds } : {}),
       submittedAt: new Date().toISOString(),
-      scorePercent: activeAttempt.scorePercent ?? computedScore,
-    } as StoredQuizAttempt;
+      correctCount: pickedCorrect,
+      scorePercent: computedScore,
+      passed: computedScore >= passPercent,
+    };
     if (backendQuizEnabled) submitBackendAttempt.mutate(nextAttempt);
     else updateAttempt(nextAttempt);
   };
@@ -382,10 +436,9 @@ export function ChapterQuizRunner({
     );
   }
 
-  const selectedCorrectCount = displayedQuestions.filter((question) => {
-    const selected = toSelectedIndexes(currentAttempt.answers[question.id]);
-    return selected.length === 1 && selected[0] === question.correctOption;
-  }).length;
+  const selectedCorrectCount = displayedQuestions.filter((question) =>
+    isLocalQuestionCorrect(question, toSelectedIndexes(currentAttempt.answers[question.id])),
+  ).length;
   const correctCount = currentAttempt.correctCount ?? selectedCorrectCount;
   const scorePercent =
     currentAttempt.scorePercent ?? Math.round((correctCount / displayedQuestions.length) * 100);

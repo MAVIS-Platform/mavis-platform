@@ -1427,13 +1427,18 @@ function StepContent({
     studentContext?.quiz?.passed === true ||
     studentContext?.quiz?.latestStatus === "PASSED";
   const rawQuizCorrect = studentContext?.quiz?.latestCorrectCount ?? null;
+  const bestPassedQuizCorrect = studentContext?.quiz?.bestPassedCorrectCount ?? null;
   const frozenQuizCorrect = studentContext?.latestSubmission?.frozenQuizCorrectCount ?? null;
   const quizCorrectCount = quizPassed
-    ? rawQuizCorrect != null && rawQuizCorrect > 0
-      ? rawQuizCorrect
-      : frozenQuizCorrect != null && frozenQuizCorrect > 0
-        ? frozenQuizCorrect
-        : null
+    ? bestPassedQuizCorrect != null && bestPassedQuizCorrect > 0
+      ? bestPassedQuizCorrect
+      : studentContext?.quiz?.latestStatus === "PASSED" &&
+          rawQuizCorrect != null &&
+          rawQuizCorrect > 0
+        ? rawQuizCorrect
+        : frozenQuizCorrect != null && frozenQuizCorrect > 0
+          ? frozenQuizCorrect
+          : null
     : rawQuizCorrect;
   const quizSummary = studentContext?.quiz
     ? {

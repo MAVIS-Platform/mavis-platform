@@ -421,18 +421,82 @@ class CourseQuizServiceTest {
         when(jdbc.query(contains("FROM course_quizzes"), any(RowMapper.class), eq(labId), eq(modelId)))
                 .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(quizRow, 0)));
 
+        var retakeTime = java.time.OffsetDateTime.parse("2026-11-25T11:00:00Z");
+        var latestRow = mock(java.sql.ResultSet.class);
+        when(latestRow.getString(1)).thenReturn("NEEDS_RETRY");
+        when(latestRow.getInt(2)).thenReturn(1);
+        when(latestRow.getObject(3, java.time.OffsetDateTime.class)).thenReturn(retakeTime);
+        when(jdbc.query(contains("CASE WHEN passed THEN 'PASSED' ELSE 'NEEDS_RETRY' END"), any(RowMapper.class), eq(labId), eq(studentId), eq(1)))
+                .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(latestRow, 0)));
+
         var bestRow = mock(java.sql.ResultSet.class);
         when(bestRow.getString(1)).thenReturn("PASSED");
         when(bestRow.getInt(2)).thenReturn(11);
-        when(bestRow.getObject(3, java.time.OffsetDateTime.class)).thenReturn(java.time.OffsetDateTime.now());
+        when(bestRow.getObject(3, java.time.OffsetDateTime.class)).thenReturn(retakeTime.minusDays(1));
         when(jdbc.query(contains("AND passed = true"), any(RowMapper.class), eq(labId), eq(studentId), eq(1)))
                 .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(bestRow, 0)));
         when(policy.hasPassedQuizVersion(labId, studentId, 1)).thenReturn(true);
 
         var quiz = service.get(workspaceId, labId);
         assertTrue(quiz.passed());
-        assertEquals("PASSED", quiz.latestStatus());
-        assertEquals(11, quiz.latestCorrectCount());
+        assertTrue(quiz.runtimeUnlocked());
+        assertEquals("NEEDS_RETRY", quiz.latestStatus());
+        assertEquals(1, quiz.latestCorrectCount());
+        assertEquals(retakeTime, quiz.latestSubmittedAt());
+        assertEquals(11, quiz.bestPassedCorrectCount());
+    }
+
+    @Test
+    void retakeScoringReflectsExactLatestAttempt1Of12WithoutOverwritingWithOldPass() throws Exception {
+        var workspaceId = UUID.randomUUID();
+        var labId = UUID.randomUUID();
+        var modelId = UUID.randomUUID();
+        var studentId = UUID.randomUUID();
+        var attemptId = UUID.randomUUID();
+        var workspace = Workspace.builder().id(workspaceId).status("ACTIVE").build();
+        var lab = Assignment.builder().id(labId).workspace(workspace).labOrder(1)
+                .referenceModel(ModelVersion.builder().id(modelId).build()).build();
+        var student = User.builder().id(studentId).role(Role.builder().code("STUDENT").build()).build();
+
+        var assignments = mock(AssignmentRepository.class);
+        var access = mock(AccessPolicyService.class);
+        var policy = mock(CourseLabPolicy.class);
+        var jdbc = mock(JdbcTemplate.class);
+        var json = new ObjectMapper();
+        var service = new CourseQuizService(assignments, access, policy, jdbc, json);
+        when(assignments.findLockedById(labId)).thenReturn(Optional.of(lab));
+        when(access.requireCurrentActiveUser()).thenReturn(student);
+
+        List<CourseQuizService.Question> questions = new java.util.ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            questions.add(new CourseQuizService.Question("q" + (i + 1), "Question " + (i + 1),
+                    "SINGLE_CHOICE", List.of("A", "B", "C", "D"), 1, null, "Exp " + (i + 1), 1));
+        }
+        var quizRow = mock(java.sql.ResultSet.class);
+        when(quizRow.getInt(1)).thenReturn(1);
+        when(quizRow.getString(2)).thenReturn("Module 1 Quiz");
+        when(quizRow.getInt(3)).thenReturn(70);
+        when(quizRow.getString(4)).thenReturn(json.writeValueAsString(questions));
+        when(jdbc.query(contains("FROM course_quizzes"), any(RowMapper.class), eq(labId), eq(modelId)))
+                .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(quizRow, 0)));
+
+        // Question 1 correct (1), Question 2 wrong (0), Questions 3..12 unanswered ([])
+        List<List<Integer>> selections = new java.util.ArrayList<>();
+        selections.add(List.of(1));
+        selections.add(List.of(0));
+        for (int i = 2; i < 12; i++) {
+            selections.add(List.of());
+        }
+
+        var result = service.submit(workspaceId, labId,
+                new CourseQuizService.Submit(attemptId, 1, null, selections));
+
+        assertEquals(1, result.correctCount());
+        assertEquals(12, result.totalQuestions());
+        assertEquals("NEEDS_RETRY", result.status());
+        assertEquals(12, result.questionResults().size());
+        assertTrue(result.questionResults().get(0).correct());
+        assertEquals(11, result.questionResults().stream().filter(r -> !r.correct()).count());
     }
 
 }

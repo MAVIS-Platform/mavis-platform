@@ -47,10 +47,18 @@ public class CourseQuizService {
     public record Publish(String lesson, Integer passPercent, List<Question> questions) {}
     public record Quiz(int version, String lesson, int passPercent, List<PublicQuestion> questions,
                        boolean passed, String latestStatus, boolean runtimeUnlocked,
-                       Integer latestCorrectCount, OffsetDateTime latestSubmittedAt) {
+                       Integer latestCorrectCount, OffsetDateTime latestSubmittedAt,
+                       Integer bestPassedCorrectCount) {
         public Quiz(int version, String lesson, int passPercent, List<PublicQuestion> questions,
                     boolean passed, String latestStatus, boolean runtimeUnlocked) {
-            this(version, lesson, passPercent, questions, passed, latestStatus, runtimeUnlocked, null, null);
+            this(version, lesson, passPercent, questions, passed, latestStatus, runtimeUnlocked, null, null, null);
+        }
+
+        public Quiz(int version, String lesson, int passPercent, List<PublicQuestion> questions,
+                    boolean passed, String latestStatus, boolean runtimeUnlocked,
+                    Integer latestCorrectCount, OffsetDateTime latestSubmittedAt) {
+            this(version, lesson, passPercent, questions, passed, latestStatus, runtimeUnlocked,
+                    latestCorrectCount, latestSubmittedAt, null);
         }
     }
     public record QuestionResult(String id, boolean correct, String explanation) {}
@@ -203,20 +211,18 @@ public class CourseQuizService {
         if (CourseLabPolicy.isStudent(user)) labs.requireOpen(lab, user);
         var quiz = current(lab);
         AttemptSummary latestAttempt = null;
+        AttemptSummary bestPassed = null;
         String latestStatus = null;
+        boolean hasPassed = false;
         if (CourseLabPolicy.isStudent(user)) {
-            boolean hasPassed = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version());
-            AttemptSummary passedAttempt = hasPassed
-                    ? bestPassedAttempt(lab.getId(), user.getId(), quiz.version())
-                    : null;
-            latestAttempt = passedAttempt != null
-                    ? passedAttempt
-                    : latestAttempt(lab.getId(), user.getId(), quiz.version());
-            latestStatus = hasPassed
-                    ? "PASSED"
-                    : latestAttempt == null ? "NOT_ATTEMPTED" : latestAttempt.status();
+            hasPassed = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version());
+            latestAttempt = latestAttempt(lab.getId(), user.getId(), quiz.version());
+            bestPassed = hasPassed ? bestPassedAttempt(lab.getId(), user.getId(), quiz.version()) : null;
+            latestStatus = latestAttempt != null
+                    ? latestAttempt.status()
+                    : hasPassed ? "PASSED" : "NOT_ATTEMPTED";
         }
-        return view(quiz, latestStatus, latestAttempt);
+        return view(quiz, hasPassed, latestStatus, latestAttempt, bestPassed);
     }
 
     @Transactional(readOnly = true)
@@ -238,20 +244,18 @@ public class CourseQuizService {
         }
         var quiz = quizOpt.get();
         AttemptSummary latestAttempt = null;
+        AttemptSummary bestPassed = null;
         String latestStatus = null;
+        boolean hasPassed = false;
         if (CourseLabPolicy.isStudent(user)) {
-            boolean hasPassed = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version());
-            AttemptSummary passedAttempt = hasPassed
-                    ? bestPassedAttempt(lab.getId(), user.getId(), quiz.version())
-                    : null;
-            latestAttempt = passedAttempt != null
-                    ? passedAttempt
-                    : latestAttempt(lab.getId(), user.getId(), quiz.version());
-            latestStatus = hasPassed
-                    ? "PASSED"
-                    : latestAttempt == null ? "NOT_ATTEMPTED" : latestAttempt.status();
+            hasPassed = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version());
+            latestAttempt = latestAttempt(lab.getId(), user.getId(), quiz.version());
+            bestPassed = hasPassed ? bestPassedAttempt(lab.getId(), user.getId(), quiz.version()) : null;
+            latestStatus = latestAttempt != null
+                    ? latestAttempt.status()
+                    : hasPassed ? "PASSED" : "NOT_ATTEMPTED";
         }
-        return view(quiz, latestStatus, latestAttempt);
+        return view(quiz, hasPassed, latestStatus, latestAttempt, bestPassed);
     }
 
     public Result submit(UUID workspaceId, UUID assignmentId, Submit request) {
@@ -527,13 +531,18 @@ public class CourseQuizService {
     }
 
     private static Quiz view(Definition quiz, String latestStatus, AttemptSummary latestAttempt) {
-        boolean passed = "PASSED".equals(latestStatus);
+        return view(quiz, "PASSED".equals(latestStatus), latestStatus, latestAttempt, null);
+    }
+
+    private static Quiz view(Definition quiz, boolean hasPassed, String latestStatus,
+                             AttemptSummary latestAttempt, AttemptSummary bestPassed) {
         return new Quiz(quiz.version(), quiz.lesson(), quiz.threshold(), quiz.questions().stream()
                 .map(question -> new PublicQuestion(question.id(), question.prompt(), question.type(),
                         question.options(), question.points())).toList(),
-                passed, latestStatus, passed,
+                hasPassed, latestStatus, hasPassed,
                 latestAttempt == null ? null : latestAttempt.correctCount(),
-                latestAttempt == null ? null : latestAttempt.submittedAt());
+                latestAttempt == null ? null : latestAttempt.submittedAt(),
+                bestPassed == null ? null : bestPassed.correctCount());
     }
 
     private String encode(Object value) {
