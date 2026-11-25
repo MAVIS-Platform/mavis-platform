@@ -545,7 +545,7 @@ export function StudioExerciseEditor({
         <div className="flex flex-wrap gap-1.5">
           {(
             [
-              { id: "CHANGE_IMPACT", label: t("Change Impact (Auto-Graded)", "Change Impact (Tự chấm)") },
+              { id: "CHANGE_IMPACT", label: t("Change Impact (Auto-Check)", "Change Impact (Tự kiểm tra)") },
               { id: "CASCADING_FAILURE", label: t("Cascading Failure", "Lỗi lan truyền") },
               { id: "CIRCUIT_BREAKER", label: t("Recovery / Circuit Breaker", "Phục hồi / Circuit Breaker") },
               { id: "SCALE_UNDER_LOAD", label: t("Scale-Out under Load", "Scale dưới tải cao") },
@@ -915,7 +915,7 @@ export function StudioExerciseEditor({
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-medium text-muted-foreground">
-              {t("Declarative auto-grade rules", "Điều kiện tự chấm dạng khai báo")}
+              {t("Declarative auto-check rules", "Điều kiện tự kiểm tra dạng khai báo")}
             </span>
             <Button
               type="button"

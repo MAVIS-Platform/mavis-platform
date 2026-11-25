@@ -495,7 +495,7 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
         ? `1. Quan sát sơ đồ phụ thuộc 3D, chọn các service gọi ngược vào ${svc} sẽ bị kéo lỗi và bấm Khóa dự đoán.`
         : `1. Quan sát sơ đồ phụ thuộc 3D để nắm các nhánh đang gọi vào ${svc} ở trạng thái bình thường.`;
       const step3 = predictionRequired
-        ? `3. Chụp snapshot Trước/Sau (Before/After) làm bằng chứng rồi bấm Hoàn thành để hệ thống tự chấm độ chính xác (F1 >= ${f1Pct}%).`
+        ? `3. Chụp snapshot Trước/Sau (Before/After) làm bằng chứng rồi bấm Hoàn thành để hệ thống tự kiểm tra độ chính xác (F1 >= ${f1Pct}%) và nộp bài cho giảng viên chấm.`
         : `3. Chụp snapshot Trước/Sau (Before/After) làm bằng chứng và giải thích phạm vi ảnh hưởng rồi bấm Hoàn thành.`;
       return [
         `Mục tiêu: Kiểm chứng phạm vi lan truyền sự cố khi ${actLabel} service ${svc}.`,
@@ -509,7 +509,7 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
       ? `1. Inspect the 3D dependency graph, select every upstream service affected if ${svc} fails, and lock your prediction.`
       : `1. Inspect the 3D dependency graph to identify callers depending on ${svc} under healthy traffic.`;
     const step3 = predictionRequired
-      ? `3. Capture Before/After snapshots as evidence and click Finish for automated F1 grading (>= ${f1Pct}%).`
+      ? `3. Capture Before/After snapshots as evidence and click Finish to run the automated F1 check (>= ${f1Pct}%) and submit for lecturer grading.`
       : `3. Capture Before/After snapshots as evidence and summarize the observed blast radius before finishing.`;
     return [
       `Goal: Verify the blast radius when ${svc} is ${actVerb}.`,
@@ -705,8 +705,8 @@ export function deriveExerciseFromLiveActions(
       }),
       summary:
         locale === "vi"
-          ? `Change Impact: ${act} ${target} (chấm tự động F1 >= 70%)`
-          : `Change Impact: ${act} ${target} (Auto-Graded F1 >= 70%)`,
+          ? `Change Impact: ${act} ${target} (tự kiểm tra F1 >= 70%)`
+          : `Change Impact: ${act} ${target} (Auto-Check F1 >= 70%)`,
     };
   }
 

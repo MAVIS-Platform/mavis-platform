@@ -2144,4 +2144,16 @@ test("3D SE block polish + authoring & reliability fixes: distance-compensated l
   assert.ok(grading.includes("formatGradeRowTitle"));
   assert.ok(grading.includes("line-clamp-2"));
   assert.ok(proxyRoute.includes("canRetrySocketReset"));
+
+  // WF-03/WF-04 wording consistency: Studio runtime criteria use Auto-Check (grading hint), never Auto-Grade
+  for (const rel of [
+    "../src/features/runtime/studio-exercise-panel.tsx",
+    "../src/features/runtime/live-studio-workbench.tsx",
+    "../src/features/runtime/studio-authoring-helpers.ts",
+    "../src/features/assignments/studio-exercise-editor.tsx",
+    "../src/features/assignments/lab-studio-section.tsx",
+  ]) {
+    const src = fs.readFileSync(path.join(__dirname, rel), "utf8");
+    assert.doesNotMatch(src, /Auto-Grad|Chấm tự động|Tự chấm|Tiêu chí chấm|Ngưỡng chấm/i, rel);
+  }
 });

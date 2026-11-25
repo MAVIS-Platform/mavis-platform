@@ -91,7 +91,7 @@ export function StudioExercisePanel({
 
   return (
     <section
-      aria-label="Change Impact & Auto-Grade"
+      aria-label="Change Impact & Auto-Check"
       className={`space-y-2.5 rounded-xl border p-3 text-xs ${
         isLight
           ? "border-indigo-200 bg-indigo-50/55 text-slate-900"
@@ -105,7 +105,7 @@ export function StudioExercisePanel({
           }`}
         >
           <Target className={`size-3.5 ${isLight ? "text-indigo-600" : "text-indigo-400"}`} aria-hidden="true" />
-          {t("Change Impact & Auto-Grade", "Change Impact & Chấm tự động")}
+          {t("Change Impact & Auto-Check", "Change Impact & Tự kiểm tra")}
         </span>
         {evaluation && evaluation.totalRules > 0 && (
           <span

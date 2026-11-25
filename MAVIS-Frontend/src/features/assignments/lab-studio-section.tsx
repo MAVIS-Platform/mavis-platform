@@ -563,7 +563,7 @@ export function LabStudioSection({
 
                 <div className="rounded-lg border border-border/70 bg-background/80 px-3.5 py-2.5">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    {t("Target & Success Criteria", "Mục tiêu & Tiêu chí chấm")}
+                    {t("Target & Auto-Check Criteria", "Mục tiêu & Tiêu chí tự kiểm tra")}
                   </p>
                   {criteriaItems.length > 0 ? (
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

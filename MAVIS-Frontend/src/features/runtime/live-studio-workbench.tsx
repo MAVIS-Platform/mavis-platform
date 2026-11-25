@@ -5382,7 +5382,7 @@ export function LiveStudioWorkbench({
                   if (activeGoalId === "change-impact") {
                     const pct = Math.round((Number(minImpactF1Draft) || 0.7) * 100);
                     return predictionRequiredDraft
-                      ? t(`Auto-graded prediction F1 >= ${pct}%`, `Chấm tự động dự đoán F1 >= ${pct}%`)
+                      ? t(`Auto-check prediction F1 >= ${pct}%`, `Tự kiểm tra dự đoán F1 >= ${pct}%`)
                       : t("Evidence-based impact report", "Đánh giá qua bằng chứng Snapshot");
                   }
                   if (activeGoalId === "scale") {
@@ -5572,7 +5572,7 @@ export function LiveStudioWorkbench({
                       )}
                       {gradingSummary && (
                         <p className={isLight ? "text-slate-700" : "text-slate-300"}>
-                          {t("Grading Rule:", "Tiêu chí chấm:")}{" "}
+                          {t("Auto-Check Criteria:", "Tiêu chí tự kiểm tra:")}{" "}
                           <span className="font-semibold text-foreground">{gradingSummary}</span>
                         </p>
                       )}
@@ -5622,7 +5622,7 @@ export function LiveStudioWorkbench({
                             <div className="space-y-1.5">
                               <div className="flex items-center justify-between gap-2">
                                 <span className={`text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
-                                  {t("Minimum Prediction Accuracy (F1)", "Ngưỡng chấm dự đoán (Min F1)")}
+                                  {t("Minimum Prediction Accuracy (F1)", "Ngưỡng kiểm tra dự đoán (Min F1)")}
                                 </span>
                                 <span className="font-mono text-[11px] font-semibold text-foreground">
                                   {Math.round((Number(minImpactF1Draft) || 0.7) * 100)}%
@@ -5661,8 +5661,8 @@ export function LiveStudioWorkbench({
                               </div>
                               <p className={`text-[10.5px] leading-snug ${styleCfg.subtleTextClass}`}>
                                 {t(
-                                  "Auto-grades student predictions against real impacted services from OpenTelemetry traces.",
-                                  "Tự chấm F1 giữa danh sách sinh viên dự đoán và các nhánh lỗi thực tế từ trace.",
+                                  "Compares student predictions against real impacted services from OpenTelemetry traces as a grading hint.",
+                                  "Tự đối chiếu F1 giữa danh sách sinh viên dự đoán và các nhánh lỗi thực tế từ trace (gợi ý chấm, không thay thế điểm giảng viên).",
                                 )}
                               </p>
                             </div>
