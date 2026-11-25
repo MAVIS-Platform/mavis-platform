@@ -229,3 +229,188 @@ export function quizToCsv(questions: QuizQuestion[]) {
   }
   return lines.join("\n");
 }
+
+
+export function parseNotebookLmQuiz(text: string): { draft: QuizDraft; errors: string[] } {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return {
+      draft: { lesson: "", passPercent: DEFAULT_PASS_PERCENT, questions: [] },
+      errors: ["NotebookLM input is empty"],
+    };
+  }
+  const strippedFence = trimmed
+    .replace(/^```(?:json|markdown|md)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  if (strippedFence.startsWith("{") || strippedFence.startsWith("[")) {
+    try {
+      const rawParsed = JSON.parse(strippedFence) as unknown;
+      const root =
+        rawParsed && typeof rawParsed === "object" && !Array.isArray(rawParsed)
+          ? (rawParsed as Record<string, unknown>)
+          : { questions: rawParsed };
+      const listRaw = Array.isArray(root["questions"])
+        ? root["questions"]
+        : Array.isArray(root["quiz"])
+          ? root["quiz"]
+          : [];
+      const questions: QuizQuestion[] = listRaw.map((entry) => {
+        const rec = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+        const prompt = String(rec["prompt"] ?? rec["question"] ?? "").trim();
+        const answerOptions = Array.isArray(rec["answerOptions"])
+          ? rec["answerOptions"]
+          : Array.isArray(rec["options"])
+            ? rec["options"]
+            : Array.isArray(rec["choices"])
+              ? rec["choices"]
+              : [];
+        const options: string[] = [];
+        const correctIndexes: number[] = [];
+        let rationales: string[] = [];
+        answerOptions.forEach((opt, idx) => {
+          if (opt && typeof opt === "object") {
+            const optRec = opt as Record<string, unknown>;
+            options.push(String(optRec["text"] ?? optRec["label"] ?? "").trim());
+            if (optRec["isCorrect"] === true || optRec["correct"] === true) {
+              correctIndexes.push(idx);
+            }
+            if (typeof optRec["rationale"] === "string" && optRec["rationale"].trim()) {
+              rationales.push(optRec["rationale"].trim());
+            }
+          } else {
+            options.push(String(opt ?? "").trim());
+          }
+        });
+        if (correctIndexes.length === 0) {
+          if (Array.isArray(rec["correctOptions"])) {
+            for (const c of rec["correctOptions"]) {
+              if (typeof c === "number") correctIndexes.push(c);
+            }
+          } else if (typeof rec["correctOption"] === "number") {
+            correctIndexes.push(rec["correctOption"]);
+          } else if (typeof rec["correctIndex"] === "number") {
+            correctIndexes.push(rec["correctIndex"]);
+          } else if (typeof rec["answer"] === "string") {
+            const letter = rec["answer"].trim().toUpperCase();
+            if (/^[A-H]$/.test(letter)) {
+              correctIndexes.push(letter.charCodeAt(0) - 65);
+            }
+          }
+        }
+        const typeValue = typeof rec["type"] === "string" ? rec["type"].toUpperCase() : "";
+        const type: QuizQuestionType =
+          typeValue === "MULTI_CHOICE" || correctIndexes.length > 1
+            ? "MULTI_CHOICE"
+            : typeValue === "TRUE_FALSE"
+              ? "TRUE_FALSE"
+              : "SINGLE_CHOICE";
+        const explanation = String(
+          rec["explanation"] ?? rec["rationale"] ?? rationales[0] ?? "",
+        ).trim();
+        return {
+          prompt,
+          type,
+          options,
+          ...(type === "MULTI_CHOICE"
+            ? { correctOptions: correctIndexes }
+            : { correctOption: correctIndexes[0] ?? 0 }),
+          explanation,
+          points: typeof rec["points"] === "number" ? rec["points"] : 1,
+        };
+      });
+      const draft: QuizDraft = {
+        lesson: String(root["lesson"] ?? root["title"] ?? "").trim(),
+        passPercent:
+          typeof root["passPercent"] === "number" ? root["passPercent"] : DEFAULT_PASS_PERCENT,
+        questions,
+      };
+      const errors = questions.length
+        ? questions.flatMap((q, i) => questionErrors(q, i))
+        : ["No questions found in NotebookLM JSON"];
+      return { draft, errors };
+    } catch {
+      // Fall through to Markdown parser below if JSON parse fails.
+    }
+  }
+
+  const lines = strippedFence.split(/\r?\n/);
+  const blocks: string[][] = [];
+  let current: string[] = [];
+  const questionStartRe =
+    /^(?:#{1,4}\s*)?(?:\*\*)?(?:(?:Question|Câu)\s+\d+|\d+[.)])\s*[:.-]?\s*(?:\*\*)?/i;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (questionStartRe.test(line) && current.length > 0) {
+      blocks.push(current);
+      current = [line];
+    } else if (questionStartRe.test(line) || current.length > 0) {
+      current.push(line);
+    }
+  }
+  if (current.length > 0) blocks.push(current);
+
+  const questions: QuizQuestion[] = [];
+  for (const block of blocks) {
+    const promptLine = block[0]!.replace(questionStartRe, "").replace(/\*\*$/g, "").trim();
+    const options: string[] = [];
+    const checkedCorrect: number[] = [];
+    let explicitCorrect: number[] = [];
+    let explanation = "";
+    for (let i = 1; i < block.length; i += 1) {
+      const line = block[i]!;
+      const checkedMatch = line.match(/^[-*]?\s*\[(x|X| )\]\s*(?:[A-Ha-h][.)]\s*)?(.+)$/);
+      const optMatch = !checkedMatch
+        ? line.match(/^(?:[-*]\s*)?(?:\*\*)?([A-Ha-h])[.)](?:\*\*)?\s+(.+)$/)
+        : null;
+      const ansMatch = line.match(
+        /^(?:\*\*)?(?:Answer|Correct|Đáp án(?:\s+đúng)?)(?:\*\*)?\s*[:：]\s*(.+)$/i,
+      );
+      const expMatch = line.match(
+        /^(?:\*\*)?(?:Explanation|Rationale|Giải thích)(?:\*\*)?\s*[:：]\s*(.+)$/i,
+      );
+      if (checkedMatch) {
+        const idx = options.length;
+        options.push(checkedMatch[2]!.trim());
+        if (checkedMatch[1]!.toLowerCase() === "x") checkedCorrect.push(idx);
+      } else if (optMatch) {
+        let textVal = optMatch[2]!.trim();
+        if (/\((?:đúng|correct)\)\s*$/i.test(textVal) || /^✓\s*/.test(textVal)) {
+          checkedCorrect.push(options.length);
+          textVal = textVal.replace(/\((?:đúng|correct)\)\s*$/i, "").replace(/^✓\s*/, "").trim();
+        }
+        options.push(textVal);
+      } else if (ansMatch) {
+        const letters = [...ansMatch[1]!.toUpperCase().matchAll(/\b([A-H])\b/g)].map(
+          (m) => m[1]!.charCodeAt(0) - 65,
+        );
+        if (letters.length > 0) explicitCorrect = letters;
+      } else if (expMatch) {
+        explanation = expMatch[1]!.trim();
+      } else if (options.length === 0 && !ansMatch && !expMatch) {
+        // Multi-line prompt continuation ignored cleanly or keep concise
+      }
+    }
+    const finalCorrect = explicitCorrect.length > 0 ? explicitCorrect : checkedCorrect;
+    const uniqueCorrect = [...new Set(finalCorrect)].filter((idx) => idx >= 0 && idx < options.length);
+    const type: QuizQuestionType = uniqueCorrect.length > 1 ? "MULTI_CHOICE" : "SINGLE_CHOICE";
+    questions.push({
+      prompt: promptLine,
+      type,
+      options,
+      ...(type === "MULTI_CHOICE"
+        ? { correctOptions: uniqueCorrect }
+        : { correctOption: uniqueCorrect[0] ?? 0 }),
+      explanation,
+      points: 1,
+    });
+  }
+
+  const draft: QuizDraft = { lesson: "", passPercent: DEFAULT_PASS_PERCENT, questions };
+  const errors = questions.length
+    ? questions.flatMap((q, i) => questionErrors(q, i))
+    : ["Could not recognize NotebookLM Markdown or JSON questions."];
+  return { draft, errors };
+}

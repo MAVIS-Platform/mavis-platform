@@ -73,4 +73,13 @@ class LlmQuizQuestionGeneratorTest {
         assertTrue(generator.parseQuestions("not json", 5).isEmpty());
         assertTrue(generator.parseQuestions("{\"unexpected\":true}", 5).isEmpty());
     }
+
+    @Test
+    void buildPromptEnforcesSourceGroundedTagsForTheoryAndDiagrams() {
+        String promptVi = generator.buildPrompt("[SOURCE: THEORY]\nDDD\n[SOURCE: STATIC_DIAGRAMS]\norder-service -> order-db", 5, true);
+        assertTrue(promptVi.contains("source-grounded"));
+        assertTrue(promptVi.contains("[Lý thuyết]"));
+        assertTrue(promptVi.contains("[Sơ đồ tĩnh]"));
+        assertTrue(promptVi.contains("order-service -> order-db"));
+    }
 }

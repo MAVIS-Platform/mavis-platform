@@ -26,6 +26,7 @@ import { useCurriculum } from "@/features/courses/curriculum";
 import {
   DEFAULT_PASS_PERCENT,
   emptyQuestion,
+  parseNotebookLmQuiz,
   parseQuizCsv,
   parseQuizJson,
   quizErrors,
@@ -108,6 +109,8 @@ export function QuizBuilder({
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [chapterId, setChapterId] = useState("");
   const [aiCount, setAiCount] = useState(5);
+  const [includeTheory, setIncludeTheory] = useState(true);
+  const [includeStaticDiagrams, setIncludeStaticDiagrams] = useState(true);
   const [showAnswerKey, setShowAnswerKey] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
   const hydrated = useRef(false);
@@ -189,13 +192,24 @@ export function QuizBuilder({
   });
   const generateFromTheory = useMutation({
     mutationFn: () =>
-      api<{ providerMode: string; sourceTheoryItems: number; questions: QuizQuestion[] }>(
+      api<{
+        providerMode: string;
+        sourceTheoryItems: number;
+        sourceDiagramElements?: number;
+        sourcesUsed?: string[];
+        questions: QuizQuestion[];
+      }>(
         assetMode
           ? `workspaces/${workspaceId}/quiz-assets/generate`
           : `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/generate`,
         {
           method: "POST",
-          body: JSON.stringify({ count: aiCount, locale }),
+          body: JSON.stringify({
+            count: aiCount,
+            locale,
+            includeTheory,
+            includeStaticDiagrams,
+          }),
         },
       ),
     onSuccess: (result) => {
@@ -205,10 +219,11 @@ export function QuizBuilder({
       setSelected(kept.length);
       setTab("questions");
       setShowValidation(false);
+      const diagramCount = result.sourceDiagramElements ?? 0;
       setMessage(
         t(
-          `Generated ${incoming.length} question(s) from ${result.sourceTheoryItems} theory item(s). Review and edit them before saving or publishing.`,
-          `Đã tạo ${incoming.length} câu hỏi từ ${result.sourceTheoryItems} mục lý thuyết. Hãy kiểm tra và sửa trước khi lưu hoặc công bố.`,
+          `Generated ${incoming.length} source-grounded question(s) (${result.sourceTheoryItems} theory item(s), ${diagramCount} C1–C3 architecture element(s)). Review before saving or publishing.`,
+          `Đã tạo ${incoming.length} câu hỏi bám sát học liệu (${result.sourceTheoryItems} mục lý thuyết, ${diagramCount} thành phần sơ đồ C1–C3). Hãy rà soát trước khi lưu hoặc công bố.`,
         ),
       );
     },
@@ -328,10 +343,15 @@ export function QuizBuilder({
       update(selected, { correctOption: optionIndex });
     }
   };
-  const parseImport = (format: "json" | "csv") => {
+  const parseImport = (format: "json" | "csv" | "notebooklm") => {
     setImportErrors([]);
     try {
-      const parsed = format === "json" ? parseQuizJson(importText) : parseQuizCsv(importText);
+      const parsed =
+        format === "json"
+          ? parseQuizJson(importText)
+          : format === "csv"
+            ? parseQuizCsv(importText)
+            : parseNotebookLmQuiz(importText);
       if (parsed.errors.length) {
         setImportErrors(parsed.errors);
         return;
@@ -363,6 +383,24 @@ export function QuizBuilder({
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 px-2.5 py-1 text-xs">
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={includeTheory}
+                onChange={(event) => setIncludeTheory(event.target.checked)}
+              />
+              <span>{t("Theory chapters", "Lý thuyết các Chương")}</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={includeStaticDiagrams}
+                onChange={(event) => setIncludeStaticDiagrams(event.target.checked)}
+              />
+              <span>{t("Static C1–C3 & Sample Repo", "Sơ đồ tĩnh C1–C3 & Repo mẫu")}</span>
+            </label>
+          </div>
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span>{t("Questions", "Số câu")}</span>
             <Input
@@ -379,13 +417,13 @@ export function QuizBuilder({
             type="button"
             size="sm"
             variant="outline"
-            disabled={generateFromTheory.isPending}
+            disabled={generateFromTheory.isPending || (!includeTheory && !includeStaticDiagrams)}
             onClick={() => generateFromTheory.mutate()}
           >
             <Sparkles className="mr-1.5 size-3.5" aria-hidden="true" />
             {generateFromTheory.isPending
               ? t("Generating…", "Đang tạo…")
-              : t("Generate from theory", "AI tạo từ lý thuyết")}
+              : t("Generate from materials", "AI tạo từ học liệu")}
           </Button>
         </div>
       </div>
@@ -725,8 +763,8 @@ export function QuizBuilder({
             <h3 className="font-semibold">{t("Import questions", "Nhập câu hỏi")}</h3>
             <p className="text-xs text-muted-foreground">
               {t(
-                "JSON accepts {lesson, passPercent, questions[]}. CSV columns: type, prompt, options (| separated), correct (| separated indexes), explanation, points.",
-                "JSON nhận {lesson, passPercent, questions[]}. CSV gồm: type, prompt, options (phân cách bằng |), correct (chỉ số phân cách bằng |), explanation, points.",
+                "Paste JSON ({lesson, passPercent, questions[]}), CSV, or quiz Markdown/JSON exported from NotebookLM.",
+                "Dán JSON ({lesson, passPercent, questions[]}), CSV, hoặc bộ câu hỏi Markdown/JSON xuất từ NotebookLM.",
               )}
             </p>
             <Textarea
@@ -736,6 +774,9 @@ export function QuizBuilder({
               placeholder={'type,prompt,options,correct,explanation,points\nSINGLE_CHOICE,"What is a boundary?","API|Database",0,"A boundary owns one reason to change.",1'}
             />
             <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => parseImport("notebooklm")}>
+                {t("Import from NotebookLM (Markdown / JSON)", "Nhập từ NotebookLM (Markdown / JSON)")}
+              </Button>
               <Button type="button" size="sm" variant="outline" onClick={() => parseImport("json")}>
                 {t("Parse JSON", "Nhập JSON")}
               </Button>
@@ -748,7 +789,7 @@ export function QuizBuilder({
                 <input
                   className="sr-only"
                   type="file"
-                  accept=".json,.csv,application/json,text/csv"
+                  accept=".json,.csv,.md,.txt,application/json,text/csv,text/markdown,text/plain"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (!file) return;

@@ -86,6 +86,34 @@ class CourseQuizGenerationServiceTest {
         verifyNoInteractions(generator);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void combinesTheoryAndStaticDiagramSourcesFromReferenceModel() throws Exception {
+        UUID modelId = UUID.randomUUID();
+        var workspace = Workspace.builder().id(workspaceId).status("ACTIVE").build();
+        var refModel = com.mavis.common.entity.ModelVersion.builder().id(modelId).build();
+        var lab = Assignment.builder().id(labId).workspace(workspace).title("Lab").referenceModel(refModel).build();
+        when(assignments.findById(labId)).thenReturn(Optional.of(lab));
+        givenTheory("Chương 01: Bounded Context tách Order và Inventory.", 1);
+        when(jdbc.query(contains("FROM model_elements"), any(RowMapper.class), eq(modelId)))
+                .thenReturn(List.of("- [CONTAINER] order-service (Java / Spring Boot)", "- [CONTAINER] inventory-service (Java)"));
+        when(jdbc.query(contains("FROM model_relationships"), any(RowMapper.class), eq(modelId)))
+                .thenReturn(List.of("- order-service -> inventory-service (HTTP_REST, layer=STATIC)"));
+        when(generator.generate(anyString(), eq(4), eq(true))).thenReturn(List.of());
+        when(generator.providerMode()).thenReturn("LIVE_LLM_PROVIDER");
+
+        var result = service.generate(workspaceId, labId,
+                new CourseQuizGenerationService.Request(4, "vi", true, true, null));
+
+        assertEquals(1, result.sourceTheoryItems());
+        assertEquals(2, result.sourceDiagramElements());
+        assertEquals(List.of("THEORY", "STATIC_DIAGRAMS"), result.sourcesUsed());
+        verify(generator).generate(argThat(src ->
+                src.contains("[SOURCE: THEORY]")
+                        && src.contains("[SOURCE: STATIC_DIAGRAMS]")
+                        && src.contains("order-service -> inventory-service")), eq(4), eq(true));
+    }
+
     private void givenLab() {
         var workspace = Workspace.builder().id(workspaceId).status("ACTIVE").build();
         var lab = Assignment.builder().id(labId).workspace(workspace).title("Lab").build();

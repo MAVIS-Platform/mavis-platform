@@ -102,26 +102,30 @@ public class LlmQuizQuestionGenerator implements QuizQuestionGenerator {
         return questions;
     }
 
-    private String buildPrompt(String theory, int count, boolean vietnamese) {
+    String buildPrompt(String theory, int count, boolean vietnamese) {
         String trimmedTheory = theory.length() > MAX_THEORY_CHARS
                 ? theory.substring(0, MAX_THEORY_CHARS)
                 : theory;
+        String theoryTag = vietnamese ? "[Lý thuyết]" : "[Theory]";
+        String diagramTag = vietnamese ? "[Sơ đồ tĩnh]" : "[Static Diagram]";
         StringBuilder prompt = new StringBuilder();
-        prompt.append("You author graded quizzes for a software architecture course. ")
-                .append("Use ONLY facts stated in the THEORY section. Do not invent services, endpoints, ")
-                .append("technologies, numbers, or claims that are not in the theory. ")
+        prompt.append("You author strictly source-grounded quizzes (NotebookLM RAG style) for a software architecture course. ")
+                .append("Use ONLY facts explicitly stated in the provided [SOURCE: THEORY] and/or [SOURCE: STATIC_DIAGRAMS] sections below. ")
+                .append("NEVER invent services, endpoints, technologies, patterns, numbers, or claims not directly supported by the provided sources. ")
                 .append("Generate exactly ").append(count).append(" questions mixing SINGLE_CHOICE, ")
                 .append("MULTI_CHOICE and TRUE_FALSE. Each question needs 2-4 plausible options, exactly one ")
-                .append("correct answer for SINGLE_CHOICE/TRUE_FALSE, at least one for MULTI_CHOICE, ")
-                .append("and a short explanation that points back to the theory. ")
+                .append("correct answer for SINGLE_CHOICE/TRUE_FALSE, at least one for MULTI_CHOICE. ")
+                .append("For every explanation, start with ").append(theoryTag).append(" or ").append(diagramTag)
+                .append(" matching the exact source section and cite the specific chapter, concept, component, or service relationship from that source. ")
                 .append("Write prompts and explanations in ")
-                .append(vietnamese ? "Vietnamese (keep technical identifiers in English). " : "English. ")
+                .append(vietnamese ? "Vietnamese (keep code/service/diagram identifiers in English). " : "English. ")
                 .append("Return ONLY a JSON object of the form ")
                 .append("{\"questions\":[{\"prompt\":\"...\",\"type\":\"SINGLE_CHOICE\",\"options\":[\"...\",\"...\"],")
-                .append("\"correctOption\":0,\"correctOptions\":null,\"explanation\":\"...\",\"points\":1}]}. ")
+                .append("\"correctOption\":0,\"correctOptions\":null,\"explanation\":\"")
+                .append(theoryTag).append(" ...\",\"points\":1}]}. ")
                 .append("For MULTI_CHOICE set correctOptions to the zero-based indexes of all correct options ")
                 .append("and omit correctOption. For TRUE_FALSE use options [\"True\",\"False\"].\n\n")
-                .append("THEORY:\n---\n").append(trimmedTheory).append("\n---\n");
+                .append("SOURCES:\n---\n").append(trimmedTheory).append("\n---\n");
         return prompt.toString();
     }
 

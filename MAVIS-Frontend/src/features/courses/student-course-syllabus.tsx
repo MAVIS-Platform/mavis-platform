@@ -701,9 +701,6 @@ export function StudentCourseSyllabus({
                             </span>
                             <span className="mt-0.5 block text-xs text-muted-foreground">
                               {badgeMeta.label}
-                              {item.estimatedMinutes
-                                ? ` · ~${item.estimatedMinutes} ${t("min", "phút")}`
-                                : ""}
                             </span>
                             {isLocked && (
                               <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
@@ -887,11 +884,6 @@ export function StudentCourseSyllabus({
                         >
                           {itemBadgeMeta(activeItem, t).label}
                         </Badge>
-                        {activeItem.estimatedMinutes && (
-                          <span className="text-xs text-muted-foreground">
-                            · ~{activeItem.estimatedMinutes} {t("min", "phút")}
-                          </span>
-                        )}
                         {activeItem.type === "THEORY" && isTheoryCompleted(activeItem.id) && (
                           <Badge
                             variant="outline"
@@ -1228,9 +1220,6 @@ export function StudentCourseSyllabus({
                                       <span className="block leading-snug">{item.title}</span>
                                       <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] font-normal text-muted-foreground">
                                         <span>{badgeMeta.label}</span>
-                                        {item.estimatedMinutes ? (
-                                          <span>· ~{item.estimatedMinutes}p</span>
-                                        ) : null}
                                         {isPassed ? (
                                           <span className="inline-flex items-center gap-0.5 text-emerald-600">
                                             <CheckCircle2 className="h-3 w-3" aria-hidden="true" />

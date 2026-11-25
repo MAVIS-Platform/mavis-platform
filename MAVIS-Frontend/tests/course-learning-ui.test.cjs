@@ -1081,7 +1081,7 @@ test("Lab Creation omits Lab Theory while Lesson owns document, URL and smart-fo
   assert.ok(assignments.includes("<PublishCourseLab"));
   assert.ok(authoring.includes("Back to Lab Library"));
   assert.ok(quiz.includes("/quiz/generate"));
-  assert.ok(quiz.includes("Generate from theory"));
+  assert.ok(quiz.includes("Generate from materials"));
   assert.ok(quiz.includes("sourceTheoryItems"));
   assert.ok(assignments.includes("ImportLabButton"));
   assert.ok(publish.includes("ExportLabButton"));
@@ -2508,4 +2508,41 @@ test("Sprint 3 #01 Quiz Scoring: grades exact latest attempt and never overwrite
   assert.match(courseQuiz, /bestPassedCorrectCount\?: number \| null/);
   assert.match(access, /bestPassedCorrectCount\?: number \| null/);
   assert.match(screens, /bestPassedQuizCorrect/);
+});
+
+
+test("Sprint 3 #02 Syllabus Duration & Grounded AI Quiz: hides ~45m notes, grounds AI quiz in theory + C1-C3 diagrams, and supports NotebookLM import", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const builder = read("src/features/assignments/quiz-builder.tsx");
+  const { parseNotebookLmQuiz } = require("../src/features/assignments/quiz-types.ts");
+
+  assert.doesNotMatch(syllabus, /~\$\{item\.estimatedMinutes\}|~\$\{activeItem\.estimatedMinutes\}/);
+  assert.match(builder, /AI tạo từ học liệu/);
+  assert.match(builder, /includeStaticDiagrams/);
+  assert.match(builder, /Nhập từ NotebookLM/);
+
+  const md = parseNotebookLmQuiz(
+    `1. Dịch vụ nào xử lý đơn hàng?\nA. catalog-service\nB. order-service\nAnswer: B\nExplanation: [Sơ đồ tĩnh] order-service quản lý đơn hàng.\n\n2. Chọn thành phần hạ tầng.\n- [x] Kafka\n- [x] PostgreSQL\n- [ ] React\nGiải thích: [Lý thuyết] Hệ thống dùng Kafka & PostgreSQL.`,
+  );
+  assert.equal(md.errors.length, 0);
+  assert.equal(md.draft.questions.length, 2);
+  assert.equal(md.draft.questions[0].correctOption, 1);
+  assert.deepEqual(md.draft.questions[1].correctOptions, [0, 1]);
+
+  const jsonQuiz = parseNotebookLmQuiz(
+    JSON.stringify({
+      title: "NotebookLM Export",
+      questions: [
+        {
+          question: "Which edge connects gateway and order?",
+          answerOptions: [
+            { text: "HTTP_REST", isCorrect: true, rationale: "[Static Diagram] Gateway calls order over HTTP." },
+            { text: "GRPC_STREAM", isCorrect: false },
+          ],
+        },
+      ],
+    }),
+  );
+  assert.equal(jsonQuiz.errors.length, 0);
+  assert.equal(jsonQuiz.draft.questions[0].correctOption, 0);
 });
