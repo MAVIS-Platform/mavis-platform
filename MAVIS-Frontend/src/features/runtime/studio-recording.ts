@@ -130,8 +130,8 @@ export function startStudioRecording(
   const recorder = new MediaRecorder(
     stream,
     mimeType
-      ? { mimeType, videoBitsPerSecond: 650_000 }
-      : { videoBitsPerSecond: 650_000 },
+      ? { mimeType, videoBitsPerSecond: 1_500_000 }
+      : { videoBitsPerSecond: 1_500_000 },
   );
 
   const chunks: Blob[] = [];
@@ -181,18 +181,76 @@ export function startStudioRecording(
     ) {
       return false;
     }
-    (
-      webglCanvas as HTMLCanvasElement & {
-        __mavisRenderNow?: () => void;
-      }
-    ).__mavisRenderNow?.();
+    const typedCanvas = webglCanvas as HTMLCanvasElement & {
+      __mavisRenderNow?: () => void;
+      __mavisDrawLabels2D?: (
+        ctx: CanvasRenderingContext2D,
+        viewW: number,
+        viewH: number,
+        options?: {
+          offsetX?: number | undefined;
+          offsetY?: number | undefined;
+          clipX?: number | undefined;
+          clipY?: number | undefined;
+          clipW?: number | undefined;
+          clipH?: number | undefined;
+          scale?: number | undefined;
+        },
+      ) => void;
+    };
+    typedCanvas.__mavisRenderNow?.();
+
+    const topHudH = 34;
+    const bottomHudH = options?.watermark ? 30 : 0;
+    const stageX = 0;
+    const stageY = topHudH;
+    const stageW = canvas.width;
+    const stageH = canvas.height - topHudH - bottomHudH;
 
     context!.fillStyle = bgFill;
     context!.fillRect(0, 0, canvas.width, canvas.height);
-    const scale = Math.min(canvas.width / webglCanvas.width, canvas.height / webglCanvas.height);
-    const w = webglCanvas.width * scale;
-    const h = webglCanvas.height * scale;
-    context!.drawImage(webglCanvas, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    context!.imageSmoothingEnabled = true;
+    context!.imageSmoothingQuality = "high";
+
+    const glW = webglCanvas.width;
+    const glH = webglCanvas.height;
+    const glAspect = glW / glH;
+    const stageAspect = stageW / stageH;
+
+    // When bottom drawer makes WebGL ultrawide, crop only empty outer horizontal margins (<= 16% per side)
+    // so the 3D architecture fills the 1280x720 frame cleanly instead of shrinking into a thin ribbon.
+    let sx = 0;
+    let sw = glW;
+    if (glAspect > stageAspect * 1.15) {
+      const targetAspect = Math.max(stageAspect, glAspect * 0.68);
+      sw = Math.min(glW, Math.round(glH * targetAspect));
+      sx = Math.round((glW - sw) / 2);
+    }
+    const sy = 0;
+    const sh = glH;
+
+    const fitScale = Math.min(stageW / sw, stageH / sh);
+    const dw = sw * fitScale;
+    const dh = sh * fitScale;
+    const dx = stageX + (stageW - dw) / 2;
+    const dy = stageY + (stageH - dh) / 2;
+    context!.drawImage(webglCanvas, sx, sy, sw, sh, dx, dy, dw, dh);
+
+    // Exact affine projection matching the cropped/letterboxed WebGL rect so 1:1 vector tags align to the pixel.
+    const projOriginX = dx - (sx / sw) * dw;
+    const projOriginY = dy - (sy / sh) * dh;
+    const projW = (glW / sw) * dw;
+    const projH = (glH / sh) * dh;
+    typedCanvas.__mavisDrawLabels2D?.(context!, projW, projH, {
+      offsetX: projOriginX,
+      offsetY: projOriginY,
+      clipX: dx,
+      clipY: dy,
+      clipW: dw,
+      clipH: dh,
+      scale: Math.max(0.95, dw / 1280),
+    });
+
     drawRecordingHud(
       context!,
       canvas.width,

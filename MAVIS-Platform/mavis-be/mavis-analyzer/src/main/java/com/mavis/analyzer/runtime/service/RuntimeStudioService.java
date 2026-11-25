@@ -1032,7 +1032,7 @@ public class RuntimeStudioService {
     }
 
     private static void validateSnapshotVideo(String videoData) {
-        if (videoData.length() > 3_500_000) throw new IllegalArgumentException();
+        if (videoData.length() > 5_000_000) throw new IllegalArgumentException();
         int comma = videoData.indexOf(',');
         if (comma < 0) throw new IllegalArgumentException();
         String header = videoData.substring(0, comma + 1).toLowerCase(java.util.Locale.ROOT);
@@ -1040,7 +1040,7 @@ public class RuntimeStudioService {
         boolean isMp4 = header.startsWith("data:video/mp4") && header.endsWith(";base64,");
         if (!isWebm && !isMp4) throw new IllegalArgumentException();
         byte[] bytes = java.util.Base64.getDecoder().decode(videoData.substring(comma + 1));
-        if (bytes.length < 16 || bytes.length > 2_700_000) throw new IllegalArgumentException();
+        if (bytes.length < 16 || bytes.length > 3_750_000) throw new IllegalArgumentException();
         if (isWebm) {
             if ((bytes[0] & 0xFF) != 0x1A || (bytes[1] & 0xFF) != 0x45
                     || (bytes[2] & 0xFF) != 0xDF || (bytes[3] & 0xFF) != 0xA3) {

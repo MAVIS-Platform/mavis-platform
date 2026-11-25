@@ -1433,7 +1433,7 @@ export function LiveStudioWorkbench({
         video.blob.size > 0
       ) {
         const videoData = await blobToDataUrl(video.blob).catch(() => undefined);
-        if (videoData && videoData.length <= 3_400_000) {
+        if (videoData && videoData.length <= 4_900_000) {
           const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ?? null;
           await captureSnapshot(svg, {
             explanationOverride: videoNote,
@@ -6455,12 +6455,15 @@ export function LiveStudioWorkbench({
                               key={goal.id}
                               type="button"
                               disabled={authoring.busy}
-                              onClick={() =>
+                              onClick={() => {
+                                setMaxErrDraft(
+                                  goal.id === "scale" ? "5" : goal.id === "recovery" ? "0" : "",
+                                );
                                 authoring.onSelectGoal?.(
                                   goal.id,
                                   canvasSelected || goalTargetSvc || undefined,
-                                )
-                              }
+                                );
+                              }}
                               className={`border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
                                 isActive ? themeActiveBtn : themeIdleBtn
                               }`}

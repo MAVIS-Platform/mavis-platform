@@ -1062,7 +1062,7 @@ export const contracts = {
       sessionId: id,
       explanation: z.string().trim().min(1).max(4000),
       imageData: z.string().max(1500000).optional(),
-      videoData: z.string().max(3600000).optional(),
+      videoData: z.string().max(5050000).optional(),
       observedAt: z.string().max(100).optional(),
     }),
     z.record(z.string(), z.unknown()),

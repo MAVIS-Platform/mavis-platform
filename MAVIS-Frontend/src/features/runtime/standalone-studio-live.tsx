@@ -452,6 +452,7 @@ function StandaloneStudioContent() {
       !assignmentId ||
       labSessions.isPending ||
       studentContext.isPending ||
+      startStudio.isPending ||
       liveStudioVerified ||
       sessionList.length > 0 ||
       activeSessionId
@@ -463,6 +464,15 @@ function StandaloneStudioContent() {
       onSuccess: (created) => {
         if (created?.id) setSelectedSessionId(created.id);
       },
+      onError: (cause) => {
+        const isConflict =
+          (cause instanceof ApiError && cause.status === 409) ||
+          (cause instanceof Error && /version has changed|conflict|already active|409/i.test(cause.message));
+        if (isConflict) {
+          startStudio.reset();
+          void labSessions.refetch();
+        }
+      },
     });
   }, [
     client.mode,
@@ -471,7 +481,9 @@ function StandaloneStudioContent() {
     workspaceId,
     assignmentId,
     labSessions.isPending,
+    labSessions.refetch,
     studentContext.isPending,
+    startStudio.isPending,
     liveStudioVerified,
     sessionList.length,
     activeSessionId,
@@ -583,12 +595,20 @@ function StandaloneStudioContent() {
       : cur?.baselineRequests?.length && cur.baselineRequests[0]?.path !== "/"
         ? cur.baselineRequests
         : [{ method: "GET" as const, path: defaultBaselinePath, expectedStatus: 200 }];
+    const nextExerciseType =
+      "exerciseType" in input
+        ? input.exerciseType
+        : (cur?.successCriteria?.exerciseType ?? null);
     const nextMaxErr =
       input.maxErrorRatePercent !== undefined
         ? input.maxErrorRatePercent.trim()
           ? Number(input.maxErrorRatePercent)
           : null
-        : (cur?.successCriteria?.maxErrorRatePercent ?? 0);
+        : cur?.successCriteria && "maxErrorRatePercent" in cur.successCriteria
+          ? (cur.successCriteria.maxErrorRatePercent ?? null)
+          : nextExerciseType === "CIRCUIT_BREAKER"
+            ? 0
+            : null;
     const nextMaxP95 =
       input.maxP95Ms !== undefined
         ? input.maxP95Ms.trim()
@@ -601,10 +621,6 @@ function StandaloneStudioContent() {
           ? Number(input.minImpactF1)
           : null
         : (cur?.successCriteria?.minImpactF1 ?? null);
-    const nextExerciseType =
-      "exerciseType" in input
-        ? input.exerciseType
-        : (cur?.successCriteria?.exerciseType ?? null);
     const nextPredictionRequired =
       "predictionRequired" in input
         ? input.predictionRequired
@@ -785,19 +801,36 @@ function StandaloneStudioContent() {
         }
 
         if (runtimeProjectId && runtimeModelId && runtimeSnapshotId) {
-          const payload = buildNextExercisePayload(curEx, input, {
-            runtimeProjectId,
-            runtimeModelId,
-            runtimeSnapshotId,
-          });
-          const savedExercise = await api<StudioExerciseView>(
-            `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-exercise`,
-            {
-              method: "PUT",
-              body: JSON.stringify(payload),
-            },
-          );
-          return { savedExercise };
+          const putExerciseOnce = (baseExercise: StudioExerciseView | undefined) => {
+            const payload = buildNextExercisePayload(baseExercise, input, {
+              runtimeProjectId,
+              runtimeModelId,
+              runtimeSnapshotId,
+            });
+            return api<StudioExerciseView>(
+              `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-exercise`,
+              {
+                method: "PUT",
+                body: JSON.stringify(payload),
+              },
+            );
+          };
+          try {
+            const savedExercise = await putExerciseOnce(curEx);
+            return { savedExercise };
+          } catch (cause) {
+            const isConflict =
+              (cause instanceof ApiError && cause.status === 409) ||
+              (cause instanceof Error && /version has changed|conflict|409/i.test(cause.message));
+            if (isConflict) {
+              const latestExercise = await api<StudioExerciseView>(
+                `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-exercise`,
+              ).catch(() => undefined);
+              const savedExercise = await putExerciseOnce(latestExercise ?? curEx);
+              return { savedExercise };
+            }
+            throw cause;
+          }
         }
         return { savedExercise: undefined as StudioExerciseView | undefined };
       };
@@ -1532,11 +1565,11 @@ function StandaloneStudioContent() {
         </header>
       )}
 
-      {/* Error strips if any mutation fails */}
-      {(autoStudio.error || startStudio.error) && (
+      {/* Error strips if any mutation fails (suppress stale startStudio 409 once an active session is attached) */}
+      {(autoStudio.error || (startStudio.error && !activeSessionId)) && (
         <div className="shrink-0 space-y-1 border-b border-destructive/30 bg-destructive/10 px-4 py-2">
           {autoStudio.error && <ErrorState error={autoStudio.error} />}
-          {startStudio.error && <ErrorState error={startStudio.error} />}
+          {startStudio.error && !activeSessionId && <ErrorState error={startStudio.error} />}
         </div>
       )}
 

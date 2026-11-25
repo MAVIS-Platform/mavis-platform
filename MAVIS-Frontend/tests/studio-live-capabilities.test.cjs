@@ -2220,7 +2220,7 @@ test("Studio crisp 3D labels, MSSV snapshot watermark, WebP encoding, and struct
   );
   assert.ok(stage.includes("LinearMipmapLinearFilter"));
   assert.ok(stage.includes("Math.min(1.75, camDepth / 11.4)"));
-  assert.ok(stage.includes("Math.min(window.devicePixelRatio || 1, 2)"));
+  assert.ok(stage.includes("Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2)"));
   assert.ok(obs.includes("stampSnapshotWatermark"));
   assert.ok(obs.includes('toDataURL("image/webp", 0.92)'));
   assert.ok(evidence.includes("data:image/webp;base64,"));
@@ -2473,4 +2473,53 @@ test("End-to-end Studio -> Lab Review & Submit -> Simplified Lecturer Grading re
   assert.match(exercisePanel, /whitespace-normal/);
   assert.match(grading, /id="mavis-simple-score"/);
   assert.match(grading, /<details/);
+});
+
+test("3D Sharpness Overhaul + Remaining UX Fixes: 2D vector tags, 1.5x SSAA, 1.5Mbps HD video, 409 recovery, top-center toast & CPU maxErr sync", () => {
+  const stage = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obs = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const recording = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-recording.ts"),
+    "utf8",
+  );
+  const standalone = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  const sonner = fs.readFileSync(
+    path.join(__dirname, "../src/components/ui/sonner.tsx"),
+    "utf8",
+  );
+  const workbench = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+
+  // Layer 1 & 2: supersampled WebGL + 2048 shadows + calibrated contrast + pixel-exact 2D vector label overlay
+  assert.ok(stage.includes("Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2)"));
+  assert.ok(stage.includes("key.shadow.mapSize.width = 2048"));
+  assert.ok(stage.includes("toneMapped: false"));
+  assert.ok(stage.includes("data-studio-label-canvas"));
+  assert.ok(stage.includes("renderSharp2DLabels"));
+  assert.ok(stage.includes("__mavisDrawLabels2D"));
+
+  // Layer 3 & 4: supersampled 1600x960 Smart Snapshot & 1.5 Mbps HD Video both composite 1:1 2D vector labels
+  assert.ok(obs.includes("capturePixelRatio: 1.5"));
+  assert.ok(obs.includes("__mavisDrawLabels2D"));
+  assert.ok(recording.includes("videoBitsPerSecond: 1_500_000"));
+  assert.ok(recording.includes("__mavisDrawLabels2D"));
+  assert.ok(workbench.includes("videoData.length <= 4_900_000"));
+
+  // UX Fixes: 409 recovery on auto-start & studio-exercise PUT, non-occluding top-center toast, CPU maxErrorRate preservation
+  assert.ok(standalone.includes("startStudio.error && !activeSessionId"));
+  assert.ok(standalone.includes("startStudio.reset()"));
+  assert.ok(standalone.includes("putExerciseOnce(latestExercise ?? curEx)"));
+  assert.ok(standalone.includes('"maxErrorRatePercent" in cur.successCriteria'));
+  assert.ok(sonner.includes('position="top-center"'));
 });

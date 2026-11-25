@@ -4244,18 +4244,33 @@ export async function captureStudioImage(
       styles.backgroundColor && styles.backgroundColor !== "rgba(0, 0, 0, 0)"
         ? styles.backgroundColor
         : "#f3f8ff";
-    const renderResult = (
-      webglCanvas as HTMLCanvasElement & {
-        __mavisRenderNow?: (
-          focus?: readonly string[],
-          options?: { maxAspect?: number; captureWidth?: number; captureHeight?: number },
-        ) => { focusedIds: string[]; restore?: () => void } | void;
-      }
-    ).__mavisRenderNow?.(focusServices, { maxAspect: 1.85, captureWidth: 1440, captureHeight: 860 });
+    const typedCanvas = webglCanvas as HTMLCanvasElement & {
+      __mavisRenderNow?: (
+        focus?: readonly string[],
+        options?: {
+          maxAspect?: number;
+          captureWidth?: number;
+          captureHeight?: number;
+          capturePixelRatio?: number;
+        },
+      ) => { focusedIds: string[]; restore?: () => void } | void;
+      __mavisDrawLabels2D?: (
+        ctx: CanvasRenderingContext2D,
+        viewW: number,
+        viewH: number,
+        options?: { scale?: number | undefined },
+      ) => void;
+    };
+    const renderResult = typedCanvas.__mavisRenderNow?.(focusServices, {
+      maxAspect: 1.85,
+      captureWidth: 1600,
+      captureHeight: 960,
+      capturePixelRatio: 1.5,
+    });
     const naturalW = webglCanvas.width;
     const naturalH = webglCanvas.height;
     const longest = Math.max(naturalW, naturalH);
-    // Perform a single GPU->2D readback once, then downscale purely on 2D canvas to avoid WebGL context loss.
+    // Single supersampled GPU->2D readback, then crisp 1:1 native-pixel vector labels before restoring capture camera.
     const sourceScale = Math.min(1, SNAPSHOT_MAX_EDGES[0] / longest);
     const sourceCanvas = document.createElement("canvas");
     sourceCanvas.width = Math.max(1, Math.round(naturalW * sourceScale));
@@ -4263,29 +4278,36 @@ export async function captureStudioImage(
     const sourceCtx = sourceCanvas.getContext("2d");
     try {
       if (!sourceCtx) throw new Error("Could not render Studio snapshot");
+      sourceCtx.imageSmoothingEnabled = true;
+      sourceCtx.imageSmoothingQuality = "high";
       sourceCtx.fillStyle = bgFill;
       sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
       sourceCtx.drawImage(webglCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height);
+
+      const outCanvas = document.createElement("canvas");
+      for (const maxEdge of SNAPSHOT_MAX_EDGES) {
+        const scale = Math.min(1, maxEdge / longest);
+        outCanvas.width = Math.max(1, Math.round(naturalW * scale));
+        outCanvas.height = Math.max(1, Math.round(naturalH * scale));
+        const context = outCanvas.getContext("2d");
+        if (!context) throw new Error("Could not render Studio snapshot");
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        context.fillStyle = bgFill;
+        context.fillRect(0, 0, outCanvas.width, outCanvas.height);
+        context.drawImage(sourceCanvas, 0, 0, outCanvas.width, outCanvas.height);
+        typedCanvas.__mavisDrawLabels2D?.(context, outCanvas.width, outCanvas.height, {
+          scale: Math.max(0.85, outCanvas.width / 1280),
+        });
+        stampSmartSnapshotHud(context, outCanvas.width, outCanvas.height, smartOverlay);
+        stampSnapshotWatermark(context, outCanvas.width, outCanvas.height, watermark);
+        const dataUrl = encodeSnapshotCanvas(outCanvas);
+        if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
+      }
+      throw new Error("Snapshot image too large");
     } finally {
       renderResult?.restore?.();
     }
-
-    const outCanvas = document.createElement("canvas");
-    for (const maxEdge of SNAPSHOT_MAX_EDGES) {
-      const scale = Math.min(1, maxEdge / longest);
-      outCanvas.width = Math.max(1, Math.round(naturalW * scale));
-      outCanvas.height = Math.max(1, Math.round(naturalH * scale));
-      const context = outCanvas.getContext("2d");
-      if (!context) throw new Error("Could not render Studio snapshot");
-      context.fillStyle = bgFill;
-      context.fillRect(0, 0, outCanvas.width, outCanvas.height);
-      context.drawImage(sourceCanvas, 0, 0, outCanvas.width, outCanvas.height);
-      stampSmartSnapshotHud(context, outCanvas.width, outCanvas.height, smartOverlay);
-      stampSnapshotWatermark(context, outCanvas.width, outCanvas.height, watermark);
-      const dataUrl = encodeSnapshotCanvas(outCanvas);
-      if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
-    }
-    throw new Error("Snapshot image too large");
   }
   const url = URL.createObjectURL(
     new Blob([serializeStudioGraph(svg, wholeDiagram || Boolean(focusServices), false, focusServices)], {

@@ -227,6 +227,18 @@ type AnimatedPacket = {
   phase: number;
 };
 
+export type StudioDrawLabels2DOptions = {
+  offsetX?: number | undefined;
+  offsetY?: number | undefined;
+  clipX?: number | undefined;
+  clipY?: number | undefined;
+  clipW?: number | undefined;
+  clipH?: number | undefined;
+  scale?: number | undefined;
+  zoom?: number | undefined;
+  recordHitRects?: Array<{ serviceId: string; x: number; y: number; w: number; h: number }> | undefined;
+};
+
 type EdgeRig = {
   from: string;
   to: string;
@@ -241,6 +253,14 @@ type EdgeRig = {
   endPort?: THREE.Mesh | undefined;
   breakRing?: THREE.Mesh | undefined;
   badgeSprite?: THREE.Sprite | undefined;
+  badgeMeta?:
+    | {
+        label: string;
+        color: string;
+        isSevered: boolean;
+        isDegraded: boolean;
+      }
+    | undefined;
   curve?: THREE.QuadraticBezierCurve3 | undefined;
   isSevered?: boolean | undefined;
 };
@@ -356,6 +376,22 @@ type AnimatedNodeRig = {
   labelBaseY: number;
   labelBaseW: number;
   labelBaseH: number;
+  labelMeta: {
+    text: string;
+    roleLabel: string;
+    badge: string;
+    pillBg: string;
+    pillStroke: string;
+    pillChipBg: string;
+    pillTextFill: string;
+    pillCountFill: string;
+    isSelected: boolean;
+    isCritical: boolean;
+    isWarning: boolean;
+    isStopped: boolean;
+    isPaused: boolean;
+    anchorY: number;
+  };
 };
 
 export type VisualArchetype = "GATEWAY" | "DATABASE" | "QUEUE" | "WORKER" | "SERVICE";
@@ -580,6 +616,7 @@ function createNodeLabelSprite(
   const material = new T.SpriteMaterial({
     map: texture,
     transparent: true,
+    toneMapped: false,
     depthTest: false,
     depthWrite: false,
   });
@@ -650,6 +687,7 @@ function createEdgeBadgeSprite(
   const material = new T.SpriteMaterial({
     map: texture,
     transparent: true,
+    toneMapped: false,
     depthTest: false,
     depthWrite: false,
   });
@@ -713,13 +751,14 @@ function createTopPlateTexture(
   T: ThreeModule,
   node: StudioThreeNode,
   styleId: StudioStyleId,
-  maxAnisotropy = 4,
+  maxAnisotropy = 8,
 ): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 176;
+  canvas.width = 512;
+  canvas.height = 352;
   const ctx = canvas.getContext("2d");
   if (!ctx) return new T.CanvasTexture(canvas);
+  ctx.scale(2, 2);
 
   const isDark = styleId === "control";
   const isPop = styleId === "pop";
@@ -1039,8 +1078,8 @@ function createZonePlateGroup(
 
   // Fixed world-scale header pill centered squarely on the outer top rim (never stretched or covered)
   const canvas = document.createElement("canvas");
-  const dpr = 2;
-  const font = `700 ${13 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const dpr = 3;
+  const font = `800 ${13 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   const mctx = canvas.getContext("2d");
   let textW = 180 * dpr;
   if (mctx) {
@@ -1058,7 +1097,7 @@ function createZonePlateGroup(
     drawRoundedRect(ctx, margin, margin, pillW, pillH, pillH / 2);
     ctx.fillStyle = isLight ? "#ffffff" : "rgba(10,15,24,0.96)";
     ctx.fill();
-    ctx.lineWidth = 2 * dpr;
+    ctx.lineWidth = 2.2 * dpr;
     ctx.strokeStyle = accentHex;
     ctx.stroke();
     ctx.font = font;
@@ -1069,15 +1108,16 @@ function createZonePlateGroup(
   }
   const tex = new T.CanvasTexture(canvas);
   tex.colorSpace = T.SRGBColorSpace;
+  tex.generateMipmaps = true;
   tex.minFilter = T.LinearMipmapLinearFilter;
   tex.magFilter = T.LinearFilter;
   tex.anisotropy = maxAnisotropy;
-  const badgeH = 0.34;
+  const badgeH = 0.36;
   const badgeNaturalW = badgeH * (canvas.width / canvas.height);
   const badgeW = Math.min(Math.max(width - 0.1, 1.45), badgeNaturalW);
   const badgeMesh = new T.Mesh(
     new T.PlaneGeometry(1, badgeH),
-    new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
+    new T.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false }),
   );
   badgeMesh.scale.set(badgeW, 1, 1);
   badgeMesh.rotation.x = -Math.PI / 2;
@@ -1209,7 +1249,7 @@ function addOutlinedMesh(
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.userData = { serviceId };
-  const edges = new T.LineSegments(new T.EdgesGeometry(geometry, 32), edgeMaterial);
+  const edges = new T.LineSegments(new T.EdgesGeometry(geometry, 22), edgeMaterial);
   edges.userData = { serviceId };
   mesh.add(edges);
   parent.add(mesh);
@@ -1283,11 +1323,11 @@ function buildServiceRig(
   });
 
   const plinthMat = new T.MeshPhysicalMaterial({
-    color: new T.Color(isDark ? "#172033" : isBlueprint ? "#e0f2fe" : isPop ? "#fffdf7" : "#f1f5f9"),
-    roughness: isDark ? 0.38 : isPop ? 0.42 : 0.32,
-    metalness: isDark ? 0.38 : isPop ? 0.08 : 0.16,
-    clearcoat: isDark ? 0.45 : 0.55,
-    clearcoatRoughness: 0.25,
+    color: new T.Color(isDark ? "#172033" : isBlueprint ? "#dbeafe" : isPop ? "#fffdf7" : "#dbe6f3"),
+    roughness: isDark ? 0.36 : isPop ? 0.4 : 0.32,
+    metalness: isDark ? 0.38 : isPop ? 0.08 : 0.18,
+    clearcoat: isDark ? 0.45 : 0.48,
+    clearcoatRoughness: 0.24,
   });
 
   const chassisMat = new T.MeshPhysicalMaterial({
@@ -1302,12 +1342,12 @@ function buildServiceRig(
             ? "#131e36"
             : isBlueprint
               ? "#eff6ff"
-              : "#ffffff",
+              : "#f8fbff",
     ),
-    roughness: isPop ? 0.34 : isDark ? 0.24 : isBlueprint ? 0.42 : 0.2,
-    metalness: isDark ? 0.52 : isPop ? 0.06 : isBlueprint ? 0.16 : 0.12,
-    clearcoat: isBlueprint ? 0.35 : 0.78,
-    clearcoatRoughness: 0.14,
+    roughness: isPop ? 0.34 : isDark ? 0.24 : isBlueprint ? 0.42 : 0.24,
+    metalness: isDark ? 0.52 : isPop ? 0.06 : isBlueprint ? 0.16 : 0.16,
+    clearcoat: isBlueprint ? 0.35 : 0.65,
+    clearcoatRoughness: 0.16,
     emissive: new T.Color(isDark ? node.palette.iconBg : node.isCritical ? "#4c0519" : "#000000"),
     emissiveIntensity: isDark ? 0.18 : node.isCritical ? 0.12 : 0,
     transparent: isBlueprint,
@@ -1350,9 +1390,15 @@ function buildServiceRig(
   });
 
   const edgeMat = new T.LineBasicMaterial({
-    color: new T.Color(isPop ? "#0f172a" : node.palette.stroke),
+    color: new T.Color(
+      isPop
+        ? "#0f172a"
+        : styleId === "daylight" && !node.isCritical && !node.isWarning
+          ? "#334155"
+          : node.palette.stroke,
+    ),
     transparent: !isPop,
-    opacity: isPop ? 0.96 : isDark ? 0.75 : isBlueprint ? 0.88 : 0.42,
+    opacity: isPop ? 0.96 : isDark ? 0.82 : isBlueprint ? 0.9 : 0.78,
   });
 
   const sculptureGroup = new T.Group();
@@ -2010,6 +2056,22 @@ function buildServiceRig(
       : node.isWarning
         ? 1
         : 0;
+  const labelText = node.label.length > 24 ? `${node.label.slice(0, 22)}…` : node.label;
+  const labelRole =
+    visualArchetype === "DATABASE"
+      ? "DB"
+      : visualArchetype === "GATEWAY"
+        ? "GW"
+        : visualArchetype === "SERVICE"
+          ? "SVC"
+          : visualArchetype;
+  const labelBadge = node.isStopped
+    ? "0"
+    : node.isPaused
+      ? "PAUSED"
+      : node.cpuThrottlePct
+        ? `×${node.replicas}·${node.cpuThrottlePct}%`
+        : `×${node.replicas}`;
 
   return {
     id: node.id,
@@ -2031,7 +2093,434 @@ function buildServiceRig(
     labelBaseY,
     labelBaseW: labelSprite.scale.x,
     labelBaseH: labelSprite.scale.y,
+    labelMeta: {
+      text: labelText,
+      roleLabel: labelRole,
+      badge: labelBadge,
+      pillBg: node.palette.pillBg,
+      pillStroke: node.palette.pillStroke,
+      pillChipBg: node.palette.pillChipBg,
+      pillTextFill: node.palette.pillTextFill,
+      pillCountFill: node.palette.pillCountFill,
+      isSelected: node.isSelected,
+      isCritical: node.isCritical,
+      isWarning: node.isWarning,
+      isStopped: node.isStopped,
+      isPaused: Boolean(node.isPaused),
+      anchorY: topY + 0.04,
+    },
   };
+}
+
+/**
+ * Pixel-exact 2D vector overlay renderer shared identically by Live View, Smart Snapshots, and 3D WebGL Videos.
+ * Keeps service tags & edge latency badges crisp at native OS typography across all zoom levels without
+ * WebGL mipmap blur, ACESFilmic tone-mapping washout, or distance shrinkage.
+ */
+function renderSharp2DLabels(
+  T: ThreeModule,
+  ctx: CanvasRenderingContext2D,
+  viewW: number,
+  viewH: number,
+  perspCam: THREE.PerspectiveCamera,
+  nodeRigs: readonly AnimatedNodeRig[],
+  edgeRigs: readonly EdgeRig[],
+  styleId: StudioStyleId,
+  showNodeTags: boolean,
+  showEdgeTags: boolean,
+  camZoom: number,
+  options?: StudioDrawLabels2DOptions,
+) {
+  if (viewW <= 0 || viewH <= 0) return;
+  const hitRects = options?.recordHitRects;
+  if (hitRects) hitRects.length = 0;
+  if (!showNodeTags && !showEdgeTags) return;
+
+  const offsetX = options?.offsetX ?? 0;
+  const offsetY = options?.offsetY ?? 0;
+  const boundsX = options?.clipX ?? 0;
+  const boundsY = options?.clipY ?? 0;
+  const boundsW = options?.clipW ?? viewW;
+  const boundsH = options?.clipH ?? viewH;
+  const s = options?.scale ?? 1;
+  const compact = camZoom < 0.72 || nodeRigs.length >= 13;
+  const isMono = styleId === "blueprint";
+  const isLight = !STUDIO_STYLES[styleId].isDark;
+
+  const textSize = Math.round((compact ? 11.5 : 12.5) * s * 2) / 2;
+  const chipSize = Math.round((compact ? 9.5 : 10) * s * 2) / 2;
+  const pillH = Math.round((compact ? 22 : 25) * s);
+  const chipH = Math.round((compact ? 15 : 16.5) * s);
+  const padX = Math.round((compact ? 6 : 7.5) * s);
+  const gap = Math.round((compact ? 5 : 6) * s);
+  const margin = Math.round(4 * s);
+
+  const labelFont = `700 ${textSize}px ${
+    isMono
+      ? "ui-monospace, SFMono-Regular, Menlo, monospace"
+      : "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
+  }`;
+  const chipFont = `700 ${chipSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+
+  ctx.save();
+  if (options?.clipW && options?.clipH) {
+    ctx.beginPath();
+    ctx.rect(boundsX, boundsY, boundsW, boundsH);
+    ctx.clip();
+  }
+
+  const placed: Array<{ x: number; y: number; w: number; h: number }> = [];
+  const proj = new T.Vector3();
+  const anchorProj = new T.Vector3();
+  const overlapArea = (x: number, y: number, w: number, h: number) => {
+    let area = 0;
+    for (const r of placed) {
+      const ox = Math.max(0, Math.min(x + w + margin, r.x + r.w + margin) - Math.max(x, r.x));
+      const oy = Math.max(0, Math.min(y + h + margin, r.y + r.h + margin) - Math.max(y, r.y));
+      area += ox * oy;
+    }
+    return area;
+  };
+
+  if (showNodeTags && nodeRigs.length > 0) {
+    type ProjectedNodeLabel = {
+      rig: AnimatedNodeRig;
+      depth: number;
+      anchorX: number;
+      anchorY: number;
+      baseX: number;
+      baseY: number;
+      pillW: number;
+      chipW: number;
+      badgeW: number;
+      x: number;
+      y: number;
+    };
+    const items: ProjectedNodeLabel[] = [];
+    for (const rig of nodeRigs) {
+      proj.set(rig.group.position.x, rig.labelBaseY + 0.08, rig.group.position.z).project(perspCam);
+      if (proj.z < -1 || proj.z > 1) continue;
+      anchorProj
+        .set(rig.group.position.x, rig.labelMeta.anchorY, rig.group.position.z)
+        .project(perspCam);
+      const baseX = offsetX + (proj.x * 0.5 + 0.5) * viewW;
+      const baseY = offsetY + (-proj.y * 0.5 + 0.5) * viewH;
+      const anchorX = offsetX + (anchorProj.x * 0.5 + 0.5) * viewW;
+      const anchorY = offsetY + (-anchorProj.y * 0.5 + 0.5) * viewH;
+      if (
+        anchorX < boundsX - 120 ||
+        anchorX > boundsX + boundsW + 120 ||
+        anchorY < boundsY - 120 ||
+        anchorY > boundsY + boundsH + 120
+      ) {
+        continue;
+      }
+
+      ctx.font = labelFont;
+      const textW = Math.ceil(ctx.measureText(rig.labelMeta.text).width);
+      ctx.font = chipFont;
+      const chipW = Math.ceil(ctx.measureText(rig.labelMeta.roleLabel).width) + Math.round(9 * s);
+      const badgeW = Math.max(
+        Math.round(21 * s),
+        Math.ceil(ctx.measureText(rig.labelMeta.badge).width) + Math.round(9 * s),
+      );
+      const pillW = padX + chipW + gap + textW + gap + badgeW + padX;
+      items.push({
+        rig,
+        depth: proj.z,
+        anchorX,
+        anchorY,
+        baseX,
+        baseY,
+        pillW,
+        chipW,
+        badgeW,
+        x: 0,
+        y: 0,
+      });
+    }
+
+    items.sort((a, b) => {
+      if (b.rig.labelPriority !== a.rig.labelPriority) {
+        return b.rig.labelPriority - a.rig.labelPriority;
+      }
+      return a.depth - b.depth;
+    });
+
+    const candidateOffsets: ReadonlyArray<readonly [number, number]> = [
+      [0, -10],
+      [0, -28],
+      [-44, -16],
+      [44, -16],
+      [0, -46],
+      [-68, -30],
+      [68, -30],
+      [0, 14],
+      [-86, -12],
+      [86, -12],
+    ];
+
+    for (const item of items) {
+      let bestX = item.baseX - item.pillW / 2;
+      let bestY = item.baseY - pillH;
+      let bestOverlap = Number.POSITIVE_INFINITY;
+      const minX = boundsX + 6;
+      const maxX = Math.max(minX, boundsX + boundsW - 6 - item.pillW);
+      const minY = boundsY + 6;
+      const maxY = Math.max(minY, boundsY + boundsH - 6 - pillH);
+
+      for (const [dx, dy] of candidateOffsets) {
+        const cx = Math.max(minX, Math.min(maxX, Math.round(item.baseX + dx * s - item.pillW / 2)));
+        const cy = Math.max(minY, Math.min(maxY, Math.round(item.baseY + dy * s - pillH / 2)));
+        const area = overlapArea(cx, cy, item.pillW, pillH);
+        if (area === 0) {
+          bestX = cx;
+          bestY = cy;
+          bestOverlap = 0;
+          break;
+        }
+        if (area < bestOverlap) {
+          bestOverlap = area;
+          bestX = cx;
+          bestY = cy;
+        }
+      }
+      item.x = Math.round(bestX);
+      item.y = Math.round(bestY);
+      placed.push({ x: item.x, y: item.y, w: item.pillW, h: pillH });
+      if (hitRects) {
+        hitRects.push({
+          serviceId: item.rig.id,
+          x: item.x,
+          y: item.y,
+          w: item.pillW,
+          h: pillH,
+        });
+      }
+    }
+
+    // Pass A: crisp 1.25px tether pins from each 3D block top to its pill edge
+    for (const item of items) {
+      const m = item.rig.labelMeta;
+      const targetX = Math.max(item.x + 8, Math.min(item.x + item.pillW - 8, item.anchorX));
+      const targetY = item.y + pillH < item.anchorY ? item.y + pillH : item.y;
+      const pinColor = m.isCritical
+        ? "#e11d48"
+        : m.isWarning
+          ? "#d97706"
+          : m.isSelected
+            ? "#0284c7"
+            : styleId === "control"
+              ? "rgba(148,163,184,0.72)"
+              : "rgba(51,65,85,0.62)";
+      ctx.beginPath();
+      ctx.moveTo(Math.round(item.anchorX) + 0.5, Math.round(item.anchorY) + 0.5);
+      ctx.lineTo(Math.round(targetX) + 0.5, Math.round(targetY) + 0.5);
+      ctx.strokeStyle = pinColor;
+      ctx.lineWidth = Math.max(1, 1.25 * s);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(Math.round(item.anchorX), Math.round(item.anchorY), Math.max(2, 2.4 * s), 0, Math.PI * 2);
+      ctx.fillStyle = pinColor;
+      ctx.fill();
+    }
+
+    // Pass B: native-pixel crisp vector service tag pills
+    for (const item of items) {
+      const m = item.rig.labelMeta;
+      const rx = styleId === "blueprint" ? Math.round(5 * s) : pillH / 2;
+      const x = item.x;
+      const y = item.y;
+
+      const bgFill =
+        styleId === "daylight"
+          ? m.isCritical
+            ? "#fff1f2"
+            : m.isWarning
+              ? "#fffbeb"
+              : "#ffffff"
+          : styleId === "control"
+            ? m.isCritical
+              ? "#240a14"
+              : m.isWarning
+                ? "#221706"
+                : "#0b1220"
+            : m.pillBg;
+      const borderStroke =
+        styleId === "daylight"
+          ? m.isCritical
+            ? "#e11d48"
+            : m.isWarning
+              ? "#d97706"
+              : m.isSelected
+                ? "#0284c7"
+                : "#475569"
+          : styleId === "control"
+            ? m.isCritical
+              ? "#fb7185"
+              : m.isWarning
+                ? "#fbbf24"
+                : m.isSelected
+                  ? "#38bdf8"
+                  : "#64748b"
+            : m.pillStroke;
+      const textFill =
+        styleId === "daylight"
+          ? m.isCritical
+            ? "#9f1239"
+            : "#0f172a"
+          : styleId === "control"
+            ? "#f8fafc"
+            : m.pillTextFill;
+      const chipBg =
+        styleId === "daylight"
+          ? m.isCritical
+            ? "#ffe4e6"
+            : m.isWarning
+              ? "#fef3c7"
+              : "#e2e8f0"
+          : styleId === "control"
+            ? "rgba(148,163,184,0.22)"
+            : m.pillChipBg;
+      const countFill =
+        styleId === "daylight"
+          ? m.isCritical
+            ? "#be123c"
+            : m.isWarning
+              ? "#b45309"
+              : "#0f172a"
+          : styleId === "control"
+            ? m.isCritical
+              ? "#fda4af"
+              : m.isWarning
+                ? "#fde68a"
+                : "#7dd3fc"
+            : m.pillCountFill;
+
+      if (styleId === "pop") {
+        drawRoundedRect(ctx, x + Math.round(2.5 * s), y + Math.round(2.5 * s), item.pillW, pillH, rx);
+        ctx.fillStyle = m.isCritical ? "#e11d48" : "#0f172a";
+        ctx.fill();
+      } else {
+        ctx.save();
+        ctx.shadowColor = styleId === "control" ? "rgba(0,0,0,0.58)" : "rgba(15,23,42,0.18)";
+        ctx.shadowBlur = Math.round(7 * s);
+        ctx.shadowOffsetY = Math.round(2 * s);
+        drawRoundedRect(ctx, x, y, item.pillW, pillH, rx);
+        ctx.fillStyle = bgFill;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      drawRoundedRect(ctx, x, y, item.pillW, pillH, rx);
+      ctx.fillStyle = bgFill;
+      ctx.fill();
+      ctx.lineWidth = (styleId === "pop" || m.isSelected || m.isCritical ? 2 : 1.45) * s;
+      ctx.strokeStyle = borderStroke;
+      ctx.stroke();
+
+      const midY = y + pillH / 2 + 0.5;
+      const chipX = x + padX;
+      const chipY = Math.round(y + (pillH - chipH) / 2);
+      drawRoundedRect(ctx, chipX, chipY, item.chipW, chipH, Math.round(4 * s));
+      ctx.fillStyle = chipBg;
+      ctx.fill();
+      ctx.font = chipFont;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = textFill;
+      ctx.fillText(m.roleLabel, chipX + item.chipW / 2, midY);
+
+      ctx.font = labelFont;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = textFill;
+      ctx.fillText(m.text, chipX + item.chipW + gap, midY);
+
+      const countX = x + item.pillW - padX - item.badgeW;
+      drawRoundedRect(
+        ctx,
+        countX,
+        chipY,
+        item.badgeW,
+        chipH,
+        styleId === "blueprint" ? Math.round(3 * s) : chipH / 2,
+      );
+      ctx.fillStyle = chipBg;
+      ctx.fill();
+      ctx.font = chipFont;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = countFill;
+      ctx.fillText(m.badge, countX + item.badgeW / 2, midY);
+    }
+  }
+
+  if (showEdgeTags && edgeRigs.length > 0) {
+    const edgeFontSize = Math.round((compact ? 9.5 : 10.5) * s * 2) / 2;
+    const edgeFont = `700 ${edgeFontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    const bh = Math.round((compact ? 18 : 20) * s);
+    ctx.font = edgeFont;
+    for (const edge of edgeRigs) {
+      const bm = edge.badgeMeta;
+      if (!bm || !edge.curve) continue;
+      const bw = Math.max(
+        Math.round(42 * s),
+        Math.ceil(ctx.measureText(bm.label).width) + Math.round(14 * s),
+      );
+      for (const fraction of [0.5, 0.34, 0.66]) {
+        edge.curve.getPoint(fraction, proj);
+        proj.y += 0.19;
+        proj.project(perspCam);
+        if (proj.z < -1 || proj.z > 1) continue;
+        const ex = Math.round(offsetX + (proj.x * 0.5 + 0.5) * viewW - bw / 2);
+        const ey = Math.round(offsetY + (-proj.y * 0.5 + 0.5) * viewH - bh / 2);
+        if (
+          ex < boundsX + 4 ||
+          ex + bw > boundsX + boundsW - 4 ||
+          ey < boundsY + 4 ||
+          ey + bh > boundsY + boundsH - 4
+        ) {
+          continue;
+        }
+        if (overlapArea(ex, ey, bw, bh) > 0) continue;
+        placed.push({ x: ex, y: ey, w: bw, h: bh });
+
+        drawRoundedRect(ctx, ex, ey, bw, bh, bh / 2);
+        ctx.fillStyle = isLight
+          ? bm.isSevered
+            ? "#fff1f2"
+            : bm.isDegraded
+              ? "#fffbeb"
+              : "#ffffff"
+          : "#090d16";
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.2, 1.5 * s);
+        ctx.strokeStyle = bm.color;
+        ctx.stroke();
+
+        ctx.font = edgeFont;
+        ctx.fillStyle = isLight
+          ? bm.isSevered
+            ? "#be123c"
+            : bm.isDegraded
+              ? "#b45309"
+              : "#0f172a"
+          : bm.isSevered
+            ? "#fda4af"
+            : bm.isDegraded
+              ? "#fde68a"
+              : "#f1f5f9";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(bm.label, ex + bw / 2, ey + bh / 2 + 0.5);
+        break;
+      }
+    }
+  }
+
+  ctx.restore();
 }
 
 function disposeObjectTree(T: ThreeModule, obj: THREE.Object3D) {
@@ -2078,6 +2567,10 @@ export function StudioThreeStage({
 }: StudioThreeStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const labelCanvasRef = useRef<HTMLCanvasElement>(null);
+  const labelHitRectsRef = useRef<Array<{ serviceId: string; x: number; y: number; w: number; h: number }>>([]);
+  const styleIdRef = useRef<StudioStyleId>(styleId);
+  styleIdRef.current = styleId;
   const tourBoxRef = useRef<HTMLDivElement>(null);
   const hoveredServiceRef = useRef<string | null>(null);
   const lastSceneSigRef = useRef("");
@@ -2229,15 +2722,16 @@ export function StudioThreeStage({
           return;
         }
 
-        // Cap DPR at 1.5 and cache static shadow map so 3D camera orbit stays locked at 60-120fps
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        // Minimum 1.5x supersampling eliminates soft/aliased 3D edges even on standard 100%-DPI monitors.
+        const livePixelRatio = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 2);
+        renderer.setPixelRatio(livePixelRatio);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = T.PCFSoftShadowMap;
         renderer.shadowMap.autoUpdate = false;
         renderer.shadowMap.needsUpdate = true;
         renderer.outputColorSpace = T.SRGBColorSpace;
         renderer.toneMapping = T.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.08;
+        renderer.toneMappingExposure = 0.98;
 
         const scene = new T.Scene();
         // Bake studio softbox PBR environment reflections once via PMREMGenerator (zero external HDR files)
@@ -2247,7 +2741,7 @@ export function StudioThreeStage({
             const roomEnv = new envMod.RoomEnvironment();
             const envRT = pmrem.fromScene(roomEnv, 0.04);
             scene.environment = envRT.texture;
-            scene.environmentIntensity = 0.56;
+            scene.environmentIntensity = 0.44;
             envTargetRef.current = envRT;
             roomEnv.dispose();
             pmrem.dispose();
@@ -2265,26 +2759,37 @@ export function StudioThreeStage({
         viewportSizeRef.current = { w: width, h: height };
         renderer.setSize(width, height, false);
 
+        const syncLabelCanvasSize = (w: number, h: number) => {
+          const lc = labelCanvasRef.current;
+          if (!lc) return;
+          const labelDpr = Math.min(Math.max(window.devicePixelRatio || 1, 2), 3);
+          const nextW = Math.max(1, Math.round(w * labelDpr));
+          const nextH = Math.max(1, Math.round(h * labelDpr));
+          if (lc.width !== nextW) lc.width = nextW;
+          if (lc.height !== nextH) lc.height = nextH;
+        };
+        syncLabelCanvasSize(width, height);
+
         const perspCam = new T.PerspectiveCamera(34, width / height, 0.1, 140);
 
-        const hemi = new T.HemisphereLight(0xffffff, 0xcbd5e1, 1.15);
+        const hemi = new T.HemisphereLight(0xf8fafc, 0xcbd5e1, 0.88);
         scene.add(hemi);
 
-        const key = new T.DirectionalLight(0xffffff, 1.2);
+        const key = new T.DirectionalLight(0xffffff, 1.42);
         key.position.set(6.5, 11, 7.5);
         key.castShadow = true;
-        key.shadow.mapSize.width = 1024;
-        key.shadow.mapSize.height = 1024;
+        key.shadow.mapSize.width = 2048;
+        key.shadow.mapSize.height = 2048;
         key.shadow.camera.near = 1;
         key.shadow.camera.far = 32;
         key.shadow.camera.left = -7.5;
         key.shadow.camera.right = 7.5;
         key.shadow.camera.top = 7.5;
         key.shadow.camera.bottom = -7.5;
-        key.shadow.bias = -0.0005;
+        key.shadow.bias = -0.0003;
         scene.add(key);
 
-        const rim = new T.DirectionalLight(0x93c5fd, 0.45);
+        const rim = new T.DirectionalLight(0x60a5fa, 0.52);
         rim.position.set(-7, 6, -7);
         scene.add(rim);
 
@@ -2309,10 +2814,12 @@ export function StudioThreeStage({
             if (w === viewportSizeRef.current.w && h === viewportSizeRef.current.h) return;
             viewportSizeRef.current = { w, h };
             renderer.setSize(w, h, false);
+            syncLabelCanvasSize(w, h);
             perspCam.aspect = w / h;
             perspCam.updateProjectionMatrix();
             if (!contextLost && !renderer.getContext().isContextLost()) {
               renderer.render(scene, perspCam);
+              paintLive2DLabels(liveCamRef.current.zoom);
             }
           });
         });
@@ -2345,7 +2852,45 @@ export function StudioThreeStage({
           return !overlaps;
         }
 
+        const paintLive2DLabels = (camZoom: number) => {
+          const lc = labelCanvasRef.current;
+          if (!lc) return;
+          const { w, h } = viewportSizeRef.current;
+          syncLabelCanvasSize(w, h);
+          const lctx = lc.getContext("2d");
+          if (!lctx) return;
+          const labelDpr = lc.width / Math.max(1, w);
+          lctx.setTransform(1, 0, 0, 1, 0, 0);
+          lctx.clearRect(0, 0, lc.width, lc.height);
+          lctx.setTransform(labelDpr, 0, 0, labelDpr, 0, 0);
+          renderSharp2DLabels(
+            T,
+            lctx,
+            w,
+            h,
+            perspCam,
+            nodeRigsRef.current,
+            edgeRigsRef.current,
+            styleIdRef.current,
+            showNodeTagsRef.current,
+            showEdgeTagsRef.current,
+            camZoom,
+            { recordHitRects: labelHitRectsRef.current },
+          );
+        };
+
         function layoutLabelsForCamera(camYaw: number, camPitch: number, camZoom: number) {
+          // When the pixel-exact 2D vector overlay canvas is mounted, keep WebGL bitmap sprites hidden.
+          if (labelCanvasRef.current) {
+            for (const rig of nodeRigsRef.current) {
+              rig.labelSprite.visible = false;
+              rig.labelPin.visible = false;
+            }
+            for (const edge of edgeRigsRef.current) {
+              if (edge.badgeSprite) edge.badgeSprite.visible = false;
+            }
+            return;
+          }
           rigDepths.clear();
           const lpBase = computeNodeLabelPlacement(camYaw, camPitch, camZoom, 0);
           for (const rig of nodeRigsRef.current) {
@@ -2440,36 +2985,76 @@ export function StudioThreeStage({
           }
         }
 
-        // Synchronous on-demand render hook used by captureStudioImage(), with optional smart exercise auto-focus
-        // and ultrawide aspect normalization (prevents squished ribbon snapshots when the bottom drawer is open).
+        let captureZoomOverride: number | null = null;
+        // Shared 2D vector label overlay renderer invoked by Smart Snapshots and 3D WebGL Video capture.
+        (
+          canvas as HTMLCanvasElement & {
+            __mavisDrawLabels2D?: (
+              ctx: CanvasRenderingContext2D,
+              viewW: number,
+              viewH: number,
+              options?: StudioDrawLabels2DOptions,
+            ) => void;
+          }
+        ).__mavisDrawLabels2D = (
+          ctx: CanvasRenderingContext2D,
+          viewW: number,
+          viewH: number,
+          options?: StudioDrawLabels2DOptions,
+        ) => {
+          if (contextLost) return;
+          renderSharp2DLabels(
+            T,
+            ctx,
+            viewW,
+            viewH,
+            perspCam,
+            nodeRigsRef.current,
+            edgeRigsRef.current,
+            styleIdRef.current,
+            showNodeTagsRef.current,
+            showEdgeTagsRef.current,
+            options?.zoom ?? captureZoomOverride ?? liveCamRef.current.zoom,
+            options,
+          );
+        };
+
+        // Synchronous on-demand render hook used by captureStudioImage() and video capture, with optional
+        // supersampled capture resolution (1.5x SSAA) and smart exercise auto-focus.
         (
           canvas as HTMLCanvasElement & {
             __mavisRenderNow?: (
               focusServices?: readonly string[],
-              options?: { maxAspect?: number; captureWidth?: number; captureHeight?: number },
+              options?: {
+                maxAspect?: number;
+                captureWidth?: number;
+                captureHeight?: number;
+                capturePixelRatio?: number;
+              },
             ) => { focusedIds: string[]; restore?: (() => void) | undefined } | void;
           }
         ).__mavisRenderNow = (
           focusServices?: readonly string[],
-          options?: { maxAspect?: number; captureWidth?: number; captureHeight?: number },
+          options?: {
+            maxAspect?: number;
+            captureWidth?: number;
+            captureHeight?: number;
+            capturePixelRatio?: number;
+          },
         ) => {
           if (contextLost || renderer.getContext().isContextLost()) return undefined;
           const prevW = viewportSizeRef.current.w;
           const prevH = viewportSizeRef.current.h;
           const prevAspect = perspCam.aspect;
           const prevDpr = renderer.getPixelRatio();
-          const maxAspect = options?.maxAspect ?? 1.85;
+          const prevCamPos = perspCam.position.clone();
+          const prevCamQuat = perspCam.quaternion.clone();
           let resizedForCapture = false;
-          if (
-            options?.captureWidth &&
-            options?.captureHeight &&
-            prevW > 0 &&
-            prevH > 0 &&
-            prevW / prevH > maxAspect
-          ) {
+          if (options?.captureWidth && options?.captureHeight) {
             const capW = options.captureWidth;
             const capH = options.captureHeight;
-            renderer.setPixelRatio(1);
+            const capDpr = Math.min(2, Math.max(1, options.capturePixelRatio ?? 1.5));
+            renderer.setPixelRatio(capDpr);
             renderer.setSize(capW, capH, false);
             perspCam.aspect = capW / capH;
             perspCam.updateProjectionMatrix();
@@ -2477,19 +3062,26 @@ export function StudioThreeStage({
           }
           const restore = resizedForCapture
             ? () => {
+                captureZoomOverride = null;
                 if (contextLost || renderer.getContext().isContextLost()) return;
                 renderer.setPixelRatio(prevDpr);
                 renderer.setSize(prevW, prevH, false);
                 perspCam.aspect = prevAspect;
                 perspCam.updateProjectionMatrix();
+                perspCam.position.copy(prevCamPos);
+                perspCam.quaternion.copy(prevCamQuat);
+                perspCam.updateMatrixWorld();
                 layoutLabelsForCamera(
                   liveCamRef.current.yaw,
                   Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, liveCamRef.current.pitch)),
                   liveCamRef.current.zoom,
                 );
                 renderer.render(scene, perspCam);
+                paintLive2DLabels(liveCamRef.current.zoom);
               }
-            : undefined;
+            : () => {
+                captureZoomOverride = null;
+              };
           if (focusServices && focusServices.length > 0 && nodeRigsRef.current.length > 0) {
             const deck = deckRigRef.current;
             const stageSpan = deck ? Math.max(deck.baseW, deck.baseD * 1.15) : 7.5;
@@ -2509,6 +3101,7 @@ export function StudioThreeStage({
               },
             );
             if (framing) {
+              captureZoomOverride = framing.zoom;
               const fCamX = framing.lookX + framing.dist * Math.cos(framing.pitch) * Math.sin(framing.yaw);
               const fCamY = 0.32 + framing.dist * Math.sin(framing.pitch);
               const fCamZ = framing.lookZ + framing.dist * Math.cos(framing.pitch) * Math.cos(framing.yaw);
@@ -2540,7 +3133,7 @@ export function StudioThreeStage({
             );
           }
           renderer.render(scene, perspCam);
-          return restore ? { focusedIds: [], restore } : undefined;
+          return { focusedIds: [], restore };
         };
 
         const animate = (now: number) => {
@@ -2629,6 +3222,7 @@ export function StudioThreeStage({
 
           if (!contextLost && !renderer.getContext().isContextLost()) {
             renderer.render(scene, perspCam);
+            paintLive2DLabels(live.zoom);
           }
 
           // Update invisible projected bounding box for Guided Tour step 2 only once camera has settled (zero layout reflow during zoom/orbit)
@@ -2797,14 +3391,14 @@ export function StudioThreeStage({
       lights.rim.intensity = 0.58;
       if (scene) scene.environmentIntensity = 0.38;
     } else {
-      lights.hemi.color.set("#ffffff");
-      lights.hemi.groundColor.set("#dbeafe");
-      lights.hemi.intensity = 1.15;
+      lights.hemi.color.set("#f8fafc");
+      lights.hemi.groundColor.set("#cbd5e1");
+      lights.hemi.intensity = 0.88;
       lights.key.color.set("#ffffff");
-      lights.key.intensity = 1.3;
-      lights.rim.color.set("#93c5fd");
-      lights.rim.intensity = 0.55;
-      if (scene) scene.environmentIntensity = 0.58;
+      lights.key.intensity = 1.42;
+      lights.rim.color.set("#60a5fa");
+      lights.rim.intensity = 0.52;
+      if (scene) scene.environmentIntensity = 0.44;
     }
 
     // 1. Sculpted 2-Tier Beveled Architectural Diorama Deck + Surface Grid Lines
@@ -2821,7 +3415,7 @@ export function StudioThreeStage({
     const deckGroup = new T.Group();
     deckGroup.position.set(deckCx, 0, deckCz);
 
-    const maxAnisotropy = Math.min(8, rendererRef.current?.capabilities.getMaxAnisotropy() ?? 4);
+    const maxAnisotropy = Math.min(16, rendererRef.current?.capabilities.getMaxAnisotropy() ?? 8);
     const deckTopMat = new T.MeshPhysicalMaterial({
       color: new T.Color(styleId === "control" ? "#070c18" : styleCfg.deckTopFill),
       roughness: styleId === "control" ? 0.64 : styleId === "pop" ? 0.55 : 0.48,
@@ -2949,7 +3543,9 @@ export function StudioThreeStage({
           ? { ...node, isDropTarget: true }
           : node;
       const rig = buildServiceRig(T, effectiveNode, styleId, sharedTexRef.current, maxAnisotropy);
-      rig.labelSprite.visible = showNodeTagsRef.current;
+      const use2DOverlay = Boolean(labelCanvasRef.current);
+      rig.labelSprite.visible = !use2DOverlay && showNodeTagsRef.current;
+      rig.labelPin.visible = !use2DOverlay && showNodeTagsRef.current;
       contentGroup.add(rig.group);
       nodeRigsRef.current.push(rig);
     }
@@ -3144,7 +3740,7 @@ export function StudioThreeStage({
       let badgeSprite: THREE.Sprite | undefined;
       if (edge.label) {
         badgeSprite = createEdgeBadgeSprite(T, edge.label, edge, isLight, maxAnisotropy);
-        badgeSprite.visible = showEdgeTagsRef.current;
+        badgeSprite.visible = !labelCanvasRef.current && showEdgeTagsRef.current;
         const apex = curve.getPoint(0.5);
         badgeSprite.position.set(apex.x, apex.y + 0.21, apex.z);
         contentGroup.add(badgeSprite);
@@ -3164,6 +3760,14 @@ export function StudioThreeStage({
         endPort,
         breakRing,
         badgeSprite,
+        badgeMeta: edge.label
+          ? {
+              label: edge.label,
+              color: edge.color,
+              isSevered: Boolean(edge.isSevered),
+              isDegraded: Boolean(edge.isDegraded),
+            }
+          : undefined,
         curve,
         isSevered: edge.isSevered,
       });
@@ -3174,13 +3778,14 @@ export function StudioThreeStage({
   }, [engineReady, nodes, edges, deckBounds, styleId, dropHoverService]);
 
   useEffect(() => {
+    const use2DOverlay = Boolean(labelCanvasRef.current);
     for (const rig of nodeRigsRef.current) {
-      rig.labelSprite.visible = showNodeTags;
-      rig.labelPin.visible = showNodeTags;
+      rig.labelSprite.visible = !use2DOverlay && showNodeTags;
+      rig.labelPin.visible = !use2DOverlay && showNodeTags;
     }
     for (const edge of edgeRigsRef.current) {
       if (edge.badgeSprite) {
-        edge.badgeSprite.visible = showEdgeTags;
+        edge.badgeSprite.visible = !use2DOverlay && showEdgeTags;
       }
     }
   }, [engineReady, showNodeTags, showEdgeTags]);
@@ -3193,6 +3798,21 @@ export function StudioThreeStage({
     if (!T || !canvas || !perspCam || rigs.length === 0) return null;
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
+    // Check crisp 2D vector service tag pills first (top-most painted pill wins) so clicking a tag selects/drags its service.
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+    const labelHits = labelHitRectsRef.current;
+    for (let i = labelHits.length - 1; i >= 0; i--) {
+      const box = labelHits[i]!;
+      if (
+        localX >= box.x &&
+        localX <= box.x + box.w &&
+        localY >= box.y &&
+        localY <= box.y + box.h
+      ) {
+        return box.serviceId;
+      }
+    }
     const ndc = ndcRef.current ?? (ndcRef.current = new T.Vector2());
     const raycaster = raycasterRef.current ?? (raycasterRef.current = new T.Raycaster());
     ndc.set(
@@ -3612,6 +4232,12 @@ export function StudioThreeStage({
             callbacksRef.current.onDropTool(toolId, hit);
           }
         }}
+      />
+      <canvas
+        ref={labelCanvasRef}
+        data-studio-label-canvas
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 h-full w-full"
       />
     </div>
   );
