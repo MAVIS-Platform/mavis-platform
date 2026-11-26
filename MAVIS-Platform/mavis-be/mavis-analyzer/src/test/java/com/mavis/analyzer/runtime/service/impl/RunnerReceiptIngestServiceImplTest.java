@@ -1238,4 +1238,30 @@ class RunnerReceiptIngestServiceImplTest {
                 .isInstanceOf(BusinessException.class);
         verify(runtimeSessionRepository, never()).findLockedById(any());
     }
+
+    @Test
+    @DisplayName("Mid-boot cancel race hitting ACK_RUNNING HTTP 409 classifies receipt as CANCELLED instead of FAILED")
+    void midBootCancelAtAckRunningClassifiesAsCancelled() {
+        session.setExecutionStatus("CANCELLING");
+        session.setCancelRequestedAt(java.time.OffsetDateTime.now().minusSeconds(10));
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
+
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Failed")
+                .scenarioStatus("NotRun")
+                .evidenceStatus("Unavailable")
+                .cleanupStatus("Confirmed")
+                .traceQuality("Unavailable")
+                .mappingStatus("Unavailable")
+                .diagnostics(List.of("SESSION_EXECUTION_FAILED_AT_ACK_RUNNING", "InvalidOperationException"))
+                .build();
+
+        runnerReceiptIngestService.ingestRunnerReceiptAck(
+                sessionId,
+                createValidReceiptBuilder().outcome(outcome).build());
+
+        assertThat(session.getExecutionStatus()).isEqualTo("CANCELLED");
+        assertThat(session.getScenarioStatus()).isEqualTo("CANCELLED");
+        assertThat(session.getCleanupStatus()).isEqualTo("CONFIRMED");
+    }
 }

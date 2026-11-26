@@ -186,6 +186,16 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         }
 
         String execution = outcome.getExecutionStatus() != null ? outcome.getExecutionStatus().toUpperCase(Locale.ROOT) : "FAILED";
+        // Older external runners hit HTTP 409 on lifecycle-ack when a learner cancels mid-boot; preserve user-initiated CANCELLED.
+        boolean cancelledAtLifecycleAck = "FAILED".equals(execution)
+                && session.getCancelRequestedAt() != null
+                && outcome.getDiagnostics() != null
+                && outcome.getDiagnostics().stream().anyMatch(d ->
+                        "SESSION_EXECUTION_FAILED_AT_ACK_RUNNING".equalsIgnoreCase(d)
+                                || "SESSION_EXECUTION_FAILED_AT_ACK_ALLOCATED".equalsIgnoreCase(d));
+        if (cancelledAtLifecycleAck) {
+            execution = "CANCELLED";
+        }
         session.setExecutionStatus(Set.of("TIMEDOUT", "TIMEOUT").contains(execution) ? "TIMED_OUT" : execution);
         session.setEvidenceStatus(outcome.getEvidenceStatus() != null ? outcome.getEvidenceStatus().toUpperCase() : "UNAVAILABLE");
         session.setCleanupStatus(outcome.getCleanupStatus() != null ? outcome.getCleanupStatus().toUpperCase() : "INCOMPLETE");
@@ -205,7 +215,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         } else if ("NotRun".equalsIgnoreCase(rawScenario)) {
             if ("TIMED_OUT".equals(session.getExecutionStatus())) {
                 session.setScenarioStatus("TIMEOUT");
-            } else if ("Cancelled".equalsIgnoreCase(outcome.getExecutionStatus())) {
+            } else if ("CANCELLED".equals(session.getExecutionStatus())) {
                 session.setScenarioStatus("CANCELLED");
             } else {
                 session.setScenarioStatus("FAILED");
