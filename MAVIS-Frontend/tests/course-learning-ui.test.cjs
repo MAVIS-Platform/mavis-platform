@@ -1900,7 +1900,7 @@ test("Bug #11: ChapterQuizRunner allows partial submit with confirmation, auto-s
   assert.match(runner, /queryKey: \["api", "workspaces"\]/);
   assert.match(
     runner,
-    /canViewFeedback = !backendQuizEnabled \|\| Boolean\(currentAttempt\.questionResults\?\.length\)/,
+    /canViewFeedback =\s*\(!backendQuizEnabled && !inlineBackendQuizEnabled\) \|\| Boolean\(currentAttempt\.questionResults\?\.length\)/,
   );
   assert.match(runner, /<QuizPreview[\s\S]*?questions=\{displayedQuestions\}/);
 });

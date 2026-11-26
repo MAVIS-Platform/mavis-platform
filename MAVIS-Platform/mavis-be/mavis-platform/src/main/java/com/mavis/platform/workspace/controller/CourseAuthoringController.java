@@ -21,6 +21,7 @@ public class CourseAuthoringController {
     public record ItemBody(@NotBlank String type, @NotBlank @Size(max = 255) String title, String description,
                            UUID assignmentId, com.fasterxml.jackson.databind.JsonNode content, Boolean required) {}
     public record MoveBody(@NotBlank String direction) {}
+    public record InlineQuizCheckBody(java.util.List<java.util.List<Integer>> selections) {}
 
     @GetMapping
     public ApiResponse<CourseAuthoringService.CourseView> get(@PathVariable UUID workspaceId) {
@@ -30,6 +31,12 @@ public class CourseAuthoringController {
     @GetMapping("/published")
     public ApiResponse<CourseAuthoringService.PublishedView> published(@PathVariable UUID workspaceId) {
         return ApiResponse.success(authoring.publishedForLearner(workspaceId));
+    }
+
+    @PostMapping("/items/{itemId}/quiz-check")
+    public ApiResponse<CourseAuthoringService.InlineQuizResult> checkInlineQuiz(
+            @PathVariable UUID workspaceId, @PathVariable UUID itemId, @RequestBody InlineQuizCheckBody body) {
+        return ApiResponse.success(authoring.checkInlineQuiz(workspaceId, itemId, body == null ? null : body.selections()));
     }
 
     @PostMapping("/draft")

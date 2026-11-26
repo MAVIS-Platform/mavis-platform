@@ -125,10 +125,13 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         }
         _resourcesMayExist = true; // Even a failed `up` may allocate partial resources.
         Stage = "DOCKER_UP";
+        using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var cancelWatcherStop = new CancellationTokenSource();
+        var cancelWatcher = WatchRemoteCancelDuringStartupAsync(startupCts, cancelWatcherStop.Token);
         try
         {
             await Require(["up", "--detach", "--wait", "--wait-timeout",
-                Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300).ToString(System.Globalization.CultureInfo.InvariantCulture)], ct);
+                Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300).ToString(System.Globalization.CultureInfo.InvariantCulture)], startupCts.Token);
         }
         catch (Exception error) when (error is RuntimeStageException or OperationCanceledException)
         {
@@ -136,6 +139,11 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             using var diagnostics = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             await CaptureFailureDiagnosticsAsync(preflight.Services, diagnostics.Token);
             throw;
+        }
+        finally
+        {
+            cancelWatcherStop.Cancel();
+            try { await cancelWatcher; } catch (OperationCanceledException) { }
         }
         Stage = "IMAGE_PROVENANCE";
         foreach (var service in preflight.Services.Append("mavis-collector"))
@@ -1045,6 +1053,32 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var json = JsonSerializer.Serialize(new { services = servicesObj }, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(path, json, ct);
         _hasActionOverride = true;
+    }
+
+    private async Task WatchRemoteCancelDuringStartupAsync(CancellationTokenSource startupCts, CancellationToken stopping)
+    {
+        if (!definition.InteractiveStudio || studio is null) return;
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250), stopping);
+            while (!stopping.IsCancellationRequested)
+            {
+                try
+                {
+                    var poll = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, stopping);
+                    if (poll.CancelRequested)
+                    {
+                        onRemoteCancel?.Invoke();
+                        startupCts.Cancel();
+                        return;
+                    }
+                }
+                catch (OperationCanceledException) when (stopping.IsCancellationRequested) { return; }
+                catch { /* Transient poll failures during DOCKER_UP must not abort startup. */ }
+                await Task.Delay(TimeSpan.FromMilliseconds(1500), stopping);
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private Task<DockerCommandResult> Command(IReadOnlyList<string> arguments, CancellationToken ct)

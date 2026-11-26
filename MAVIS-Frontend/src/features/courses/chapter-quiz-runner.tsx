@@ -21,6 +21,7 @@ import { formatQuizQuestionPrompt, sanitizeQuizPlainText } from "@/lib/format/co
 import type { QuizQuestionData } from "./java-coursera-curriculum-data";
 import { useCourseQuiz } from "./course-quiz";
 import { calculateQuizDurationMinutes, QuizCountdownBanner } from "./quiz-timer";
+import { isUuidSegment } from "@/features/workspaces/course-access";
 
 const PASS_PERCENT = 70;
 type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "TRUE_FALSE";
@@ -77,8 +78,18 @@ export function parseInlineQuizQuestions(
       const options = Array.isArray(rec["options"])
         ? rec["options"].map((opt) => String(opt ?? "").trim()).filter(Boolean)
         : [];
-      const correctOption = typeof rec["correctOption"] === "number" ? rec["correctOption"] : -1;
-      if (!prompt || options.length < 2 || correctOption < 0 || correctOption >= options.length) {
+      const hasCorrectOption =
+        rec["correctOption"] !== undefined && rec["correctOption"] !== null;
+      const correctOption = hasCorrectOption
+        ? typeof rec["correctOption"] === "number"
+          ? rec["correctOption"]
+          : -2
+        : -1;
+      if (
+        !prompt ||
+        options.length < 2 ||
+        (hasCorrectOption && (correctOption < 0 || correctOption >= options.length))
+      ) {
         return null;
       }
       return {
@@ -112,6 +123,7 @@ export function ChapterQuizRunner({
   canManage,
   workspaceId,
   assignmentId,
+  courseItemId,
   nextLessonTitle,
   onNextLesson,
   hideTitle,
@@ -121,6 +133,7 @@ export function ChapterQuizRunner({
   canManage: boolean;
   workspaceId: string;
   assignmentId?: string | null | undefined;
+  courseItemId?: string | null | undefined;
   nextLessonTitle?: string | undefined;
   onNextLesson?: (() => void) | undefined;
   hideTitle?: boolean | undefined;
@@ -132,6 +145,12 @@ export function ChapterQuizRunner({
   const cache = useQueryClient();
   const hasAssignmentBackend = client.mode === "backend" && Boolean(assignmentId);
   const backendQuizEnabled = hasAssignmentBackend && !canManage;
+  const inlineBackendQuizEnabled =
+    client.mode === "backend" &&
+    !assignmentId &&
+    !canManage &&
+    isUuidSegment(workspaceId) &&
+    isUuidSegment(courseItemId);
   const backendQuiz = useCourseQuiz(workspaceId, assignmentId ?? "", hasAssignmentBackend);
   const passPercent = backendQuizEnabled
     ? (backendQuiz.data?.passPercent ?? PASS_PERCENT)
@@ -226,6 +245,40 @@ export function ChapterQuizRunner({
       void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
       void cache.invalidateQueries({ queryKey: ["api", "workspace-gradebook", workspaceId] });
       void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
+    },
+  });
+
+  const submitInlineBackendAttempt = useMutation({
+    mutationFn: (nextAttempt: StoredQuizAttempt) =>
+      api<BackendQuizResult>(
+        `workspaces/${encodeURIComponent(workspaceId)}/course/items/${encodeURIComponent(courseItemId ?? "")}/quiz-check`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            selections: questions.map((question, index) =>
+              toSelectedIndexes(nextAttempt.answers[question.id ?? `inline-q-${index + 1}`]),
+            ),
+          }),
+        },
+      ),
+    onSuccess: (result, nextAttempt) => {
+      const submittedAtIso = new Date().toISOString();
+      const total = Math.max(result.totalQuestions, 1);
+      updateAttempt({
+        attemptId: nextAttempt.attemptId,
+        status: "SUBMITTED",
+        answers: nextAttempt.answers,
+        ...(nextAttempt.startedAt ? { startedAt: nextAttempt.startedAt } : {}),
+        ...(nextAttempt.durationSeconds ? { durationSeconds: nextAttempt.durationSeconds } : {}),
+        submittedAt: submittedAtIso,
+        correctCount: result.correctCount,
+        scorePercent: Math.round((result.correctCount / total) * 100),
+        passed: result.status === "PASSED",
+        questionResults: result.questionResults ?? [],
+      });
+      if (result.questionResults?.length) {
+        setShowFeedback(true);
+      }
     },
   });
 
@@ -394,8 +447,10 @@ export function ChapterQuizRunner({
     );
   };
 
+  const isSubmitting = submitBackendAttempt.isPending || submitInlineBackendAttempt.isPending;
+
   const submitAttempt = () => {
-    if (backendQuizEnabled && submitBackendAttempt.isPending) return;
+    if ((backendQuizEnabled || inlineBackendQuizEnabled) && isSubmitting) return;
     const pickedCorrect = displayedQuestions.filter((question) =>
       isLocalQuestionCorrect(question, toSelectedIndexes(activeAttempt.answers[question.id])),
     ).length;
@@ -412,6 +467,7 @@ export function ChapterQuizRunner({
       passed: computedScore >= passPercent,
     };
     if (backendQuizEnabled) submitBackendAttempt.mutate(nextAttempt);
+    else if (inlineBackendQuizEnabled) submitInlineBackendAttempt.mutate(nextAttempt);
     else updateAttempt(nextAttempt);
   };
 
@@ -443,7 +499,8 @@ export function ChapterQuizRunner({
   const correctCount = currentAttempt.correctCount ?? selectedCorrectCount;
   const scorePercent =
     currentAttempt.scorePercent ?? Math.round((correctCount / displayedQuestions.length) * 100);
-  const canViewFeedback = !backendQuizEnabled || Boolean(currentAttempt.questionResults?.length);
+  const canViewFeedback =
+    (!backendQuizEnabled && !inlineBackendQuizEnabled) || Boolean(currentAttempt.questionResults?.length);
   if (currentAttempt.status === "SUBMITTED") {
     return (
       <QuizResult
@@ -488,7 +545,7 @@ export function ChapterQuizRunner({
       durationSeconds={resolvedDurationSeconds}
       onExpire={() => {
         if (
-          submitBackendAttempt.isPending ||
+          isSubmitting ||
           autoSubmittedAttemptRef.current === currentAttempt.attemptId
         ) {
           return;
@@ -510,8 +567,8 @@ export function ChapterQuizRunner({
           answers: { ...currentAttempt.answers, [questionId]: nextValue },
         });
       }}
-      submitting={submitBackendAttempt.isPending}
-      submitError={submitBackendAttempt.error}
+      submitting={isSubmitting}
+      submitError={submitBackendAttempt.error ?? submitInlineBackendAttempt.error}
       onSubmit={submitAttempt}
     />
   );

@@ -82,60 +82,6 @@ export function SocialSignIn({
 
   useEffect(() => {
     let live = true;
-    let script: HTMLScriptElement | undefined;
-
-    const mountGoogle = (clientId: string) => {
-      if (!live || !googleOverlay.current) return;
-      const google = (window as unknown as { google?: GoogleApi }).google;
-      if (!google) {
-        setGoogleFailed(true);
-        return;
-      }
-      googleOverlay.current.innerHTML = "";
-      google.accounts.id.initialize({
-        client_id: clientId,
-        callback: async (response) => {
-          if (submitting.current || !live) return;
-          submitting.current = true;
-          try {
-            const session = await action.current.mutateAsync({ idToken: response.credential });
-            if (live) await callback.current(session);
-          } catch {
-            /* Error shown below. */
-          } finally {
-            submitting.current = false;
-          }
-        },
-      });
-      // Render Google's official circular icon button cleanly and only reveal it once its iframe loads,
-      // avoiding opaque dark-mode iframe rectangles when accounts.google.com is slow or unreachable.
-      google.accounts.id.renderButton(googleOverlay.current, {
-        type: "icon",
-        shape: "circle",
-        size: "large",
-        theme: "outline",
-      });
-      const iframe = googleOverlay.current.querySelector("iframe");
-      if (iframe) {
-        iframe.addEventListener(
-          "load",
-          () => {
-            if (live) setGoogleReady(true);
-          },
-          { once: true },
-        );
-        iframe.addEventListener(
-          "error",
-          () => {
-            if (live) setGoogleFailed(true);
-          },
-          { once: true },
-        );
-      } else {
-        setGoogleReady(true);
-      }
-    };
-
     void fetch("/api/auth-config")
       .then((r) => r.json())
       .then((value: AuthConfig) => {
@@ -144,19 +90,6 @@ export function SocialSignIn({
           googleClientId: value.googleClientId ?? null,
           githubClientId: value.githubClientId ?? null,
         });
-        if (!value.googleClientId) return;
-        if ((window as unknown as { google?: GoogleApi }).google) {
-          mountGoogle(value.googleClientId);
-        } else {
-          script = document.createElement("script");
-          script.src = "https://accounts.google.com/gsi/client";
-          script.async = true;
-          script.onload = () => mountGoogle(value.googleClientId!);
-          script.onerror = () => {
-            if (live) setGoogleFailed(true);
-          };
-          document.head.appendChild(script);
-        }
       })
       .catch(() => {
         if (live) {
@@ -164,12 +97,122 @@ export function SocialSignIn({
           setGoogleFailed(true);
         }
       });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const clientId = config?.googleClientId;
+    if (!clientId) return;
+    let live = true;
+
+    const getReadyGoogleId = () => {
+      const api = (window as unknown as { google?: Partial<GoogleApi> }).google?.accounts?.id;
+      return api && typeof api.initialize === "function" && typeof api.renderButton === "function"
+        ? api
+        : null;
+    };
+
+    const mountGoogle = () => {
+      if (!live || !googleOverlay.current) return;
+      const googleId = getReadyGoogleId();
+      if (!googleId) {
+        setGoogleFailed(true);
+        return;
+      }
+      try {
+        googleOverlay.current.innerHTML = "";
+        googleId.initialize({
+          client_id: clientId,
+          callback: async (response) => {
+            if (submitting.current || !live) return;
+            submitting.current = true;
+            try {
+              const session = await action.current.mutateAsync({ idToken: response.credential });
+              if (live) await callback.current(session);
+            } catch {
+              /* Error shown below. */
+            } finally {
+              submitting.current = false;
+            }
+          },
+        });
+        // Render Google's official circular icon button cleanly and only reveal it once its iframe loads,
+        // avoiding opaque dark-mode iframe rectangles when accounts.google.com is slow or unreachable.
+        googleId.renderButton(googleOverlay.current, {
+          type: "icon",
+          shape: "circle",
+          size: "large",
+          theme: "outline",
+        });
+        const iframe = googleOverlay.current.querySelector("iframe");
+        if (iframe) {
+          iframe.addEventListener(
+            "load",
+            () => {
+              if (live) setGoogleReady(true);
+            },
+            { once: true },
+          );
+          iframe.addEventListener(
+            "error",
+            () => {
+              if (live) setGoogleFailed(true);
+            },
+            { once: true },
+          );
+        } else {
+          setGoogleReady(true);
+        }
+      } catch {
+        if (live) setGoogleFailed(true);
+      }
+    };
+
+    const onLoad = () => mountGoogle();
+    const onError = () => {
+      if (live) setGoogleFailed(true);
+    };
+
+    if (getReadyGoogleId()) {
+      mountGoogle();
+    } else {
+      // Reuse a singleton GSI script tag: removing and re-injecting gsi/client corrupts Google's internal state.
+      let script = document.querySelector<HTMLScriptElement>(
+        'script#mavis-google-gsi, script[src="https://accounts.google.com/gsi/client"]',
+      );
+      if (!script) {
+        script = document.createElement("script");
+        script.id = "mavis-google-gsi";
+        script.src = "https://accounts.google.com/gsi/client";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      }
+      script.addEventListener("load", onLoad, { once: true });
+      script.addEventListener("error", onError, { once: true });
+      return () => {
+        live = false;
+        script?.removeEventListener("load", onLoad);
+        script?.removeEventListener("error", onError);
+        try {
+          getReadyGoogleId()?.cancel();
+        } catch {
+          // Ignore GSI cleanup errors on unmount.
+        }
+      };
+    }
 
     return () => {
       live = false;
-      script?.remove();
+      try {
+        getReadyGoogleId()?.cancel();
+      } catch {
+        // Ignore GSI cleanup errors on unmount.
+      }
     };
-  }, []);
+  }, [config?.googleClientId]);
 
   const googleEnabled = Boolean(config?.googleClientId);
   const githubEnabled = Boolean(config?.githubClientId);
@@ -204,6 +247,7 @@ export function SocialSignIn({
               {!googleReady && <GoogleMark />}
               <div
                 ref={googleOverlay}
+                data-no-translate
                 aria-label={t("Continue with Google", "Tiếp tục với Google")}
                 style={{ colorScheme: "light" }}
                 className={

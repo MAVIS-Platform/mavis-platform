@@ -1691,6 +1691,7 @@ export function PublishCourseLab({
   topologyFrozen = false,
   freezeDisabledReason,
   publishBlockedReason,
+  compact = false,
 }: {
   workspaceId: string;
   assignmentId: string;
@@ -1700,6 +1701,7 @@ export function PublishCourseLab({
   topologyFrozen?: boolean | undefined;
   freezeDisabledReason?: string | undefined;
   publishBlockedReason?: string | undefined;
+  compact?: boolean | undefined;
 }) {
   const t = useCourseText();
   const cache = useQueryClient();
@@ -1730,13 +1732,20 @@ export function PublishCourseLab({
   const labPosition = position ?? publish.data?.position;
   if (labPosition)
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">
+      <div className={compact ? "flex shrink-0 items-center gap-1.5" : "flex flex-wrap items-center gap-2"}>
+        <span className={compact ? "hidden whitespace-nowrap text-xs font-medium 2xl:inline" : "text-sm font-medium"}>
           {t(`In class · Lab ${labPosition}`, `Trong lớp · Lab ${labPosition}`)}
         </span>
         {topologyFrozen || freeze.isSuccess ? (
-          <Badge variant="success">
-            {t("Topology frozen", "Đã đóng băng topology")}
+          <Badge variant="success" className="shrink-0 whitespace-nowrap">
+            {compact ? (
+              <>
+                <span className="hidden xl:inline">{t("Topology frozen", "Đã đóng băng topology")}</span>
+                <span className="xl:hidden">{t("Frozen", "Đã khóa")}</span>
+              </>
+            ) : (
+              t("Topology frozen", "Đã đóng băng topology")
+            )}
           </Badge>
         ) : (
           canFreeze && (
@@ -1744,6 +1753,7 @@ export function PublishCourseLab({
               type="button"
               size="sm"
               variant="outline"
+              className={compact ? "h-8 shrink-0 whitespace-nowrap px-2 text-xs" : undefined}
               disabled={freeze.isPending || Boolean(freezeDisabledReason)}
               title={freezeDisabledReason}
               onClick={() => {
@@ -1752,7 +1762,9 @@ export function PublishCourseLab({
             >
               {freeze.isPending
                 ? t("Freezing…", "Đang đóng băng…")
-                : t("Freeze Studio topology", "Đóng băng topology Studio")}
+                : compact
+                  ? t("Freeze topology", "Đóng băng")
+                  : t("Freeze Studio topology", "Đóng băng topology Studio")}
             </Button>
           )
         )}

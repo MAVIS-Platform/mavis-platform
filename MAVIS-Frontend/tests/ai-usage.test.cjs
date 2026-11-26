@@ -33,3 +33,41 @@ test("reports real tokens safely, and handles missing data and outages", async (
   if(oldUrl===undefined) delete process.env.MAVIS_JAVA_URL; else process.env.MAVIS_JAVA_URL=oldUrl;
  }
 });
+
+test("AI diagram rate limiter enforces per-minute and per-day sliding windows with Retry-After", () => {
+ const rlSource = path.resolve(__dirname, "../src/lib/ai/rate-limit.ts");
+ const rlMod = new Module(rlSource, module);
+ rlMod.filename = rlSource;
+ rlMod._compile(
+  ts.transpileModule(fs.readFileSync(rlSource, "utf8"), {
+   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText,
+  rlSource,
+ );
+ const { createAiRateLimiter, AiRateLimitError } = rlMod.exports;
+ const limiter = createAiRateLimiter({ perMinute: 2, perDay: 3 });
+ const t0 = 1_700_000_000_000;
+
+ assert.deepEqual(limiter.checkAndConsume("user-a", t0), { allowed: true });
+ assert.deepEqual(limiter.checkAndConsume("user-a", t0 + 10_000), { allowed: true });
+ const blocked = limiter.checkAndConsume("user-a", t0 + 15_000);
+ assert.equal(blocked.allowed, false);
+ assert.equal(blocked.retryAfterSeconds, 45);
+ assert.throws(() => limiter.assertAllowed("user-a", t0 + 15_000), AiRateLimitError);
+
+ // Independent user still allowed
+ assert.deepEqual(limiter.checkAndConsume("user-b", t0 + 15_000), { allowed: true });
+
+ // After minute window slides, 3rd daily call succeeds, 4th hits daily ceiling
+ assert.deepEqual(limiter.checkAndConsume("user-a", t0 + 61_000), { allowed: true });
+ const dayBlocked = limiter.checkAndConsume("user-a", t0 + 122_000);
+ assert.equal(dayBlocked.allowed, false);
+ assert.ok(dayBlocked.retryAfterSeconds > 3600);
+
+ // Route wires rate limiter + 429 + 413 payload limit
+ const routeText = fs.readFileSync(path.resolve(__dirname, "../app/api/ai-diagram-semantics/route.ts"), "utf8");
+ assert.match(routeText, /aiDiagramRateLimiter\.assertAllowed\(userId\)/);
+ assert.match(routeText, /status:\s*429/);
+ assert.match(routeText, /Retry-After/);
+ assert.match(routeText, /status:\s*413/);
+});

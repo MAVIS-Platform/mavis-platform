@@ -52,4 +52,7 @@ test("locale-context.tsx defines Vietnamese translations for Student sidebar, Lo
     assert.ok(locale.includes(key), `Missing dictionary key: ${key}`);
     assert.ok(locale.includes(expectedVi), `Missing Vietnamese value: ${expectedVi}`);
   }
+  assert.match(locale, /tag === "CANVAS"/);
+  assert.match(locale, /tag === "IFRAME"/);
+  assert.match(locale, /isContentEditable/);
 });

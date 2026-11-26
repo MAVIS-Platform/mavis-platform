@@ -1072,6 +1072,7 @@ export function StudentCourseSyllabus({
                               canManage={false}
                               workspaceId={workspaceId}
                               assignmentId={chapterQuizItem.assignmentId}
+                              courseItemId={chapterQuizItem.id}
                             />
                           )}
 
@@ -1119,6 +1120,7 @@ export function StudentCourseSyllabus({
                       canManage={false}
                       workspaceId={workspaceId}
                       assignmentId={activeItem.assignmentId}
+                      courseItemId={activeItem.id}
                     />
                   )}
 

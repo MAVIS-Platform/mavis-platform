@@ -15,6 +15,7 @@ import { ApiError } from "@/lib/errors/api-error";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
+  isUuidSegment,
   PublishCourseLab,
   useAutoConfigureStudio,
   useCourseSetup,
@@ -1468,7 +1469,10 @@ function StandaloneStudioContent() {
         MAVIS Live
       </span>
       {labTitle && (
-        <div className="hidden min-w-0 items-center gap-1.5 overflow-hidden xl:flex" title={labTitle}>
+        <div
+          className={`hidden min-w-0 items-center gap-1.5 overflow-hidden ${isAuthorMode ? "2xl:flex" : "xl:flex"}`}
+          title={labTitle}
+        >
           <span className="shrink-0 text-muted-foreground/60" aria-hidden="true">
             /
           </span>
@@ -1478,7 +1482,7 @@ function StandaloneStudioContent() {
         </div>
       )}
 
-      {isAuthorMode && setupLab?.topologyFrozen && (
+      {isAuthorMode && setupLab?.topologyFrozen && !published && (
         <Badge variant="success" className="hidden shrink-0 whitespace-nowrap xl:inline-flex">
           {t("Frozen", "Đã khóa")}
         </Badge>
@@ -1497,6 +1501,7 @@ function StandaloneStudioContent() {
               position={setupLab?.position}
               topologyFrozen={Boolean(setupLab?.topologyFrozen)}
               sessionId={verifiedSession?.id}
+              compact
             />
           )}
           <Button
@@ -1596,16 +1601,28 @@ function StandaloneStudioContent() {
 
       {/* Main Full-Viewport Studio Live Surface */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {!workspaceId || !assignmentId ? (
-          <div className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+        {!workspaceId ||
+        !assignmentId ||
+        (client.mode === "backend" && (!isUuidSegment(workspaceId) || !isUuidSegment(assignmentId))) ? (
+          <div
+            role="alert"
+            className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm"
+          >
             <p className="text-sm font-medium text-foreground">
-              {t(
-                "Open Studio Live from a Lab workspace.",
-                "Hãy mở Studio Live từ một bài Lab trong lớp học.",
-              )}
+              {!workspaceId || !assignmentId
+                ? t(
+                    "Open Studio Live from a Lab workspace.",
+                    "Hãy mở Studio Live từ một bài Lab trong lớp học.",
+                  )
+                : t(
+                    "The workspace or Lab identifier in this URL is invalid.",
+                    "Mã lớp học hoặc mã bài Lab trong đường dẫn không hợp lệ.",
+                  )}
             </p>
             <Button asChild size="sm" variant="outline">
-              <Link href={returnHref}>{t("Return to MAVIS", "Quay lại MAVIS")}</Link>
+              <Link href={isUuidSegment(workspaceId) ? returnHref : "/courses"}>
+                {t("Return to MAVIS", "Quay lại MAVIS")}
+              </Link>
             </Button>
           </div>
         ) : isInitialLoading ? (

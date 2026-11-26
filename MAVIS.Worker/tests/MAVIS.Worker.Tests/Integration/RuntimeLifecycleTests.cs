@@ -574,34 +574,70 @@ public sealed class RuntimeLifecycleTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
-    private sealed class RuntimesMockDocker(string runtimesJson, string hostConfigRuntime, string? imageId = null) : IDockerCommands
+    [Fact]
+    public async Task RemoteStudioCancelDuringDockerUpAbortsStartupPromptlyAndCleansUp()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-remote-cancel-up-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('a', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["api"] = new("passthrough", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var project = "mavisrun-" + new string('d', 32);
+        var definition = new RuntimeRunDefinition("session-rc-up", "m", "snapshot", "profile",
+            $"services:\n  api:\n    image: sha256:{digest}", profile,
+            new("session-rc-up", [new("health", "api", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario", ResourceProject: project, InteractiveStudio: true);
+        var docker = new RuntimesMockDocker("{\"runc\":{\"path\":\"runc\"}}", hostConfigRuntime: "runc",
+            imageId: "sha256:" + digest, blockComposeUpUntilCancelled: true);
+        using var handler = new CancelPollHandler("session-rc-up", project);
+        using var java = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"), "svc-key", handler);
+        using var cts = new CancellationTokenSource();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker,
+                lifecycle: java, studio: java, onRemoteCancel: cts.Cancel);
+            var result = await RuntimeSessionLifecycle.RunAsync(session, 30, cts.Token);
+            sw.Stop();
+            Assert.Equal("Cancelled", result.ExecutionStatus);
+            Assert.Equal("Confirmed", result.CleanupStatus);
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(8), $"Expected prompt cancel during DOCKER_UP, took {sw.Elapsed}");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class RuntimesMockDocker(string runtimesJson, string hostConfigRuntime, string? imageId = null, bool blockComposeUpUntilCancelled = false) : IDockerCommands
     {
         private readonly string _appId = new('1', 64);
         private readonly string _collectorId = new('2', 64);
         private readonly string _image = imageId ?? "sha256:" + new string('f', 64);
-        public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, CancellationToken ct)
+        public async Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, CancellationToken ct)
         {
-            if (args[0] == "info" && args.Contains("{{.OSType}}")) return Task.FromResult(new DockerCommandResult(0, "linux\n", ""));
-            if (args[0] == "info" && args.Contains("{{json .Runtimes}}")) return Task.FromResult(new DockerCommandResult(0, runtimesJson, ""));
-            if (args[0] == "image" && args[1] == "inspect") return Task.FromResult(new DockerCommandResult(0, _image + "\n", ""));
-            if (args[0] == "compose" && args.Contains("up")) return Task.FromResult(new DockerCommandResult(0, "", ""));
+            if (args[0] == "info" && args.Contains("{{.OSType}}")) return new DockerCommandResult(0, "linux\n", "");
+            if (args[0] == "info" && args.Contains("{{json .Runtimes}}")) return new DockerCommandResult(0, runtimesJson, "");
+            if (args[0] == "image" && args[1] == "inspect") return new DockerCommandResult(0, _image + "\n", "");
+            if (args[0] == "compose" && args.Contains("up"))
+            {
+                if (blockComposeUpUntilCancelled) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new DockerCommandResult(0, "", "");
+            }
             if (args[0] == "compose" && args.Contains("ps") && args.Contains("--quiet"))
-                return Task.FromResult(new DockerCommandResult(0, (args.Contains("mavis-collector") ? _collectorId : _appId) + "\n", ""));
+                return new DockerCommandResult(0, (args.Contains("mavis-collector") ? _collectorId : _appId) + "\n", "");
             if (args[0] == "compose" && args.Contains("ps") && args.Contains("--format"))
-                return Task.FromResult(new DockerCommandResult(0, $"api|{_appId}|running\n", ""));
-            if (args[0] == "compose" && args.Contains("down")) return Task.FromResult(new DockerCommandResult(0, "", ""));
-            if (args[0] == "inspect" && args.Contains("{{.Image}}")) return Task.FromResult(new DockerCommandResult(0, _image + "\n", ""));
+                return new DockerCommandResult(0, $"api|{_appId}|running\n", "");
+            if (args[0] == "compose" && args.Contains("down")) return new DockerCommandResult(0, "", "");
+            if (args[0] == "inspect" && args.Contains("{{.Image}}")) return new DockerCommandResult(0, _image + "\n", "");
             if (args[0] == "inspect" && args.Contains("{{json .HostConfig}}"))
             {
                 var isCollector = args.Contains(_collectorId);
                 var mem = 256 * 1024L * 1024L;
                 var pids = isCollector ? 64 : 256;
                 var ro = !isCollector && hostConfigRuntime == "runsc" ? "false" : "true";
-                return Task.FromResult(new DockerCommandResult(0,
-                    $"{{\"Privileged\":false,\"ReadonlyRootfs\":{ro},\"Runtime\":\"{hostConfigRuntime}\",\"Memory\":{mem},\"NanoCpus\":1000000000,\"PidsLimit\":{pids},\"CapDrop\":[\"ALL\"],\"SecurityOpt\":[\"no-new-privileges:true\"]}}", ""));
+                return new DockerCommandResult(0,
+                    $"{{\"Privileged\":false,\"ReadonlyRootfs\":{ro},\"Runtime\":\"{hostConfigRuntime}\",\"Memory\":{mem},\"NanoCpus\":1000000000,\"PidsLimit\":{pids},\"CapDrop\":[\"ALL\"],\"SecurityOpt\":[\"no-new-privileges:true\"]}}", "");
             }
-            if (args[0] == "network" && args[1] == "inspect") return Task.FromResult(new DockerCommandResult(0, "true\n", ""));
-            return Task.FromResult(new DockerCommandResult(0, "", ""));
+            if (args[0] == "network" && args[1] == "inspect") return new DockerCommandResult(0, "true\n", "");
+            return new DockerCommandResult(0, "", "");
         }
 
         public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, string input, CancellationToken ct)

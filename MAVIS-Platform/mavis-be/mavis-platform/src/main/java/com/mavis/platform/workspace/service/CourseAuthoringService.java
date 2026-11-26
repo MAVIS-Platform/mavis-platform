@@ -65,6 +65,9 @@ public class CourseAuthoringService {
     public record ModuleRequest(String title, String description, UUID prerequisiteModuleId) {}
     public record ItemRequest(String type, String title, String description, UUID assignmentId,
                               JsonNode content, Boolean required) {}
+    public record InlineQuestionResult(String id, boolean correct, String explanation) {}
+    public record InlineQuizResult(int correctCount, int totalQuestions, String status,
+                                   List<InlineQuestionResult> questionResults) {}
 
     public CourseView startDraft(UUID workspaceId) {
         access.requireWorkspaceLecturer(workspaceId);
@@ -126,19 +129,102 @@ public class CourseAuthoringService {
             moduleNodes.forEach(moduleNode -> {
                 JsonNode itemNodes = moduleNode.path("items");
                 if (itemNodes.isArray()) itemNodes.forEach(itemNode -> {
-                    // Only strip assignment-linked quiz payloads (graded server-side via course_quizzes);
-                    // standalone inline module quizzes store their questions in content.questions.
-                    if ("QUIZ".equals(itemNode.path("type").asText())
-                            && itemNode.hasNonNull("assignmentId")
+                    if (!"QUIZ".equals(itemNode.path("type").asText())) {
+                        return;
+                    }
+                    // Strip assignment-linked quiz payloads (graded via course_quizzes).
+                    if (itemNode.hasNonNull("assignmentId")
                             && !itemNode.path("assignmentId").asText().isBlank()) {
                         ((com.fasterxml.jackson.databind.node.ObjectNode) itemNode)
                                 .set("content", JsonNodeFactory.instance.objectNode());
+                        return;
+                    }
+                    // Strip answer keys & explanations from standalone inline module quizzes; grade via /quiz-check.
+                    JsonNode questions = itemNode.path("content").path("questions");
+                    if (questions.isArray()) {
+                        questions.forEach(question -> {
+                            if (question instanceof com.fasterxml.jackson.databind.node.ObjectNode qObj) {
+                                qObj.remove(List.of("correctOption", "correctOptions", "answer", "answers", "explanation"));
+                            }
+                        });
                     }
                 });
             });
         }
         return new PublishedView(course.getId(), version.getVersion(), version.getDraftRevision(),
                 version.getSnapshotDigest(), version.getPublishedAt(), learnerSnapshot);
+    }
+
+    @Transactional(readOnly = true)
+    public InlineQuizResult checkInlineQuiz(UUID workspaceId, UUID itemId, List<List<Integer>> selections) {
+        access.requireWorkspaceMember(workspaceId);
+        if (itemId == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Quiz item ID is required");
+        }
+        CourseDefinition course = courses.findByWorkspaceId(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course not found"));
+        if (course.getPublishedVersion() < 1) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Course has not been published");
+        }
+        CourseVersion version = versions.findByCourseIdAndVersion(course.getId(), course.getPublishedVersion())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Published Course version not found"));
+        JsonNode targetItem = null;
+        JsonNode moduleNodes = version.getSnapshot().path("modules");
+        if (moduleNodes.isArray()) {
+            outer:
+            for (JsonNode moduleNode : moduleNodes) {
+                JsonNode itemNodes = moduleNode.path("items");
+                if (!itemNodes.isArray()) continue;
+                for (JsonNode itemNode : itemNodes) {
+                    if (itemId.toString().equals(itemNode.path("id").asText())) {
+                        targetItem = itemNode;
+                        break outer;
+                    }
+                }
+            }
+        }
+        if (targetItem == null || !"QUIZ".equals(targetItem.path("type").asText())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Inline Quiz item not found");
+        }
+        if (targetItem.hasNonNull("assignmentId") && !targetItem.path("assignmentId").asText().isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab-linked quizzes must be submitted via Lab quiz attempts");
+        }
+        JsonNode questions = targetItem.path("content").path("questions");
+        if (!questions.isArray() || questions.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Inline Quiz has no questions");
+        }
+        List<List<Integer>> safeSelections = selections == null ? List.of() : selections;
+        int total = questions.size();
+        int correctCount = 0;
+        List<InlineQuestionResult> results = new java.util.ArrayList<>(total);
+        for (int i = 0; i < total; i++) {
+            JsonNode q = questions.get(i);
+            String qId = q.path("id").asText("");
+            if (qId.isBlank()) {
+                qId = "inline-q-" + (i + 1);
+            }
+            Set<Integer> picked = new java.util.HashSet<>();
+            if (i < safeSelections.size() && safeSelections.get(i) != null) {
+                for (Integer idx : safeSelections.get(i)) {
+                    if (idx != null && idx >= 0) picked.add(idx);
+                }
+            }
+            Set<Integer> expected = new java.util.HashSet<>();
+            JsonNode multi = q.path("correctOptions");
+            if (multi.isArray() && !multi.isEmpty()) {
+                for (JsonNode entry : multi) {
+                    if (entry.isInt()) expected.add(entry.asInt());
+                }
+            } else if (q.has("correctOption") && q.path("correctOption").isInt()) {
+                int single = q.path("correctOption").asInt(-1);
+                if (single >= 0) expected.add(single);
+            }
+            boolean isCorrect = !expected.isEmpty() && expected.equals(picked);
+            if (isCorrect) correctCount++;
+            results.add(new InlineQuestionResult(qId, isCorrect, q.path("explanation").asText("")));
+        }
+        String status = (correctCount * 100 >= total * 70) ? "PASSED" : "NEEDS_RETRY";
+        return new InlineQuizResult(correctCount, total, status, results);
     }
 
     @Transactional(readOnly = true)

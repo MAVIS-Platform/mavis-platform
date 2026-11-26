@@ -651,6 +651,7 @@ function CourseOutlineBody({
                             canManage={canManage}
                             workspaceId={workspaceId}
                             assignmentId={item.assignmentId}
+                            courseItemId={item.id}
                           />
                         )}
                         {item.type === "ESSAY" && typeof item.content?.["prompt"] === "string" && (
@@ -738,6 +739,7 @@ function LazyOutlineQuizDetails({
   canManage,
   workspaceId,
   assignmentId,
+  courseItemId,
 }: {
   summaryLabel: string;
   title: string;
@@ -745,6 +747,7 @@ function LazyOutlineQuizDetails({
   canManage: boolean;
   workspaceId: string;
   assignmentId?: string | null | undefined;
+  courseItemId?: string | null | undefined;
 }) {
   const [opened, setOpened] = useState(false);
   return (
@@ -764,6 +767,7 @@ function LazyOutlineQuizDetails({
           canManage={canManage}
           workspaceId={workspaceId}
           assignmentId={assignmentId}
+          courseItemId={courseItemId}
         />
       )}
     </details>

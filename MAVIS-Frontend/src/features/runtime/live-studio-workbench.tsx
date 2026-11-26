@@ -1892,7 +1892,7 @@ export function LiveStudioWorkbench({
       >
         {standaloneHeader?.left && (
           <>
-            <div data-tour="studio-top-nav" className="flex min-w-0 items-center gap-2">
+            <div data-tour="studio-top-nav" className="flex shrink-0 items-center gap-2">
               {standaloneHeader.left}
             </div>
             <span
@@ -2058,8 +2058,8 @@ export function LiveStudioWorkbench({
                   ? `${healthyCount}/${services.length || 0}`
                   : `0/${services.length || 0}`}
               </span>
-              <span className={`hidden sm:inline ${isLight ? "text-slate-300" : "text-slate-600"}`}>·</span>
-              <span className="hidden font-mono sm:inline">
+              <span className={`hidden lg:inline ${isLight ? "text-slate-300" : "text-slate-600"}`}>·</span>
+              <span className="hidden font-mono lg:inline">
                 {data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED"
                   ? liveRps != null
                     ? `${liveRps} rps`
@@ -2220,7 +2220,7 @@ export function LiveStudioWorkbench({
               }`}
             >
               <Palette className="size-3.5 opacity-80" aria-hidden="true" />
-              <span className="hidden sm:inline">{t(styleCfg.name, styleCfg.nameVi)}</span>
+              <span className="hidden xl:inline">{t(styleCfg.name, styleCfg.nameVi)}</span>
               <ChevronDown className="size-3 opacity-60" aria-hidden="true" />
             </button>
 
@@ -3402,9 +3402,9 @@ export function LiveStudioWorkbench({
                   }`}
                 >
                   {data.finishRequested
-                    ? "Finishing"
+                    ? t("Finishing", "Đang niêm phong")
                     : waiting
-                      ? "Waiting for Runner"
+                      ? t("Waiting for Runner", "Đang chờ Runner")
                       : statusLabel}
                 </span>
                 {(data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED") &&

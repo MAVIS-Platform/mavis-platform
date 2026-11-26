@@ -366,7 +366,23 @@ class CourseAuthoringServiceTest {
         var view = service.publishedForLearner(workspaceId);
         var itemsNode = view.snapshot().path("modules").get(0).path("items");
         assertEquals(1, itemsNode.get(0).path("content").path("questions").size());
-        assertEquals("Which service runs .NET 8?", itemsNode.get(0).path("content").path("questions").get(0).path("prompt").asText());
+        var learnerQuestion = itemsNode.get(0).path("content").path("questions").get(0);
+        assertEquals("Which service runs .NET 8?", learnerQuestion.path("prompt").asText());
+        assertFalse(learnerQuestion.has("correctOption"), "Learner published snapshot must redact inline quiz answers");
+        assertFalse(learnerQuestion.has("explanation"), "Learner published snapshot must redact inline quiz explanations");
         assertEquals(0, itemsNode.get(1).path("content").size());
+
+        // Server-side grading validates against immutable published snapshot
+        UUID inlineItemId = UUID.fromString(inlineQuizItem.path("id").asText());
+        var passed = service.checkInlineQuiz(workspaceId, inlineItemId, List.of(List.of(0)));
+        assertEquals(1, passed.correctCount());
+        assertEquals(1, passed.totalQuestions());
+        assertEquals("PASSED", passed.status());
+        assertTrue(passed.questionResults().get(0).correct());
+
+        var failed = service.checkInlineQuiz(workspaceId, inlineItemId, List.of(List.of(1)));
+        assertEquals(0, failed.correctCount());
+        assertEquals("NEEDS_RETRY", failed.status());
+        assertFalse(failed.questionResults().get(0).correct());
     }
 }

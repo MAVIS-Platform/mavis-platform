@@ -181,3 +181,11 @@ test("GitHub OAuth callback maps backend LOGIN_LOCKED and provider cancellation 
     "http://localhost:3000/login?oauthError=LOGIN_LOCKED",
   );
 });
+
+test("SocialSignIn uses singleton GSI script, validates google.accounts.id methods, and isolates DOM translation", () => {
+  const src = fs.readFileSync(path.join(root, "src/features/auth/social-sign-in.tsx"), "utf8");
+  assert.match(src, /script#mavis-google-gsi/);
+  assert.match(src, /typeof api\.initialize === "function" && typeof api\.renderButton === "function"/);
+  assert.doesNotMatch(src, /script\?\.remove\(\)/, "Must not tear down global gsi/client script tag on unmount");
+  assert.match(src, /data-no-translate/);
+});

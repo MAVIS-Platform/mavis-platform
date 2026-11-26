@@ -2529,11 +2529,26 @@ function shouldSkipElement(el: Element | null): boolean {
     tag === "PRE" ||
     tag === "TEXTAREA" ||
     tag === "SVG" ||
-    tag === "PATH"
+    tag === "PATH" ||
+    tag === "CANVAS" ||
+    tag === "IFRAME" ||
+    tag === "OBJECT" ||
+    tag === "EMBED" ||
+    tag === "NOSCRIPT"
   ) {
     return true;
   }
-  if (el.closest("code, pre, script, style, textarea, [data-no-translate]")) {
+  if (
+    (el as { isContentEditable?: boolean }).isContentEditable === true ||
+    el.getAttribute?.("contenteditable") === "true"
+  ) {
+    return true;
+  }
+  if (
+    el.closest(
+      "code, pre, script, style, textarea, svg, canvas, iframe, [contenteditable='true'], [data-no-translate]",
+    )
+  ) {
     return true;
   }
   return false;
@@ -2620,17 +2635,23 @@ function AutoDomTranslator({ locale }: { locale: Locale }) {
     const collect = (records: MutationRecord[]) => {
       for (const record of records) {
         if (record.type === "characterData") {
+          if (shouldSkipElement(record.target.parentElement)) continue;
           const tracked = originalTextMap.get(record.target);
           if (!tracked || record.target.nodeValue !== tracked.lastRendered)
             pending.add(record.target);
         } else if (record.type === "attributes" && record.target instanceof Element) {
+          if (shouldSkipElement(record.target)) continue;
           const attribute = record.attributeName;
           if (!attribute) continue;
           const tracked = originalAttrMap.get(record.target)?.get(attribute);
           if (!tracked || record.target.getAttribute(attribute) !== tracked.lastRendered)
             pending.add(record.target);
         } else {
-          record.addedNodes.forEach((node) => pending.add(node));
+          if (record.target instanceof Element && shouldSkipElement(record.target)) continue;
+          record.addedNodes.forEach((node) => {
+            const el = node instanceof Element ? node : node.parentElement;
+            if (!shouldSkipElement(el)) pending.add(node);
+          });
         }
       }
     };

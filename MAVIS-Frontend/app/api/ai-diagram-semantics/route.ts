@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { reportAiUsage } from "@/lib/ai/usage-report";
+import { AiRateLimitError, aiDiagramRateLimiter } from "@/lib/ai/rate-limit";
 import { currentSession } from "@/lib/api/java-operations";
 import { hasAllowedEvidenceRefs, literalSourceContext, normalizeThreeE, normalizeC4, redactEvidenceText } from "@/lib/ai/evidence-grounding";
 import type { CompactFlowAiContext, SequenceAiEnrichment } from "@/features/architecture/scenario-design";
@@ -133,6 +134,7 @@ async function callStructuredLlm<T>(
   userPayload: string,
   maxTokens?: number,
 ): Promise<Partial<T> | null> {
+  aiDiagramRateLimiter.assertAllowed(userId);
   if (resolved.provider === "openai") {
     const isDeepSeek = /^sk-[0-9a-f]{32}$/.test(resolved.key);
     const endpoint =
@@ -248,8 +250,23 @@ export async function POST(request: NextRequest) {
   } catch {
     return fail(503);
   }
+  const MAX_BODY_BYTES = 512 * 1024;
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: "Payload too large", code: "PAYLOAD_TOO_LARGE" },
+      { status: 413, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   try {
-    const body = (await request.json()) as {
+    const rawBody = await request.text();
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { error: "Payload too large", code: "PAYLOAD_TOO_LARGE" },
+        { status: 413, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    const body = JSON.parse(rawBody) as {
       context?: CompactFlowAiContext;
       fallback?: SequenceAiEnrichment;
       c4Context?: CompactC4AiContext;
@@ -727,7 +744,23 @@ export async function POST(request: NextRequest) {
     enrichmentCache.set(seqCacheKey, merged);
 
     return NextResponse.json({ enrichment: merged, cached: false });
-  } catch {
+  } catch (err) {
+    if (err instanceof AiRateLimitError) {
+      return NextResponse.json(
+        {
+          error: "Too many AI requests. Please wait a moment.",
+          code: "AI_RATE_LIMITED",
+          retryAfterSeconds: err.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            "Cache-Control": "no-store",
+            "Retry-After": String(err.retryAfterSeconds),
+          },
+        },
+      );
+    }
     return NextResponse.json({ enrichment: {}, c4Enrichment: {}, cached: false });
   }
 }

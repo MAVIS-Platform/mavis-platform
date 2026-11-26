@@ -963,6 +963,31 @@ export function LabWorkspace() {
       </p>
     );
 
+  if (
+    client.mode === "backend" &&
+    (!isUuidSegment(workspaceId) || (assignmentId && !isUuidSegment(assignmentId)))
+  ) {
+    return (
+      <div
+        role="alert"
+        className="mx-auto max-w-lg space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-sm"
+      >
+        <p className="font-semibold text-foreground">
+          {t("Invalid Lab link", "Đường dẫn bài Lab không hợp lệ")}
+        </p>
+        <p className="text-muted-foreground">
+          {t(
+            "The workspace or Lab identifier in this URL is invalid. Return to My Courses to open an enrolled Lab.",
+            "Mã lớp học hoặc mã bài Lab trong đường dẫn không hợp lệ. Hãy quay lại Khóa học của tôi để mở bài Lab.",
+          )}
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/courses">{t("Back to My Courses", "Quay lại Khóa học của tôi")}</Link>
+        </Button>
+      </div>
+    );
+  }
+
   if (client.mode === "backend") {
     if (roadmap.isError)
       return <ErrorState error={roadmap.error} onRetry={() => void roadmap.refetch()} />;
