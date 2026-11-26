@@ -73,8 +73,10 @@ import {
   resolveModelElementByName,
   resolveModuleAuditLens,
   resolveModuleIndex,
+  type AuditLensQuickChip,
   type ModuleAuditLens,
 } from "@/features/architecture/module-audit-lens";
+import { ModuleAuditLensBar } from "@/features/architecture/module-audit-lens-bar";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
 import type { ArchitecturalModel, Evidence } from "@/types/domain";
@@ -1437,6 +1439,7 @@ function StepContent({
   const [lensFocusEnabled, setLensFocusEnabled] = useState<boolean>(
     activeLens.dimOthersByDefault,
   );
+  const [activeLensChipId, setActiveLensChipId] = useState<string | null>(null);
   const [graphHiddenCategories, setGraphHiddenCategories] = useState<GraphCategory[]>(
     activeLens.defaultGraphHiddenCategories ?? [
       "database",
@@ -1595,6 +1598,7 @@ function StepContent({
     initializedLensModelKeyRef.current = lensKey;
 
     setLensFocusEnabled(activeLens.dimOthersByDefault);
+    setActiveLensChipId(null);
     setGraphHiddenCategories(
       activeLens.defaultGraphHiddenCategories ?? [
         "database",
@@ -1622,6 +1626,36 @@ function StepContent({
       setInspectorTab("overview");
     }
   }, [labId, activeLens, activeModel]);
+
+  const handleSelectLensChip = (chip: AuditLensQuickChip) => {
+    setActiveLensChipId(chip.id);
+    onSelectInlineC4View(chip.targetView);
+
+    if (chip.graphHiddenCategories) {
+      setGraphHiddenCategories(chip.graphHiddenCategories);
+    } else if (chip.targetView === "GRAPH" && activeLens.defaultGraphHiddenCategories) {
+      setGraphHiddenCategories(activeLens.defaultGraphHiddenCategories);
+    }
+
+    if (activeModel && chip.targetServiceName) {
+      const svc = resolveModelElementByName(activeModel, chip.targetServiceName);
+      if (svc) {
+        setInlineC3Service(svc.id);
+      }
+    }
+
+    if (activeModel && chip.targetNodeName) {
+      const node = resolveModelElementByName(activeModel, chip.targetNodeName);
+      if (node) {
+        setSelectedGraphId(node.id);
+        setInspectorTab("overview");
+      }
+    }
+
+    if (activeLens.dimOthersByDefault) {
+      setLensFocusEnabled(true);
+    }
+  };
 
   const activeDiagramMermaid = useMemo(() => {
     if (inlineC4View === "GRAPH") return null;
@@ -2146,6 +2180,14 @@ function StepContent({
                 className="scroll-mt-36 space-y-4 rounded-xl border bg-card p-4 sm:p-5"
                 aria-label={t("Architecture workspace", "Không gian kiến trúc")}
               >
+                <ModuleAuditLensBar
+                  lens={activeLens}
+                  activeView={inlineC4View}
+                  activeChipId={activeLensChipId}
+                  focusEnabled={lensFocusEnabled}
+                  onToggleFocus={() => setLensFocusEnabled((prev) => !prev)}
+                  onSelectChip={handleSelectLensChip}
+                />
                 <div
                   className="flex flex-wrap gap-2"
                   role="tablist"
@@ -2169,7 +2211,10 @@ function StepContent({
                       aria-selected={inlineC4View === tab.id}
                       size="sm"
                       variant={inlineC4View === tab.id ? "default" : "outline"}
-                      onClick={() => onSelectInlineC4View(tab.id)}
+                      onClick={() => {
+                        setActiveLensChipId(null);
+                        onSelectInlineC4View(tab.id);
+                      }}
                     >
                       {tab.label}
                     </Button>
