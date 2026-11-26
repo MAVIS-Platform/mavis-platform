@@ -499,8 +499,18 @@ class RuntimeStudioServiceTest {
         org.springframework.test.util.ReflectionTestUtils.setField(service, "telemetryHub", hub);
         when(hub.publish(eq(id), any(), anyString(), eq(false), eq("RUNNING"))).thenReturn(false);
 
+        // Runner callbacks have no user JWT; publishSessionState must never invoke transactional AccessPolicyService.
+        var studentRole = com.mavis.common.entity.Role.builder().code("STUDENT").build();
+        session.setTriggeredBy(com.mavis.common.entity.User.builder().id(UUID.randomUUID()).role(studentRole).build());
+        ((ObjectNode) session.getScenarioConfig()).putObject("exerciseCriteria")
+                .put("exerciseType", "CHANGE_IMPACT").put("minImpactF1", 0.7);
+
         service.publishSessionState(session);
-        verify(hub).notifyState(eq(id), argThat(node -> "RUNNING".equals(node.path("executionStatus").asText())));
+        verify(access, never()).requireCurrentActiveUser();
+        verify(hub).notifyState(eq(id), argThat(node ->
+                "RUNNING".equals(node.path("executionStatus").asText())
+                        && !node.has("exerciseEvaluation")
+                        && !node.path("exerciseCriteria").has("minImpactF1")));
 
         var frame = mapper.createObjectNode().put("observedAt", "2026-11-21T08:00:00Z");
         frame.putArray("services");

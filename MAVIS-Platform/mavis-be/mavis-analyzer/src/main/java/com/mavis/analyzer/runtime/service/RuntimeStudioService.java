@@ -760,10 +760,16 @@ public class RuntimeStudioService {
     }
 
     private static boolean isStudentSession(RuntimeSession session) {
-        if (session == null || session.getTriggeredBy() == null || session.getTriggeredBy().getRole() == null) {
+        if (session == null) {
             return false;
         }
-        return "STUDENT".equalsIgnoreCase(session.getTriggeredBy().getRole().getCode());
+        try {
+            var triggeredBy = session.getTriggeredBy();
+            return triggeredBy != null && triggeredBy.getRole() != null
+                    && "STUDENT".equalsIgnoreCase(triggeredBy.getRole().getCode());
+        } catch (RuntimeException ignored) {
+            return true;
+        }
     }
 
     private void requireSessionReadAccess(RuntimeSession session) {
@@ -824,7 +830,8 @@ public class RuntimeStudioService {
     private void notifyStateAfterCommit(RuntimeSession session) {
         if (telemetryHub == null || session == null || session.getId() == null) return;
         UUID sessionId = session.getId();
-        JsonNode snapshot = view(session, isStudentActor() || isStudentSession(session));
+        // Never invoke transactional AccessPolicyService here: Runner callbacks carry no user JWT and would mark the tx rollback-only.
+        JsonNode snapshot = view(session, isStudentSession(session));
         if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
             org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                     new org.springframework.transaction.support.TransactionSynchronization() {
