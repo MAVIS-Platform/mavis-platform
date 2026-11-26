@@ -625,7 +625,7 @@ export function LabWorkspace() {
   const selection = useSelection();
   const session = useSession();
   const workspaceId = params.get("workspace") || selection.workspaceId;
-  const assignmentId = params.get("assignment") || "";
+  const requestedAssignmentId = params.get("assignment") || "";
   const stepValue = Number(params.get("step") || "1");
   const activeStep = ([1, 2, 3].includes(stepValue) ? stepValue : 1) as 1 | 2 | 3;
   const viewParam = params.get("view");
@@ -638,7 +638,7 @@ export function LabWorkspace() {
       : "CONTAINER";
   const [inlineC4View, setInlineC4View] = useState<InlineC4View>(initialView);
   const userSelectedViewRef = useRef<boolean>(Boolean(viewParam));
-  const lastAssignmentViewRef = useRef<string>(assignmentId);
+  const lastAssignmentViewRef = useRef<string>(requestedAssignmentId);
   const handleSelectInlineC4View = (view: InlineC4View) => {
     userSelectedViewRef.current = true;
     setInlineC4View(view);
@@ -653,6 +653,12 @@ export function LabWorkspace() {
   );
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const roadmap = useCourseRoadmap(workspaceId);
+  const assignmentId =
+    requestedAssignmentId ||
+    roadmap.data?.labs.find((item) => item.state !== "LOCKED")?.assignmentId ||
+    roadmap.data?.labs[0]?.assignmentId ||
+    assignments.data?.[0]?.id ||
+    "";
   const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const preview = Boolean(isLecturer && params.get("preview") !== "0");
   const publishedCourse = usePublishedCourse(workspaceId);

@@ -2642,3 +2642,20 @@ test("E2E #04 Curated Repos & Runner Error i18n: exposes all 7 curated repos and
   }
   assert.match(localeCtx, /The Lab source failed Runner validation\. Ask your lecturer to check the Studio configuration\./);
 });
+
+
+test("E2E #07 RBAC & Navigation: guards /workspace-overview for students, scopes /workspaces pending banner to lecturers, and defaults /lab assignment", () => {
+  const workspaces = read("src/features/workspaces/screens.tsx");
+  const courses = read("src/features/courses/screens.tsx");
+
+  assert.match(workspaces, /const isLecturerRole = session\.data\?\.user\?\.role === "lecturer"/);
+  assert.match(workspaces, /useApiQuery\("submissions", \{\}, \{ enabled: isLecturerRole \}\)/);
+  assert.match(workspaces, /if \(session\.data\?\.user\?\.role === "student" && !query\.isPending && !canManage\)/);
+  assert.match(workspaces, /t\("Access unavailable", "Không thể truy cập"\)/);
+
+  assert.match(courses, /const requestedAssignmentId = params\.get\("assignment"\) \|\| "";/);
+  assert.match(
+    courses,
+    /roadmap\.data\?\.labs\.find\(\(item\) => item\.state !== "LOCKED"\)\?\.assignmentId/,
+  );
+});

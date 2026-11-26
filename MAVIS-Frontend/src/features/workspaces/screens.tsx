@@ -68,7 +68,8 @@ export function Workspaces() {
   const [activationIssueById, setActivationIssueById] = useState<Record<string, string>>({});
   const updateWorkspace = useApiMutation("updateWorkspace");
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
-  const submissions = useApiQuery("submissions", {}, { enabled: canCreate });
+  const isLecturerRole = session.data?.user?.role === "lecturer";
+  const submissions = useApiQuery("submissions", {}, { enabled: isLecturerRole });
   const selected = query.data?.find((w) => w.id === workspaceId);
   const visibleWorkspaces = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -133,6 +134,7 @@ export function Workspaces() {
             </div>
           </header>
 
+          {isLecturerRole && (
           <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
             <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
               <ClipboardCheck className="size-6" aria-hidden="true" />
@@ -183,6 +185,7 @@ export function Workspaces() {
               </Link>
             </Button>
           </div>
+          )}
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-2xl font-semibold">{t("Your classes", "Các lớp của bạn")}</h2>
@@ -484,6 +487,27 @@ export function WorkspaceOverview() {
           : canManage && requestedView === "course-setup"
             ? "setup"
             : "outline";
+
+  if (session.data?.user?.role === "student" && !query.isPending && !canManage) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 p-8" role="alert">
+        <h1 className="text-xl font-semibold">
+          {t("Access unavailable", "Không thể truy cập")}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            "Your account does not have permission to view this page.",
+            "Tài khoản của bạn không có quyền xem trang này.",
+          )}
+        </p>
+        <Button asChild variant="outline">
+          <Link href="/courses">
+            {t("Return to your courses", "Quay lại khóa học của tôi")}
+          </Link>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <RequestState query={query} empty={!workspace}>
