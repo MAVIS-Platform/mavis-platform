@@ -4857,9 +4857,24 @@ export function LiveStudioWorkbench({
                       if (!rootCauseIds.includes(svc)) upstreamAffected.add(svc);
                     }
                   }
+                  const seenDegradedEdge = new Set<string>();
                   const degradedEdges = (data.telemetry?.serviceGraph ?? [])
                     .filter((e) => e.errorRatePercent > 0 || (e.p95Ms != null && e.p95Ms >= 300))
                     .sort((a, b) => b.errorRatePercent - a.errorRatePercent || (b.p95Ms ?? 0) - (a.p95Ms ?? 0))
+                    .map((e) => {
+                      if (e.server && e.server.toLowerCase() !== "unknown") return e;
+                      const inferred = staticEdgesForBlast.find(
+                        (se) => se.from === e.client && faultedServices.includes(se.to),
+                      )?.to;
+                      return inferred ? { ...e, server: inferred } : null;
+                    })
+                    .filter((e): e is NonNullable<typeof e> => {
+                      if (!e) return false;
+                      const key = `${e.client}->${e.server}`;
+                      if (seenDegradedEdge.has(key)) return false;
+                      seenDegradedEdge.add(key);
+                      return true;
+                    })
                     .slice(0, 6);
                   const hasIssue = rootCauseIds.length > 0 || degradedEdges.length > 0;
                   return (

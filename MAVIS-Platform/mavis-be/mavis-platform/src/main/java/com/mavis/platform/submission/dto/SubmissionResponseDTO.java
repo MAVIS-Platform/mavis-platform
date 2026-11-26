@@ -15,18 +15,23 @@ import java.util.UUID;
 @Builder
 @Schema(description = "Thông tin chi tiết gói bài nộp bất biến")
 public class SubmissionResponseDTO {
+    private static void stripLecturerEvaluationFields(com.fasterxml.jackson.databind.JsonNode node) {
+        if (node instanceof com.fasterxml.jackson.databind.node.ObjectNode obj) {
+            obj.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
+            obj.elements().forEachRemaining(SubmissionResponseDTO::stripLecturerEvaluationFields);
+        } else if (node instanceof com.fasterxml.jackson.databind.node.ArrayNode arr) {
+            arr.elements().forEachRemaining(SubmissionResponseDTO::stripLecturerEvaluationFields);
+        }
+    }
+
     public static com.fasterxml.jackson.databind.JsonNode redactStudioEvidenceForRole(
             com.fasterxml.jackson.databind.JsonNode studioEvidence,
             boolean revealLecturerEvaluation) {
         if (revealLecturerEvaluation || studioEvidence == null || !studioEvidence.isObject()) {
             return studioEvidence;
         }
-        var copy = (com.fasterxml.jackson.databind.node.ObjectNode) studioEvidence.deepCopy();
-        copy.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
-        var receipt = copy.get("receipt");
-        if (receipt instanceof com.fasterxml.jackson.databind.node.ObjectNode receiptObj) {
-            receiptObj.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
-        }
+        var copy = studioEvidence.deepCopy();
+        stripLecturerEvaluationFields(copy);
         return copy;
     }
 

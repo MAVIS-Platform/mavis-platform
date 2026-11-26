@@ -856,9 +856,13 @@ class SubmissionServiceImplTest {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode studioEv = mapper.createObjectNode();
         studioEv.put("receiptDigest", "sha256:abc123");
-        studioEv.putArray("snapshots").addObject().put("id", "snap-1");
+        ObjectNode snapObj = studioEv.putArray("snapshots").addObject().put("id", "snap-1");
+        snapObj.putObject("exerciseEvaluation").put("autoScorePercent", 100).put("passed", true);
         studioEv.putObject("exerciseEvaluation").put("f1Score", 1.0).put("passed", true);
-        studioEv.putObject("receipt").putObject("exerciseEvaluation").put("passed", true);
+        ObjectNode receiptObj = studioEv.putObject("receipt");
+        receiptObj.putObject("exerciseEvaluation").put("passed", true);
+        receiptObj.putArray("snapshots").addObject().put("id", "snap-1")
+                .putObject("exerciseEvaluation").put("passed", true);
 
         SubmissionSnapshot subSnapshot = SubmissionSnapshot.builder()
                 .id(subId)
@@ -882,11 +886,11 @@ class SubmissionServiceImplTest {
 
         var studentExport = submissionService.exportSubmissionBundle(subId);
         assertThat(studentExport.getStudioEvidence().path("receiptDigest").asText()).isEqualTo("sha256:abc123");
-        assertThat(studentExport.getStudioEvidence().has("exerciseEvaluation")).isFalse();
-        assertThat(studentExport.getStudioEvidence().path("receipt").has("exerciseEvaluation")).isFalse();
+        assertThat(studentExport.getStudioEvidence().toString()).doesNotContain("exerciseEvaluation");
+        assertThat(studentExport.getStudioEvidence().path("snapshots").get(0).path("id").asText()).isEqualTo("snap-1");
 
         var studentRead = submissionService.getSubmissionById(subId);
-        assertThat(studentRead.getStudioEvidence().has("exerciseEvaluation")).isFalse();
+        assertThat(studentRead.getStudioEvidence().toString()).doesNotContain("exerciseEvaluation");
 
         com.mavis.common.entity.Role lecturerRole = new com.mavis.common.entity.Role();
         lecturerRole.setCode("LECTURER");
@@ -895,9 +899,11 @@ class SubmissionServiceImplTest {
 
         var lecturerExport = submissionService.exportSubmissionBundle(subId);
         assertThat(lecturerExport.getStudioEvidence().path("exerciseEvaluation").path("passed").asBoolean()).isTrue();
+        assertThat(lecturerExport.getStudioEvidence().path("snapshots").get(0).path("exerciseEvaluation").path("autoScorePercent").asInt()).isEqualTo(100);
 
         var lecturerRead = submissionService.getSubmissionById(subId);
         assertThat(lecturerRead.getStudioEvidence().path("exerciseEvaluation").path("f1Score").asDouble()).isEqualTo(1.0);
+        assertThat(lecturerRead.getStudioEvidence().path("snapshots").get(0).path("exerciseEvaluation").path("passed").asBoolean()).isTrue();
     }
 
     @Test
