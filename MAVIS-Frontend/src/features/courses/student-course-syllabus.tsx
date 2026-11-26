@@ -934,19 +934,21 @@ export function StudentCourseSyllabus({
                         !(
                           activeItem.type === "THEORY" &&
                           typeof activeItem.content?.["body"] === "string" &&
-                          (activeItem.description === "Theory from the workspace library" ||
-                            String(activeItem.content["body"])
-                              .replace(/[#*_>`-]/g, " ")
-                              .replace(/\s+/g, " ")
-                              .trim()
-                              .toLowerCase()
-                              .startsWith(
-                                activeItem.description
-                                  .replace(/\s+/g, " ")
-                                  .trim()
-                                  .slice(0, 48)
-                                  .toLowerCase(),
-                              ))
+                          (() => {
+                            if (activeItem.description === "Theory from the workspace library") {
+                              return true;
+                            }
+                            const normBody = String(activeItem.content["body"])
+                              .replace(/[^\p{L}\p{N}]+/gu, "")
+                              .toLowerCase();
+                            const normDesc = activeItem.description
+                              .replace(/[^\p{L}\p{N}]+/gu, "")
+                              .toLowerCase();
+                            return (
+                              normDesc.length > 0 &&
+                              normBody.includes(normDesc.slice(0, Math.min(40, normDesc.length)))
+                            );
+                          })()
                         ) && (
                           <p className="text-sm text-muted-foreground">
                             {formatSyllabusItemDescription(activeItem.description, t)}

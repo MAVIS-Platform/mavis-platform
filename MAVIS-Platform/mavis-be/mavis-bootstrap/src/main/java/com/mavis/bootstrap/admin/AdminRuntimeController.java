@@ -108,7 +108,7 @@ public class AdminRuntimeController {
  @GetMapping("/runtime-sessions") @Transactional(readOnly=true)
  public ApiResponse<?> sessions() {
   policy.requireSystemAdmin();
-  // Skip loading multi-MB studio_control TOAST blobs (snapshots/3D videos) when listing 50 admin summary rows.
+  // Skip loading multi-MB studio_control and runner_receipt_json TOAST blobs when listing 50 admin summary rows.
   if (jdbcTemplate == null) {
    return ApiResponse.success(sessions.findTop50ByOrderByCreatedAtDesc().stream().map(RuntimeSessionResponseDTO::fromEntity).toList());
   }
@@ -120,9 +120,6 @@ public class AdminRuntimeController {
                  s.publication_gate_status, s.trace_status, s.sandbox_enforcement_confirmed,
                  s.resource_project, s.cancel_requested_at, s.started_at, s.completed_at, s.created_at,
                  (s.receipt_digest IS NOT NULL AND s.receipt_digest <> '') AS studio_verified,
-                 CASE WHEN jsonb_typeof(s.runner_receipt_json->'outcome'->'trace'->'spans') = 'array'
-                      THEN jsonb_array_length(s.runner_receipt_json->'outcome'->'trace'->'spans')
-                      ELSE NULL END AS captured_span_count,
                  COALESCE(s.recovery_result_json->>'reason', s.recovery_result_json->>'message') AS recovery_reason,
                  s.recovery_result_json->>'code' AS recovery_code
           FROM runtime_sessions s
@@ -147,7 +144,6 @@ public class AdminRuntimeController {
      failureReason = "Runtime execution failed before scenario verification completed.";
     }
    }
-   Number spanNum = (Number) rs.getObject("captured_span_count");
    return RuntimeSessionResponseDTO.builder()
            .id(rs.getObject("id", UUID.class))
            .projectId(rs.getObject("project_id", UUID.class))
@@ -171,7 +167,6 @@ public class AdminRuntimeController {
            .sandboxEnforcementConfirmed(rs.getObject("sandbox_enforcement_confirmed", Boolean.class))
            .resourceProject(rs.getString("resource_project"))
            .studioVerified(rs.getBoolean("studio_verified"))
-           .capturedSpanCount(spanNum != null ? spanNum.intValue() : null)
            .failureReason(failureReason)
            .diagnostics(diags)
            .stepResults(List.of())

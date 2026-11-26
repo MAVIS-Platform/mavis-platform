@@ -600,7 +600,22 @@ function CourseOutlineBody({
                               })
                             : item.title}
                         </p>
-                        {(item.description || (assignment?.title && assignment.title !== item.title)) && (
+                        {(item.description || (assignment?.title && assignment.title !== item.title)) &&
+                          !(
+                            item.type === "THEORY" &&
+                            typeof item.content?.["body"] === "string" &&
+                            item.description &&
+                            (item.description === "Theory from the workspace library" ||
+                              String(item.content["body"])
+                                .replace(/[^\p{L}\p{N}]+/gu, "")
+                                .toLowerCase()
+                                .includes(
+                                  item.description
+                                    .replace(/[^\p{L}\p{N}]+/gu, "")
+                                    .toLowerCase()
+                                    .slice(0, 40),
+                                ))
+                          ) && (
                           <p className="mt-1 text-sm leading-5 text-muted-foreground">
                             {formatCoursePlainText(item.description || assignment?.title)}
                           </p>
