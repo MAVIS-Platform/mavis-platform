@@ -208,20 +208,24 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
         var probe = new HttpScenarioDefinition("readiness", steps, Math.Clamp(steps.Length * 3, 5, 30));
         HttpScenarioOutcome? lastResult = null;
+        using var readinessCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var cancelWatcherStop = new CancellationTokenSource();
+        var cancelWatcher = WatchRemoteCancelDuringStartupAsync(readinessCts, cancelWatcherStop.Token);
+        var effectiveCt = readinessCts.Token;
         try
         {
             for (var attempt = 0; attempt < 120; attempt++)
             {
-                ct.ThrowIfCancellationRequested();
+                effectiveCt.ThrowIfCancellationRequested();
                 HttpScenarioOutcome? result = null;
                 try
                 {
-                    result = await RunInsideNetwork(probe, _endpoints, new Dictionary<string, string>(), ct);
+                    result = await RunInsideNetwork(probe, _endpoints, new Dictionary<string, string>(), effectiveCt);
                 }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                catch (OperationCanceledException) when (!effectiveCt.IsCancellationRequested)
                 {
                     // A probe can time out while Docker is still warming up. The session deadline still applies.
-                    if (!await ScenarioContainerCleanup.RemoveAsync(docker, _directory!, ResourceProject, ct))
+                    if (!await ScenarioContainerCleanup.RemoveAsync(docker, _directory!, ResourceProject, effectiveCt))
                         throw new RuntimeStageException("READINESS_PROBE_CLEANUP_UNCONFIRMED");
                 }
 
@@ -229,28 +233,33 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 if (result?.Status == "Passed")
                 {
                     if (definition.Profile.SeedHook is { } seed)
-                        await ExecuteSeedHookAsync(seed, ct);
+                        await ExecuteSeedHookAsync(seed, effectiveCt);
                     if (definition.InteractiveStudio && definition.Profile.StudioTopology is { } topology)
                     {
                         var stopped = topology.Blocks.Where(block => block.InitiallyStopped).Select(block => block.Service)
                             .Concat(topology.Connections.Where(link => link.InitiallyStopped).Select(link => link.ControllerService))
                             .ToArray();
                         if (stopped.Length > 0)
-                            await Require(new[] { "stop", "--timeout", "5" }.Concat(stopped).ToArray(), ct);
+                            await Require(new[] { "stop", "--timeout", "5" }.Concat(stopped).ToArray(), effectiveCt);
                     }
-                    await CheckpointAsync("RUNNING", 2, ct);
+                    await CheckpointAsync("RUNNING", 2, effectiveCt);
                     return;
                 }
-                await Task.Delay(2000, ct);
+                await Task.Delay(2000, effectiveCt);
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (effectiveCt.IsCancellationRequested)
         {
             // The session deadline usually ends readiness; still record which probe failed and why, then rethrow.
             RecordReadinessFailures(lastResult);
             using var diagnostics = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             await CaptureFailureDiagnosticsAsync(_composeServices.Count > 0 ? _composeServices : definition.Profile.Applications.Keys, diagnostics.Token);
             throw;
+        }
+        finally
+        {
+            cancelWatcherStop.Cancel();
+            try { await cancelWatcher; } catch (OperationCanceledException) { }
         }
         RecordReadinessFailures(lastResult);
         await CaptureFailureDiagnosticsAsync(_composeServices.Count > 0 ? _composeServices : definition.Profile.Applications.Keys, ct);
@@ -916,7 +925,25 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             definition.SourceSnapshotId, definition.ProfileVersionId, definition.RunConfigurationVersionId!,
             definition.ScenarioVersionId!, ResourceProject, stage, sequence, DateTimeOffset.UtcNow);
         RuntimeLifecycleJournal.Record(stateRoot, notification);
-        if (lifecycle is not null) await lifecycle.AcknowledgeAsync(notification, ct);
+        if (lifecycle is not null)
+        {
+            try
+            {
+                await lifecycle.AcknowledgeAsync(notification, ct);
+            }
+            catch (InvalidOperationException) when (definition.InteractiveStudio && studio is not null && !ct.IsCancellationRequested)
+            {
+                // If Java rejected lifecycle-ack (HTTP 409) because the learner cancelled mid-boot, classify as Cancelled instead of Failed.
+                using var checkCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var poll = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, checkCts.Token);
+                if (poll.CancelRequested)
+                {
+                    onRemoteCancel?.Invoke();
+                    throw new OperationCanceledException("Session cancelled before lifecycle acknowledgement.", ct);
+                }
+                throw;
+            }
+        }
         ct.ThrowIfCancellationRequested();
     }
 
