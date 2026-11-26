@@ -40,6 +40,7 @@ import {
 } from "./java-coursera-curriculum-data";
 import { resolveLabTier } from "@/features/assignments/requirements";
 import { courseSetupStepHref } from "./course-setup-flow-navigation";
+import { resolveStaticAuditStepTitle } from "./module-steps";
 
 export function isMissingCourseError(error: unknown) {
   return error instanceof ApiError && error.status === 404;
@@ -582,7 +583,15 @@ function CourseOutlineBody({
                           )}
                         </div>
                         <p className="mt-1 text-base font-semibold leading-snug text-foreground">
-                          {item.title}
+                          {effectiveType === "STATIC_LAB" || /khám phá sơ đồ tĩnh|explore static diagrams/i.test(item.title)
+                            ? resolveStaticAuditStepTitle(item.title, {
+                                courseCode: workspace?.code ?? courseTitle,
+                                modulePosition: module.position,
+                                curriculumCode: item.curriculumCode,
+                                locale,
+                                isStaticStep: effectiveType === "STATIC_LAB",
+                              })
+                            : item.title}
                         </p>
                         {(item.description || (assignment?.title && assignment.title !== item.title)) && (
                           <p className="mt-1 text-sm leading-5 text-muted-foreground">

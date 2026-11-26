@@ -54,6 +54,40 @@ export type ModuleFlowOptions = {
   track?: AuditTrack | undefined;
 };
 
+/**
+ * Idempotently maps any static diagram step title (including legacy saved titles)
+ * to the module's dedicated Audit Lens title for either Java or C#.
+ */
+export function resolveStaticAuditStepTitle(
+  rawTitle: string,
+  options: {
+    courseCode?: string | null | undefined;
+    modulePosition?: number | null | undefined;
+    curriculumCode?: string | null | undefined;
+    locale?: "en" | "vi" | undefined;
+    isStaticStep?: boolean | undefined;
+  } = {},
+): string {
+  const trimmed = rawTitle.trim();
+  const looksLegacyStatic =
+    options.isStaticStep === true ||
+    /khám phá sơ đồ tĩnh|explore static diagrams|static-view/i.test(trimmed);
+  if (!looksLegacyStatic && trimmed.length > 0) {
+    return rawTitle;
+  }
+  const track = detectAuditTrack({
+    workspaceCode: options.courseCode,
+    labTitle: trimmed,
+  });
+  const moduleIndex = resolveModuleIndex({
+    modulePosition: options.modulePosition,
+    labTitle: trimmed,
+    curriculumCode: options.curriculumCode,
+  });
+  const lens = resolveModuleAuditLens(track, moduleIndex);
+  return (options.locale ?? "vi") === "vi" ? lens.stepTitleVi : lens.stepTitleEn;
+}
+
 function inferTrackForModuleFlow(
   items: ReadonlyArray<OutlineItemData>,
   assignments: ReadonlyArray<AssignmentMetaLike>,
@@ -228,7 +262,22 @@ export function expandModuleFlowItems(
       );
     } else {
       for (const quiz of quizItems) ordered.push(quiz);
-      if (labItem) ordered.push(labItem);
+      if (labItem) {
+        ordered.push(
+          labItem.type === "STATIC_LAB"
+            ? {
+                ...labItem,
+                title: resolveStaticAuditStepTitle(labItem.title, {
+                  courseCode: options?.courseCode,
+                  modulePosition: options?.modulePosition,
+                  curriculumCode: options?.curriculumCode ?? labItem.curriculumCode,
+                  locale,
+                  isStaticStep: true,
+                }),
+              }
+            : labItem,
+        );
+      }
     }
     return ordered;
   }
