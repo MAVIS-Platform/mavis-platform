@@ -1,5 +1,6 @@
 import type { ArchitecturalModel } from "@/types/domain";
 import type { GraphCategory } from "./graph-projection";
+import { JAVA_AUDIT_LENSES } from "./java-audit-lenses";
 
 export type AuditTrack = "JAVA" | "CSHARP";
 export type LensViewTab = "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH";
@@ -50,7 +51,9 @@ export interface ActiveLensFocus {
   focusEdgeIds: Set<string>;
 }
 
-const JAVA_MODULE_LENSES: Partial<Record<AuditModuleNumber, ModuleAuditLens>> = {};
+const JAVA_MODULE_LENSES: Partial<Record<AuditModuleNumber, ModuleAuditLens>> = {
+  ...JAVA_AUDIT_LENSES,
+};
 const CSHARP_MODULE_LENSES: Partial<Record<AuditModuleNumber, ModuleAuditLens>> = {};
 
 export function registerAuditLensPresets(
