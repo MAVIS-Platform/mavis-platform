@@ -2599,3 +2599,12 @@ test("Sprint 3 #05 Lab Header Row 1 & Quiz AI/Date i18n: keeps /lab Row 1 single
   assert.match(builder, /localizeQuizGenerationError\(generateFromTheory\.error\.message, t\)/);
   assert.match(runner, /locale === "vi" \? "vi-VN" : "en-US"/);
 });
+
+
+test("E2E #01 Passkey Create: rejects maxUses <= 0 inline instead of silently wiping to unlimited", () => {
+  const access = read("src/features/workspaces/course-access.tsx");
+  assert.match(access, /const createMaxUsesInvalid =/);
+  assert.match(access, /onChange=\{\(event\) => setMaxUses\(event\.target\.value\)\}/);
+  assert.match(access, /disabled=\{mutating \|\| createMaxUsesInvalid\}/);
+  assert.doesNotMatch(access, /if \(next === "" \|\| Number\(next\) <= 0\) \{\s*setMaxUses\(""\);/);
+});

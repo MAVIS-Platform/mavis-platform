@@ -1218,6 +1218,8 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
 
   const list = passkeys.data ?? [];
   const mutating = createKey.isPending || updateKey.isPending || deleteKey.isPending;
+  const createMaxUsesInvalid =
+    maxUses.trim() !== "" && (!Number.isInteger(Number(maxUses)) || Number(maxUses) < 1);
 
   const handleCopy = (id: string, value: string) => {
     const confirmCopied = () => {
@@ -1365,40 +1367,42 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
           </FormField>
           <FormField label={t("Max uses", "Giới hạn lượt")}>
             {(props) => (
-              <div className="flex items-center gap-1.5">
-                <Input
-                  {...props}
-                  type="number"
-                  min={0}
-                  max={10000}
-                  placeholder={t("Unlimited", "Không giới hạn")}
-                  value={maxUses}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    if (next === "" || Number(next) <= 0) {
-                      setMaxUses("");
-                    } else {
-                      setMaxUses(next);
-                    }
-                  }}
-                />
-                {maxUses !== "" && (
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="outline"
-                    aria-label={t("Reset to unlimited", "Đặt lại không giới hạn")}
-                    title={t("Reset to unlimited", "Đặt lại không giới hạn")}
-                    onClick={() => setMaxUses("")}
-                  >
-                    <X className="size-4" aria-hidden="true" />
-                  </Button>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    {...props}
+                    type="number"
+                    min={1}
+                    max={10000}
+                    aria-invalid={createMaxUsesInvalid || undefined}
+                    className={createMaxUsesInvalid ? "border-destructive focus-visible:ring-destructive" : undefined}
+                    placeholder={t("Unlimited", "Không giới hạn")}
+                    value={maxUses}
+                    onChange={(event) => setMaxUses(event.target.value)}
+                  />
+                  {maxUses !== "" && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      aria-label={t("Reset to unlimited", "Đặt lại không giới hạn")}
+                      title={t("Reset to unlimited", "Đặt lại không giới hạn")}
+                      onClick={() => setMaxUses("")}
+                    >
+                      <X className="size-4" aria-hidden="true" />
+                    </Button>
+                  )}
+                </div>
+                {createMaxUsesInvalid && (
+                  <p role="alert" className="mt-1 text-[11px] font-medium text-destructive">
+                    {t("Must be ≥ 1 (or leave blank for unlimited).", "Nhập số nguyên ≥ 1, hoặc để trống nếu không giới hạn.")}
+                  </p>
                 )}
               </div>
             )}
           </FormField>
           <div className="flex items-end">
-            <Button type="submit" className="w-full" disabled={mutating}>
+            <Button type="submit" className="w-full" disabled={mutating || createMaxUsesInvalid}>
               {createKey.isPending ? t("Creating…", "Đang tạo…") : t("Create", "Tạo mã")}
             </Button>
           </div>
