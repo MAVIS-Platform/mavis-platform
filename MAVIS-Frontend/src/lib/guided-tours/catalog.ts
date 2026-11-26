@@ -2200,8 +2200,8 @@ export const SCREEN_TOUR_CATALOG = {
           vi: "9. Chỉ số sức khỏe & Lịch sử phiên",
         },
         description: {
-          en: "Tracks healthy pods (5/5), RPS, p95 latency, and error rate. Click to inspect live totals or switch between recent Studio runs.",
-          vi: "Theo dõi số pod khỏe (5/5), lưu lượng RPS, độ trễ p95 và tỉ lệ lỗi. Bấm vào để xem tóm tắt hoặc đổi sang phiên chạy cũ.",
+          en: "Tracks healthy vs. total pods, RPS, p95 latency, and error rate. Click to inspect live totals or switch between recent Studio runs.",
+          vi: "Theo dõi số pod khỏe trên tổng số service, lưu lượng RPS, độ trễ p95 và tỉ lệ lỗi. Bấm vào để xem tóm tắt hoặc đổi sang phiên chạy cũ.",
         },
       },
       {
@@ -2358,8 +2358,8 @@ export const SCREEN_TOUR_CATALOG = {
           vi: "9. Chỉ số cụm & Lịch sử phiên",
         },
         description: {
-          en: "Monitors pod count (5/5), live RPS, p95 latency, and error rate. Click to inspect summary metrics or switch past Docker runs.",
-          vi: "Hiển thị số pod (5/5), RPS, độ trễ p95 và tỉ lệ lỗi trực tiếp. Bấm vào để xem chi tiết hoặc chuyển giữa các lần chạy thử trước.",
+          en: "Monitors healthy vs. total pod count, live RPS, p95 latency, and error rate. Click to inspect summary metrics or switch past Docker runs.",
+          vi: "Hiển thị số pod khỏe trên tổng số service, RPS, độ trễ p95 và tỉ lệ lỗi trực tiếp. Bấm vào để xem chi tiết hoặc chuyển giữa các lần chạy thử trước.",
         },
       },
       {

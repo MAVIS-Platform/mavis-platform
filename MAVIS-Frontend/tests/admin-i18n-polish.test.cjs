@@ -61,8 +61,8 @@ test("Wave 2: Admin Accounts & RuntimeProfiles fix double-plus bug and localize 
 
 test("Wave 2: Passkey CRUD table action buttons stay single-line with whitespace-nowrap", () => {
   const courseAccess = read("src/features/workspaces/course-access.tsx");
-  assert.match(courseAccess, /flex flex-nowrap items-center justify-end gap-1/);
-  assert.match(courseAccess, /className="h-7 whitespace-nowrap px-2 text-xs"/);
+  assert.match(courseAccess, /className="whitespace-nowrap px-4 py-3"/);
+  assert.match(courseAccess, /openDialog\("renew"\)/);
 });
 
 test("Wave 3: status labels normalize TIMED_OUT/TIMEDOUT without underscores while keeping formatStatusLabel intact", () => {
@@ -116,8 +116,7 @@ test("Bug #04: CourseWorkspaceShell header omits duplicate passkey pill, keeps l
   assert.doesNotMatch(shell, /ClassHeaderPasskey/);
   assert.match(shell, /t\("Active", "Đang hoạt động"\)/);
   assert.match(shell, /t\("Archived", "Đã lưu trữ"\)/);
-  assert.match(access, /item\.label === "Mã ghi danh lớp học" \|\| item\.label === "Class Passkey"/);
-  assert.match(access, /t\("Class Passkey", "Mã ghi danh lớp học"\)/);
+  assert.match(access, /t\("Class Passkey", "Passkey lớp học"\)/);
 });
 
 test("Bug #08: workspaces exposes an h1 landmark, singular/plural counts avoid '1 students'/'1 Labs', and Admin createdAt separates date/time", () => {
@@ -139,8 +138,8 @@ test("Bug #09: CourseBuilder uses single-scroll accordion with slide-over drawer
   assert.match(builder, /fixed inset-0 z-50 flex justify-end bg-black\/40/);
   assert.match(builder, /role="dialog"/);
   assert.match(builder, /overflow-x-auto rounded-lg border bg-background p-4/);
-  assert.match(access, /className="block max-w-40 truncate"/);
-  assert.match(access, /className="whitespace-nowrap px-2 py-2 font-medium"/);
+  assert.match(access, /className="whitespace-nowrap px-4 py-3 text-muted-foreground"/);
+  assert.match(access, /className="px-4 py-2 font-medium"/);
 });
 
 test("Bug #10: Admin Health diagnostics and Accounts filter controls are localized in EN/VI dictionary", () => {
@@ -184,7 +183,7 @@ test("Lecturer UX Pack 1: single-line breadcrumbs & class tabs, Google mark isol
   assert.match(shell, /flex w-max min-w-full flex-nowrap items-center gap-1/);
   assert.match(social, /\[clip-path:circle\(50%\)\]/);
   assert.match(social, /colorScheme: "light"/);
-  assert.match(access, /isCopied \? t\("Copied!", "Đã chép!"\) : item\.code/);
+  assert.match(access, /copiedId === current\.id \? t\("Copied!", "Đã sao chép!"\) : current\.code/);
   assert.match(assignments, /xl:flex-row xl:items-center xl:justify-between/);
   assert.match(studioSection, /Open Visual Studio Builder/);
   assert.doesNotMatch(studioSection, /Configure Exercise & Templates/);

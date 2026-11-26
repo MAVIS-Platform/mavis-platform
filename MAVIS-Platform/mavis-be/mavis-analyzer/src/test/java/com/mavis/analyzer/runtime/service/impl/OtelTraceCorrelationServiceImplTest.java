@@ -866,5 +866,20 @@ class OtelTraceCorrelationServiceImplTest {
             assertThat(step.getCandidateRelationshipIds()).containsExactly(relFirstId, relSecondId);
         }
     }
+
+    @Test
+    @DisplayName("getSequenceDiagramBySession blocks students from reading another user's session")
+    void getSequenceDiagramBySessionEnforcesStudentSessionOwnership() {
+        var studentRole = com.mavis.common.entity.Role.builder().code("STUDENT").build();
+        var owner = com.mavis.common.entity.User.builder().id(UUID.randomUUID()).role(studentRole).build();
+        var intruder = com.mavis.common.entity.User.builder().id(UUID.randomUUID()).role(studentRole).build();
+        session.setTriggeredBy(owner);
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(intruder);
+
+        assertThatThrownBy(() -> otelTraceCorrelationService.getSequenceDiagramBySession(sessionId))
+                .isInstanceOfSatisfying(com.mavis.common.exception.BusinessException.class,
+                        ex -> assertThat(ex.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.FORBIDDEN));
+    }
 }
 

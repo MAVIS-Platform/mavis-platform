@@ -32,6 +32,9 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final CourseLabPolicy courseLabs;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.mavis.common.repository.LabStudioExerciseRepository labStudioExerciseRepository;
+
     @Override
     public User requireCurrentActiveUser() {
         UUID currentUserId = SecurityUtils.getCurrentUserId();
@@ -200,6 +203,11 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
                     runtimeSnapshotId = null;
                 }
             }
+        }
+        if (runtimeSnapshotId == null && labStudioExerciseRepository != null) {
+            runtimeSnapshotId = labStudioExerciseRepository.findByAssignmentId(lab.getId())
+                    .map(com.mavis.common.entity.LabStudioExercise::getRuntimeSnapshotId)
+                    .orElse(null);
         }
         boolean snapshotMatches = staticSnapshotId.equals(project.getReferenceSnapshotId())
                 || (runtimeSnapshotId != null && runtimeSnapshotId.equals(project.getReferenceSnapshotId()));

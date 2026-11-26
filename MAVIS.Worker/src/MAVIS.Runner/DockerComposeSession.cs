@@ -482,7 +482,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 try
                 {
                     await Require(["up", "--detach", "--no-deps", "--force-recreate", "--no-build", "--pull", "never",
-                        "--wait", "--wait-timeout", actionWaitTimeout, service], ct);
+                        "--wait", "--wait-timeout", actionWaitTimeout, "--scale", $"{service}={Math.Max(1, before.running)}", service], ct);
                 }
                 catch
                 {
@@ -502,7 +502,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 try
                 {
                     await Require(["up", "--detach", "--no-deps", "--force-recreate", "--no-build", "--pull", "never",
-                        "--wait", "--wait-timeout", actionWaitTimeout, service], ct);
+                        "--wait", "--wait-timeout", actionWaitTimeout, "--scale", $"{service}={Math.Max(1, before.running)}", service], ct);
                 }
                 catch
                 {
@@ -751,7 +751,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             lock (_probeLock)
             {
                 if (obj["probe"] is JsonNode probe) _latestProbeNode = probe.DeepClone();
-                if (obj["serviceGraph"] is JsonArray graph && graph.Count > 0) _latestServiceGraphNode = graph.DeepClone();
+                if (obj["serviceGraph"] is JsonArray graph) _latestServiceGraphNode = graph.DeepClone();
             }
         }
         catch (JsonException) { }

@@ -84,6 +84,9 @@ public class RuntimeRunnerDispatcher {
     @Value("${mavis.runner.gvisor-writable-rootfs:true}")
     private boolean gvisorWritableRootfs;
 
+    @Value("${mavis.runtime.studio-max-session-seconds:3600}")
+    private int studioMaxSessionSeconds = 3600;
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     @Lazy
     private RuntimeQueueCoordinator runtimeQueueCoordinator;
@@ -802,6 +805,8 @@ public class RuntimeRunnerDispatcher {
             pb.environment().put("MAVIS_RUNNER_OCI_RUNTIME", ociRuntime.trim());
         }
         pb.environment().put("MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS", gvisorWritableRootfs ? "1" : "0");
+        pb.environment().put("MAVIS_STUDIO_MAX_SESSION_SECONDS",
+                String.valueOf(Math.max(300, Math.min(14400, studioMaxSessionSeconds))));
         if (!allowlist.isEmpty()) {
             pb.environment().put("MAVIS_RUNNER_SECRET_ALLOWLIST", String.join(",", allowlist));
         }
@@ -809,7 +814,7 @@ public class RuntimeRunnerDispatcher {
         pb.redirectOutput(stateDir.resolve("runner-" + session.getId() + ".log").toFile());
 
         Process process = pb.start();
-        long deadlineSeconds = resolveProcessDeadlineSeconds(session);
+        long deadlineSeconds = resolveProcessDeadlineSeconds(session, studioMaxSessionSeconds);
         if (!process.waitFor(deadlineSeconds, TimeUnit.SECONDS)) {
             process.destroyForcibly();
             throw new IllegalStateException("Runner deadline exceeded (" + deadlineSeconds + "s); recovery is required to confirm cleanup.");
@@ -819,6 +824,10 @@ public class RuntimeRunnerDispatcher {
 
     /** Give the runner its configured session timeout plus startup, drain, teardown, and receipt delivery margin. */
     static long resolveProcessDeadlineSeconds(RuntimeSession session) {
+        return resolveProcessDeadlineSeconds(session, 3600);
+    }
+
+    static long resolveProcessDeadlineSeconds(RuntimeSession session, int configuredStudioMaxSeconds) {
         long timeout = 240L;
         boolean interactive = false;
         if (session != null && session.getScenarioConfig() != null) {
@@ -831,7 +840,7 @@ public class RuntimeRunnerDispatcher {
             }
         }
         if (interactive) {
-            long studioMax = 3600L;
+            long studioMax = Math.max(300L, Math.min(14400L, configuredStudioMaxSeconds));
             String raw = System.getenv("MAVIS_STUDIO_MAX_SESSION_SECONDS");
             if (raw != null && !raw.isBlank()) {
                 try {

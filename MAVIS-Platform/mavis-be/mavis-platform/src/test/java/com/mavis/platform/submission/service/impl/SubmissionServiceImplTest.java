@@ -1393,4 +1393,105 @@ class SubmissionServiceImplTest {
             org.springframework.test.util.ReflectionTestUtils.setField(submissionService, "jdbc", null);
         }
     }
+
+    @Test
+    @DisplayName("submitTheoryV2 accepts separate-runtime-repo cloned snapshot by artifactHash and preserves finalExerciseEvaluation for Lecturers while stripping for Students")
+    void studioV2AcceptsSeparateRuntimeSnapshotHashAndPreservesFinalEvaluationForLecturerOnly() {
+        var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        student.setRole(Role.builder().code("STUDENT").build());
+        assignment.setLabMode("THEORY_QUIZ_STUDIO");
+        assignment.setLabOrder(3);
+        assignment.setWorkspace(labWorkspace);
+        assignment.setReferenceModel(modelVersion);
+        project.setWorkspace(labWorkspace);
+
+        UUID configuredRuntimeSnapshotId = UUID.randomUUID();
+        SourceSnapshot configuredRuntimeSnapshot = SourceSnapshot.builder()
+                .id(configuredRuntimeSnapshotId)
+                .artifactHash("sha256:runtime-repo-distinct-hash")
+                .build();
+        Project clonedStudentRuntimeProject = Project.builder()
+                .id(UUID.randomUUID())
+                .workspace(labWorkspace)
+                .owner(student)
+                .build();
+        SourceSnapshot clonedStudentRuntimeSnapshot = SourceSnapshot.builder()
+                .id(UUID.randomUUID())
+                .project(clonedStudentRuntimeProject)
+                .artifactHash("sha256:runtime-repo-distinct-hash")
+                .build();
+        ModelVersion clonedStudentRuntimeModel = ModelVersion.builder()
+                .id(UUID.randomUUID())
+                .project(clonedStudentRuntimeProject)
+                .sourceSnapshot(clonedStudentRuntimeSnapshot)
+                .build();
+
+        assignment.setStudioExerciseSnapshot(objectMapper.createObjectNode()
+                .put("runtimeSnapshotId", configuredRuntimeSnapshotId.toString()));
+
+        runtimeSession.setAssignment(assignment);
+        runtimeSession.setTriggeredBy(student);
+        runtimeSession.setProject(clonedStudentRuntimeProject);
+        runtimeSession.setSourceSnapshot(clonedStudentRuntimeSnapshot);
+        runtimeSession.setModelVersion(clonedStudentRuntimeModel);
+        var scenarioPlan = objectMapper.createObjectNode().put("interactiveStudio", true);
+        scenarioPlan.putArray("infrastructureActions").addObject()
+                .put("action", "START").put("service", "inventory-service");
+        runtimeSession.setScenarioConfig(scenarioPlan);
+        runtimeSession.setSandboxEnforcementConfirmed(true);
+        runtimeSession.setReceiptDigest("sha256:" + "c".repeat(64));
+
+        var control = objectMapper.createObjectNode().put("receiptSignature", "hmac-sha256:verified");
+        control.putArray("actions").addObject()
+                .put("action", "START").put("service", "inventory-service").put("status", "CONFIRMED");
+        control.putObject("finalExerciseEvaluation").put("passed", true).put("scorePercent", 100);
+        control.putArray("snapshots").addObject()
+                .put("id", "cap-before")
+                .put("title", "Before recovery")
+                .put("explanation", "Inventory service initially down at 0x.");
+        runtimeSession.setStudioControl(control);
+
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("spanId", "s1");
+        var action = receipt.putArray("infrastructureActions").addObject()
+                .put("action", "START").put("service", "inventory-service")
+                .put("replicasBefore", 0).put("replicasAfter", 1).put("confirmed", true);
+        action.putObject("metricsBefore");
+        action.putObject("metricsAfter");
+        runtimeSession.setRunnerReceiptJson(receipt);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(workspaceRepository.findLockedById(labWorkspace.getId())).thenReturn(Optional.of(labWorkspace));
+        when(sourceSnapshotRepository.findById(configuredRuntimeSnapshotId)).thenReturn(Optional.of(configuredRuntimeSnapshot));
+        when(courseLabs.currentQuizPass(assignment, userId)).thenReturn(Optional.of(
+                new com.mavis.common.security.CourseLabPolicy.QuizPass(UUID.randomUUID(), 1, 5, 5, 100, OffsetDateTime.now())));
+        final SubmissionSnapshot[] persisted = new SubmissionSnapshot[1];
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call -> {
+            SubmissionSnapshot saved = call.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            saved.setSubmittedAt(OffsetDateTime.now());
+            persisted[0] = saved;
+            return saved;
+        });
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .runtimeSessionId(runtimeSessionId)
+                .submissionNotes("Recovered inventory-service after capturing baseline.")
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO(
+                        "THEORY", "Theory explanation", "Circuit breaker recovered after START.")))
+                .build();
+
+        SubmissionResponseDTO studentDto = submissionService.submitAssignment(request);
+        // Student DTO must never see finalExerciseEvaluation, while persisted entity retains it for Lecturer SpeedGrader
+        assertThat(studentDto.getStudioEvidence().has("finalExerciseEvaluation")).isFalse();
+        assertThat(persisted[0].getStudioEvidence().path("finalExerciseEvaluation").path("passed").asBoolean()).isTrue();
+        assertThat(persisted[0].getStudioEvidence().path("actions")).hasSize(1);
+
+        SubmissionResponseDTO lecturerDto = SubmissionResponseDTO.fromEntity(persisted[0], 0L, null, true);
+        assertThat(lecturerDto.getStudioEvidence().path("finalExerciseEvaluation").path("scorePercent").asInt()).isEqualTo(100);
+    }
 }

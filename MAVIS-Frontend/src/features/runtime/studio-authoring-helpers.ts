@@ -581,22 +581,18 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
   }
 
   if (resolvedType === "CIRCUIT_BREAKER") {
-    const downList =
-      stoppedServices.length > 0
-        ? stoppedServices.join(", ")
-        : targetAction?.service || "target-service";
     const errLimit = maxErrorRatePercent != null ? maxErrorRatePercent : 0;
     if (isVi) {
       return [
         `Mục tiêu: Chẩn đoán sự cố khởi phát sẵn và khôi phục hệ thống về trạng thái ổn định (tỉ lệ lỗi <= ${errLimit}%).`,
-        `1. Quan sát các khối 3D, tỉ lệ lỗi và Log & Trace để xác định service đang tắt sẵn (${downList}) cùng các nhánh upstream bị ảnh hưởng.`,
+        `1. Quan sát các khối 3D, tỉ lệ lỗi và Log & Trace để tự chẩn đoán service đang dừng (0x) cùng các nhánh upstream bị ảnh hưởng.`,
         `2. Khởi động lại (START) service gặp sự cố và kiểm tra traffic phục hồi về mức lỗi <= ${errLimit}%.`,
         `3. Chụp snapshot Trước/Sau khi khôi phục hoặc quay video làm bằng chứng rồi bấm Kết thúc Studio để nộp bài cho giảng viên chấm.`,
       ].join("\n");
     }
     return [
       `Goal: Diagnose the pre-existing outage and restore healthy traffic (error rate <= ${errLimit}%).`,
-      `1. Inspect 3D block health, error charts, and Logs & Traces to pinpoint the stopped service (${downList}) and impacted callers.`,
+      `1. Inspect 3D block health, error charts, and Logs & Traces to diagnose the stopped (0x) service and impacted callers.`,
       `2. START the failed service and verify live traces recover to <= ${errLimit}% error rate.`,
       `3. Capture Before/After recovery snapshots or record a video, then click Finish Studio to submit for lecturer grading.`,
     ].join("\n");

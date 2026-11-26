@@ -250,7 +250,7 @@ export function LabAuthoring() {
                       `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
                     );
                   }}
-                  className="h-9 w-56 sm:w-64 2xl:w-80 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-slate-300 bg-card px-2.5 text-xs font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
+                  className="h-9 w-64 sm:w-80 xl:w-96 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-slate-300 bg-card px-2.5 text-xs font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
                 >
                   <option value="">{t("Switch Lab…", "Chuyển nhanh bài Lab…")}</option>
                   {allLabs.map((item) => (
@@ -302,7 +302,7 @@ export function LabAuthoring() {
           )}
         </div>
 
-        {section === "create" && (
+        {section === "create" && courseAccess.isEditable && (
           <nav
             aria-label={t("Lab creation steps", "Các bước tạo Lab")}
             className="flex flex-wrap items-center gap-1.5 border-t border-slate-200 pt-2.5 dark:border-border"
@@ -363,6 +363,29 @@ export function LabAuthoring() {
           </nav>
         )}
       </div>
+      {!courseAccess.isEditable && section === "create" && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50/75 px-4 py-3 text-xs text-slate-800 dark:border-sky-500/30 dark:bg-sky-950/30 dark:text-slate-100"
+        >
+          <p className="font-medium leading-relaxed">
+            {t(
+              "This class is currently ACTIVE — published Lab rules are locked to protect student submissions. You can still inspect the 3D Studio topology and preview as a student.",
+              "Lớp học đang ở trạng thái Đang mở (ACTIVE) — cấu hình Lab đã công bố được khóa để bảo vệ bài nộp của sinh viên. Bạn vẫn có thể mở Studio 3D hoặc xem trước như sinh viên.",
+            )}
+          </p>
+          {assignment && (
+            <Button asChild size="sm" variant="outline" className="shrink-0 text-xs">
+              <Link
+                href={`/studio-live?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}&mode=author`}
+              >
+                <Activity className="mr-1.5 size-3.5" aria-hidden="true" />
+                {t("Open Studio 3D", "Mở Studio 3D")}
+              </Link>
+            </Button>
+          )}
+        </div>
+      )}
       {!courseAccess.isEditable ||
       (section === "create" && !assignment && !courseAccess.canCreateLabs) ? (
         <Assignments embedded />

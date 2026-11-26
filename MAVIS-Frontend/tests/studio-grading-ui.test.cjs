@@ -106,7 +106,7 @@ test("Adversarial QA hardening: portal lightbox, WebGL release, UUID URL guards,
   assert.match(three, /forceContextLoss\(\)/);
   assert.match(access, /UUID_SEGMENT_RE\.test\(workspaceId\)/);
   assert.doesNotMatch(access, /NOT_ENROLLED/);
-  assert.match(access, /setEditHours\(0\)/);
+  assert.match(access, /Math\.min\(8760, Math\.max\(1, validHours \|\| 720\)\)/);
   assert.match(grading, /onReloadLatest\?\.\(\)/);
   assert.match(grading, /reviseHref/);
   assert.match(grading, /tooManyDecimals/);

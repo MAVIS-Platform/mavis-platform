@@ -101,54 +101,83 @@ export function downloadStudioEvidence(snapshot: {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function StudioEvidenceReplay({ frames, onSound }: {
+export function StudioEvidenceReplay({
+  frames,
+  onSound,
+  surfaceTheme = "dark",
+}: {
   frames: EvidenceFrame[];
   onSound?: (sound: "play" | "pause" | "checkpoint") => void;
+  surfaceTheme?: "light" | "dark";
 }) {
+  const { t } = useLocale();
+  const isLight = surfaceTheme === "light";
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const frame = frames[index];
+  const maxIndex = Math.max(0, frames.length - 1);
+  const safeIndex = Math.min(index, maxIndex);
+  const frame = frames[safeIndex];
 
   useEffect(() => {
-    if (!playing || index >= frames.length - 1) return;
-    const timer = window.setTimeout(() => setIndex(index + 1), 1200);
+    if (!playing || safeIndex >= maxIndex) return;
+    const timer = window.setTimeout(() => setIndex((prev) => Math.min(prev + 1, maxIndex)), 1200);
     return () => window.clearTimeout(timer);
-  }, [playing, index, frames.length]);
+  }, [playing, safeIndex, maxIndex]);
 
   if (!frame) return null;
-  const isPlaying = playing && index < frames.length - 1;
+  const isPlaying = playing && safeIndex < maxIndex;
   return (
     <div className="space-y-2">
-      <img className="max-h-72 w-full rounded-md border border-slate-700 object-contain" src={evidenceImage(frame.svg)} alt="Replay diagram" />
+      <img
+        className={`max-h-72 w-full rounded-md border object-contain ${isLight ? "border-slate-300 bg-white" : "border-slate-700 bg-slate-950"}`}
+        src={evidenceImage(frame.svg)}
+        alt={t("Replay diagram", "Sơ đồ phát lại")}
+      />
       <div className="flex items-center gap-2">
-        <button type="button" className="rounded border border-slate-600 px-2 py-1"
+        <button
+          type="button"
+          className={`rounded border px-2 py-1 text-xs font-medium ${isLight ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-100" : "border-slate-600 text-slate-100 hover:bg-slate-800"}`}
           onClick={() => {
-            if (!isPlaying && index === frames.length - 1) setIndex(0);
+            if (!isPlaying && safeIndex === maxIndex) setIndex(0);
             setPlaying(!isPlaying);
             onSound?.(isPlaying ? "pause" : "play");
-          }}>
-          {isPlaying ? "Pause" : "Play replay"}
+          }}
+        >
+          {isPlaying ? t("Pause", "Tạm dừng") : t("Play replay", "Phát lại")}
         </button>
-        <input type="range" aria-label="Replay step" min={0} max={frames.length - 1} value={index}
-          onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }}
+        <input
+          type="range"
+          aria-label={t("Replay step", "Bước phát lại")}
+          min={0}
+          max={maxIndex}
+          value={safeIndex}
+          onChange={(event) => {
+            setPlaying(false);
+            setIndex(Number(event.target.value));
+          }}
           onPointerUp={() => onSound?.("checkpoint")}
           onKeyUp={(event) => {
             if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) onSound?.("checkpoint");
           }}
-          className="min-w-0 flex-1" />
+          className="min-w-0 flex-1"
+        />
       </div>
-      <p className="text-slate-200">Step {index + 1}/{frames.length} · {(frame.elapsedMs / 1000).toFixed(1)}s · {frame.label}</p>
-      <p className="text-slate-400">{frame.totals.pods} pods · {frame.totals.handledRps} req/s handled · {frame.totals.droppedRps} req/s dropped</p>
+      <p className={isLight ? "text-slate-800" : "text-slate-200"}>
+        {t("Step", "Bước")} {safeIndex + 1}/{frames.length} · {(frame.elapsedMs / 1000).toFixed(1)}s · {frame.label}
+      </p>
+      <p className={isLight ? "text-slate-600" : "text-slate-400"}>
+        {frame.totals.pods} pods · {frame.totals.handledRps} req/s {t("handled", "xử lý")} · {frame.totals.droppedRps} req/s {t("dropped", "rơi")}
+      </p>
       {frame.connections.length > 0 && (
         <ul aria-label="Step traffic flows" className="flex flex-wrap gap-1 pt-0.5 font-mono text-[10px]">
           {frame.connections.slice(0, 8).map((conn, idx) => (
             <li
               key={`${conn.from}-${conn.to}-${idx}`}
-              className="rounded border border-slate-800 bg-slate-900/80 px-1.5 py-0.5 text-slate-300"
+              className={`rounded border px-1.5 py-0.5 ${isLight ? "border-slate-200 bg-slate-50 text-slate-700" : "border-slate-800 bg-slate-900/80 text-slate-300"}`}
             >
-              <span className="text-sky-300">{conn.from}</span>
+              <span className={isLight ? "text-sky-700" : "text-sky-300"}>{conn.from}</span>
               <span className="mx-1 text-slate-500">→</span>
-              <span className="text-emerald-300">{conn.to}</span>
+              <span className={isLight ? "text-emerald-700" : "text-emerald-300"}>{conn.to}</span>
               {conn.protocol && <span className="ml-1 text-slate-400">· {conn.protocol}</span>}
             </li>
           ))}

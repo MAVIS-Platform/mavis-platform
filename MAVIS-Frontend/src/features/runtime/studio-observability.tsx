@@ -4010,12 +4010,13 @@ export function formatSnapshotWatermark(watermark?: StudioSnapshotWatermark): {
           ),
           "",
         )
+        .replace(/\(\s*(?:Sinh\s*Vi[êe]n|Student|SV|MSSV)?\s*[:·•|\-–—]*\s*\)/gi, "")
         .replace(/\(\s*\)/g, "")
         .replace(/\s*[·•|\-–—]\s*$/, "")
         .replace(/\s{2,}/g, " ")
         .trim()
     : rawName
-        .replace(/\(\s*(?:Sinh\s*Vi[êe]n|Student|MSSV)?\s*:?\s*\)/gi, "")
+        .replace(/\(\s*(?:Sinh\s*Vi[êe]n|Student|SV|MSSV)?\s*[:·•|\-–—]*\s*\)/gi, "")
         .replace(/\(\s*\)/g, "")
         .replace(/\s{2,}/g, " ")
         .trim();

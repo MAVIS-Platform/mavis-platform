@@ -62,6 +62,7 @@ type ExerciseCriteriaLike = {
   maxErrorRatePercent?: number | null;
   maxP95Ms?: number | null;
   minF1?: number | null;
+  minImpactF1?: number | null;
 };
 
 function fmtNum(value: unknown, digits = 1): string | null {
@@ -104,7 +105,9 @@ function detectExerciseType(
   if (explicit) return explicit;
 
   const confirmed = (data.actions ?? []).filter((a) => a.status === "CONFIRMED");
-  if (confirmed.some((a) => a.action === "THROTTLE_CPU")) return "CONFIG_REGRESSION";
+  if (confirmed.some((a) => a.action === "THROTTLE_CPU" || a.action === "SET_ENV" || a.action === "SWAP_VERSION")) {
+    return "CONFIG_REGRESSION";
+  }
   if (confirmed.some((a) => a.action === "SCALE" || a.action === "SET_LOAD")) {
     return "SCALE_UNDER_LOAD";
   }
@@ -146,7 +149,8 @@ function readServiceCpuMem(
   if (!service) return { cpu: null, memory: null, runningReplicas: null };
   const live = data.telemetry?.services?.find((s) => s.service === service);
   if (!live) return { cpu: null, memory: null, runningReplicas: null };
-  const firstStat = live.stats.find((s) => s.cpu || s.memory) ?? live.stats[0];
+  const statsList = Array.isArray(live.stats) ? live.stats : [];
+  const firstStat = statsList.find((s) => s.cpu || s.memory) ?? statsList[0];
   return {
     cpu: firstStat?.cpu?.trim() || null,
     memory: firstStat?.memory?.trim() || null,
@@ -238,7 +242,8 @@ export function buildSmartSnapshotPlan(
     actionOf("SCALE")?.service ??
     data.telemetry?.services?.find((s) => s.runningReplicas > 1)?.service;
   const initiallyStopped = data.topology?.blocks?.find((b) => b.initiallyStopped)?.service;
-  const throttledService = actionOf("THROTTLE_CPU")?.service;
+  const liveDownService = data.telemetry?.services?.find((s) => s.runningReplicas === 0)?.service;
+  const throttledService = actionOf("THROTTLE_CPU", "SET_ENV", "SWAP_VERSION")?.service;
   const faultService = actionOf("PAUSE", "STOP")?.service;
   const recoveredService = actionOf("START", "RESUME")?.service;
 
@@ -322,7 +327,7 @@ export function buildSmartSnapshotPlan(
         value: predictionLabel,
         tone:
           options?.includeAutoCheck && evaluation?.impact
-            ? evaluation.impact.f1Score >= (criteria?.minF1 ?? 0.7)
+            ? evaluation.impact.f1Score >= (criteria?.minImpactF1 ?? criteria?.minF1 ?? 0.7)
               ? "good"
               : "warn"
             : "neutral",
@@ -357,13 +362,21 @@ export function buildSmartSnapshotPlan(
         ? `${primaryService ?? "service"}: ${repBefore} → ${repAfter}×`
         : `${primaryService ?? "service"}: ${repAfter ?? 1}×`;
 
-    const rpsNow = fmtNum(probe?.rps, 1);
+    const maxGraphRps = Math.max(
+      0,
+      ...(data.telemetry?.serviceGraph ?? []).map((sg) =>
+        typeof sg.rps === "number" && Number.isFinite(sg.rps) ? sg.rps : 0,
+      ),
+    );
+    const rawEffectiveRps =
+      probe?.rps != null || maxGraphRps > 0 ? Math.max(probe?.rps ?? 0, maxGraphRps) : null;
+    const rpsNow = fmtNum(rawEffectiveRps, 1);
     const targetRps = probe?.targetRps ?? actionOf("SET_LOAD")?.targetRps ?? criteria?.targetChangeAction?.targetRps;
     const rpsText =
       rpsNow !== null
-        ? `${rpsNow} req/s${targetRps ? ` (target ${targetRps})` : ""}`
+        ? `${rpsNow} req/s${targetRps ? ` (${t("target", "mục tiêu")} ${targetRps})` : ""}`
         : targetRps
-          ? `Target ${targetRps} req/s`
+          ? `${t("Target", "Mục tiêu")} ${targetRps} req/s`
           : "—";
 
     const resParts = [svcLive.cpu ? `CPU ${svcLive.cpu}` : null, svcLive.memory ? `RAM ${svcLive.memory.split("/")[0]?.trim()}` : null].filter(Boolean);
@@ -397,6 +410,7 @@ export function buildSmartSnapshotPlan(
       initiallyStopped ??
       criteria?.targetChangeAction?.service ??
       recoveredService ??
+      liveDownService ??
       faultService ??
       options?.authoringTargetService ??
       options?.selectedService ??

@@ -1885,7 +1885,7 @@ test("Smart endpoint auto-picker, structured 3-step student instructions, and go
     maxErrorRatePercent: 0,
     locale: "vi",
   });
-  assert.ok(recVi.includes("1.") && recVi.includes("START") && recVi.includes("payment-service"));
+  assert.ok(recVi.includes("1.") && recVi.includes("START") && !recVi.includes("payment-service"));
 
   const cpuVi = buildStudentExerciseInstructions({
     exerciseType: "CONFIG_REGRESSION",
@@ -2512,7 +2512,7 @@ test("3D Sharpness Overhaul + Remaining UX Fixes: 2D vector tags, 1.5x SSAA, 1.5
   // Layer 3 & 4: supersampled 1600x960 Smart Snapshot & 1.5 Mbps HD Video both composite 1:1 2D vector labels
   assert.ok(obs.includes("capturePixelRatio: 1.5"));
   assert.ok(obs.includes("__mavisDrawLabels2D"));
-  assert.ok(recording.includes("videoBitsPerSecond: 1_500_000"));
+  assert.ok(recording.includes("videoBitsPerSecond: 1_100_000"));
   assert.ok(recording.includes("__mavisDrawLabels2D"));
   assert.ok(workbench.includes("videoData.length <= 4_900_000"));
 
@@ -2841,4 +2841,122 @@ test("Post-Upgrade Deep Test Regressions: MULTI_CHOICE inline quiz, HyperMesh le
     snapshotIndex: 1,
   });
   assert.ok(!wmNoCode.left.includes("()"));
+});
+
+test("Studio Deep-Test Wave Fixes: anti-spoiler Outage Recovery, 120s finish timeout, per-Lab author topology, Smart Snapshot liveDownService & graph RPS, and 0 dark: bleed", () => {
+  const { buildStudentExerciseInstructions } = require("../src/features/runtime/studio-authoring-helpers.ts");
+  const { buildSmartSnapshotPlan } = require("../src/features/runtime/studio-smart-snapshot.ts");
+
+  // 1. Outage Recovery (CIRCUIT_BREAKER) generated instructions never spoil stoppedServices
+  const cbVi = buildStudentExerciseInstructions({
+    exerciseType: "CIRCUIT_BREAKER",
+    stoppedServices: ["inventory-service"],
+    targetAction: { action: "START", service: "inventory-service" },
+    maxErrorRatePercent: 0,
+    locale: "vi",
+  });
+  const cbEn = buildStudentExerciseInstructions({
+    exerciseType: "CIRCUIT_BREAKER",
+    stoppedServices: ["inventory-service"],
+    targetAction: { action: "START", service: "inventory-service" },
+    maxErrorRatePercent: 0,
+    locale: "en",
+  });
+  assert.ok(!cbVi.includes("inventory-service"), "VI CIRCUIT_BREAKER instructions must not leak stopped service");
+  assert.ok(!cbEn.includes("inventory-service"), "EN CIRCUIT_BREAKER instructions must not leak stopped service");
+
+  // 2. Smart Snapshot detects live 0x service in student-redacted CIRCUIT_BREAKER & uses serviceGraph RPS on SCALE_UNDER_LOAD
+  const cbSnap = buildSmartSnapshotPlan(
+    {
+      sessionId: "sess-cb",
+      executionStatus: "RUNNING",
+      services: ["api-gateway", "order-service", "inventory-service"],
+      exerciseCriteria: { exerciseType: "CIRCUIT_BREAKER" },
+      exerciseEvaluation: null,
+      actions: [],
+      topology: {
+        version: 1,
+        blocks: [
+          { service: "api-gateway", label: "Gateway", canScale: false, initiallyStopped: false },
+          { service: "order-service", label: "Orders", canScale: true, initiallyStopped: false },
+          { service: "inventory-service", label: "Inventory", canScale: false, initiallyStopped: false },
+        ],
+        connections: [],
+      },
+      telemetry: {
+        observedAt: "2026-11-26T18:00:00Z",
+        probe: { rps: 1, p95Ms: 120, errorRatePercent: 100 },
+        services: [
+          { service: "api-gateway", replicas: 1, runningReplicas: 1 },
+          { service: "order-service", replicas: 1, runningReplicas: 1 },
+          { service: "inventory-service", replicas: 1, runningReplicas: 0 },
+        ],
+        spans: [],
+        logs: [],
+        serviceGraph: [{ client: "order-service", server: "inventory-service", requestCount: 5, errorCount: 5, errorRatePercent: 100, p95LatencyMs: 120 }],
+      },
+    },
+    { locale: "vi", selectedService: "api-gateway" },
+  );
+  assert.equal(cbSnap.primaryService, "inventory-service");
+  assert.match(cbSnap.stats[0].value, /inventory-service · DOWN \(×0\)/);
+
+  const scaleSnap = buildSmartSnapshotPlan(
+    {
+      sessionId: "sess-scale",
+      executionStatus: "RUNNING",
+      services: ["api-gateway", "order-service"],
+      exerciseCriteria: { exerciseType: "SCALE_UNDER_LOAD" },
+      exerciseEvaluation: null,
+      actions: [
+        { id: "a1", action: "SET_LOAD", service: "api-gateway", targetRps: 30, status: "CONFIRMED", requestedAt: "2026-11-26T18:01:00Z" },
+        { id: "a2", action: "SCALE", service: "order-service", replicas: 2, status: "CONFIRMED", requestedAt: "2026-11-26T18:01:10Z", result: { replicasBefore: 1, replicasAfter: 2 } },
+      ],
+      telemetry: {
+        observedAt: "2026-11-26T18:01:20Z",
+        probe: { rps: 1, targetRps: 30, p95Ms: 42, errorRatePercent: 0 },
+        services: [{ service: "order-service", replicas: 2, runningReplicas: 2 }],
+        spans: [],
+        logs: [],
+        serviceGraph: [{ client: "api-gateway", server: "order-service", rps: 28.4, requestCount: 56, errorCount: 0, errorRatePercent: 0, p95LatencyMs: 42 }],
+      },
+    },
+    { locale: "vi" },
+  );
+  const rpsStat = scaleSnap.stats.find((s) => s.label === "Lưu lượng (RPS)");
+  assert.ok(rpsStat && rpsStat.value.includes("28.4 req/s"));
+
+  // 3. BackendAdapter gives studioFinish / studioAction / stopRuntime 120s timeout
+  const adapterSrc = fs.readFileSync(
+    path.join(__dirname, "../src/lib/api/backend-adapter.ts"),
+    "utf8",
+  );
+  for (const op of ["studioFinish", "studioAction", "studioPrediction", "stopRuntime"]) {
+    assert.ok(adapterSrc.includes(`"${op}"`), `BackendAdapter 120s timeout list missing ${op}`);
+  }
+
+  // 4. StandaloneStudioLive overlays per-Lab stoppedServices on previewTopology & removes unsolicited auto-boot
+  const standaloneSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  assert.ok(standaloneSrc.includes("exercise.data.initialState.stoppedServices"));
+  assert.ok(!standaloneSrc.includes("autoStartedRef"));
+  assert.ok(standaloneSrc.includes("poll: false"));
+
+  // 5. LiveStudioWorkbench exposes all 4 themes, clamps drag above bottom dock, and has zero dark: utility classes
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  assert.ok(workbenchSrc.includes("{STUDIO_STYLE_LIST.map((id) => {"));
+  assert.ok(workbenchSrc.includes("bottomReserved"));
+  assert.ok(!workbenchSrc.includes("dark:"), "live-studio-workbench.tsx must use isLight instead of global dark: classes");
+
+  // 6. Submission StudioEvidence reads finalExerciseEvaluation first
+  const subEvSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/submissions/studio-evidence.tsx"),
+    "utf8",
+  );
+  assert.ok(subEvSrc.includes("evidence.data.studioEvidence.finalExerciseEvaluation"));
 });

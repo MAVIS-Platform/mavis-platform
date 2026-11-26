@@ -40,15 +40,13 @@ public class StudioTelemetryHub {
     private final ObjectMapper mapper;
     private final ConcurrentHashMap<UUID, SessionStream> streams = new ConcurrentHashMap<>();
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    @org.springframework.context.annotation.Lazy
-    private com.mavis.analyzer.runtime.service.impl.RuntimeQueueCoordinator queueCoordinator;
-
     public record SessionSnapshot(
             JsonNode latestTelemetry,
             String receivedAt,
             List<String> recentObservedAt,
             List<JsonNode> history) {}
+
+    private record Subscriber(SseEmitter emitter, boolean redactForStudent) {}
 
     private static final class SessionStream {
         JsonNode latestTelemetry;
@@ -57,7 +55,7 @@ public class StudioTelemetryHub {
         long lastTouchedAtMs = System.currentTimeMillis();
         final Deque<String> recentObservedAt = new ArrayDeque<>();
         final Deque<JsonNode> history = new ArrayDeque<>();
-        final CopyOnWriteArrayList<SseEmitter> subscribers = new CopyOnWriteArrayList<>();
+        final CopyOnWriteArrayList<Subscriber> subscribers = new CopyOnWriteArrayList<>();
     }
 
     /**
@@ -119,12 +117,32 @@ public class StudioTelemetryHub {
 
     /** Pushes a state transition (action submitted/acked, finish requested, terminal status) over SSE. */
     public void notifyState(UUID sessionId, JsonNode stateView) {
+        notifyState(sessionId, stateView, stateView);
+    }
+
+    public void notifyState(UUID sessionId, JsonNode studentStateView, JsonNode fullStateView) {
         SessionStream stream = streams.get(sessionId);
         if (stream == null || stream.subscribers.isEmpty()) {
             return;
         }
         stream.lastTouchedAtMs = System.currentTimeMillis();
-        broadcast(stream, "state", stateView);
+        for (Subscriber sub : stream.subscribers) {
+            JsonNode payload = sub.redactForStudent() ? studentStateView : fullStateView;
+            try {
+                sub.emitter().send(SseEmitter.event().name("state").data(payload));
+            } catch (Exception ex) {
+                stream.subscribers.remove(sub);
+            }
+        }
+    }
+
+    public boolean hasNonStudentSubscriber(UUID sessionId) {
+        SessionStream stream = streams.get(sessionId);
+        if (stream == null || stream.subscribers.isEmpty()) return false;
+        for (Subscriber sub : stream.subscribers) {
+            if (!sub.redactForStudent()) return true;
+        }
+        return false;
     }
 
     public Optional<SessionSnapshot> latest(UUID sessionId) {
@@ -145,22 +163,27 @@ public class StudioTelemetryHub {
     }
 
     public SseEmitter subscribe(UUID sessionId, JsonNode initialState) {
+        return subscribe(sessionId, initialState, true);
+    }
+
+    public SseEmitter subscribe(UUID sessionId, JsonNode initialState, boolean redactForStudent) {
         SessionStream stream = streams.computeIfAbsent(sessionId, ignored -> new SessionStream());
         stream.lastTouchedAtMs = System.currentTimeMillis();
         while (stream.subscribers.size() >= MAX_SUBSCRIBERS_PER_SESSION) {
-            SseEmitter oldest = stream.subscribers.remove(0);
-            try { oldest.complete(); } catch (Exception ignored) {}
+            Subscriber oldest = stream.subscribers.remove(0);
+            try { oldest.emitter().complete(); } catch (Exception ignored) {}
         }
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        Runnable detach = () -> stream.subscribers.remove(emitter);
+        Subscriber sub = new Subscriber(emitter, redactForStudent);
+        Runnable detach = () -> stream.subscribers.remove(sub);
         emitter.onCompletion(detach);
         emitter.onTimeout(detach);
         emitter.onError(ex -> detach.run());
-        stream.subscribers.add(emitter);
+        stream.subscribers.add(sub);
         try {
             emitter.send(SseEmitter.event().name("state").data(initialState));
         } catch (Exception ex) {
-            stream.subscribers.remove(emitter);
+            stream.subscribers.remove(sub);
             emitter.completeWithError(ex);
         }
         return emitter;
@@ -171,8 +194,8 @@ public class StudioTelemetryHub {
         if (removed == null) {
             return;
         }
-        for (SseEmitter emitter : removed.subscribers) {
-            try { emitter.complete(); } catch (Exception ignored) {}
+        for (Subscriber sub : removed.subscribers) {
+            try { sub.emitter().complete(); } catch (Exception ignored) {}
         }
         removed.subscribers.clear();
     }
@@ -182,11 +205,11 @@ public class StudioTelemetryHub {
         for (var entry : streams.entrySet()) {
             SessionStream stream = entry.getValue();
             if (stream.subscribers.isEmpty()) continue;
-            for (SseEmitter emitter : stream.subscribers) {
+            for (Subscriber sub : stream.subscribers) {
                 try {
-                    emitter.send(SseEmitter.event().comment("keepalive"));
+                    sub.emitter().send(SseEmitter.event().comment("keepalive"));
                 } catch (Exception ex) {
-                    stream.subscribers.remove(emitter);
+                    stream.subscribers.remove(sub);
                 }
             }
         }
@@ -204,11 +227,11 @@ public class StudioTelemetryHub {
     }
 
     private void broadcast(SessionStream stream, String eventName, JsonNode payload) {
-        for (SseEmitter emitter : stream.subscribers) {
+        for (Subscriber sub : stream.subscribers) {
             try {
-                emitter.send(SseEmitter.event().name(eventName).data(payload));
+                sub.emitter().send(SseEmitter.event().name(eventName).data(payload));
             } catch (Exception ex) {
-                stream.subscribers.remove(emitter);
+                stream.subscribers.remove(sub);
             }
         }
     }

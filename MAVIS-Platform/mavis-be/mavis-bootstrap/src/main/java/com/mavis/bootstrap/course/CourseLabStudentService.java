@@ -305,7 +305,7 @@ public class CourseLabStudentService {
                 .toList();
     }
 
-    private static JsonNode redactStudioExerciseForStudent(JsonNode exercise) {
+    static JsonNode redactStudioExerciseForStudent(JsonNode exercise) {
         if (exercise == null || !exercise.isObject()) {
             return exercise;
         }
@@ -315,6 +315,26 @@ public class CourseLabStudentService {
             exerciseType = copy.path("successCriteria").path("exerciseType").asText("");
         }
         boolean isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(exerciseType);
+        Set<String> hiddenStoppedServices = new LinkedHashSet<>();
+        if (isOutageRecovery) {
+            JsonNode tca = copy.path("successCriteria").path("targetChangeAction");
+            if (tca.isObject()) {
+                String svc = tca.path("service").asText("").trim();
+                if (!svc.isEmpty()) hiddenStoppedServices.add(svc);
+            } else if (tca.isTextual()) {
+                String targetAction = tca.asText("");
+                int colon = targetAction.indexOf(':');
+                if (colon >= 0 && colon + 1 < targetAction.length()) {
+                    hiddenStoppedServices.add(targetAction.substring(colon + 1).trim());
+                }
+            }
+            if (copy.path("initialState").path("stoppedServices").isArray()) {
+                for (JsonNode svcNode : copy.path("initialState").path("stoppedServices")) {
+                    String svc = svcNode.asText("").trim();
+                    if (!svc.isEmpty()) hiddenStoppedServices.add(svc);
+                }
+            }
+        }
         if (copy.path("successCriteria").isObject()) {
             ObjectNode sc = (ObjectNode) copy.get("successCriteria");
             sc.remove(List.of("rules", "minImpactF1", "expectedAffectedServices"));
@@ -326,6 +346,16 @@ public class CourseLabStudentService {
             ObjectNode init = (ObjectNode) copy.get("initialState");
             init.putArray("stoppedServices");
             init.putArray("stoppedControllers");
+        }
+        if (isOutageRecovery && copy.hasNonNull("instructions")) {
+            String sanitized = copy.path("instructions").asText("");
+            for (String svc : hiddenStoppedServices) {
+                if (svc.isEmpty()) continue;
+                String quoted = java.util.regex.Pattern.quote(svc);
+                sanitized = sanitized.replaceAll("(?i)\\s*\\(\\s*" + quoted + "\\s*\\)", "");
+                sanitized = sanitized.replaceAll("(?i)\\b" + quoted + "\\b", "service đang dừng");
+            }
+            copy.put("instructions", sanitized);
         }
         return copy;
     }

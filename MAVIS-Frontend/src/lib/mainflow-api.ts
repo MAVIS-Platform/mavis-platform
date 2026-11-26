@@ -11,20 +11,31 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData))
     headers.set("Content-Type", "application/json");
-  const response = await fetch(`/api/backend/${path}`, {
-    ...init,
-    headers,
-    credentials: "same-origin",
-    cache: "no-store",
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok)
-    throw new ApiError(
-      response.status,
-      body?.message ?? `Request failed (${response.status})`,
-      typeof body?.errorCode === "string" ? body.errorCode : undefined,
-    );
-  return body?.data as T;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  init.signal?.addEventListener("abort", onAbort, { once: true });
+  if (init.signal?.aborted) controller.abort();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+  try {
+    const response = await fetch(`/api/backend/${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers,
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok)
+      throw new ApiError(
+        response.status,
+        body?.message ?? `Request failed (${response.status})`,
+        typeof body?.errorCode === "string" ? body.errorCode : undefined,
+      );
+    return body?.data as T;
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener("abort", onAbort);
+  }
 }
 export type Project = { id: string; name: string };
 export type Model = { id: string; revision: number; sourceSnapshotId?: string; status?: string };

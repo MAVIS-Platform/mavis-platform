@@ -592,6 +592,12 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         RuntimeSession requestedSession = runtimeSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Runtime session not found"));
         accessPolicyService.requireProjectReadAccess(requestedSession.getProject());
+        var actor = accessPolicyService.requireCurrentActiveUser();
+        if (actor != null && com.mavis.common.security.CourseLabPolicy.isStudent(actor)
+                && (requestedSession.getTriggeredBy() == null
+                    || !actor.getId().equals(requestedSession.getTriggeredBy().getId()))) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "You can only access your own runtime session");
+        }
 
         RuntimeSession session = requestedSession;
 

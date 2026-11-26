@@ -138,7 +138,7 @@ export const STUDIO_STYLES: Record<StudioStyleId, StudioStyleConfig> = {
     wireMode: "orthogonal",
     canvasBg: "#EAF3FF",
     canvasBgCss:
-      "linear-gradient(180deg, #EDF5FF 0%, #E3EEFF 100%)",
+      "linear-gradient(180deg, #EDF5FF 0%, #E3EEFF 100%), #EAF3FF",
     gridKind: "blueprint",
     gridColor: "#BFDBFE",
     gridMajorColor: "#93C5FD",

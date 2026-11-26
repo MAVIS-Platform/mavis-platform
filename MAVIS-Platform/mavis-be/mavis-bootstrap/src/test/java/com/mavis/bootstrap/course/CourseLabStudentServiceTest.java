@@ -493,4 +493,27 @@ class CourseLabStudentServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getStableCode()).isEqualTo("RUN_COOLDOWN_ACTIVE"));
     }
+
+    @Test
+    void redactStudioExerciseForStudentStripsOutageRecoveryStoppedServiceSpoilersFromInstructions() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var raw = mapper.readTree("""
+                {
+                  "exerciseType": "CIRCUIT_BREAKER",
+                  "instructions": "Bước 1: Chạy Docker, xác định service đang tắt sẵn (inventory-service). Bước 2: START lại inventory-service.",
+                  "initialState": { "stoppedServices": ["inventory-service"], "stoppedControllers": [] },
+                  "successCriteria": {
+                    "exerciseType": "CIRCUIT_BREAKER",
+                    "targetChangeAction": { "action": "START", "service": "inventory-service" },
+                    "rules": [{ "metric": "errorRate" }]
+                  }
+                }
+                """);
+        var redacted = CourseLabStudentService.redactStudioExerciseForStudent(raw);
+        assertThat(redacted.path("initialState").path("stoppedServices")).isEmpty();
+        assertThat(redacted.path("successCriteria").has("targetChangeAction")).isFalse();
+        assertThat(redacted.path("instructions").asText())
+                .doesNotContainIgnoringCase("inventory-service")
+                .contains("Bước 1:");
+    }
 }

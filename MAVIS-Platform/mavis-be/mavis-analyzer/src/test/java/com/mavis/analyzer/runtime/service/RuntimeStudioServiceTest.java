@@ -603,4 +603,44 @@ class RuntimeStudioServiceTest {
         var forbidden = assertThrows(BusinessException.class, () -> service.state(id));
         assertEquals(com.mavis.common.exception.ErrorCode.FORBIDDEN, forbidden.getErrorCode());
     }
+
+    @Test
+    void sseBroadcastSeparatesStudentRedactedAndLecturerFullPayloadsAndLeaseExpirySavesEvaluation() throws Exception {
+        StudioTelemetryHub hub = spy(new StudioTelemetryHub(mapper));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "telemetryHub", hub);
+        try {
+            var studentUser = com.mavis.common.entity.User.builder()
+                    .id(UUID.randomUUID())
+                    .role(com.mavis.common.entity.Role.builder().code("STUDENT").build())
+                    .build();
+            var lecturerUser = com.mavis.common.entity.User.builder()
+                    .id(UUID.randomUUID())
+                    .role(com.mavis.common.entity.Role.builder().code("LECTURER").build())
+                    .build();
+            session.setTriggeredBy(studentUser);
+            var criteria = ((ObjectNode) session.getScenarioConfig()).putObject("exerciseCriteria");
+            criteria.put("exerciseType", "CIRCUIT_BREAKER");
+            criteria.putObject("targetChangeAction").put("action", "START").put("service", "orders");
+            criteria.putArray("rules").addObject().put("metric", "errorRate");
+
+            when(access.requireCurrentActiveUser()).thenReturn(studentUser);
+            service.subscribeStream(id);
+            when(access.requireCurrentActiveUser()).thenReturn(lecturerUser);
+            service.subscribeStream(id);
+
+            service.publishSessionState(session);
+            var studentCap = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+            var fullCap = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+            verify(hub).notifyState(eq(id), studentCap.capture(), fullCap.capture());
+            assertFalse(studentCap.getValue().has("exerciseEvaluation"));
+            assertTrue(fullCap.getValue().has("exerciseEvaluation"));
+
+            // Lease auto-finish computes finalExerciseEvaluation before hub.clear()
+            hub.publish(id, mapper.createObjectNode().put("observedAt", "2026-11-27T00:00:00Z"), "r0", true);
+            service.ensureFinalEvaluationBeforeClear(session);
+            assertTrue(session.getStudioControl().hasNonNull("finalExerciseEvaluation"));
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(service, "telemetryHub", null);
+        }
+    }
 }

@@ -3334,13 +3334,13 @@ export function StudioThreeStage({
       nodes
         .map(
           (n) =>
-            `${n.id}|${n.label}|${n.archetype}|${n.tier ?? ""}|${n.wx}|${n.wz}|${n.replicas}|${n.isStopped ? 1 : 0}${n.isPaused ? 1 : 0}${n.isCritical ? 1 : 0}${n.isWarning ? 1 : 0}${n.isSelected ? 1 : 0}${n.isDropTarget ? 1 : 0}|${n.cpuPct ?? ""}|${n.ramPct ?? ""}|${n.cpuThrottlePct ?? ""}|${n.ramLabel ?? ""}|${n.palette.accent}`,
+            `${n.id}|${n.label}|${n.archetype}|${n.tier ?? ""}|${n.wx}|${n.wz}|${n.replicas}|${n.isStopped ? 1 : 0}${n.isPaused ? 1 : 0}${n.isCritical ? 1 : 0}${n.isWarning ? 1 : 0}${n.isSelected ? 1 : 0}${n.isDropTarget ? 1 : 0}|${n.cpuPct != null ? Math.round(n.cpuPct / 5) : ""}|${n.ramPct != null ? Math.round(n.ramPct / 5) : ""}|${n.cpuThrottlePct ?? ""}|${n.palette.accent}`,
         )
         .join(";"),
       edges
         .map(
           (e) =>
-            `${e.id}|${e.from}>${e.to}|${e.kind}|${e.color}|${e.dashed ? 1 : 0}${e.isAsync ? 1 : 0}${e.isSevered ? 1 : 0}${e.isDegraded ? 1 : 0}|${e.label ?? ""}|${e.rps ?? ""}`,
+            `${e.from}>${e.to}|${e.kind}|${e.color}|${e.dashed ? 1 : 0}${e.isAsync ? 1 : 0}${e.isSevered ? 1 : 0}${e.isDegraded ? 1 : 0}|${e.rps != null ? Math.round(e.rps) : ""}`,
         )
         .join(";"),
     ].join("#");
@@ -3537,12 +3537,19 @@ export function StudioThreeStage({
     // 2. Real 3D SE-Standard Service Deployment Nodes
     const nodeById = new Map<string, StudioThreeNode>();
     for (const node of nodes) {
-      nodeById.set(node.id, node);
-      liveNodePosRef.current.set(node.id, { wx: node.wx, wz: node.wz });
+      const activeNodeDrag =
+        dragRef.current?.mode === "NODE" && dragRef.current.serviceId === node.id
+          ? dragRef.current
+          : null;
+      const posWx = activeNodeDrag ? activeNodeDrag.currentWx : node.wx;
+      const posWz = activeNodeDrag ? activeNodeDrag.currentWz : node.wz;
+      const positionedNode = activeNodeDrag ? { ...node, wx: posWx, wz: posWz } : node;
+      nodeById.set(node.id, positionedNode);
+      liveNodePosRef.current.set(node.id, { wx: posWx, wz: posWz });
       const effectiveNode =
         dropHoverService === node.id
-          ? { ...node, isDropTarget: true }
-          : node;
+          ? { ...positionedNode, isDropTarget: true }
+          : positionedNode;
       const rig = buildServiceRig(T, effectiveNode, styleId, sharedTexRef.current, maxAnisotropy);
       const use2DOverlay = Boolean(labelCanvasRef.current);
       rig.labelSprite.visible = !use2DOverlay && showNodeTagsRef.current;

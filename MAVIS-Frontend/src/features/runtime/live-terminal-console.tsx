@@ -87,29 +87,44 @@ export function isBootNoiseMessage(message: string): boolean {
   return BOOT_NOISE_RE.test(message.trim());
 }
 
-export function explainRuntimeDiagnostic(raw: string): string | null {
+export function explainRuntimeDiagnostic(raw: string, locale = "en"): string | null {
   const text = raw.trim();
+  const isVi = locale === "vi";
   if (!text) return null;
   if (/BACKEND_RESTART_RECOVERY/i.test(text)) {
-    return "Previous Docker session stopped because the backend server restarted during deployment. Click Run to start a fresh Docker session.";
+    return isVi
+      ? "Phiên Docker trước đã dừng do máy chủ khởi động lại khi cập nhật. Bấm Chạy Docker để mở phiên mới."
+      : "Previous Docker session stopped because the backend server restarted during deployment. Click Run to start a fresh Docker session.";
   }
   if (/DOCKER_UP_FAILED/i.test(text)) {
-    return "Docker Compose failed to start all lab containers. Check the error lines below or click Run to retry.";
+    return isVi
+      ? "Docker Compose chưa khởi chạy được toàn bộ container. Hãy kiểm tra dòng lỗi bên dưới hoặc bấm Chạy lại."
+      : "Docker Compose failed to start all lab containers. Check the error lines below or click Run to retry.";
   }
   if (/STUDIO_MAX_DURATION_AUTO_FINISHED/i.test(text)) {
-    return "Docker session reached its maximum session lease and automatically sealed your confirmed evidence. Review your receipt or click Run for a new session.";
+    return isVi
+      ? "Phiên Docker đã đạt thời lượng tối đa và tự động niêm phong minh chứng. Hãy kiểm tra biên nhận hoặc bấm Chạy để mở phiên mới."
+      : "Docker session reached its maximum session lease and automatically sealed your confirmed evidence. Review your receipt or click Run for a new session.";
   }
   if (/TIMED_?OUT|SESSION_TIMED_OUT/i.test(text)) {
-    return "Docker session timed out or became inactive and was cleaned up. Click Run to launch a new session.";
+    return isVi
+      ? "Phiên Docker đã hết thời gian chờ hoặc không hoạt động nên được dọn sạch. Bấm Chạy để mở phiên mới."
+      : "Docker session timed out or became inactive and was cleaned up. Click Run to launch a new session.";
   }
   if (/STUDIO_QUEUE_FULL|QUEUE_INACTIVE/i.test(text)) {
-    return "All Runner slots were busy or the tab stayed inactive while queued. Click Run again to rejoin the queue.";
+    return isVi
+      ? "Tất cả slot Runner đang bận hoặc tab tạm ngưng khi xếp hàng. Bấm Chạy lại để vào hàng đợi."
+      : "All Runner slots were busy or the tab stayed inactive while queued. Click Run again to rejoin the queue.";
   }
   if (/^ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION$/i.test(text)) {
-    return "OTel privacy filter active: sensitive span attributes and event payloads are redacted.";
+    return isVi
+      ? "Bộ lọc bảo mật OTel đang bật: các thuộc tính nhạy cảm trong span đã được ẩn."
+      : "OTel privacy filter active: sensitive span attributes and event payloads are redacted.";
   }
   if (/^MISSING_PARENT_SPAN$/i.test(text)) {
-    return "Partial OTel trace captured (child span arrived before root parent span).";
+    return isVi
+      ? "Thu thập một phần OTel trace (span con đến trước span cha gốc)."
+      : "Partial OTel trace captured (child span arrived before root parent span).";
   }
   return null;
 }
@@ -836,7 +851,11 @@ export function LiveTerminalConsole({
               aria-label="Filter terminal output"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("grep…", "lọc log…")}
+              placeholder={
+                view === "traces"
+                  ? t("filter traces…", "lọc trace…")
+                  : t("grep…", "lọc log…")
+              }
               className={`h-6 w-28 pl-6 pr-2 font-mono text-[11px] focus:outline-none sm:w-36 ${styleCfg.inputClass}`}
             />
           </label>

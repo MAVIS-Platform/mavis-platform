@@ -391,6 +391,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         session.setRunnerReceiptJson(SecretRedactor.redactJson(objectMapper.valueToTree(receipt)));
         session.setCompletedAt(OffsetDateTime.now());
+        if (runtimeStudioService != null && "COMPLETED".equalsIgnoreCase(session.getExecutionStatus())) {
+            runtimeStudioService.ensureFinalEvaluationBeforeClear(session);
+        }
 
         // [CHẶNG 11 & 12]: Đánh giá điều kiện Publication Gate
         boolean correspondenceOk = "Verified".equalsIgnoreCase(receipt.getImageSourceCorrespondence());

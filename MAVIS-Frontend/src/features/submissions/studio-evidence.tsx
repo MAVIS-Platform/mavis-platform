@@ -70,11 +70,12 @@ const studioActionSchema = z
 
 const frozenStudio = z
   .object({
-    studioEvidence: z
+      studioEvidence: z
       .object({
         receiptDigest: z.string(),
         receiptSignature: z.string().nullable().optional(),
         actions: z.array(studioActionSchema).optional(),
+        finalExerciseEvaluation: exerciseEvaluationSchema.nullish(),
         snapshots: z.array(
           z
             .object({
@@ -234,9 +235,11 @@ export function StudioSubmissionEvidence({
     : [];
   const actions = rawActions.filter((a) => !a.status || a.status.toUpperCase() === "CONFIRMED");
   const latestEval = evidence.success
-    ? [...snapshots]
+    ? (evidence.data.studioEvidence.finalExerciseEvaluation ??
+      [...snapshots]
         .reverse()
-        .find((snapshot) => snapshot.exerciseEvaluation)?.exerciseEvaluation ?? null
+        .find((snapshot) => snapshot.exerciseEvaluation)?.exerciseEvaluation ??
+      null)
     : null;
   const predictionRationale = evidence.success
     ? [...snapshots]

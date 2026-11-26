@@ -49,6 +49,9 @@ public class SubmissionServiceImpl implements SubmissionService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LabStudioExerciseRepository labStudioExerciseRepository;
+
     @Override
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getMySubmissions() {
@@ -407,9 +410,20 @@ public class SubmissionServiceImpl implements SubmissionService {
                     assignment.getStudioExerciseSnapshot() == null
                             ? null
                             : assignment.getStudioExerciseSnapshot().path("runtimeSnapshotId").asText(null));
+            if (configuredRuntimeSnapshotId == null && labStudioExerciseRepository != null) {
+                configuredRuntimeSnapshotId = labStudioExerciseRepository.findByAssignmentId(assignment.getId())
+                        .map(LabStudioExercise::getRuntimeSnapshotId)
+                        .orElse(null);
+            }
+            var configuredRuntimeSnapshot = configuredRuntimeSnapshotId == null
+                    ? null
+                    : sourceSnapshotRepository.findById(configuredRuntimeSnapshotId).orElse(null);
             boolean sameSource = sessionSource != null
                     && (sourceSnapshot.getId().equals(sessionSource.getId())
                         || (configuredRuntimeSnapshotId != null && configuredRuntimeSnapshotId.equals(sessionSource.getId()))
+                        || (configuredRuntimeSnapshot != null
+                            && configuredRuntimeSnapshot.getArtifactHash() != null
+                            && configuredRuntimeSnapshot.getArtifactHash().equals(sessionSource.getArtifactHash()))
                         || (sourceSnapshot.getArtifactHash() != null
                             && sourceSnapshot.getArtifactHash().equals(sessionSource.getArtifactHash())));
             boolean sameModel = sessionModel != null
@@ -875,6 +889,12 @@ public class SubmissionServiceImpl implements SubmissionService {
         evidence.set("snapshots", control.path("snapshots").isArray()
                 ? control.path("snapshots").deepCopy()
                 : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode());
+        if (control.path("actions").isArray()) {
+            evidence.set("actions", control.path("actions").deepCopy());
+        }
+        if (control.hasNonNull("finalExerciseEvaluation") && control.get("finalExerciseEvaluation").isObject()) {
+            evidence.set("finalExerciseEvaluation", control.get("finalExerciseEvaluation").deepCopy());
+        }
         evidence.set("receiptSignature", control.path("receiptSignature").deepCopy());
         evidence.set("receipt", runtime.getRunnerReceiptJson().deepCopy());
         return evidence;

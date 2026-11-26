@@ -130,8 +130,8 @@ export function startStudioRecording(
   const recorder = new MediaRecorder(
     stream,
     mimeType
-      ? { mimeType, videoBitsPerSecond: 1_500_000 }
-      : { videoBitsPerSecond: 1_500_000 },
+      ? { mimeType, videoBitsPerSecond: 1_100_000 }
+      : { videoBitsPerSecond: 1_100_000 },
   );
 
   const chunks: Blob[] = [];

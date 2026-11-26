@@ -40,8 +40,14 @@ export class BackendAdapter implements ApiAdapter {
               "saveRuntimeConfiguration",
               "startRuntime",
               "runtimeApprove",
+              "stopRuntime",
               "submit",
+              "studioAction",
+              "studioPrediction",
+              "studioFinish",
               "studioCapture",
+              "studioSnapshot",
+              "studioReceipt",
               "submissionExport",
             ].includes(operation)
           ? 120000

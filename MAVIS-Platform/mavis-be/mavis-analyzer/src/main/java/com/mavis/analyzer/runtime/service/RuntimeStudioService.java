@@ -238,11 +238,12 @@ public class RuntimeStudioService {
         RuntimeSession session = sessions.findById(id).orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
         requireSessionReadAccess(session);
         if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
-        JsonNode initial = view(session);
+        boolean redactForStudent = isStudentActor();
+        JsonNode initial = view(session, redactForStudent);
         if (telemetryHub == null) {
             throw error(ErrorCode.INTERNAL_SERVER_ERROR, "Studio stream hub is unavailable.");
         }
-        return telemetryHub.subscribe(id, initial);
+        return telemetryHub.subscribe(id, initial, redactForStudent);
     }
 
     @Transactional
@@ -823,6 +824,35 @@ public class RuntimeStudioService {
         sessions.save(session);
     }
 
+    /**
+     * Persists finalExerciseEvaluation onto studioControl if Runner auto-completed the session (e.g. session lease expiry)
+     * before UI called /studio/finish, while telemetryHub still retains the in-memory history ring buffer.
+     */
+    public void ensureFinalEvaluationBeforeClear(RuntimeSession session) {
+        if (session == null || session.getId() == null || session.getScenarioConfig() == null
+                || !session.getScenarioConfig().path("interactiveStudio").asBoolean(false)) {
+            return;
+        }
+        ObjectNode control = control(session);
+        if (control.hasNonNull("finalExerciseEvaluation") && control.get("finalExerciseEvaluation").isObject()) {
+            return;
+        }
+        JsonNode exerciseCriteria = extractExerciseCriteria(session);
+        if (exerciseCriteria == null && !control.hasNonNull("prediction")) {
+            return;
+        }
+        StudioTelemetryHub.SessionSnapshot liveSnapshot = telemetryHub != null
+                ? telemetryHub.latest(session.getId()).orElse(null)
+                : null;
+        JsonNode effectiveTelemetry = liveSnapshot != null && liveSnapshot.latestTelemetry() != null
+                ? liveSnapshot.latestTelemetry()
+                : (control.hasNonNull("telemetry") ? control.get("telemetry") : null);
+        java.util.List<JsonNode> history = liveSnapshot != null ? liveSnapshot.history() : java.util.List.of();
+        control.set("finalExerciseEvaluation",
+                StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history));
+        session.setStudioControl(control);
+    }
+
     public void publishSessionState(RuntimeSession session) {
         notifyStateAfterCommit(session);
     }
@@ -831,17 +861,29 @@ public class RuntimeStudioService {
         if (telemetryHub == null || session == null || session.getId() == null) return;
         UUID sessionId = session.getId();
         // Never invoke transactional AccessPolicyService here: Runner callbacks carry no user JWT and would mark the tx rollback-only.
-        JsonNode snapshot = view(session, isStudentSession(session));
+        boolean splitRoles = telemetryHub.hasNonStudentSubscriber(sessionId);
+        JsonNode fullSnapshot = splitRoles ? view(session, false) : null;
+        JsonNode defaultSnapshot;
+        if (splitRoles && fullSnapshot instanceof ObjectNode obj) {
+            ObjectNode copy = obj.deepCopy();
+            redactStudioViewForStudent(copy);
+            defaultSnapshot = copy;
+        } else {
+            defaultSnapshot = view(session, isStudentSession(session));
+        }
+        Runnable deliver = splitRoles
+                ? () -> telemetryHub.notifyState(sessionId, defaultSnapshot, fullSnapshot)
+                : () -> telemetryHub.notifyState(sessionId, defaultSnapshot);
         if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
             org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                     new org.springframework.transaction.support.TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            telemetryHub.notifyState(sessionId, snapshot);
+                            deliver.run();
                         }
                     });
         } else {
-            telemetryHub.notifyState(sessionId, snapshot);
+            deliver.run();
         }
     }
     private int effectiveStudioMaxSessionSeconds() {

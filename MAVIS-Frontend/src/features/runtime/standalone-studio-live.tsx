@@ -266,16 +266,27 @@ function StandaloneStudioContent() {
   const [canvasOpened, setCanvasOpened] = useState(false);
   const [visualSaved, setVisualSaved] = useState(false);
   const [visualError, setVisualError] = useState("");
-  const autoStartedRef = useRef(false);
 
-  const previewTopology = useMemo(
-    () =>
-      isAuthorMode
-        ? (parseStudioTopology(runtimeConfig.data?.profile?.["studioTopology"]) ??
-          parseStudioTopology(readiness.data?.topology))
-        : undefined,
-    [isAuthorMode, runtimeConfig.data?.profile, readiness.data?.topology],
-  );
+  const previewTopology = useMemo(() => {
+    if (!isAuthorMode) return undefined;
+    const base =
+      parseStudioTopology(runtimeConfig.data?.profile?.["studioTopology"]) ??
+      parseStudioTopology(readiness.data?.topology);
+    if (!base || !exercise.data?.initialState) return base;
+    const stoppedSvcs = new Set(exercise.data.initialState.stoppedServices ?? []);
+    const stoppedCtrls = new Set(exercise.data.initialState.stoppedControllers ?? []);
+    return {
+      ...base,
+      blocks: base.blocks.map((b) => ({
+        ...b,
+        initiallyStopped: stoppedSvcs.has(b.service),
+      })),
+      connections: base.connections.map((c) => ({
+        ...c,
+        initiallyStopped: stoppedCtrls.has(c.controllerService),
+      })),
+    };
+  }, [isAuthorMode, runtimeConfig.data?.profile, readiness.data?.topology, exercise.data?.initialState]);
   const previewModelId =
     runtimeConfig.data?.modelId ??
     assignment?.referenceSource?.modelId ??
@@ -365,8 +376,13 @@ function StandaloneStudioContent() {
     if (liveOrBooting) return liveOrBooting.id;
     // In Author mode, fall back to clean Design Preview instead of locking onto a dead cancelled session
     if (isAuthorMode) return "";
-    const forAssignment = sessionList.find((item) => item.assignmentId === assignmentId);
-    return forAssignment?.id ?? sessionList[0]?.id ?? "";
+    // Never auto-select dead CANCELLED/FAILED/TIMED_OUT sessions on entry; only resume verified/completed evidence.
+    const verifiedOrCompleted = sessionList.find(
+      (item) =>
+        item.assignmentId === assignmentId &&
+        (item.studioVerified || item.executionStatus?.toUpperCase() === "COMPLETED"),
+    );
+    return verifiedOrCompleted?.id ?? "";
   }, [selectedSessionId, startStudio.data?.id, sessionList, assignmentId, isAuthorMode]);
 
   const studentQuizLocked = Boolean(
@@ -431,7 +447,7 @@ function StandaloneStudioContent() {
         !isAuthorMode &&
         !studentQuizLocked &&
         Boolean(activeSessionId),
-      poll: !isAuthorMode && Boolean(activeSessionId),
+      poll: false,
     },
   );
 
@@ -441,56 +457,6 @@ function StandaloneStudioContent() {
       studioStateQuery.data?.executionStatus === "COMPLETED" &&
         studioStateQuery.data?.receiptDigest,
     );
-
-  // Auto-start a student Studio session once when entering standalone /studio-live with no sessions yet.
-  useEffect(() => {
-    if (autoStartedRef.current) return;
-    if (
-      client.mode !== "backend" ||
-      workspaces.isPending ||
-      isAuthorMode ||
-      studentQuizLocked ||
-      !workspaceId ||
-      !assignmentId ||
-      labSessions.isPending ||
-      studentContext.isPending ||
-      startStudio.isPending ||
-      liveStudioVerified ||
-      sessionList.length > 0 ||
-      activeSessionId
-    ) {
-      return;
-    }
-    autoStartedRef.current = true;
-    startStudio.mutate(undefined, {
-      onSuccess: (created) => {
-        if (created?.id) setSelectedSessionId(created.id);
-      },
-      onError: (cause) => {
-        const isConflict =
-          (cause instanceof ApiError && cause.status === 409) ||
-          (cause instanceof Error && /version has changed|conflict|already active|409/i.test(cause.message));
-        if (isConflict) {
-          startStudio.reset();
-          void labSessions.refetch();
-        }
-      },
-    });
-  }, [
-    client.mode,
-    isAuthorMode,
-    studentQuizLocked,
-    workspaceId,
-    assignmentId,
-    labSessions.isPending,
-    labSessions.refetch,
-    studentContext.isPending,
-    startStudio.isPending,
-    liveStudioVerified,
-    sessionList.length,
-    activeSessionId,
-    startStudio,
-  ]);
 
   const endpointOptions = useMemo(
     () =>

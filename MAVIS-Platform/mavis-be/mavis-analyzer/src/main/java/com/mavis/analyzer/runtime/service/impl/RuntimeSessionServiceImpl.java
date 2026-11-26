@@ -1985,13 +1985,30 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         if (!isGuidedRuntime(project)) return;
 
         var lab = project.getAssignment();
+        UUID frozenRuntimeSnapshotId = null;
+        boolean hasFrozenRuntimeModel = false;
+        if (lab != null && lab.getStudioExerciseSnapshot() != null
+                && lab.getStudioExerciseSnapshot().hasNonNull("runtimeModelId")) {
+            hasFrozenRuntimeModel = true;
+            String rawFrozenSnap = lab.getStudioExerciseSnapshot().path("runtimeSnapshotId").asText("");
+            if (!rawFrozenSnap.isBlank()) {
+                try {
+                    frozenRuntimeSnapshotId = UUID.fromString(rawFrozenSnap.trim());
+                } catch (IllegalArgumentException ignored) {
+                    frozenRuntimeSnapshotId = null;
+                }
+            }
+        }
         var exercise = lab == null || labStudioExercises == null ? null
                 : labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
-        if (exercise != null && exercise.getRuntimeModelId() != null) {
-            // Guided sessions run on a cloned STUDENT_WORKING snapshot, so the session snapshot id
-            // differs from the exercise runtime snapshot id. Match the pinned runtime snapshot by
-            // identity on the project and by artifact hash on the cloned snapshot instead.
-            UUID runtimeSnapshotId = exercise.getRuntimeSnapshotId();
+        if (hasFrozenRuntimeModel || (exercise != null && exercise.getRuntimeModelId() != null)) {
+            // Guided sessions run on a cloned STUDENT_WORKING snapshot; prefer the Lab's frozen
+            // studioExerciseSnapshot so unpublished Lecturer edits do not invalidate active students.
+            UUID liveRuntimeSnapshotId = exercise != null ? exercise.getRuntimeSnapshotId() : null;
+            UUID runtimeSnapshotId = frozenRuntimeSnapshotId != null
+                    && Objects.equals(project.getReferenceSnapshotId(), frozenRuntimeSnapshotId)
+                    ? frozenRuntimeSnapshotId
+                    : (liveRuntimeSnapshotId != null ? liveRuntimeSnapshotId : frozenRuntimeSnapshotId);
             var runtimeSnapshot = runtimeSnapshotId == null ? null
                     : sourceSnapshotRepository.findById(runtimeSnapshotId).orElse(null);
             boolean matches = runtimeSnapshot != null

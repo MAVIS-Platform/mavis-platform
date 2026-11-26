@@ -139,9 +139,17 @@ export function useStudioSession(sessionId: string) {
   }, [sessionId, resetAction, resetPrediction, resetFinish, resetCancel, resetCapture]);
 
   const data = state.data;
+  const latestObservedAtRef = useRef<string | undefined>(undefined);
+  latestObservedAtRef.current = data?.telemetry?.observedAt;
   const executionStatus = data?.executionStatus?.toUpperCase() ?? "";
   useEffect(() => {
-    setCachedStatus(data?.finishRequested ? "FINISHING" : executionStatus);
+    setCachedStatus(
+      TERMINAL_STUDIO_STATUSES.has(executionStatus)
+        ? executionStatus
+        : data?.finishRequested
+          ? "FINISHING"
+          : executionStatus,
+    );
     if (executionStatus === "QUEUED") {
       sawQueuedRef.current = true;
       setCancelledWhileQueued(false);
@@ -410,7 +418,11 @@ export function useStudioSession(sessionId: string) {
         TERMINAL_STUDIO_STATUSES.has(prev) ? prev : "FINISHING",
       );
     } catch (error) {
-      setActionError(error instanceof Error ? error : new Error("Could not finish Studio session"));
+      const refreshed = await state.refetch();
+      const nextExec = refreshed.data?.executionStatus?.toUpperCase() ?? "";
+      if (!refreshed.data?.finishRequested && !TERMINAL_STUDIO_STATUSES.has(nextExec)) {
+        setActionError(error instanceof Error ? error : new Error("Could not finish Studio session"));
+      }
     } finally {
       await state.refetch();
       await Promise.all([
@@ -475,7 +487,7 @@ export function useStudioSession(sessionId: string) {
           explanation: finalExplanation,
           ...(imageData ? { imageData } : {}),
           ...(options?.videoData ? { videoData: options.videoData } : {}),
-          observedAt: data.telemetry?.observedAt,
+          observedAt: latestObservedAtRef.current ?? data.telemetry?.observedAt,
         });
         const createdId =
           created && typeof created["id"] === "string" ? (created["id"] as string) : null;

@@ -903,7 +903,8 @@ export function LiveStudioWorkbench({
       const nextX = initial.x + (moveEvent.clientX - startX);
       const nextY = initial.y + (moveEvent.clientY - startY);
       const minY = -8;
-      const maxY = Math.max(-8, ph - 72);
+      const bottomReserved = bottomCollapsed ? 44 : Math.min(Math.max(120, ph - 120), bottomHeight + 12);
+      const maxY = Math.max(-8, ph - bottomReserved - 52);
       const clampedY = Math.max(minY, Math.min(maxY, Math.round(nextY)));
       const clampedX =
         panel === "right"
@@ -1074,6 +1075,32 @@ export function LiveStudioWorkbench({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [expanded, settingsPopoverOpen, stylePopoverOpen, telemetryPopoverOpen]);
+
+  // Re-clamp floating Mission & Inspector cards on viewport resize / drawer expand so headers stay reachable.
+  useEffect(() => {
+    const reclamp = () => {
+      const stageEl = graphRef.current?.parentElement;
+      const pw = stageEl?.clientWidth ?? window.innerWidth;
+      const ph = stageEl?.clientHeight ?? window.innerHeight;
+      const bottomReserved = bottomCollapsed ? 44 : Math.min(Math.max(120, ph - 120), bottomHeight + 12);
+      const maxY = Math.max(-8, ph - bottomReserved - 52);
+      setRightOffset((prev) => {
+        const minX = 16 - Math.max(8, pw - rightWidth - 8);
+        const cx = Math.max(minX, Math.min(8, prev.x));
+        const cy = Math.max(-8, Math.min(maxY, prev.y));
+        return cx === prev.x && cy === prev.y ? prev : { x: cx, y: cy };
+      });
+      setMissionOffset((prev) => {
+        const maxX = Math.max(-62, pw - missionWidth - 78);
+        const cx = Math.max(-62, Math.min(maxX, prev.x));
+        const cy = Math.max(-8, Math.min(maxY, prev.y));
+        return cx === prev.x && cy === prev.y ? prev : { x: cx, y: cy };
+      });
+    };
+    reclamp();
+    window.addEventListener("resize", reclamp);
+    return () => window.removeEventListener("resize", reclamp);
+  }, [bottomCollapsed, bottomHeight, rightWidth, missionWidth]);
 
   const confirmedActions = data.actions.filter((item) => item.status === "CONFIRMED" && item.result);
   const firstConfirmed = confirmedActions[0];
@@ -1473,24 +1500,28 @@ export function LiveStudioWorkbench({
   }
 
   const activeSessionMeta = sessions.find((item) => item.id === activeSessionId);
+  const effectiveExecStatus = (
+    liveData?.executionStatus ||
+    data.executionStatus ||
+    activeSessionMeta?.executionStatus ||
+    ""
+  ).toUpperCase();
   const isBooting = Boolean(
     starting ||
-      (Boolean(activeSessionId) && studio.state.isPending && !liveData) ||
-      BOOTING_STATUSES.has(data.executionStatus.toUpperCase()) ||
-      BOOTING_STATUSES.has(liveData?.executionStatus?.toUpperCase() ?? "") ||
-      BOOTING_STATUSES.has(activeSessionMeta?.executionStatus?.toUpperCase() ?? ""),
+      (Boolean(activeSessionId) &&
+        studio.state.isPending &&
+        !liveData &&
+        !["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
+          effectiveExecStatus,
+        )) ||
+      BOOTING_STATUSES.has(effectiveExecStatus),
   );
   const failedStatuses = ["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"];
   const timedOutStatuses = ["TIMED_OUT", "TIMEDOUT", "TIMEOUT"];
-  const lastSessionFailed =
-    failedStatuses.includes(data.executionStatus.toUpperCase()) ||
-    failedStatuses.includes(liveData?.executionStatus?.toUpperCase() ?? "") ||
-    failedStatuses.includes(activeSessionMeta?.executionStatus?.toUpperCase() ?? "");
-  const isCancelling = data.executionStatus.toUpperCase() === "CANCELLING";
-  const isTimedOut =
-    timedOutStatuses.includes(data.executionStatus.toUpperCase()) ||
-    timedOutStatuses.includes(liveData?.executionStatus?.toUpperCase() ?? "") ||
-    timedOutStatuses.includes(activeSessionMeta?.executionStatus?.toUpperCase() ?? "");
+  const lastSessionFailed = failedStatuses.includes(effectiveExecStatus);
+  const isCancelling = effectiveExecStatus === "CANCELLING";
+  const isCancelled = effectiveExecStatus === "CANCELLED";
+  const isTimedOut = timedOutStatuses.includes(effectiveExecStatus);
 
   const failedSessionDetail = useApiQuery(
     "runtimeReadSession",
@@ -1734,19 +1765,21 @@ export function LiveStudioWorkbench({
         ? `QUEUED${data.queuePosition ? ` #${data.queuePosition}` : ""}`
         : isCancelling
           ? "CANCELLING"
-          : isBooting
-            ? "BOOTING"
-            : data.executionStatus === "COMPLETED"
-              ? "SEALED"
-              : lastSessionFailed
-                ? isTimedOut
-                  ? "TIMED OUT"
-                  : "FAILED"
-                : isPreviewMode && effectivePreviewTopology
-                  ? authoring
-                    ? "LAB SETUP"
-                    : "PREVIEW"
-                  : "IDLE";
+          : isCancelled
+            ? "CANCELLED"
+            : isBooting
+              ? "BOOTING"
+              : data.executionStatus === "COMPLETED"
+                ? "SEALED"
+                : lastSessionFailed
+                  ? isTimedOut
+                    ? "TIMED OUT"
+                    : "FAILED"
+                  : isPreviewMode && effectivePreviewTopology
+                    ? authoring
+                      ? "LAB SETUP"
+                      : "PREVIEW"
+                    : "IDLE";
   const displayStatusLabel =
     locale === "vi"
       ? statusLabel === "LIVE"
@@ -1759,10 +1792,12 @@ export function LiveStudioWorkbench({
               ? statusLabel.replace("QUEUED", "HÀNG ĐỢI")
               : statusLabel === "CANCELLING"
                 ? "ĐANG HỦY"
-                : statusLabel === "BOOTING"
-                  ? "KHỞI ĐỘNG"
-                  : statusLabel === "SEALED"
-                    ? "ĐÃ NIÊM PHONG"
+                : statusLabel === "CANCELLED"
+                  ? "ĐÃ HỦY"
+                  : statusLabel === "BOOTING"
+                    ? "KHỞI ĐỘNG"
+                    : statusLabel === "SEALED"
+                      ? "ĐÃ NIÊM PHONG"
                     : statusLabel === "TIMED OUT"
                       ? "HẾT GIỜ"
                       : statusLabel === "FAILED"
@@ -1843,7 +1878,7 @@ export function LiveStudioWorkbench({
     [authoring, isPreviewMode, data.actions, stoppedServiceNames, locale],
   );
   const pausedServiceNames = services.filter((svc) => servicePhase(data, svc) === "paused");
-  const faultedServices = [...stoppedServiceNames, ...pausedServiceNames];
+  const faultedServices = isTerminalExecution ? [] : [...stoppedServiceNames, ...pausedServiceNames];
   const snapshotCount = data.snapshots?.length ?? 0;
   const healthyCount = Math.max(0, services.length - faultedServices.length);
   const isPredictionRequired = Boolean(
@@ -1865,13 +1900,23 @@ export function LiveStudioWorkbench({
     setRightCardMode("service");
     setShowRight(true);
   }, [needsPrediction, sessionId]);
-  const effectiveMissionInstructions =
+  const rawMissionInstructions =
     missionCard?.instructions?.trim() ||
     authoring?.instructions?.trim() ||
     t(
       "Click any live microservice on the canvas to inject faults, scale replicas, observe live Change Impact, and capture a Snapshot.",
       "Bấm vào bất kỳ microservice đang chạy nào trên sơ đồ để tiêm lỗi, scale replica, quan sát Change Impact trực tiếp và chụp Snapshot.",
     );
+  const effectiveMissionInstructions = useMemo(() => {
+    if (authoring) return rawMissionInstructions;
+    const exType = (data.exerciseCriteria as { exerciseType?: string } | null | undefined)
+      ?.exerciseType;
+    const isOutage =
+      exType?.toUpperCase() === "CIRCUIT_BREAKER" ||
+      /chẩn đoán sự cố|tắt sẵn|pre-existing outage|stopped service/i.test(rawMissionInstructions);
+    if (!isOutage) return rawMissionInstructions;
+    return rawMissionInstructions.replace(/\s*\(\s*[a-z0-9_,-]+-service(?:\s*,\s*[a-z0-9_,-]+)*\s*\)/gi, "");
+  }, [authoring, data.exerciseCriteria, rawMissionInstructions]);
 
   return (
     <div
@@ -2054,22 +2099,24 @@ export function LiveStudioWorkbench({
                   }`}
                   aria-hidden="true"
                 />
-                {data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED"
+                {data.executionStatus === "RUNNING"
                   ? `${healthyCount}/${services.length || 0}`
                   : `0/${services.length || 0}`}
               </span>
               <span className={`hidden lg:inline ${isLight ? "text-slate-300" : "text-slate-600"}`}>·</span>
               <span className="hidden font-mono lg:inline">
-                {data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED"
+                {data.executionStatus === "RUNNING"
                   ? liveRps != null
                     ? `${liveRps} rps`
                     : `${totalRunningReplicas} pods`
-                  : t("Idle", "Chờ chạy")}
+                  : data.executionStatus === "COMPLETED"
+                    ? t("Sealed", "Đã niêm phong")
+                    : t("Idle", "Chờ chạy")}
               </span>
-              {(data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED") && liveP95Ms != null && (
+              {data.executionStatus === "RUNNING" && liveP95Ms != null && (
                 <span className="hidden font-mono xl:inline">· {liveP95Ms}ms</span>
               )}
-              {(data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED") && liveErrorPct != null && (
+              {data.executionStatus === "RUNNING" && liveErrorPct != null && (
                 <span
                   className={`hidden font-mono font-semibold md:inline ${
                     liveErrorPct > 0
@@ -2163,7 +2210,9 @@ export function LiveStudioWorkbench({
                           void cancelStudio();
                         }
                       }}
-                      className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left font-medium ${
+                        isLight ? "text-rose-600 hover:bg-rose-50" : "text-rose-400 hover:bg-rose-950/40"
+                      }`}
                     >
                       <span>{t("Stop & Cancel Session", "Dừng & Hủy phiên Docker")}</span>
                     </button>
@@ -2247,7 +2296,7 @@ export function LiveStudioWorkbench({
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  {STUDIO_STYLE_LIST.filter((id) => id === "daylight" || id === "control").map((id) => {
+                  {STUDIO_STYLE_LIST.map((id) => {
                     const item = STUDIO_STYLES[id];
                     const active = studioStyle === id;
                     return (
@@ -2576,7 +2625,9 @@ export function LiveStudioWorkbench({
             {state.isError && state.data && !isTerminalExecution && !data.finishRequested && (
               <div
                 role="status"
-                className="absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-400/70 bg-amber-50 px-4 py-1.5 text-xs font-medium text-amber-900 shadow-lg dark:bg-amber-950/90 dark:text-amber-100"
+                className={`absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-400/70 px-4 py-1.5 text-xs font-medium shadow-lg ${
+                  isLight ? "bg-amber-50 text-amber-900" : "bg-amber-950/90 text-amber-100"
+                }`}
               >
                 <span>Connection interrupted — keeping last live view while retrying…</span>
                 <Button
@@ -2763,7 +2814,11 @@ export function LiveStudioWorkbench({
               >
                 <Lightbulb className="size-4" aria-hidden="true" />
                 {faultedServices.length > 0 && (
-                  <span className="absolute top-1 right-1 size-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900" />
+                  <span
+                    className={`absolute top-1 right-1 size-2 rounded-full bg-amber-500 ring-2 ${
+                      isLight ? "ring-white" : "ring-slate-900"
+                    }`}
+                  />
                 )}
               </button>
 
@@ -2868,7 +2923,7 @@ export function LiveStudioWorkbench({
                       type="button"
                       onClick={() => setMissionCollapsed((c) => !c)}
                       aria-label={missionCollapsed ? t("Expand mission", "Mở rộng mục tiêu") : t("Collapse mission", "Thu gọn mục tiêu")}
-                      className="rounded p-1 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                      className={`rounded p-1 opacity-70 hover:opacity-100 ${isLight ? "hover:bg-black/5" : "hover:bg-white/10"}`}
                     >
                       {missionCollapsed ? (
                         <ChevronDown className="size-3.5" aria-hidden="true" />
@@ -2880,7 +2935,7 @@ export function LiveStudioWorkbench({
                       type="button"
                       onClick={() => setMissionHidden(true)}
                       aria-label={t("Hide mission card", "Ẩn thẻ mục tiêu")}
-                      className="rounded p-1 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                      className={`rounded p-1 opacity-70 hover:opacity-100 ${isLight ? "hover:bg-black/5" : "hover:bg-white/10"}`}
                     >
                       <X className="size-3.5" aria-hidden="true" />
                     </button>
@@ -2990,7 +3045,7 @@ export function LiveStudioWorkbench({
                             </span>
                             <span
                               className={`font-bold ${
-                                data.prediction ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"
+                                data.prediction ? (isLight ? "text-emerald-600" : "text-emerald-400") : "opacity-50"
                               }`}
                             >
                               {data.prediction ? "✓" : "○"}
@@ -3003,7 +3058,7 @@ export function LiveStudioWorkbench({
                           </span>
                           <span
                             className={`font-bold ${
-                              hasConfirmedAction ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"
+                              hasConfirmedAction ? (isLight ? "text-emerald-600" : "text-emerald-400") : "opacity-50"
                             }`}
                           >
                             {hasConfirmedAction ? "✓" : "○"}
@@ -3015,7 +3070,7 @@ export function LiveStudioWorkbench({
                           </span>
                           <span
                             className={`font-mono font-bold ${
-                              snapshotCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"
+                              snapshotCount > 0 ? (isLight ? "text-emerald-600" : "text-emerald-400") : "opacity-50"
                             }`}
                           >
                             {snapshotCount > 0 ? `${snapshotCount} ✓` : "0/1"}
@@ -3411,7 +3466,7 @@ export function LiveStudioWorkbench({
                       ? t("Waiting for Runner", "Đang chờ Runner")
                       : statusLabel}
                 </span>
-                {(data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED") &&
+                {data.executionStatus === "RUNNING" &&
                   data.telemetry?.probe && (
                   <span
                     className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 font-mono lg:inline-flex ${
@@ -4696,7 +4751,10 @@ export function LiveStudioWorkbench({
                             posterDataUrl={replayItem.imageData}
                           />
                         ) : (
-                          <StudioEvidenceReplay frames={replayItem.replay} />
+                          <StudioEvidenceReplay
+                            frames={replayItem.replay}
+                            surfaceTheme={isLight ? "light" : "dark"}
+                          />
                         )}
                       </div>
                     );
@@ -4979,7 +5037,11 @@ export function LiveStudioWorkbench({
                                   }`}
                                 >
                                   <span>{svc}</span>
-                                  <span className="rounded bg-black/10 px-1 py-0.5 text-[9.5px] dark:bg-white/10">
+                                  <span
+                                    className={`rounded px-1 py-0.5 text-[9.5px] ${
+                                      isLight ? "bg-black/10" : "bg-white/10"
+                                    }`}
+                                  >
                                     {tag}
                                   </span>
                                 </button>
