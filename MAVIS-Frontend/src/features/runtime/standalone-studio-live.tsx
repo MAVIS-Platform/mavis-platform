@@ -1464,24 +1464,22 @@ function StandaloneStudioContent() {
         <span className="hidden xl:inline">{t("Back", "Quay lại")}</span>
       </Link>
 
-      <div className="flex min-w-0 items-center gap-1.5" title={labTitle || undefined}>
-        <span className="shrink-0 text-[13px] font-bold tracking-tight text-foreground">
-          MAVIS Live
-        </span>
-        {labTitle && (
-          <>
-            <span className="hidden text-muted-foreground/60 lg:inline" aria-hidden="true">
-              /
-            </span>
-            <span className="hidden max-w-[155px] truncate text-[13px] font-medium text-muted-foreground lg:inline xl:max-w-[215px]">
-              {labTitle}
-            </span>
-          </>
-        )}
-      </div>
+      <span className="shrink-0 whitespace-nowrap text-[13px] font-bold tracking-tight text-foreground">
+        MAVIS Live
+      </span>
+      {labTitle && (
+        <div className="hidden min-w-0 items-center gap-1.5 overflow-hidden xl:flex" title={labTitle}>
+          <span className="shrink-0 text-muted-foreground/60" aria-hidden="true">
+            /
+          </span>
+          <span className="min-w-0 max-w-[155px] truncate text-[13px] font-medium text-muted-foreground 2xl:max-w-[215px]">
+            {labTitle}
+          </span>
+        </div>
+      )}
 
       {isAuthorMode && setupLab?.topologyFrozen && (
-        <Badge variant="success" className="hidden shrink-0 whitespace-nowrap lg:inline-flex">
+        <Badge variant="success" className="hidden shrink-0 whitespace-nowrap xl:inline-flex">
           {t("Frozen", "Đã khóa")}
         </Badge>
       )}

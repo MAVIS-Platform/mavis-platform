@@ -28,6 +28,7 @@ import {
   RequestState,
 } from "@/components/shared/request-state";
 import {
+  isUuidSegment,
   useCourseRoadmap,
   usePublishedCourse,
   useStudentLabContext,
@@ -642,14 +643,14 @@ export function LabWorkspace() {
     setInlineC4View(view);
   };
   const [tocOpen, setTocOpen] = useState(false);
+  const client = useApi();
   const workspaces = useApiQuery("workspaces", {});
   const assignments = useApiQuery(
     "assignments",
     { workspaceId },
-    { enabled: Boolean(workspaceId) },
+    { enabled: Boolean(workspaceId) && (client.mode !== "backend" || isUuidSegment(workspaceId)) },
   );
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
-  const client = useApi();
   const roadmap = useCourseRoadmap(workspaceId);
   const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const preview = Boolean(isLecturer && params.get("preview") !== "0");

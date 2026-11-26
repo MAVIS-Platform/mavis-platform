@@ -3407,7 +3407,8 @@ export function LiveStudioWorkbench({
                       ? "Waiting for Runner"
                       : statusLabel}
                 </span>
-                {data.telemetry?.probe && (
+                {(data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED") &&
+                  data.telemetry?.probe && (
                   <span
                     className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 font-mono lg:inline-flex ${
                       isLight

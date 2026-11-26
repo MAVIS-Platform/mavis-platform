@@ -67,6 +67,12 @@ export type CourseEssaySubmission = {
   gradedAt: string | null;
 };
 
+const UUID_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuidSegment(value: string | null | undefined): boolean {
+  return Boolean(value && UUID_SEGMENT_RE.test(value));
+}
+
 const roadmapKey = (workspaceId: string) => ["api", "course-roadmap", workspaceId];
 const passkeyKey = (workspaceId: string) => ["api", "course-passkey", workspaceId];
 const passkeysKey = (workspaceId: string) => ["api", "course-passkeys", workspaceId];
@@ -96,8 +102,8 @@ export function useCourseRoadmap(workspaceId: string) {
   return useQuery({
     queryKey: roadmapKey(workspaceId),
     queryFn: ({ signal }) =>
-      courseApi<Roadmap>(`workspaces/${workspaceId}/course-roadmap`, { signal }),
-    enabled: client.mode === "backend" && !!workspaceId,
+      courseApi<Roadmap>(`workspaces/${encodeURIComponent(workspaceId)}/course-roadmap`, { signal }),
+    enabled: client.mode === "backend" && isUuidSegment(workspaceId),
     refetchOnWindowFocus: true,
   });
 }
@@ -107,8 +113,8 @@ export function useCoursePasskeys(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: passkeysKey(workspaceId),
     queryFn: ({ signal }) =>
-      courseApi<PasskeyItem[]>(`workspaces/${workspaceId}/course-passkeys`, { signal }),
-    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+      courseApi<PasskeyItem[]>(`workspaces/${encodeURIComponent(workspaceId)}/course-passkeys`, { signal }),
+    enabled: client.mode === "backend" && isUuidSegment(workspaceId) && enabled,
     retry: false,
   });
 }
@@ -187,8 +193,8 @@ export function useCourseEssays(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: essaysKey(workspaceId),
     queryFn: ({ signal }) =>
-      courseApi<CourseEssaySubmission[]>(`workspaces/${workspaceId}/course-essays`, { signal }),
-    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+      courseApi<CourseEssaySubmission[]>(`workspaces/${encodeURIComponent(workspaceId)}/course-essays`, { signal }),
+    enabled: client.mode === "backend" && isUuidSegment(workspaceId) && enabled,
     retry: false,
   });
 }
@@ -300,8 +306,8 @@ export function usePublishedCourse(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: ["api", "course-published", workspaceId],
     queryFn: ({ signal }) =>
-      courseApi<PublishedCourse>(`workspaces/${workspaceId}/course/published`, { signal }),
-    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+      courseApi<PublishedCourse>(`workspaces/${encodeURIComponent(workspaceId)}/course/published`, { signal }),
+    enabled: client.mode === "backend" && isUuidSegment(workspaceId) && enabled,
   });
 }
 
@@ -311,8 +317,8 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
   const query = useQuery({
     queryKey: ["api", "course-authoring", workspaceId],
     queryFn: ({ signal }) =>
-      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course`, { signal }),
-    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+      courseApi<AuthoringCourse>(`workspaces/${encodeURIComponent(workspaceId)}/course`, { signal }),
+    enabled: client.mode === "backend" && isUuidSegment(workspaceId) && enabled,
     retry: false,
   });
   const save = useMutation({
@@ -705,8 +711,6 @@ export type StudentLabContext = {
     revision?: number;
   } | null;
 };
-
-const UUID_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function useStudentLabContext(workspaceId: string, assignmentId: string, enabled = true) {
   const client = useApi();
@@ -1432,6 +1436,10 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                 const expired = new Date(item.expiresAt).getTime() <= Date.now();
                 const isEditing = editingId === item.id;
                 const isCopied = copiedId === item.id;
+                const editMaxUsesInvalid =
+                  isEditing &&
+                  editMaxUses.trim() !== "" &&
+                  (!Number.isInteger(Number(editMaxUses)) || Number(editMaxUses) < 1);
                 return (
                   <tr key={item.id} className="align-middle hover:bg-muted/20">
                     <td className="px-2 py-2 font-mono">
@@ -1503,30 +1511,35 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                     </td>
                     <td className="whitespace-nowrap px-2 py-2 tabular-nums text-muted-foreground">
                       {isEditing ? (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            type="number"
-                            className="h-7 w-16 text-xs"
-                            min={0}
-                            placeholder="∞"
-                            value={editMaxUses}
-                            onChange={(e) => {
-                              const next = e.target.value;
-                              setEditMaxUses(next === "" || Number(next) <= 0 ? "" : next);
-                            }}
-                          />
-                          {editMaxUses !== "" && (
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="outline"
-                              className="size-7 shrink-0"
-                              aria-label={t("Reset to unlimited", "Đặt lại không giới hạn")}
-                              title={t("Reset to unlimited", "Đặt lại không giới hạn")}
-                              onClick={() => setEditMaxUses("")}
-                            >
-                              <X className="size-3.5" aria-hidden="true" />
-                            </Button>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              className={`h-7 w-16 text-xs ${editMaxUsesInvalid ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                              min={1}
+                              placeholder="∞"
+                              aria-invalid={editMaxUsesInvalid || undefined}
+                              value={editMaxUses}
+                              onChange={(e) => setEditMaxUses(e.target.value)}
+                            />
+                            {editMaxUses !== "" && (
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                className="size-7 shrink-0"
+                                aria-label={t("Reset to unlimited", "Đặt lại không giới hạn")}
+                                title={t("Reset to unlimited", "Đặt lại không giới hạn")}
+                                onClick={() => setEditMaxUses("")}
+                              >
+                                <X className="size-3.5" aria-hidden="true" />
+                              </Button>
+                            )}
+                          </div>
+                          {editMaxUsesInvalid && (
+                            <p role="alert" className="text-[11px] font-medium text-destructive">
+                              {t("Must be ≥ 1", "Phải ≥ 1")}
+                            </p>
                           )}
                         </div>
                       ) : (
@@ -1572,7 +1585,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               type="button"
                               size="sm"
                               className="h-7 whitespace-nowrap px-2 text-xs"
-                              disabled={mutating}
+                              disabled={mutating || editMaxUsesInvalid}
                               onClick={() => {
                                 const parsedEditMax = Number(editMaxUses);
                                 if (editMaxUses.trim() !== "" && (!Number.isInteger(parsedEditMax) || parsedEditMax < 1)) {
