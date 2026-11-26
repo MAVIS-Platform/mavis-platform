@@ -718,7 +718,7 @@ export const JAVA_COURSERA_MODULES: OutlineModuleData[] = [
         id: "java-mod-2-lab",
         type: "STATIC_LAB",
         position: 6,
-        title: "Mô hình Trực quan #1: Khám phá Sơ đồ Tĩnh C1–C3 & Kiểm toán Shared Database (3E)",
+        title: "Mô hình Trực quan #1: Kiểm toán Giao tiếp Dịch vụ & Ranh giới Database (C2/Graph)",
         description: "Quan sát mô hình kiến trúc tham chiếu C1 Context, C2 Container, C3 Component và kiểm tra 5 quy tắc bằng chứng 3E.",
         required: true,
       },

@@ -232,6 +232,10 @@ export function StudentCourseSyllabus({
           mappedItems,
           assignmentsQuery.data ?? [],
           locale,
+          {
+            courseCode: workspace.code,
+            modulePosition: mod.position,
+          },
         );
         return {
           id: mod.id,
@@ -252,9 +256,12 @@ export function StudentCourseSyllabus({
     }
     return buildCourseraModulesWithLabLinks(assignmentsQuery.data ?? [], labs).map((mod) => ({
       ...mod,
-      items: expandModuleFlowItems(mod.items, assignmentsQuery.data ?? [], locale),
+      items: expandModuleFlowItems(mod.items, assignmentsQuery.data ?? [], locale, {
+        courseCode: workspace.code,
+        modulePosition: mod.position,
+      }),
     }));
-  }, [publishedCourse.data?.snapshot?.modules, publishedCourse.isPending, isJavaCourseraWorkspace, assignmentsQuery.data, labs, locale]);
+  }, [publishedCourse.data?.snapshot?.modules, publishedCourse.isPending, isJavaCourseraWorkspace, assignmentsQuery.data, labs, locale, workspace.code]);
 
   const flattenedItems = useMemo(
     () => syllabusModules.flatMap((mod) => mod.items.map((item) => ({ module: mod, item }))),

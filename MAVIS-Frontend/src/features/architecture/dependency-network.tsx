@@ -57,6 +57,9 @@ export function DependencyNetwork({
   selectedConnectionKey = null,
   onConnectionSelect,
   onClearConnection,
+  lensFocusActive = false,
+  lensFocusNodeIds,
+  lensFocusEdgeIds,
 }: {
   connections?: NetworkConnection[];
   selectedConnectionKey?: string | null;
@@ -79,6 +82,9 @@ export function DependencyNetwork({
   projection?: ReturnType<typeof projectGraphModel> | undefined;
   hiddenCategories?: GraphCategory[];
   onHiddenCategoriesChange?: (hidden: GraphCategory[]) => void;
+  lensFocusActive?: boolean | undefined;
+  lensFocusNodeIds?: ReadonlyArray<string> | undefined;
+  lensFocusEdgeIds?: ReadonlyArray<string> | undefined;
 }) {
   const fillHeightRef = useRef(fillHeight);
   fillHeightRef.current = fillHeight;
@@ -339,6 +345,9 @@ export function DependencyNetwork({
           },
         },
         { selector: ".muted", style: { opacity: 0.15 } },
+        { selector: ".lens-muted", style: { opacity: 0.28 } },
+        { selector: "node.lens-focused", style: { "border-width": 3, "border-color": "#0284c7", "font-weight": "bold" } },
+        { selector: "edge.lens-focused", style: { width: 2.5, opacity: 1 } },
         { selector: "node.focused", style: { "border-width": 4, "font-weight": "bold" } },
         { selector: "edge.focused", style: { width: 3, opacity: 1 } },
         { selector: "node.search-match", style: { "border-width": 4, "font-weight": "bold" } },
@@ -535,16 +544,28 @@ export function DependencyNetwork({
       selectedConnection.projectedEdgeIds.forEach((id) => focus.edges.add(id));
     }
     const search = query.trim().toLowerCase();
+    const lensNodeSet = new Set(lensFocusNodeIds ?? []);
+    const lensEdgeSet = new Set(lensFocusEdgeIds ?? []);
+    const applyLens = Boolean(
+      lensFocusActive &&
+        !focus.active &&
+        highlightIds.length === 0 &&
+        !selectedId &&
+        (lensNodeSet.size > 0 || lensEdgeSet.size > 0),
+    );
     cy.batch(() => {
-      cy.elements().removeClass("muted focused search-match neighbor");
+      cy.elements().removeClass("muted focused search-match neighbor lens-muted lens-focused");
       cy.nodes().forEach((node) => {
         const id = node.data("sourceId") as string;
         const match = !search || String(node.data("name")).toLowerCase().includes(search);
         const orphanInRuntime = origin === "runtime" && edges.length > 0 && node.degree() === 0;
+        const inLensNode = lensNodeSet.size === 0 || lensNodeSet.has(id);
         node.toggleClass(
           "muted",
           !match || orphanInRuntime || (focus.active && !focus.nodes.has(id)),
         );
+        node.toggleClass("lens-muted", applyLens && !inLensNode && match && !orphanInRuntime);
+        node.toggleClass("lens-focused", applyLens && inLensNode && match && !orphanInRuntime);
         node.toggleClass(
           "focused",
           selectedId === id || (highlightIds.length > 0 && focus.nodes.has(id)),
@@ -558,7 +579,16 @@ export function DependencyNetwork({
         const projectedIds = edge.data("projectedEdgeIds") as string[] | undefined;
         const inFocus =
           focus.edges.has(id) || (projectedIds ?? []).some((member) => focus.edges.has(member));
+        const edgeSrcId = String(edge.data("source") ?? "").replace(/^node:/, "");
+        const edgeDstId = String(edge.data("target") ?? "").replace(/^node:/, "");
+        const inLensEdge =
+          lensEdgeSet.has(id) ||
+          (underlying ?? []).some((member) => lensEdgeSet.has(member)) ||
+          (projectedIds ?? []).some((member) => lensEdgeSet.has(member)) ||
+          (lensNodeSet.size > 0 && lensNodeSet.has(edgeSrcId) && lensNodeSet.has(edgeDstId));
         edge.toggleClass("muted", focus.active && !inFocus);
+        edge.toggleClass("lens-muted", applyLens && !inLensEdge && !focus.active);
+        edge.toggleClass("lens-focused", applyLens && inLensEdge && !focus.active);
         edge.toggleClass(
           "focused",
           highlightIds.length > 0
@@ -583,6 +613,9 @@ export function DependencyNetwork({
     mode,
     origin,
     edges.length,
+    lensFocusActive,
+    lensFocusNodeIds,
+    lensFocusEdgeIds,
   ]);
   return (
     <section

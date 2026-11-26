@@ -1,4 +1,10 @@
 import type { OutlineItemData } from "./java-coursera-curriculum-data";
+import {
+  detectAuditTrack,
+  resolveModuleAuditLens,
+  resolveModuleIndex,
+  type AuditTrack,
+} from "../architecture/module-audit-lens";
 
 export type ModuleFlowStepKind =
   | "THEORY"
@@ -41,12 +47,81 @@ export function resolveLabStepForItem(
   return 1;
 }
 
+export type ModuleFlowOptions = {
+  courseCode?: string | null | undefined;
+  modulePosition?: number | null | undefined;
+  curriculumCode?: string | null | undefined;
+  track?: AuditTrack | undefined;
+};
+
+/**
+ * Idempotently maps any static diagram step title (including legacy saved titles)
+ * to the module's dedicated Audit Lens title for either Java or C#.
+ */
+export function resolveStaticAuditStepTitle(
+  rawTitle: string,
+  options: {
+    courseCode?: string | null | undefined;
+    modulePosition?: number | null | undefined;
+    curriculumCode?: string | null | undefined;
+    locale?: "en" | "vi" | undefined;
+    isStaticStep?: boolean | undefined;
+  } = {},
+): string {
+  const trimmed = rawTitle.trim();
+  const looksLegacyStatic =
+    options.isStaticStep === true ||
+    /khám phá sơ đồ tĩnh|explore static diagrams|static-view/i.test(trimmed);
+  if (!looksLegacyStatic && trimmed.length > 0) {
+    return rawTitle;
+  }
+  const track = detectAuditTrack({
+    workspaceCode: options.courseCode,
+    labTitle: trimmed,
+  });
+  const moduleIndex = resolveModuleIndex({
+    modulePosition: options.modulePosition,
+    labTitle: trimmed,
+    curriculumCode: options.curriculumCode,
+  });
+  const lens = resolveModuleAuditLens(track, moduleIndex);
+  return (options.locale ?? "vi") === "vi" ? lens.stepTitleVi : lens.stepTitleEn;
+}
+
+function inferTrackForModuleFlow(
+  items: ReadonlyArray<OutlineItemData>,
+  assignments: ReadonlyArray<AssignmentMetaLike>,
+  labLabel: string,
+  options?: ModuleFlowOptions,
+): AuditTrack {
+  if (options?.track) return options.track;
+  const combinedHint = [
+    labLabel,
+    ...items.map((item) => `${item.id} ${item.curriculumCode ?? ""} ${item.title}`),
+    ...assignments.map((a) => a.title ?? ""),
+  ].join(" ");
+  if (
+    /csharp|dotnet|\.net|trái cây|fruit|polly|roslyn|masstransit/i.test(combinedHint)
+  ) {
+    return detectAuditTrack({
+      workspaceCode: options?.courseCode ?? "CSHARP",
+      labTitle: combinedHint,
+    });
+  }
+  return detectAuditTrack({
+    workspaceCode: options?.courseCode,
+    labTitle: combinedHint,
+  });
+}
+
 function buildLabModuleSequence(
   labItem: OutlineItemData,
   matchedQuizzes: ReadonlyArray<OutlineItemData>,
   assignments: ReadonlyArray<AssignmentMetaLike>,
   isVi: boolean,
   positionStart: number,
+  options?: ModuleFlowOptions,
+  allItems: ReadonlyArray<OutlineItemData> = [],
 ): OutlineItemData[] {
   const assignmentId = labItem.assignmentId;
   if (!assignmentId) return [labItem];
@@ -93,17 +168,20 @@ function buildLabModuleSequence(
         : [];
 
   const labLabel = (linkedAssignment?.title ?? labItem.title).trim();
+  const track = inferTrackForModuleFlow(allItems, assignments, labLabel, options);
+  const moduleIndex = resolveModuleIndex({
+    modulePosition: options?.modulePosition,
+    labTitle: labLabel,
+    curriculumCode: options?.curriculumCode ?? labItem.curriculumCode ?? labItem.id,
+  });
+  const activeLens = resolveModuleAuditLens(track, moduleIndex);
   const sequence: OutlineItemData[] = [];
   if (hasReferenceArch) {
     sequence.push({
       id: `static-view:${assignmentId}`,
       type: "STATIC_LAB",
-      title: isVi
-        ? `Khám phá Sơ đồ Tĩnh · ${labLabel}`
-        : `Explore Static Diagrams · ${labLabel}`,
-      description: isVi
-        ? "Xem sơ đồ C1–C3, đồ thị phụ thuộc và hỏi trợ lý AI trước khi làm Quiz."
-        : "Inspect C1–C3 diagrams, service dependencies, and ask MAVIS AI before the Quiz.",
+      title: isVi ? activeLens.stepTitleVi : activeLens.stepTitleEn,
+      description: isVi ? activeLens.stepDescriptionVi : activeLens.stepDescriptionEn,
       position: positionStart + sequence.length + 1,
       assignmentId,
       required: true,
@@ -147,6 +225,7 @@ export function expandModuleFlowItems(
   items: ReadonlyArray<OutlineItemData>,
   assignments: ReadonlyArray<AssignmentMetaLike> = [],
   locale: "en" | "vi" = "vi",
+  options?: ModuleFlowOptions,
 ): OutlineItemData[] {
   const filtered = items.filter((item) => item.type !== "ESSAY");
   const theoryItems = filtered.filter((item) => item.type === "THEORY");
@@ -171,11 +250,34 @@ export function expandModuleFlowItems(
     const labItem = labItems[0];
     if (labItem?.assignmentId) {
       ordered.push(
-        ...buildLabModuleSequence(labItem, quizItems, assignments, isVi, ordered.length),
+        ...buildLabModuleSequence(
+          labItem,
+          quizItems,
+          assignments,
+          isVi,
+          ordered.length,
+          options,
+          filtered,
+        ),
       );
     } else {
       for (const quiz of quizItems) ordered.push(quiz);
-      if (labItem) ordered.push(labItem);
+      if (labItem) {
+        ordered.push(
+          labItem.type === "STATIC_LAB"
+            ? {
+                ...labItem,
+                title: resolveStaticAuditStepTitle(labItem.title, {
+                  courseCode: options?.courseCode,
+                  modulePosition: options?.modulePosition,
+                  curriculumCode: options?.curriculumCode ?? labItem.curriculumCode,
+                  locale,
+                  isStaticStep: true,
+                }),
+              }
+            : labItem,
+        );
+      }
     }
     return ordered;
   }
@@ -187,7 +289,15 @@ export function expandModuleFlowItems(
       : [];
     for (const q of labQuizzes) matchedQuizIds.add(q.id);
     ordered.push(
-      ...buildLabModuleSequence(labItem, labQuizzes, assignments, isVi, ordered.length),
+      ...buildLabModuleSequence(
+        labItem,
+        labQuizzes,
+        assignments,
+        isVi,
+        ordered.length,
+        options,
+        filtered,
+      ),
     );
   }
   for (const quiz of quizItems) {

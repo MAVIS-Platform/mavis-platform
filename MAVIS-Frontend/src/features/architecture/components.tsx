@@ -860,6 +860,11 @@ export function ArchitectureGraph({
   highlightIds = [],
   onClearHighlight,
   guidedStatic = false,
+  hiddenCategories,
+  onHiddenCategoriesChange,
+  lensFocusActive = false,
+  lensFocusNodeIds,
+  lensFocusEdgeIds,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
@@ -869,6 +874,11 @@ export function ArchitectureGraph({
   highlightIds?: string[];
   onClearHighlight?: (() => void) | undefined;
   guidedStatic?: boolean;
+  hiddenCategories?: import("./graph-projection").GraphCategory[] | undefined;
+  onHiddenCategoriesChange?: ((hidden: import("./graph-projection").GraphCategory[]) => void) | undefined;
+  lensFocusActive?: boolean | undefined;
+  lensFocusNodeIds?: ReadonlyArray<string> | undefined;
+  lensFocusEdgeIds?: ReadonlyArray<string> | undefined;
 }) {
   const localeCtx = useLocale();
   const t = localeCtx.t;
@@ -924,6 +934,11 @@ export function ArchitectureGraph({
         onOriginChange={setOrigin}
         guidedStatic={guidedStatic}
         showPresentationOptions={!guidedStatic}
+        {...(hiddenCategories !== undefined ? { hiddenCategories } : {})}
+        {...(onHiddenCategoriesChange ? { onHiddenCategoriesChange } : {})}
+        lensFocusActive={lensFocusActive}
+        lensFocusNodeIds={lensFocusNodeIds}
+        lensFocusEdgeIds={lensFocusEdgeIds}
       />
       {(group?.underlyingEdgeIds?.length ?? 0) > 1 && (
         <SelectField

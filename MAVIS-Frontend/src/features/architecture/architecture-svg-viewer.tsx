@@ -774,6 +774,62 @@ export function renderDiagramXmlToSvgString(xml: string, isDark = false): string
   return parts.join("");
 }
 
+export interface DiagramFocusFilter {
+  active: boolean;
+  focusNodeIds: ReadonlySet<string>;
+  focusEdgeIds: ReadonlySet<string>;
+}
+
+export function isSvgNodeFocused(
+  node: Pick<ParsedSvgNode, "id" | "mavisId" | "canonicalId" | "underlyingIds" | "shape">,
+  filter?: DiagramFocusFilter | undefined,
+): boolean {
+  if (!filter?.active || filter.focusNodeIds.size === 0) return true;
+  if (node.shape === "boundary") return true;
+  const candidates = [
+    node.canonicalId,
+    node.mavisId,
+    node.id,
+    ...(node.underlyingIds ?? []),
+  ].filter((v): v is string => Boolean(v));
+  return candidates.some((id) => filter.focusNodeIds.has(id));
+}
+
+export function isSvgEdgeFocused(
+  edge:
+    | Pick<ParsedSvgEdge, "id" | "mavisId" | "canonicalId" | "underlyingIds" | "source" | "target">
+    | undefined,
+  filter?: DiagramFocusFilter | undefined,
+  nodesById?: ReadonlyMap<string, ParsedSvgNode>,
+): boolean {
+  if (!filter?.active) return true;
+  if (!edge) return true;
+  if (filter.focusEdgeIds.size === 0 && filter.focusNodeIds.size === 0) return true;
+  const candidates = [
+    edge.canonicalId,
+    edge.mavisId,
+    edge.id,
+    edge.mavisId.replace(/^(?:projection:|view:|ctx-edge:)/, ""),
+    ...(edge.underlyingIds ?? []),
+  ].filter((v): v is string => Boolean(v));
+  if (candidates.some((id) => filter.focusEdgeIds.has(id))) {
+    return true;
+  }
+  if (nodesById && filter.focusNodeIds.size > 0) {
+    const srcNode = nodesById.get(edge.source);
+    const dstNode = nodesById.get(edge.target);
+    if (
+      srcNode &&
+      dstNode &&
+      isSvgNodeFocused(srcNode, filter) &&
+      isSvgNodeFocused(dstNode, filter)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Pure Native React SVG Architecture Diagram Viewer — zero Draw.io iframe, zero external embeds.
  * Adapts live to Dark/Light theme and renders distinct C4 & UML shapes with ELK port-anchored routes.
@@ -783,11 +839,13 @@ export function ArchitectureSvgViewer({
   selectedId,
   onSelect,
   onDoubleClickNode,
+  focusFilter,
 }: {
   xml: string;
   selectedId?: string | null | undefined;
   onSelect?: ((id: string) => void) | undefined;
   onDoubleClickNode?: ((id: string) => void) | undefined;
+  focusFilter?: DiagramFocusFilter | undefined;
 }) {
   const localeCtx = useLocale();
   const t = localeCtx.t;
@@ -1139,10 +1197,12 @@ export function ArchitectureSvgViewer({
                 y: (startPt.y + endPt.y) / 2,
               };
 
+              const isFocusedEdge = isSvgEdgeFocused(edge, focusFilter, parsed.resolvedById);
               return (
                 <g
                   key={edge.id}
                   data-svg-edge={edge.id}
+                  opacity={isFocusedEdge ? 1 : 0.28}
                   onClick={
                     onSelect && selectTarget ? () => onSelect(selectTarget) : undefined
                   }
@@ -1210,10 +1270,14 @@ export function ArchitectureSvgViewer({
                 const cylRy = Math.min(14, node.height * 0.12);
                 const cylPath = `M 0 ${cylRy} L 0 ${node.height - cylRy} A ${node.width / 2} ${cylRy} 0 0 0 ${node.width} ${node.height - cylRy} L ${node.width} ${cylRy} Z`;
 
+                const isFocusedNode = isSvgNodeFocused(node, focusFilter);
+                const showFocusHalo = Boolean(focusFilter?.active && isFocusedNode && !isSelected);
+
                 return (
                   <g
                     key={node.id}
                     data-svg-node={selectTarget || node.id}
+                    opacity={isFocusedNode ? 1 : 0.28}
                     transform={`translate(${node.x}, ${node.y})`}
                     filter={`url(#${shadowId})`}
                     onClick={
@@ -1229,7 +1293,7 @@ export function ArchitectureSvgViewer({
                     }
                     className={onSelect && selectTarget ? "cursor-pointer" : undefined}
                   >
-                    {isSelected && (
+                    {(isSelected || showFocusHalo) && (
                       <rect
                         x={-4}
                         y={-4}
@@ -1238,8 +1302,8 @@ export function ArchitectureSvgViewer({
                         rx={14}
                         fill="none"
                         stroke={edgeStrokeSelected}
-                        strokeWidth={2}
-                        strokeOpacity={0.85}
+                        strokeWidth={isSelected ? 2 : 1.5}
+                        strokeOpacity={isSelected ? 0.85 : 0.45}
                       />
                     )}
 
@@ -1362,9 +1426,19 @@ export function ArchitectureSvgViewer({
               );
               const pillH = Math.max(22, lines.length * 14 + 8);
               const pillY = lbl.y + (lbl.height - pillH) / 2;
+              const linkedEdge =
+                parsed.edges.find((e) => e.id === lbl.edgeId || e.mavisId === lbl.edgeId) ?? undefined;
+              const isFocusedLabel = linkedEdge
+                ? isSvgEdgeFocused(linkedEdge, focusFilter, parsed.resolvedById)
+                : !focusFilter?.active ||
+                  focusFilter.focusEdgeIds.size === 0 ||
+                  [lbl.canonicalId, lbl.edgeId, ...(lbl.underlyingIds ?? [])]
+                    .filter((v): v is string => Boolean(v))
+                    .some((id) => focusFilter.focusEdgeIds.has(id));
               return (
                 <g
                   key={lbl.id}
+                  opacity={isFocusedLabel ? 1 : 0.28}
                   onClick={
                     onSelect && selectTarget ? () => onSelect(selectTarget) : undefined
                   }
