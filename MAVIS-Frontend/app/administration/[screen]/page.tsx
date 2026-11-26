@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
 import {
@@ -34,6 +34,7 @@ function AdminSessions() {
 }
 export default async function AdminPage({ params }: { params: Promise<{ screen: string }> }) {
   const { screen } = await params;
+  if (screen === "accounts") redirect("/administration/users");
   const config = screens[screen];
   if (!config) notFound();
   if (screen === "studio") return <StudioWorkbench />;

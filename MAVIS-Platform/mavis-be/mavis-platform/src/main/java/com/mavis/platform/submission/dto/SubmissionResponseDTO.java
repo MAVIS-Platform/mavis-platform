@@ -15,6 +15,21 @@ import java.util.UUID;
 @Builder
 @Schema(description = "Thông tin chi tiết gói bài nộp bất biến")
 public class SubmissionResponseDTO {
+    public static com.fasterxml.jackson.databind.JsonNode redactStudioEvidenceForRole(
+            com.fasterxml.jackson.databind.JsonNode studioEvidence,
+            boolean revealLecturerEvaluation) {
+        if (revealLecturerEvaluation || studioEvidence == null || !studioEvidence.isObject()) {
+            return studioEvidence;
+        }
+        var copy = (com.fasterxml.jackson.databind.node.ObjectNode) studioEvidence.deepCopy();
+        copy.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
+        var receipt = copy.get("receipt");
+        if (receipt instanceof com.fasterxml.jackson.databind.node.ObjectNode receiptObj) {
+            receiptObj.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
+        }
+        return copy;
+    }
+
     private static com.fasterxml.jackson.databind.JsonNode studioSummary(SubmissionSnapshot submission) {
         if(submission.getStudioEvidence()==null)return null;
         var summary=(com.fasterxml.jackson.databind.node.ObjectNode)submission.getStudioEvidence().deepCopy();
@@ -131,7 +146,7 @@ public class SubmissionResponseDTO {
                 .runtimeSessionId(s.getRuntimeSession() != null ? s.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(s.getCourseQuizEvidence())
                 .theoryEvidence(s.getTheoryEvidence())
-                .studioEvidence(studioSummary(s))
+                .studioEvidence(redactStudioEvidenceForRole(studioSummary(s), revealDraft))
                 .studentSnapshots(s.getStudentSnapshots())
                 .scenarioStatus(scenarioStatus)
                 .feedbackCount(feedbackCount != null ? feedbackCount : 0L)

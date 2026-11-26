@@ -367,6 +367,8 @@ type LiveTerminalConsoleProps = {
   diagnosticLines?: readonly string[] | undefined;
   selectedTraceId?: string | null | undefined;
   onSelectTrace?: ((traceId: string | null) => void) | undefined;
+  faultedServices?: ReadonlyArray<string> | undefined;
+  staticEdges?: ReadonlyArray<{ from: string; to: string }> | undefined;
   isLight?: boolean | undefined;
   studioStyle?: StudioStyleId | undefined;
 };
@@ -382,6 +384,8 @@ export function LiveTerminalConsole({
   diagnosticLines = [],
   selectedTraceId,
   onSelectTrace,
+  faultedServices,
+  staticEdges,
   isLight = false,
   studioStyle,
 }: LiveTerminalConsoleProps) {
@@ -562,9 +566,7 @@ export function LiveTerminalConsole({
       if (activeServiceFilter !== "ALL" && entry.service !== activeServiceFilter) return false;
       if (levelFilter === "ACT" && !entry.isAction) return false;
       if (levelFilter === "ERROR" && entry.level !== "ERROR") return false;
-      if (levelFilter === "WARN" && entry.level !== "WARN" && entry.level !== "ERROR") {
-        return false;
-      }
+      if (levelFilter === "WARN" && entry.level !== "WARN") return false;
       if (
         normalizedQuery &&
         !entry.message.toLowerCase().includes(normalizedQuery) &&
@@ -772,10 +774,10 @@ export function LiveTerminalConsole({
             >
               {(
                 [
-                  ["ALL", "ALL"],
-                  ["ACT", actionCount > 0 ? `ACT (${actionCount})` : "ACT"],
-                  ["WARN", warnCount > 0 ? `WARN (${warnCount})` : "WARN"],
-                  ["ERROR", errorCount > 0 ? `ERR (${errorCount})` : "ERR"],
+                  ["ALL", t("ALL", "Tất cả")],
+                  ["ACT", actionCount > 0 ? `${t("ACT", "Thao tác")} (${actionCount})` : t("ACT", "Thao tác")],
+                  ["WARN", warnCount > 0 ? `${t("WARN", "Cảnh báo")} (${warnCount})` : t("WARN", "Cảnh báo")],
+                  ["ERROR", errorCount > 0 ? `${t("ERR", "Lỗi")} (${errorCount})` : t("ERR", "Lỗi")],
                 ] as const
               ).map(([lvl, label]) => (
                 <button
@@ -1113,6 +1115,8 @@ export function LiveTerminalConsole({
               <TraceWaterfallPanel
                 spans={spans}
                 interactions={data.telemetry?.interactions}
+                faultedServices={faultedServices}
+                staticEdges={staticEdges}
                 traceId={activeTraceId}
                 isLight={isLight}
                 onClose={() => setActiveTraceId(null)}

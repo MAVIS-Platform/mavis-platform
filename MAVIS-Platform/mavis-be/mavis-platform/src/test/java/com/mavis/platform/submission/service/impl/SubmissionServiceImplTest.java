@@ -850,6 +850,57 @@ class SubmissionServiceImplTest {
     }
 
     @Test
+    @DisplayName("Security: exportSubmissionBundle và getSubmissionById ẩn exerciseEvaluation với STUDENT nhưng giữ nguyên với LECTURER")
+    void testStudioEvidenceRedactsAutoCheckForStudentButPreservesForLecturer() {
+        UUID subId = UUID.randomUUID();
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode studioEv = mapper.createObjectNode();
+        studioEv.put("receiptDigest", "sha256:abc123");
+        studioEv.putArray("snapshots").addObject().put("id", "snap-1");
+        studioEv.putObject("exerciseEvaluation").put("f1Score", 1.0).put("passed", true);
+        studioEv.putObject("receipt").putObject("exerciseEvaluation").put("passed", true);
+
+        SubmissionSnapshot subSnapshot = SubmissionSnapshot.builder()
+                .id(subId)
+                .assignment(assignment)
+                .project(project)
+                .submittedBy(student)
+                .sourceSnapshot(this.snapshot)
+                .modelVersion(modelVersion)
+                .studioEvidence(studioEv)
+                .submittedAt(OffsetDateTime.now())
+                .build();
+
+        when(submissionSnapshotRepository.findWithDetailsById(subId)).thenReturn(Optional.of(subSnapshot));
+        when(feedbackCommentRepository.findBySubmissionIdOrderByCreatedAtAsc(subId)).thenReturn(List.of());
+        when(submissionReviewRepository.findBySubmissionId(subId)).thenReturn(Optional.empty());
+
+        com.mavis.common.entity.Role studentRole = new com.mavis.common.entity.Role();
+        studentRole.setCode("STUDENT");
+        student.setRole(studentRole);
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+
+        var studentExport = submissionService.exportSubmissionBundle(subId);
+        assertThat(studentExport.getStudioEvidence().path("receiptDigest").asText()).isEqualTo("sha256:abc123");
+        assertThat(studentExport.getStudioEvidence().has("exerciseEvaluation")).isFalse();
+        assertThat(studentExport.getStudioEvidence().path("receipt").has("exerciseEvaluation")).isFalse();
+
+        var studentRead = submissionService.getSubmissionById(subId);
+        assertThat(studentRead.getStudioEvidence().has("exerciseEvaluation")).isFalse();
+
+        com.mavis.common.entity.Role lecturerRole = new com.mavis.common.entity.Role();
+        lecturerRole.setCode("LECTURER");
+        User lecturerUser = User.builder().id(UUID.randomUUID()).email("lec@mavis.edu.vn").role(lecturerRole).build();
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(lecturerUser);
+
+        var lecturerExport = submissionService.exportSubmissionBundle(subId);
+        assertThat(lecturerExport.getStudioEvidence().path("exerciseEvaluation").path("passed").asBoolean()).isTrue();
+
+        var lecturerRead = submissionService.getSubmissionById(subId);
+        assertThat(lecturerRead.getStudioEvidence().path("exerciseEvaluation").path("f1Score").asDouble()).isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("Ticket V11/T15: exportSubmissionBundle ném NOT_FOUND khi submissionId không tồn tại")
     void testExportSubmissionBundle_NotFound() {
         UUID nonExistent = UUID.randomUUID();

@@ -251,7 +251,7 @@ export function StudioExercisePanel({
           </div>
         ))}
 
-      {/* Step 2: Outage Recovery asks students to diagnose & start the crashed service themselves; other types provide 1-click CTA */}
+      {/* Step 2: Outage Recovery asks students to diagnose & start the crashed service themselves; Scale-Out adds 2-step Load -> Scale cue */}
       {data.executionStatus === "RUNNING" && isOutageRecovery ? (
         <div
           className={`rounded-lg border px-2.5 py-2 text-[11px] leading-snug ${
@@ -269,6 +269,22 @@ export function StudioExercisePanel({
         prescribed?.action &&
         prescribed?.service &&
         data.executionStatus === "RUNNING" && (
+          <div className="space-y-1.5">
+            {exerciseType === "SCALE_UNDER_LOAD" &&
+              !data.actions.some((a) => a.status === "CONFIRMED" && a.action === "SET_LOAD") && (
+                <p
+                  className={`rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug ${
+                    isLight
+                      ? "border-sky-200 bg-sky-50/75 text-sky-900"
+                      : "border-sky-500/30 bg-sky-950/35 text-sky-200"
+                  }`}
+                >
+                  {t(
+                    "Tip: Increase live load (15–30 RPS) above first to observe saturation, then scale replicas to verify recovery.",
+                    "Gợi ý: Hãy tăng tải (15–30 RPS) ở bảng trên trước để thấy hệ thống nghẽn, rồi mới nhân bản replica để kiểm chứng hồi phục.",
+                  )}
+                </p>
+              )}
           <Button
             type="button"
             size="sm"
@@ -298,6 +314,7 @@ export function StudioExercisePanel({
               {prescribed.replicas ? ` (×${prescribed.replicas})` : ""}
             </span>
           </Button>
+          </div>
         )
       )}
 

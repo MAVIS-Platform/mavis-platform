@@ -140,7 +140,7 @@ test("Bug #09: CourseBuilder uses single-scroll accordion with slide-over drawer
   assert.match(builder, /role="dialog"/);
   assert.match(builder, /overflow-x-auto rounded-lg border bg-background p-4/);
   assert.match(access, /className="block max-w-40 truncate"/);
-  assert.match(access, /className="whitespace-nowrap px-2\.5 py-2 font-medium"/);
+  assert.match(access, /className="whitespace-nowrap px-2 py-2 font-medium"/);
 });
 
 test("Bug #10: Admin Health diagnostics and Accounts filter controls are localized in EN/VI dictionary", () => {
@@ -307,7 +307,7 @@ test("Task #07 Navigation & Layout: SectionHeader supports backHref, /submission
 
   assert.match(page, /backHref\?:/);
   assert.doesNotMatch(subDetail, /contextName=\{submissionId\}/);
-  assert.match(subDetail, /backHref="\/submissions"/);
+  assert.doesNotMatch(subDetail, /backHref="\/submissions"/);
   assert.match(notifPage, /backHref="\/"/);
   assert.match(appShell, /\/workspace-overview\?workspace=\$\{encodeURIComponent\(selectedWorkspaceId\)\}/);
   assert.match(wsShell, /Back to classes/);

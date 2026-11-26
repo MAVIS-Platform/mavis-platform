@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { AdminCommandHeader, AdminRuntimeSummary, AdminToolbar, PageResults, Notice } from "./operations";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpRight, Boxes, Plus } from "lucide-react";
 import { summarizeJobModel } from "@/lib/navigation/admin-job-review";
@@ -27,10 +27,20 @@ export function Accounts() {
   const createAcc = useApiMutation("createAccount");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const createFormRef = useRef<HTMLDivElement>(null);
+  const createNameRef = useRef<HTMLInputElement>(null);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [newRole, setNewRole] = useState<"student" | "lecturer" | "admin">("lecturer");
+
+  useEffect(() => {
+    if (!showCreate) return;
+    requestAnimationFrame(() => {
+      createFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      createNameRef.current?.focus({ preventScroll: true });
+    });
+  }, [showCreate]);
 
   const runLock = async (accountId: string, locked: boolean) => {
     setBusyId(accountId);
@@ -112,15 +122,17 @@ export function Accounts() {
         </Button>
       </AdminToolbar>
       {showCreate && (
-        <DetailPanel title={t("Provision Active User Account", "Cấp tài khoản người dùng mới")}>
-          <form onSubmit={(e) => void submitCreate(e)} className="grid gap-3 md:grid-cols-4">
-            <Input
-              required
-              aria-label={t("Full name", "Họ và tên")}
-              placeholder={t("Full name (e.g. Dr. Nguyen)", "Họ và tên (VD: TS. Nguyễn Văn A)")}
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-            />
+        <div ref={createFormRef}>
+          <DetailPanel title={t("Provision Active User Account", "Cấp tài khoản người dùng mới")}>
+            <form onSubmit={(e) => void submitCreate(e)} className="grid gap-3 md:grid-cols-4">
+              <Input
+                ref={createNameRef}
+                required
+                aria-label={t("Full name", "Họ và tên")}
+                placeholder={t("Full name (e.g. Dr. Nguyen)", "Họ và tên (VD: TS. Nguyễn Văn A)")}
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
             <Input
               required
               type="email"
@@ -156,7 +168,8 @@ export function Accounts() {
             </div>
           </form>
           {createAcc.error && <ErrorState error={createAcc.error} />}
-        </DetailPanel>
+          </DetailPanel>
+        </div>
       )}
       <div className="flex flex-wrap gap-1.5 rounded-xl border bg-muted/30 p-1.5">
         {[
@@ -228,7 +241,7 @@ export function Accounts() {
         />
       </div>
       <RequestState query={query}>
-        <div className="space-y-4 [&_thead]:bg-muted/50 [&_th]:py-3.5 [&_th]:font-semibold [&_td]:py-4">
+        <div className="space-y-4 [&_thead]:bg-muted/50 [&_th]:px-3 [&_th]:py-3 [&_th]:font-semibold [&_td]:px-3 [&_td]:py-3">
           <DataTable
             emptyDescription={t(
               "Try clearing the filters or refresh to check for new records.",
@@ -242,7 +255,7 @@ export function Accounts() {
                 key: "name",
                 label: t("Account", "Tài khoản"),
                 render: (a) => (
-                  <div className="flex min-w-44 max-w-60 items-center gap-2.5">
+                  <div className="flex min-w-0 max-w-[210px] items-center gap-2">
                     <UserAvatar name={a.name} avatarUrl={a.avatarUrl} size="sm" />
                     <div className="min-w-0 space-y-0.5">
                       <p className="truncate font-semibold text-foreground">{a.name}</p>
@@ -260,7 +273,7 @@ export function Accounts() {
                   ) : (
                     <select
                       aria-label={t(`Role for ${a.name}`, `Vai trò của ${a.name}`)}
-                      className="h-8 w-36 rounded-md border bg-card px-2 text-xs disabled:opacity-50"
+                      className="h-8 w-32 rounded-md border bg-card px-2 text-xs disabled:opacity-50"
                       value={a.role}
                       disabled={busyId !== null}
                       onChange={(event) => {

@@ -1396,12 +1396,12 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
           <table className="w-full text-left text-xs">
             <thead className="border-b bg-muted/40 text-muted-foreground">
               <tr>
-                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Passkey", "Mã Passkey")}</th>
-                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Label", "Nhãn")}</th>
-                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Usage", "Đã dùng")}</th>
-                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Expires", "Hết hạn")}</th>
-                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Status", "Trạng thái")}</th>
-                <th className="whitespace-nowrap px-2.5 py-2 text-right font-medium">{t("Actions", "Thao tác")}</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">{t("Passkey", "Mã Passkey")}</th>
+                <th className="hidden whitespace-nowrap px-2 py-2 font-medium xl:table-cell">{t("Label", "Nhãn")}</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">{t("Usage", "Đã dùng")}</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">{t("Expires", "Hết hạn")}</th>
+                <th className="whitespace-nowrap px-2 py-2 font-medium">{t("Status", "Trạng thái")}</th>
+                <th className="whitespace-nowrap px-2 py-2 text-right font-medium">{t("Actions", "Thao tác")}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -1454,7 +1454,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         <span className="text-muted-foreground">••••</span>
                       )}
                     </td>
-                    <td className="px-2 py-2 text-foreground/90">
+                    <td className="hidden px-2 py-2 text-foreground/90 xl:table-cell">
                       {isEditing ? (
                         <Input
                           className="h-7 w-32 text-xs"

@@ -1925,33 +1925,21 @@ function StepContent({
   }, [phaseIssueDialogOpen, liveStudioVerified, phaseIssue]);
 
   useEffect(() => {
+    // Step 3 already displays an inline Studio recovery card when runtime evidence is missing,
+    // so avoid stacking a redundant blocking dialog on top of it.
     const automaticIssue =
       step === 1 && fallbackModelQuery.isError
         ? "static-data"
         : step === 2 && needsSandboxBootstrap
           ? "runtime-failed"
-          : step === 3 &&
-              requiresRuntime &&
-              !liveStudioVerified &&
-              !preview &&
-              !studentContextLoading &&
-              !studioStateQuery.isLoading &&
-              !studioStateQuery.isFetching
-            ? "evidence-missing"
-            : null;
+          : null;
     if (!automaticIssue || shownAutomaticIssueKeys.current.has(`${step}:${automaticIssue}`)) return;
     shownAutomaticIssueKeys.current.add(`${step}:${automaticIssue}`);
     openPhaseIssue(automaticIssue);
   }, [
     fallbackModelQuery.isError,
-    liveStudioVerified,
     needsSandboxBootstrap,
-    preview,
-    requiresRuntime,
     step,
-    studentContextLoading,
-    studioStateQuery.isLoading,
-    studioStateQuery.isFetching,
   ]);
 
   return (

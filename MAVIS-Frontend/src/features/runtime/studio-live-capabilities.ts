@@ -122,10 +122,11 @@ export function liveCapabilities(input: LiveCapabilityInput): LiveCapability[] {
     },
     {
       id: "local-video",
-      label: "Local video recording",
-      state: "UNAVAILABLE",
-      reason:
-        "Live evidence is the signed snapshot and receipt path. Sandbox video remains a local-only artifact.",
+      label: "3D video recording",
+      state: input.hasSession ? "REAL" : "UNAVAILABLE",
+      reason: input.hasSession
+        ? "Records crisp 3D WebGL video attached to your Studio evidence."
+        : "Start a Live Docker session to record 3D evidence video.",
     },
   ];
 }

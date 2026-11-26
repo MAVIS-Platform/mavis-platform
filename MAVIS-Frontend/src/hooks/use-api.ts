@@ -224,8 +224,27 @@ export function useApiMutation<K extends Operation>(operation: K) {
           );
         }
       }
-      if (["setAccountRole", "setAccountLock"].includes(operation)) {
+      if (["createAccount", "setAccountRole", "setAccountLock"].includes(operation)) {
         client.setQueryData<unknown[]>(["api", "accounts", {}], (rows) => upsertRow(rows, data));
+      }
+      if (operation === "createAccount") {
+        client.setQueryData<Record<string, unknown> | undefined>(
+          ["api", "platformSummary", {}],
+          (prev) => {
+            if (!prev || typeof prev !== "object") return prev;
+            const roleVal = String((input as { role?: string } | null)?.role ?? "").toLowerCase();
+            return {
+              ...prev,
+              ...(typeof prev["users"] === "number" ? { users: prev["users"] + 1 } : {}),
+              ...(roleVal === "lecturer" && typeof prev["activeLecturers"] === "number"
+                ? { activeLecturers: prev["activeLecturers"] + 1 }
+                : {}),
+              ...(roleVal === "student" && typeof prev["activeStudents"] === "number"
+                ? { activeStudents: prev["activeStudents"] + 1 }
+                : {}),
+            };
+          },
+        );
       }
       if (operation === "updateProfile") {
         client.setQueryData(["api", "session", {}], data);

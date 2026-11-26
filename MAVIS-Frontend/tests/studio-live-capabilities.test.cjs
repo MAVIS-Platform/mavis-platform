@@ -108,10 +108,10 @@ test("Capability summary counts every Sandbox surface exactly once", () => {
     counts.REAL + counts.PREPARED + counts.OBSERVE + counts.UNAVAILABLE,
     capabilities.length,
   );
-  assert.equal(counts.REAL, 2);
+  assert.equal(counts.REAL, 3);
   assert.equal(counts.PREPARED, 2);
   assert.equal(counts.OBSERVE, 3);
-  assert.equal(counts.UNAVAILABLE, 6);
+  assert.equal(counts.UNAVAILABLE, 5);
 });
 
 test("studioState contract preserves simulatedSandbox and derives operationName from Runner httpMethod/route", () => {
@@ -1192,7 +1192,7 @@ test("Inline module quiz normalizes questions/IDs, Active class Settings shows P
   );
   assert.match(courseScreensSrc, /quizNotPublished\s*\|\|\s*\(studentContext\.isSuccess && studentContext\.data\?\.quiz == null\)/);
   assert.match(courseScreensSrc, /runtimePrerequisiteMissing\s*=\s*\n?\s*step === 2 && requiresRuntime && !runtimeReady && !preview && !studentContextLoading/);
-  assert.match(courseScreensSrc, /!liveStudioVerified &&\s*!preview &&\s*!studentContextLoading &&\s*!studioStateQuery\.isLoading/);
+  assert.ok(!courseScreensSrc.includes('? "evidence-missing"'), "Step 3 inline recovery card avoids duplicate auto-dialog");
 
   const workbenchSrc = fs.readFileSync(
     path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
@@ -2643,4 +2643,91 @@ test("Critical Audit 26 P0/P1/P2 Overhaul: initials, watermark, waterfall peers,
   assert.ok(subComponents.includes("<SubmissionExport"));
   assert.ok(grading.includes("Return for revision"));
   assert.ok(courseOutline.includes("{isLab && ("));
+});
+
+test("Wave-2 audit fixes: timeout waterfall fallback, root-cause diagnostics tree, WARN separation, student sidebar, cancel relocation, admin/references polish", () => {
+  const { buildTraceWaterfall } = require("../src/features/runtime/studio-red-charts.tsx");
+
+  // Even when interactions[] is empty (e.g. timed-out call to a paused/stopped service),
+  // buildTraceWaterfall infers the downstream target from faultedServices + staticEdges.
+  const wf = buildTraceWaterfall(
+    [
+      {
+        traceId: "tr-timeout",
+        spanId: "sp-root",
+        parentSpanId: "",
+        runtimeService: "api-gateway",
+        operationName: "POST /api/v1/orders",
+        route: "/api/v1/orders",
+        spanStatus: "ERROR",
+        startTimeUnixNano: "1000000000000",
+        durationNanoseconds: "1250000000",
+      },
+      {
+        traceId: "tr-timeout",
+        spanId: "sp-order-srv",
+        parentSpanId: "sp-root",
+        runtimeService: "order-service",
+        operationName: "POST /orders",
+        route: "/orders",
+        spanStatus: "ERROR",
+        startTimeUnixNano: "1000005000000",
+        durationNanoseconds: "1240000000",
+      },
+      {
+        traceId: "tr-timeout",
+        spanId: "sp-timeout-leaf",
+        parentSpanId: "sp-order-srv",
+        runtimeService: "order-service",
+        operationName: "GET",
+        httpMethod: "GET",
+        spanStatus: "ERROR",
+        startTimeUnixNano: "1000010000000",
+        durationNanoseconds: "1200700000",
+      },
+    ],
+    "tr-timeout",
+    [],
+    {
+      faultedServices: ["payment-service"],
+      staticEdges: [
+        { from: "order-service", to: "inventory-service" },
+        { from: "order-service", to: "payment-service" },
+      ],
+    },
+  );
+  const timeoutRow = wf.rows.find((r) => r.spanId === "sp-timeout-leaf");
+  assert.ok(timeoutRow);
+  assert.equal(timeoutRow.targetService, "payment-service");
+
+  const readSrc = (rel) => fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+  const workbench = readSrc("src/features/runtime/live-studio-workbench.tsx");
+  const parity = readSrc("src/features/runtime/live-sandbox-parity.tsx");
+  const terminal = readSrc("src/features/runtime/live-terminal-console.tsx");
+  const panel = readSrc("src/features/runtime/studio-exercise-panel.tsx");
+  const standalone = readSrc("src/features/runtime/standalone-studio-live.tsx");
+  const adminRoute = readSrc("app/administration/[screen]/page.tsx");
+  const adminScreen = readSrc("src/features/administration/screens.tsx");
+  const refManage = readSrc("src/features/workspaces/reference-manage.tsx");
+  const useApi = readSrc("src/hooks/use-api.ts");
+  const submissionPage = readSrc("app/submissions/[submissionId]/page.tsx");
+
+  // Studio Wave-2 invariants
+  assert.ok(workbench.includes("Root Cause & Impact Tree"));
+  assert.ok(workbench.includes("displayStatusLabel"));
+  assert.ok(workbench.includes("snapshotCount + liveReplays.length"));
+  assert.ok(workbench.includes("faultedServices={faultedServices}"));
+  assert.ok(parity.includes("Boolean(authoring) &&"));
+  assert.ok(terminal.includes('entry.level !== "WARN"'));
+  assert.ok(terminal.includes("Cảnh báo"));
+  assert.ok(panel.includes("Increase live load (15–30 RPS)"));
+  assert.ok(standalone.includes("labSessions.refetch"));
+
+  // Admin, Submissions, and References Wave-2 invariants
+  assert.ok(adminRoute.includes('screen === "accounts"'));
+  assert.ok(adminRoute.includes('redirect("/administration/users")'));
+  assert.ok(adminScreen.includes("createFormRef"));
+  assert.ok(!refManage.includes("redirectTimer"));
+  assert.ok(useApi.includes('"platformSummary"'));
+  assert.ok(!submissionPage.includes('backHref="/submissions"'));
 });

@@ -17,7 +17,6 @@ export default async function SubmissionPage({
         <SectionHeader
           title="Submission Details & Review"
           screenId="submission-review"
-          backHref="/submissions"
         />
         <SubmissionReview submissionId={submissionId} />
       </PageContainer>

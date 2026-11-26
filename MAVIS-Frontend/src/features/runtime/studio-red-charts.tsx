@@ -156,6 +156,10 @@ export function buildTraceWaterfall(
   spans: ReadonlyArray<StudioSpan> | null | undefined,
   traceId: string,
   interactions?: ReadonlyArray<StudioInteraction> | null | undefined,
+  options?: {
+    faultedServices?: ReadonlyArray<string> | undefined;
+    staticEdges?: ReadonlyArray<{ from: string; to: string }> | undefined;
+  },
 ): { rows: WaterfallRow[]; totalMs: number } {
   const group = (spans ?? []).filter((s) => s.traceId === traceId);
   if (group.length === 0) return { rows: [], totalMs: 0 };
@@ -251,7 +255,42 @@ export function buildTraceWaterfall(
     );
     if (edgeIdx >= 0) {
       consumedEdges.add(edgeIdx);
-      item.targetService = traceInteractions[edgeIdx]!.toService;
+      const target = traceInteractions[edgeIdx]!.toService;
+      item.targetService = target;
+      const set = matchedTargetsByCaller.get(item.span.runtimeService) ?? new Set<string>();
+      set.add(target);
+      matchedTargetsByCaller.set(item.span.runtimeService, set);
+    }
+  }
+  // Final fallback for timed-out/paused outbound leaf spans that never got a child SERVER span or trace interaction:
+  // infer target from static topology outgoing edges, prioritizing currently faulted/paused services.
+  const faultedSet = new Set(options?.faultedServices ?? []);
+  const staticEdges = options?.staticEdges ?? [];
+  if (staticEdges.length > 0) {
+    for (const item of parsed) {
+      if (item.targetService) continue;
+      const isOutboundLeaf = !item.span.route && (children.get(item.span.spanId)?.length ?? 0) === 0;
+      if (!isOutboundLeaf) continue;
+      const alreadyMatched = matchedTargetsByCaller.get(item.span.runtimeService);
+      const outgoing = staticEdges.filter(
+        (e) =>
+          e.from === item.span.runtimeService &&
+          e.to &&
+          e.to !== item.span.runtimeService &&
+          !alreadyMatched?.has(e.to),
+      );
+      if (outgoing.length === 0) continue;
+      const faultedMatch =
+        item.isError || item.durationMs >= 800 || item.span.httpStatusCode == null
+          ? outgoing.find((e) => faultedSet.has(e.to))
+          : undefined;
+      const chosen = faultedMatch ?? (outgoing.length === 1 ? outgoing[0] : undefined);
+      if (chosen) {
+        item.targetService = chosen.to;
+        const set = matchedTargetsByCaller.get(item.span.runtimeService) ?? new Set<string>();
+        set.add(chosen.to);
+        matchedTargetsByCaller.set(item.span.runtimeService, set);
+      }
     }
   }
 
@@ -635,18 +674,25 @@ export function StudioRedCharts({
 export function TraceWaterfallPanel({
   spans,
   interactions,
+  faultedServices,
+  staticEdges,
   traceId,
   onClose,
   isLight = false,
 }: {
   spans: ReadonlyArray<StudioSpan> | null | undefined;
   interactions?: ReadonlyArray<StudioInteraction> | null | undefined;
+  faultedServices?: ReadonlyArray<string> | undefined;
+  staticEdges?: ReadonlyArray<{ from: string; to: string }> | undefined;
   traceId: string;
   onClose: () => void;
   isLight?: boolean | undefined;
 }) {
   const { t } = useLocale();
-  const { rows, totalMs } = buildTraceWaterfall(spans, traceId, interactions);
+  const { rows, totalMs } = buildTraceWaterfall(spans, traceId, interactions, {
+    faultedServices,
+    staticEdges,
+  });
   if (rows.length === 0) return null;
 
   return (

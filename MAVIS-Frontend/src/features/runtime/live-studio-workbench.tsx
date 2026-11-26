@@ -1470,8 +1470,10 @@ export function LiveStudioWorkbench({
   const activeSessionMeta = sessions.find((item) => item.id === activeSessionId);
   const isBooting = Boolean(
     starting ||
+      (Boolean(activeSessionId) && studio.state.isPending && !liveData) ||
       BOOTING_STATUSES.has(data.executionStatus.toUpperCase()) ||
-      BOOTING_STATUSES.has(liveData?.executionStatus?.toUpperCase() ?? ""),
+      BOOTING_STATUSES.has(liveData?.executionStatus?.toUpperCase() ?? "") ||
+      BOOTING_STATUSES.has(activeSessionMeta?.executionStatus?.toUpperCase() ?? ""),
   );
   const failedStatuses = ["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"];
   const timedOutStatuses = ["TIMED_OUT", "TIMEDOUT", "TIMEOUT"];
@@ -1740,6 +1742,32 @@ export function LiveStudioWorkbench({
                     ? "LAB SETUP"
                     : "PREVIEW"
                   : "IDLE";
+  const displayStatusLabel =
+    locale === "vi"
+      ? statusLabel === "LIVE"
+        ? "TRỰC TIẾP"
+        : statusLabel === "FINISHING"
+          ? "ĐANG ĐÓNG"
+          : statusLabel === "APPLYING"
+            ? "ĐANG ÁP DỤNG"
+            : statusLabel.startsWith("QUEUED")
+              ? statusLabel.replace("QUEUED", "HÀNG ĐỢI")
+              : statusLabel === "CANCELLING"
+                ? "ĐANG HỦY"
+                : statusLabel === "BOOTING"
+                  ? "KHỞI ĐỘNG"
+                  : statusLabel === "SEALED"
+                    ? "ĐÃ NIÊM PHONG"
+                    : statusLabel === "TIMED OUT"
+                      ? "HẾT GIỜ"
+                      : statusLabel === "FAILED"
+                        ? "LỖI"
+                        : statusLabel === "LAB SETUP"
+                          ? "SOẠN BÀI"
+                          : statusLabel === "PREVIEW"
+                            ? "XEM TRƯỚC"
+                            : "CHỜ"
+      : statusLabel;
 
   const showLiveSessionControls = !authoring || !isPreviewMode || isBooting;
   const finishDisabledReason =
@@ -1901,19 +1929,21 @@ export function LiveStudioWorkbench({
               }`}
               aria-hidden="true"
             />
-            {statusLabel}
+            {displayStatusLabel}
           </span>
         )}
 
-        {/* Right Cluster: Live Metrics Popover + 4-Style Visual Picker + Settings + Mode actions */}
+        {/* Right Cluster: Live Metrics Popover + Theme Picker + Settings + Mode actions */}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {authoring && authoring.saved && !missionDirty && (
             <span className="hidden items-center gap-1 text-xs font-medium text-emerald-600 xl:inline-flex">
-              <Check aria-hidden="true" className="size-3.5" /> Saved
+              <Check aria-hidden="true" className="size-3.5" /> {t("Saved", "Đã lưu")}
             </span>
           )}
 
-          {authoring && data.executionStatus === "RUNNING" && (
+          {authoring &&
+            data.executionStatus === "RUNNING" &&
+            (hasConfirmedAction || stoppedServiceNames.length > 0) && (
             <Button
               type="button"
               size="sm"
@@ -2094,6 +2124,34 @@ export function LiveStudioWorkbench({
                       )}
                     </select>
                   </label>
+                )}
+                {showLiveSessionControls && (data.executionStatus === "RUNNING" || isBooting) && (
+                  <div
+                    className={`border-t pt-2 text-xs ${
+                      isLight ? "border-slate-200" : "border-slate-800"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      disabled={cancel.isPending}
+                      onClick={() => {
+                        setTelemetryPopoverOpen(false);
+                        if (
+                          window.confirm(
+                            t(
+                              "Stop and cancel this live Docker session? Unsaved container state will be discarded.",
+                              "Dừng và hủy phiên Docker đang chạy? Trạng thái chưa lưu trong container sẽ bị hủy bỏ.",
+                            ),
+                          )
+                        ) {
+                          void cancelStudio();
+                        }
+                      }}
+                      className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                    >
+                      <span>{t("Stop & Cancel Session", "Dừng & Hủy phiên Docker")}</span>
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -2380,35 +2438,6 @@ export function LiveStudioWorkbench({
                     </span>
                   </button>
                 </div>
-
-                {showLiveSessionControls && (data.executionStatus === "RUNNING" || isBooting) && (
-                  <div
-                    className={`border-t pt-2 text-xs ${
-                      isLight ? "border-slate-200" : "border-slate-800"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      disabled={cancel.isPending}
-                      onClick={() => {
-                        setSettingsPopoverOpen(false);
-                        if (
-                          window.confirm(
-                            t(
-                              "Stop and cancel this live Docker session? Unsaved container state will be discarded.",
-                              "Dừng và hủy phiên Docker đang chạy? Trạng thái chưa lưu trong container sẽ bị hủy bỏ.",
-                            ),
-                          )
-                        ) {
-                          void cancelStudio();
-                        }
-                      }}
-                      className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                    >
-                      <span>{t("Stop & Cancel Session", "Dừng & Hủy phiên Docker")}</span>
-                    </button>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -2741,12 +2770,12 @@ export function LiveStudioWorkbench({
                   }`}
                 >
                   <History className="size-4" aria-hidden="true" />
-                  {snapshotCount > 0 && (
+                  {snapshotCount + liveReplays.length > 0 && (
                     <span
                       style={{ fontSize: 9, lineHeight: 1 }}
                       className={`pointer-events-none absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full px-1 py-0.5 font-mono font-bold ${styleCfg.railBadgeClass}`}
                     >
-                      {snapshotCount}
+                      {snapshotCount + liveReplays.length}
                     </span>
                   )}
                 </button>
@@ -4213,6 +4242,8 @@ export function LiveStudioWorkbench({
               diagnosticLines={failedDiagnostics}
               selectedTraceId={inspectedTraceId}
               onSelectTrace={setInspectedTraceId}
+              faultedServices={faultedServices}
+              staticEdges={staticEdgesForBlast}
               isLight={isLight}
               studioStyle={studioStyle}
             />
@@ -4807,136 +4838,206 @@ export function LiveStudioWorkbench({
 
             <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pb-5">
               {rightCardMode === "diagnostics" ? (
-                <section aria-label={t("Change Impact Diagnostics", "Chẩn đoán Change Impact")} className="space-y-3.5 text-xs">
-                  {/* Overall Status Stamp */}
-                  <div
-                    className={`rounded-xl border p-3 ${
-                      faultedServices.length > 0
-                        ? isLight ? "border-rose-200 bg-rose-50/80" : "border-rose-500/30 bg-rose-950/30"
-                        : isLight ? "border-emerald-200 bg-emerald-50/80" : "border-emerald-500/30 bg-emerald-950/30"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 font-bold">
-                        {faultedServices.length > 0 ? (
-                          <AlertTriangle className="size-4 text-rose-600" aria-hidden="true" />
-                        ) : (
-                          <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
+                (() => {
+                  const cpuLimitBySvc = new Map<string, number>();
+                  for (const act of data.actions) {
+                    if (act.status === "CONFIRMED" && act.action === "THROTTLE_CPU" && act.service) {
+                      const pct = typeof act.cpuPercent === "number" ? act.cpuPercent : 100;
+                      if (pct > 0 && pct < 100) cpuLimitBySvc.set(act.service, pct);
+                      else cpuLimitBySvc.delete(act.service);
+                    }
+                  }
+                  const rootCauseIds = [
+                    ...new Set([...faultedServices, ...cpuLimitBySvc.keys()]),
+                  ];
+                  const upstreamAffected = new Set<string>();
+                  for (const rootId of rootCauseIds) {
+                    const blast = computeStaticBlastRadius(rootId, staticEdgesForBlast);
+                    for (const svc of blast.upstreamImpacted) {
+                      if (!rootCauseIds.includes(svc)) upstreamAffected.add(svc);
+                    }
+                  }
+                  const degradedEdges = (data.telemetry?.serviceGraph ?? [])
+                    .filter((e) => e.errorRatePercent > 0 || (e.p95Ms != null && e.p95Ms >= 300))
+                    .sort((a, b) => b.errorRatePercent - a.errorRatePercent || (b.p95Ms ?? 0) - (a.p95Ms ?? 0))
+                    .slice(0, 6);
+                  const hasIssue = rootCauseIds.length > 0 || degradedEdges.length > 0;
+                  return (
+                    <section
+                      aria-label={t("Change Impact Diagnostics", "Chẩn đoán Change Impact")}
+                      className="space-y-3 text-xs"
+                    >
+                      {/* Root Cause Banner */}
+                      <div
+                        className={`rounded-xl border p-3 ${
+                          hasIssue
+                            ? isLight
+                              ? "border-rose-200 bg-rose-50/80"
+                              : "border-rose-500/30 bg-rose-950/30"
+                            : isLight
+                              ? "border-emerald-200 bg-emerald-50/80"
+                              : "border-emerald-500/30 bg-emerald-950/30"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1.5 font-bold">
+                            {hasIssue ? (
+                              <AlertTriangle className="size-4 text-rose-600" aria-hidden="true" />
+                            ) : (
+                              <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
+                            )}
+                            {hasIssue
+                              ? t("Root Cause & Impact Tree", "Cây Nguyên nhân gốc & Lan truyền")
+                              : t("All Services Healthy", "Hệ thống đang hoạt động ổn định")}
+                          </span>
+                          <span className="font-mono font-semibold">
+                            {healthyCount}/{services.length}
+                          </span>
+                        </div>
+                        {!hasIssue && (
+                          <p className="mt-1.5 leading-relaxed opacity-85">
+                            {t(
+                              "No active fault or bottleneck detected. Select any service to inject a fault, throttle CPU, or add load to inspect live propagation.",
+                              "Chưa có sự cố hay điểm nghẽn nào. Chọn 1 service để tiêm lỗi, bóp CPU hoặc tăng tải rồi quan sát chuỗi lan truyền trực tiếp.",
+                            )}
+                          </p>
                         )}
-                        {faultedServices.length > 0
-                          ? t("Fault & Impact Detected", "Phát hiện sự cố & lan truyền")
-                          : t("All Services Healthy", "Hệ thống đang hoạt động ổn định")}
-                      </span>
-                      <span className="font-mono font-semibold">
-                        {healthyCount}/{services.length}
-                      </span>
-                    </div>
-                    <p className="mt-1.5 leading-relaxed opacity-85">
-                      {faultedServices.length > 0
-                        ? t(
-                            `Faulted container(s): ${faultedServices.join(", ")}. Observe upstream errors and P95 spikes, then capture a Snapshot.`,
-                            `Container gặp sự cố: ${faultedServices.join(", ")}. Quan sát lỗi dây chuyền ở dịch vụ gọi lên trên và chụp Snapshot minh chứng.`,
-                          )
-                        : t(
-                            "Click any microservice on the canvas to stop, pause, throttle CPU, or scale replicas and watch real Docker & OpenTelemetry impact.",
-                            "Bấm vào bất kỳ microservice nào trên sơ đồ để dừng, tạm ngưng, bóp CPU hoặc scale replica và theo dõi tác động thực tế qua Docker & OTel.",
-                          )}
-                    </p>
-                  </div>
+                      </div>
 
-                  {/* Criteria Breakdown (GonnaCrash "Kết quả" style) */}
-                  <div className="space-y-1.5">
-                    <h4 className="font-bold uppercase tracking-wide text-muted-foreground">
-                      {t("Live Results", "Kết quả trực tiếp")}
-                    </h4>
-                    <div className={`divide-y rounded-xl border ${isLight ? "divide-slate-200 border-slate-200 bg-slate-50/60" : "divide-slate-800 border-slate-800 bg-slate-900/50"}`}>
-                      <div className="flex items-center justify-between px-3 py-2">
-                        <span>{t("Error Rate", "Tỉ lệ lỗi HTTP")}</span>
-                        <span className={`font-mono font-bold ${liveErrorPct && liveErrorPct > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                          {liveErrorPct != null ? `${liveErrorPct}%` : "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between px-3 py-2">
-                        <span>P95 Latency</span>
-                        <span className="font-mono font-bold">
-                          {liveP95Ms != null ? `${liveP95Ms} ms` : "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between px-3 py-2">
-                        <span>{t("Confirmed Actions", "Thao tác đã xác nhận")}</span>
-                        <span className="font-mono font-bold">
-                          {data.actions.filter((a) => a.status === "CONFIRMED").length}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between px-3 py-2">
-                        <span>{t("Sealed Snapshots", "Snapshot minh chứng")}</span>
-                        <span className="font-mono font-bold">{snapshotCount}</span>
-                      </div>
-                    </div>
-                  </div>
+                      {/* Level 1: Root Faulted / Throttled Services */}
+                      {rootCauseIds.length > 0 && (
+                        <div className="space-y-1.5">
+                          <h4 className="font-bold uppercase tracking-wide text-muted-foreground">
+                            {t("1. Root cause service(s)", "1. Service nguyên nhân gốc")}
+                          </h4>
+                          <div className="flex flex-wrap gap-1.5">
+                            {rootCauseIds.map((svc) => {
+                              const phase = servicePhase(data, svc);
+                              const throttlePct = cpuLimitBySvc.get(svc);
+                              const tag =
+                                phase === "paused"
+                                  ? t("Paused", "Tạm dừng")
+                                  : phase === "stopped"
+                                    ? t("Stopped 0x", "Tắt 0x")
+                                    : throttlePct
+                                      ? `CPU ${throttlePct}%`
+                                      : t("Fault", "Lỗi");
+                              return (
+                                <button
+                                  key={svc}
+                                  type="button"
+                                  onClick={() => {
+                                    studio.setService(svc);
+                                    setRightCardMode("service");
+                                  }}
+                                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[11px] font-semibold transition ${
+                                    phase !== "running"
+                                      ? isLight
+                                        ? "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100"
+                                        : "border-rose-500/40 bg-rose-950/40 text-rose-200 hover:bg-rose-950/70"
+                                      : isLight
+                                        ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                                        : "border-amber-500/40 bg-amber-950/40 text-amber-200 hover:bg-amber-950/70"
+                                  }`}
+                                >
+                                  <span>{svc}</span>
+                                  <span className="rounded bg-black/10 px-1 py-0.5 text-[9.5px] dark:bg-white/10">
+                                    {tag}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
-                  {/* Recent Action Timeline (GonnaCrash "Diễn biến" style) */}
-                  <div className="space-y-1.5">
-                    <h4 className="font-bold uppercase tracking-wide text-muted-foreground">
-                      {t("Timeline", "Diễn biến")}
-                    </h4>
-                    {data.actions.length > 0 ? (
-                      <ul className="space-y-1.5">
-                        {data.actions.slice(-5).reverse().map((act) => (
-                          <li
-                            key={act.actionId}
-                            className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 font-mono text-xs ${
-                              isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-900/60"
-                            }`}
-                          >
-                            <span className="truncate font-semibold">
-                              {act.action} {act.service}
-                            </span>
-                            <span
-                              className={
-                                act.status === "CONFIRMED"
-                                  ? "text-emerald-600"
-                                  : act.status === "FAILED"
-                                    ? "text-rose-600"
-                                    : "text-amber-600"
-                              }
-                            >
-                              {act.status}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-muted-foreground">
-                        {t("No Docker actions executed yet.", "Chưa có thao tác Docker nào được chạy.")}
-                      </p>
-                    )}
-                  </div>
+                      {/* Level 2: Upstream Callers Impacted via Reverse BFS */}
+                      {upstreamAffected.size > 0 && (
+                        <div className="space-y-1.5">
+                          <h4 className="font-bold uppercase tracking-wide text-muted-foreground">
+                            {t("2. Upstream impacted callers", "2. Service gọi ngược bị ảnh hưởng")}
+                          </h4>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[...upstreamAffected].map((svc) => (
+                              <button
+                                key={svc}
+                                type="button"
+                                onClick={() => {
+                                  studio.setService(svc);
+                                  setRightCardMode("service");
+                                }}
+                                className={`rounded-lg border px-2 py-1 font-mono text-[11px] font-medium transition ${
+                                  isLight
+                                    ? "border-amber-200 bg-amber-50/70 text-amber-900 hover:bg-amber-100"
+                                    : "border-amber-500/35 bg-amber-950/30 text-amber-200 hover:bg-amber-950/60"
+                                }`}
+                              >
+                                ↑ {svc}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
-                  <div className="flex gap-2 pt-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 text-xs"
-                      onClick={() => {
-                        setTab("logs");
-                        setBottomCollapsed(false);
-                      }}
-                    >
-                      <Terminal className="mr-1.5 size-3.5" aria-hidden="true" />
-                      {t("Open Logs & Traces", "Mở Logs & Traces")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="flex-1 text-xs"
-                      onClick={() => setRightCardMode("service")}
-                    >
-                      {t("Control Service", "Điều khiển Service")}
-                    </Button>
-                  </div>
-                </section>
+                      {/* Level 3: Live Degraded OTel Call Edges */}
+                      {degradedEdges.length > 0 && (
+                        <div className="space-y-1.5">
+                          <h4 className="font-bold uppercase tracking-wide text-muted-foreground">
+                            {t("3. Live failing / slow edges (OTel)", "3. Đường gọi lỗi / chậm thực tế (OTel)")}
+                          </h4>
+                          <ul className="space-y-1">
+                            {degradedEdges.map((edge) => (
+                              <li
+                                key={`${edge.client}->${edge.server}`}
+                                className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 font-mono text-[11px] ${
+                                  isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-900/60"
+                                }`}
+                              >
+                                <span className="truncate font-semibold">
+                                  {edge.client} → {edge.server}
+                                </span>
+                                <span className="shrink-0 space-x-1.5">
+                                  {edge.errorRatePercent > 0 && (
+                                    <span className={isLight ? "font-bold text-rose-600" : "font-bold text-rose-300"}>
+                                      {edge.errorRatePercent.toFixed(0)}% err
+                                    </span>
+                                  )}
+                                  {edge.p95Ms != null && (
+                                    <span className="text-muted-foreground">{Math.round(edge.p95Ms)}ms</span>
+                                  )}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-xs"
+                          onClick={() => {
+                            setTab("logs");
+                            setBottomCollapsed(false);
+                          }}
+                        >
+                          <Terminal className="mr-1.5 size-3.5" aria-hidden="true" />
+                          {t("Open Logs & Traces", "Mở Logs & Traces")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="flex-1 text-xs"
+                          onClick={() => setRightCardMode("service")}
+                        >
+                          {t("Control Service", "Điều khiển Service")}
+                        </Button>
+                      </div>
+                    </section>
+                  );
+                })()
               ) : !authoring ? (
                 (() => {
                   const selSvc = canvasSelected || selected || services[0] || "";
@@ -6032,16 +6133,29 @@ export function LiveStudioWorkbench({
                             <div className="flex flex-wrap gap-1">
                               {ALL_ACTIONS.map((act) => {
                                 const on = allowedActionsDraft.includes(act);
+                                const chipLabels: Record<string, [string, string]> = {
+                                  START: ["Start", "Khởi động"],
+                                  STOP: ["Stop", "Dừng"],
+                                  SCALE: ["Scale", "Nhân bản"],
+                                  PAUSE: ["Pause", "Tạm dừng"],
+                                  RESUME: ["Resume", "Tiếp tục"],
+                                  THROTTLE_CPU: ["CPU Throttle", "Bóp CPU"],
+                                  SET_LOAD: ["Load RPS", "Tải RPS"],
+                                  CONNECT: ["Connect (2D)", "Nối dây (2D)"],
+                                  DISCONNECT: ["Disconnect (2D)", "Ngắt dây (2D)"],
+                                };
+                                const [enLbl, viLbl] = chipLabels[act] ?? [act, act];
                                 return (
                                   <button
                                     key={act}
                                     type="button"
+                                    title={act}
                                     onClick={() => toggleAllowedAction(act)}
-                                    className={`border px-1.5 py-0.5 font-mono text-[10px] font-semibold transition ${themeRadius} ${
+                                    className={`border px-1.5 py-0.5 text-[10.5px] font-semibold transition ${themeRadius} ${
                                       on ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
                                     }`}
                                   >
-                                    {act}
+                                    {t(enLbl, viLbl)}
                                   </button>
                                 );
                               })}
@@ -6058,6 +6172,9 @@ export function LiveStudioWorkbench({
                                 onClick={authoring.onSyncDocker}
                                 className={`h-7 w-full text-[11px] ${themeRadius} ${styleCfg.controlIdleClass}`}
                               >
+                                {authoring.syncingDocker && (
+                                  <RefreshCw aria-hidden="true" className="mr-1.5 size-3 animate-spin" />
+                                )}
                                 {authoring.syncingDocker
                                   ? t("Syncing Docker topology…", "Đang đồng bộ Docker…")
                                   : t("Re-sync Docker Compose from repo", "Đồng bộ lại Docker Compose từ repo")}

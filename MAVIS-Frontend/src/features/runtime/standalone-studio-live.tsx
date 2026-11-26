@@ -1713,6 +1713,15 @@ function StandaloneStudioContent() {
                   void labSessions.refetch();
                 },
                 onError: (cause) => {
+                  const isConflict =
+                    (cause instanceof ApiError && cause.status === 409) ||
+                    (cause instanceof Error &&
+                      /version has changed|conflict|already active|409/i.test(cause.message));
+                  if (isConflict) {
+                    startStudio.reset();
+                    void labSessions.refetch();
+                    return;
+                  }
                   setVisualError(cause instanceof Error ? cause.message : String(cause));
                 },
               });

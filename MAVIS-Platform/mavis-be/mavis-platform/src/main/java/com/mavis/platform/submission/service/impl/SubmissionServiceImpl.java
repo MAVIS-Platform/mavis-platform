@@ -719,11 +719,15 @@ public class SubmissionServiceImpl implements SubmissionService {
                     + " (equivalent " + review.getScore() + "/100)\n\n" + review.getSummary() + "\n";
         }
 
+        User actor = accessPolicyService.requireCurrentActiveUser();
+        boolean revealLecturerEvaluation = actor != null && actor.getRole() != null
+                && !"STUDENT".equalsIgnoreCase(actor.getRole().getCode());
         var assignment = submission.getAssignment();
         var workspace = assignment != null ? assignment.getWorkspace() : null;
 
         return com.mavis.platform.submission.dto.SubmissionExportBundleDTO.builder()
-                .studioEvidence(submission.getStudioEvidence())
+                .studioEvidence(SubmissionResponseDTO.redactStudioEvidenceForRole(
+                        submission.getStudioEvidence(), revealLecturerEvaluation))
                 .submissionId(submission.getId())
                 .workspaceId(workspace != null ? workspace.getId() : null)
                 .workspaceName(workspace != null ? workspace.getName() : null)
@@ -1108,7 +1112,9 @@ public class SubmissionServiceImpl implements SubmissionService {
             String labModeRaw = rs.getString("lab_mode");
             JsonNode courseQuizEvidence = parseJsonOrNull(mapper, rs.getString("course_quiz_evidence_json"));
             JsonNode theoryEvidence = parseJsonOrNull(mapper, rs.getString("theory_evidence_json"));
-            JsonNode studioEvidence = parseJsonOrNull(mapper, rs.getString("studio_evidence_summary_json"));
+            JsonNode studioEvidence = SubmissionResponseDTO.redactStudioEvidenceForRole(
+                    parseJsonOrNull(mapper, rs.getString("studio_evidence_summary_json")),
+                    revealDraft);
             JsonNode studentSnapshots = parseJsonOrNull(mapper, rs.getString("student_snapshots_json"));
 
             boolean guidedLab = labOrder != null
@@ -1352,8 +1358,12 @@ public class SubmissionServiceImpl implements SubmissionService {
                         .append(" (equivalent ").append(reviewScore).append("/100)\n\n").append(reviewSummary).append("\n");
             }
 
+            boolean revealLecturerEvaluation = actor != null && actor.getRole() != null
+                    && !"STUDENT".equalsIgnoreCase(actor.getRole().getCode());
             return com.mavis.platform.submission.dto.SubmissionExportBundleDTO.builder()
-                    .studioEvidence(parseJsonOrNull(mapper, rs.getString("studio_evidence_json")))
+                    .studioEvidence(SubmissionResponseDTO.redactStudioEvidenceForRole(
+                            parseJsonOrNull(mapper, rs.getString("studio_evidence_json")),
+                            revealLecturerEvaluation))
                     .submissionId(submissionId)
                     .workspaceId(wsId)
                     .workspaceName(rs.getString("workspace_name"))

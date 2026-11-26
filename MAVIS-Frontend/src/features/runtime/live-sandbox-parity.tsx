@@ -821,8 +821,8 @@ export function LiveSandboxParity({
               </div>
             )}
 
-            {/* 4. Calm, Context-Aware Action Toolbox (Drag onto any node OR click for selected node) */}
-            {(() => {
+            {/* 4. Author-only Drag Action Toolbox (Student uses the unified Right Inspector with full Docker + allowedActions controls) */}
+            {Boolean(authoring) && (() => {
               const isLiveRunning = data.executionStatus === "RUNNING";
               const isPreviewAuthor = !isLiveRunning && Boolean(authoring);
               const canDrag = !busy && (isLiveRunning || isPreviewAuthor);

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle2, FolderGit2, GitBranch, Plus, X } from "lucide-react";
+import Link from "next/link";
+import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { ArrowRight, CheckCircle2, FolderGit2, GitBranch, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   AssignmentSourcePicker,
@@ -20,25 +21,23 @@ import {
 export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const allowed = usePermission("workspace:manage");
   const { t } = useLocale();
-  const router = useRouter();
   const params = useSearchParams();
   const flowMode = params?.get("flow") === "setup" ? "setup" : "content";
   const [importOpen, setImportOpen] = useState(false);
   const [prefilledRepoUrl, setPrefilledRepoUrl] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [sourcePending, setSourcePending] = useState(false);
-  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [importCompleted, setImportCompleted] = useState(false);
   const projects = useApiQuery("workspaceProjects", { workspaceId });
   const publishReference = useApiMutation("publishReference");
   const existingRefs = (projects.data ?? []).filter(
     (project) => project.projectType === "TEACHER_REFERENCE" || project.isReferenceTemplate,
   );
-
-  useEffect(
-    () => () => {
-      if (redirectTimer.current) clearTimeout(redirectTimer.current);
-    },
-    [],
+  const nextStepHref = courseSetupStepHref(
+    workspaceId,
+    flowMode === "setup" ? "lesson" : "arrange",
+    "repository",
+    flowMode,
   );
 
   if (!allowed) return null;
@@ -213,23 +212,14 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                     { workspaceId, projectId, snapshotId },
                     {
                       onSuccess: () => {
-                        setImportOpen(false);
+                        setImportCompleted(true);
+                        void projects.refetch();
                         toast.success(
                           t(
-                            "Repository analyzed and C1–C3 architecture is ready.",
-                            "Repository đã được phân tích và sơ đồ C1–C3 đã sẵn sàng.",
+                            "Repository analyzed and C1–C3 architecture is ready. Review the result below before continuing.",
+                            "Repository đã phân tích xong và sơ đồ C1–C3 đã sẵn sàng. Hãy kiểm tra thông tin bên dưới trước khi sang bước tiếp theo.",
                           ),
                         );
-                        redirectTimer.current = setTimeout(() => {
-                          router.push(
-                            courseSetupStepHref(
-                              workspaceId,
-                              flowMode === "setup" ? "lesson" : "arrange",
-                              "repository",
-                              flowMode,
-                            ),
-                          );
-                        }, 900);
                       },
                       onError: () => {
                         toast.error(
@@ -262,15 +252,27 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                       "Nhập repo GitHub, file ZIP hoặc chọn dự án đã phân tích.",
                     )}
               </p>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setImportOpen(false)}
-                disabled={publishReference.isPending}
-              >
-                {t("Close", "Đóng")}
-              </Button>
+              <div className="flex items-center gap-2">
+                {(importCompleted || (selectedModelId && !sourcePending)) && (
+                  <Button asChild size="sm">
+                    <Link href={nextStepHref}>
+                      {flowMode === "setup"
+                        ? t("Continue to Theory Library", "Tiếp tục sang Thư viện lý thuyết")
+                        : t("Continue to Course Outline", "Tiếp tục sang Khung khóa học")}
+                      <ArrowRight className="ml-1.5 size-3.5" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setImportOpen(false)}
+                  disabled={publishReference.isPending}
+                >
+                  {t("Close", "Đóng")}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
