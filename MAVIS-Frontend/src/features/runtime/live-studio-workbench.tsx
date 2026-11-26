@@ -903,7 +903,7 @@ export function LiveStudioWorkbench({
       const nextX = initial.x + (moveEvent.clientX - startX);
       const nextY = initial.y + (moveEvent.clientY - startY);
       const minY = -8;
-      const bottomReserved = bottomCollapsed ? 56 : Math.min(Math.max(120, ph - 120), bottomHeight + 24);
+      const bottomReserved = bottomCollapsed ? 76 : Math.min(Math.max(120, ph - 120), bottomHeight + 24);
       const maxY = Math.max(-8, ph - bottomReserved - 80);
       const clampedY = Math.max(minY, Math.min(maxY, Math.round(nextY)));
       const clampedX =
@@ -1082,7 +1082,7 @@ export function LiveStudioWorkbench({
       const stageEl = graphRef.current?.parentElement;
       const pw = stageEl?.clientWidth ?? window.innerWidth;
       const ph = stageEl?.clientHeight ?? window.innerHeight;
-      const bottomReserved = bottomCollapsed ? 56 : Math.min(Math.max(120, ph - 120), bottomHeight + 24);
+      const bottomReserved = bottomCollapsed ? 76 : Math.min(Math.max(120, ph - 120), bottomHeight + 24);
       const maxY = Math.max(-8, ph - bottomReserved - 80);
       setRightOffset((prev) => {
         const minX = 16 - Math.max(8, pw - rightWidth - 8);
@@ -1639,47 +1639,6 @@ export function LiveStudioWorkbench({
     return edges;
   }, [data.topology?.connections, referenceModel.data, data.serviceMappings, services, data.telemetry?.interactions]);
 
-  const staticBlastRadius = useMemo(
-    () =>
-      computeStaticBlastRadius(
-        authoring?.targetChangeAction?.service ?? null,
-        staticEdgesForBlast,
-      ),
-    [authoring?.targetChangeAction?.service, staticEdgesForBlast],
-  );
-
-  const authoringTargetService = authoring?.targetChangeAction?.service ?? null;
-  const authoringRequiredEdge = authoring?.requiredTraceEdge ?? null;
-  const authorHighlights = useMemo<StudioAuthorHighlights | undefined>(() => {
-    if (!authoringStoppedServices || !authoringScalable) return undefined;
-    return {
-      authorStoppedServices: new Set(authoringStoppedServices),
-      impactTarget: authoringTargetService,
-      predictedUpstream: new Set(staticBlastRadius.upstreamImpacted),
-      impactEdgeKeys: staticBlastRadius.impactedEdgeKeys,
-      requiredTraceEdge: authoringRequiredEdge,
-      scalableServices: new Set(authoringScalable),
-    };
-  }, [
-    authoringStoppedServices,
-    authoringTargetService,
-    authoringRequiredEdge,
-    authoringScalable,
-    staticBlastRadius,
-  ]);
-
-  const authoringWithBlast = useMemo<LiveBlockAuthoringControls | undefined>(() => {
-    if (!authoring) return undefined;
-    return {
-      ...authoring,
-      impactTargetService: authoring.targetChangeAction?.service ?? null,
-      predictedImpactedServices: staticBlastRadius.upstreamImpacted,
-      onDropAuthorChip: (chipId: string, svc: string) => {
-        authoring.onApplyBlockChip?.(chipId as AuthorBlockChipId, svc);
-      },
-    };
-  }, [authoring, staticBlastRadius.upstreamImpacted]);
-
   const activeGoalId = useMemo<StudioGoalId | null>(() => {
     if (!authoring) return null;
     if (
@@ -1710,6 +1669,49 @@ export function LiveStudioWorkbench({
     }
     return null;
   }, [authoring]);
+
+  const authoringTargetService =
+    activeGoalId === "recovery"
+      ? (authoring?.initialStoppedServices[0] ?? authoring?.targetChangeAction?.service ?? null)
+      : activeGoalId === "scale"
+        ? (authoring?.replicaService || authoring?.targetChangeAction?.service || null)
+        : (authoring?.targetChangeAction?.service ?? null);
+
+  const staticBlastRadius = useMemo(
+    () => computeStaticBlastRadius(authoringTargetService, staticEdgesForBlast),
+    [authoringTargetService, staticEdgesForBlast],
+  );
+
+  const authoringRequiredEdge = authoring?.requiredTraceEdge ?? null;
+  const authorHighlights = useMemo<StudioAuthorHighlights | undefined>(() => {
+    if (!authoringStoppedServices || !authoringScalable) return undefined;
+    return {
+      authorStoppedServices: new Set(authoringStoppedServices),
+      impactTarget: authoringTargetService,
+      predictedUpstream: new Set(staticBlastRadius.upstreamImpacted),
+      impactEdgeKeys: staticBlastRadius.impactedEdgeKeys,
+      requiredTraceEdge: authoringRequiredEdge,
+      scalableServices: new Set(authoringScalable),
+    };
+  }, [
+    authoringStoppedServices,
+    authoringTargetService,
+    authoringRequiredEdge,
+    authoringScalable,
+    staticBlastRadius,
+  ]);
+
+  const authoringWithBlast = useMemo<LiveBlockAuthoringControls | undefined>(() => {
+    if (!authoring) return undefined;
+    return {
+      ...authoring,
+      impactTargetService: authoringTargetService,
+      predictedImpactedServices: staticBlastRadius.upstreamImpacted,
+      onDropAuthorChip: (chipId: string, svc: string) => {
+        authoring.onApplyBlockChip?.(chipId as AuthorBlockChipId, svc);
+      },
+    };
+  }, [authoring, authoringTargetService, staticBlastRadius.upstreamImpacted]);
 
   const missionDirty = Boolean(
     authoring &&
@@ -4792,7 +4794,7 @@ export function LiveStudioWorkbench({
           const rightBottomReserve = !bottomCollapsed
             ? bottomHeight + 24
             : rightHeight != null || rightOffset.y !== 0
-              ? 56
+              ? 76
               : 100;
           return (
           <aside
@@ -6345,10 +6347,7 @@ export function LiveStudioWorkbench({
               })()
             ) : authoring ? (
               (() => {
-                const goalTargetSvc =
-                  authoring.targetChangeAction?.service ||
-                  (activeGoalId === "scale" ? authoring.replicaService : "") ||
-                  (activeGoalId === "recovery" ? authoring.initialStoppedServices[0] ?? "" : "");
+                const goalTargetSvc = authoringTargetService ?? "";
                 const svc = canvasSelected || goalTargetSvc;
                 const startsDown = Boolean(svc && authoring.initialStoppedServices.includes(svc));
                 const isImpactTarget =
