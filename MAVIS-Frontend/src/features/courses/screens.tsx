@@ -66,6 +66,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { ArchitectureGraph, ElementDetailsPanel, type InspectorTab } from "@/features/architecture/components";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
+import type { GraphCategory } from "@/features/architecture/graph-projection";
+import {
+  computeActiveLensFocus,
+  detectAuditTrack,
+  resolveModelElementByName,
+  resolveModuleAuditLens,
+  resolveModuleIndex,
+  type ModuleAuditLens,
+} from "@/features/architecture/module-audit-lens";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
 import type { ArchitecturalModel, Evidence } from "@/types/domain";
@@ -624,6 +633,12 @@ export function LabWorkspace() {
       ? viewParam
       : "CONTAINER";
   const [inlineC4View, setInlineC4View] = useState<InlineC4View>(initialView);
+  const userSelectedViewRef = useRef<boolean>(Boolean(viewParam));
+  const lastAssignmentViewRef = useRef<string>(assignmentId);
+  const handleSelectInlineC4View = (view: InlineC4View) => {
+    userSelectedViewRef.current = true;
+    setInlineC4View(view);
+  };
   const [tocOpen, setTocOpen] = useState(false);
   const workspaces = useApiQuery("workspaces", {});
   const assignments = useApiQuery(
@@ -746,6 +761,43 @@ export function LabWorkspace() {
     () => toInlineArchitecturalModel(refArch, lab?.title || "Reference model"),
     [refArch, lab?.title],
   );
+  const activeTrack = detectAuditTrack({
+    workspaceCode: workspace?.code,
+    projectName: refArch?.projectName,
+    labTitle: lab?.title,
+    model: inlineReferenceModel,
+  });
+  const activeModuleNumber = resolveModuleIndex({
+    modulePosition: currentModule?.position,
+    labOrder: lab?.labOrder,
+    labTitle: lab?.title,
+    curriculumCode: currentModule?.title,
+  });
+  const activeLens = useMemo(
+    () => resolveModuleAuditLens(activeTrack, activeModuleNumber),
+    [activeTrack, activeModuleNumber],
+  );
+  useEffect(() => {
+    if (lastAssignmentViewRef.current !== assignmentId) {
+      lastAssignmentViewRef.current = assignmentId;
+      userSelectedViewRef.current = Boolean(viewParam);
+    }
+    if (viewParam) {
+      userSelectedViewRef.current = true;
+      return;
+    }
+    if (!assignmentId || !lab || userSelectedViewRef.current) return;
+    if (client.mode === "backend" && !workspace?.code && studentContext.isLoading) return;
+    setInlineC4View(activeLens.defaultView);
+  }, [
+    assignmentId,
+    viewParam,
+    lab,
+    client.mode,
+    workspace?.code,
+    studentContext.isLoading,
+    activeLens.defaultView,
+  ]);
   const activeModelId = inlineReferenceModel?.id ?? model?.id ?? lab?.referenceSource?.modelId;
   const activeModelRevision =
     inlineReferenceModel?.revision ?? model?.revision ?? lab?.referenceSource?.revision;
@@ -1243,10 +1295,11 @@ export function LabWorkspace() {
                 modelRevision={activeModelRevision}
                 referenceArchitecture={refArch}
                 inlineReferenceModel={inlineReferenceModel}
+                activeLens={activeLens}
                 inlineC4View={inlineC4View}
-                onSelectInlineC4View={setInlineC4View}
+                onSelectInlineC4View={handleSelectInlineC4View}
                 onOpenC1C3View={(view) => {
-                  setInlineC4View(view);
+                  handleSelectInlineC4View(view);
                   router.push(labHref(1, view));
                 }}
                 studentContext={studentContext.data}
@@ -1327,6 +1380,7 @@ function StepContent({
   isTheoryOnlyLab,
   referenceArchitecture,
   inlineReferenceModel,
+  activeLens,
   inlineC4View,
   onSelectInlineC4View,
   onOpenC1C3View,
@@ -1368,6 +1422,7 @@ function StepContent({
   isTheoryOnlyLab: boolean;
   referenceArchitecture: StudentLabReferenceArchitecture | null;
   inlineReferenceModel?: ArchitecturalModel | undefined;
+  activeLens: ModuleAuditLens;
   inlineC4View: InlineC4View;
   onSelectInlineC4View: (view: InlineC4View) => void;
   onOpenC1C3View: (view: InlineC4View) => void;
@@ -1379,6 +1434,19 @@ function StepContent({
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [inlineC3Service, setInlineC3Service] = useState<string | undefined>(undefined);
+  const [lensFocusEnabled, setLensFocusEnabled] = useState<boolean>(
+    activeLens.dimOthersByDefault,
+  );
+  const [graphHiddenCategories, setGraphHiddenCategories] = useState<GraphCategory[]>(
+    activeLens.defaultGraphHiddenCategories ?? [
+      "database",
+      "messaging",
+      "component",
+      "external",
+      "unknown",
+    ],
+  );
+  const initializedLensModelKeyRef = useRef<string | null>(null);
   const [impactAnalysisOpen, setImpactAnalysisOpen] = useState(false);
   const [impactHighlightIds, setImpactHighlightIds] = useState<string[]>([]);
   const [tutorInput, setTutorInput] = useState("");
@@ -1499,6 +1567,61 @@ function StepContent({
     { enabled: !inlineReferenceModel && Boolean(modelId) && Boolean(studentContext) && step === 1 },
   );
   const activeModel = inlineReferenceModel ?? fallbackModelQuery.data;
+
+  const lensFocus = useMemo(
+    () => computeActiveLensFocus(activeLens, activeModel),
+    [activeLens, activeModel],
+  );
+  const diagramFocusFilter = useMemo(
+    () => ({
+      active: lensFocusEnabled && activeLens.dimOthersByDefault,
+      focusNodeIds: lensFocus.focusNodeIds,
+      focusEdgeIds: lensFocus.focusEdgeIds,
+    }),
+    [lensFocusEnabled, activeLens.dimOthersByDefault, lensFocus],
+  );
+  const lensFocusNodeIdList = useMemo(
+    () => Array.from(lensFocus.focusNodeIds),
+    [lensFocus.focusNodeIds],
+  );
+  const lensFocusEdgeIdList = useMemo(
+    () => Array.from(lensFocus.focusEdgeIds),
+    [lensFocus.focusEdgeIds],
+  );
+
+  useEffect(() => {
+    const lensKey = `${labId}:${activeLens.track}:${activeLens.moduleIndex}:${activeModel?.id ?? "none"}`;
+    if (initializedLensModelKeyRef.current === lensKey) return;
+    initializedLensModelKeyRef.current = lensKey;
+
+    setLensFocusEnabled(activeLens.dimOthersByDefault);
+    setGraphHiddenCategories(
+      activeLens.defaultGraphHiddenCategories ?? [
+        "database",
+        "messaging",
+        "component",
+        "external",
+        "unknown",
+      ],
+    );
+
+    if (!activeModel) return;
+
+    const targetService = resolveModelElementByName(
+      activeModel,
+      activeLens.defaultC3ServiceName,
+    );
+    setInlineC3Service(targetService?.id);
+
+    const targetNode = resolveModelElementByName(
+      activeModel,
+      activeLens.defaultSelectedNodeName,
+    );
+    setSelectedGraphId(targetNode?.id ?? null);
+    if (targetNode) {
+      setInspectorTab("overview");
+    }
+  }, [labId, activeLens, activeModel]);
 
   const activeDiagramMermaid = useMemo(() => {
     if (inlineC4View === "GRAPH") return null;
@@ -2077,6 +2200,7 @@ function StepContent({
                           systemName={referenceArchitecture?.projectName || "Mộc Hương Shop Platform"}
                           selectedId={selectedGraphId}
                           onSelect={setSelectedGraphId}
+                          focusFilter={diagramFocusFilter}
                         />
                       </div>
                       <aside className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
@@ -2139,6 +2263,11 @@ function StepContent({
                         onSelect={setSelectedGraphId}
                         highlightIds={impactHighlightIds}
                         onClearHighlight={() => setImpactHighlightIds([])}
+                        hiddenCategories={graphHiddenCategories}
+                        onHiddenCategoriesChange={setGraphHiddenCategories}
+                        lensFocusActive={lensFocusEnabled && activeLens.dimOthersByDefault}
+                        lensFocusNodeIds={lensFocusNodeIdList}
+                        lensFocusEdgeIds={lensFocusEdgeIdList}
                       />
                     </div>
                     <aside className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
