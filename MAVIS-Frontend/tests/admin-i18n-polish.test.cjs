@@ -232,7 +232,8 @@ test("Coursera Profile & Unified Avatar System: UserAvatar everywhere, AvatarStu
   assert.match(avatarDialog, /\/api\/backend\/auth\/me\/avatar/);
   assert.match(avatarDialog, /image\/webp/);
   assert.match(profile, /<AvatarStudioDialog/);
-  assert.match(profile, /xl:grid-cols-\[minmax\(16rem,20rem\)_minmax\(0,1fr\)\]/);
+  assert.match(profile, /lg:grid-cols-\[minmax\(0,1fr\)_18rem\]/);
+  assert.doesNotMatch(profile, /Classes Teaching|Enrolled Courses/);
   assert.match(appShell, /<UserAvatar[\s\S]*avatarUrl=\{avatarUrl\}/);
   assert.match(workspaces, /<UserAvatar name=\{m\.name\} avatarUrl=\{m\.avatarUrl\}/);
   assert.match(admin, /<UserAvatar name=\{a\.name\} avatarUrl=\{a\.avatarUrl\}/);

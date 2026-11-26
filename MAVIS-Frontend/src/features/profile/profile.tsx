@@ -3,8 +3,6 @@ import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
 import {
   ArrowLeft,
-  ArrowUpRight,
-  BookOpen,
   Camera,
   Check,
   Copy,
@@ -49,7 +47,7 @@ export function Profile() {
         ? "/workspaces"
         : "/courses";
   return (
-    <div className="mx-auto w-full min-w-0 max-w-6xl space-y-4 sm:space-y-6">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-4 sm:space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="mb-2">
@@ -120,14 +118,11 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
         ? t("Unavailable")
         : amount;
   const failed = projects.isError || workspaces.isError || submissions.isError;
-  const workspaceList = (workspaces.data ?? []).filter(
-    (w): w is NonNullable<typeof workspaces.data>[number] => Boolean(w && w.id && w.name),
-  );
   return (
-    <div className="mt-5 space-y-5 border-t pt-5">
+    <div className="space-y-3">
       <dl
         aria-label={t("Account statistics")}
-        className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 xl:grid-cols-1"
+        className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 lg:grid-cols-1"
       >
         {[
           [t("Projects", "Dự án"), value(projects, projectList.length)],
@@ -139,12 +134,12 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
         ].map(([label, amount]) => (
           <div
             key={String(label)}
-            className="min-w-0 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 xl:flex xl:items-center xl:justify-between xl:gap-3"
+            className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/25 px-3.5 py-3"
           >
             <dt className="break-normal [overflow-wrap:normal] text-xs font-medium leading-4 text-muted-foreground">
               {label}
             </dt>
-            <dd className="mavis-tabular mt-1 break-normal [overflow-wrap:normal] text-base font-bold text-foreground xl:mt-0">
+            <dd className="mavis-tabular shrink-0 break-normal [overflow-wrap:normal] text-base font-bold text-foreground">
               {amount}
             </dd>
           </div>
@@ -169,50 +164,6 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
           >
             {t("Retry")}
           </Button>
-        </div>
-      )}
-      {workspaceList.length > 0 && (
-        <div className="space-y-2 border-t pt-4">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <BookOpen className="size-3.5 text-primary" aria-hidden="true" />
-              {role === "lecturer"
-                ? t("Classes Teaching", "Lớp đang giảng dạy")
-                : t("Enrolled Courses", "Khóa học đã tham gia")}
-            </h3>
-            <span className="mavis-tabular text-[11px] text-muted-foreground">
-              {workspaceList.length}
-            </span>
-          </div>
-          <ul className="space-y-1.5">
-            {workspaceList.slice(0, 4).map((ws) => (
-              <li key={ws.id}>
-                <Link
-                  href={
-                    role === "lecturer"
-                      ? `/workspace-overview?workspace=${encodeURIComponent(ws.id)}`
-                      : `/roadmap?workspace=${encodeURIComponent(ws.id)}`
-                  }
-                  className="group flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-foreground group-hover:text-primary">
-                      {ws.name}
-                    </p>
-                    {ws.code && (
-                      <p className="truncate font-mono text-[10px] text-muted-foreground">
-                        {ws.code}
-                      </p>
-                    )}
-                  </div>
-                  <ArrowUpRight
-                    className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary"
-                    aria-hidden="true"
-                  />
-                </Link>
-              </li>
-            ))}
-          </ul>
         </div>
       )}
     </div>
@@ -297,7 +248,7 @@ export function ProfileDetails({ user }: { user: User }) {
         aria-label={t("Social profile header", "Ảnh bìa và đại diện")}
         className="overflow-hidden rounded-2xl border bg-card shadow-sm"
       >
-        <div className="relative h-28 bg-gradient-to-r from-sky-600 via-teal-600 to-indigo-600 dark:from-slate-900 dark:via-teal-900 dark:to-indigo-950 sm:h-36">
+        <div className="relative h-24 bg-gradient-to-r from-sky-600 via-teal-600 to-indigo-600 dark:from-slate-900 dark:via-teal-900 dark:to-indigo-950 sm:h-28">
           <div
             aria-hidden="true"
             className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_60%)]"
@@ -305,7 +256,7 @@ export function ProfileDetails({ user }: { user: User }) {
         </div>
         <div className="flex min-w-0 flex-col gap-4 px-4 pb-4 sm:flex-row sm:items-end sm:justify-between sm:px-6 sm:pb-5">
           <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end">
-            <div className="relative -mt-14 inline-flex w-fit shrink-0">
+            <div className="relative -mt-12 inline-flex w-fit shrink-0">
               {canUploadPhoto ? (
                 <button
                   type="button"
@@ -321,7 +272,7 @@ export function ProfileDetails({ user }: { user: User }) {
                     name={fullName || user.name}
                     avatarUrl={avatarUrl}
                     size="xl"
-                    className="size-24 text-xl ring-4 ring-card transition-opacity group-hover:opacity-90 sm:size-28"
+                    className="size-20 text-lg ring-4 ring-card transition-opacity group-hover:opacity-90 sm:size-24"
                   />
                   <span className="absolute bottom-1 right-1 flex size-9 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground shadow-sm transition-transform group-hover:scale-105 group-hover:bg-primary/90">
                     <Camera className="size-4" aria-hidden="true" />
@@ -332,7 +283,7 @@ export function ProfileDetails({ user }: { user: User }) {
                   name={fullName || user.name}
                   avatarUrl={avatarUrl}
                   size="xl"
-                  className="size-24 text-xl ring-4 ring-card sm:size-28"
+                  className="size-20 text-lg ring-4 ring-card sm:size-24"
                 />
               )}
             </div>
@@ -367,13 +318,24 @@ export function ProfileDetails({ user }: { user: User }) {
 
       <div
         data-testid="profile-responsive-layout"
-        className="grid min-w-0 gap-4 sm:gap-6 xl:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] xl:items-start"
+        className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start"
       >
         <section
           aria-label={t("Profile summary")}
-          className="min-w-0 overflow-hidden rounded-2xl border bg-card p-4 shadow-sm sm:p-5 [overflow-wrap:anywhere]"
+          className="min-w-0 overflow-hidden rounded-2xl border bg-card p-4 shadow-sm sm:p-5 [overflow-wrap:anywhere] lg:col-start-2 lg:row-start-1"
         >
           <div className="space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">
+                {t("Account overview", "Tổng quan tài khoản")}
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {t(
+                  "Your account identifier and activity summary.",
+                  "Mã định danh và tổng quan hoạt động của tài khoản.",
+                )}
+              </p>
+            </div>
             <div className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-muted/25 px-2.5 py-1.5 text-xs text-muted-foreground">
               <span className="shrink-0 font-medium">{t("Account ID:")}</span>
               <code className="min-w-0 flex-1 truncate font-mono text-[11px]" title={user.id}>
@@ -403,11 +365,13 @@ export function ProfileDetails({ user }: { user: User }) {
               </p>
             )}
 
-            {hasPermission(user.role, "project:read") && <ProfileStatistics role={user.role} />}
+            <div className="border-t pt-4">
+              {hasPermission(user.role, "project:read") && <ProfileStatistics role={user.role} />}
+            </div>
           </div>
         </section>
 
-        <div className="min-w-0 space-y-5">
+        <div className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-1">
           {notice && (
             <p
               role="status"
