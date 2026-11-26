@@ -37,6 +37,7 @@ import {
   toggleCompletedTheoryId,
 } from "@/lib/coursera-ui-helpers";
 import { useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
+import { useCourseQuiz } from "./course-quiz";
 import {
   ChapterQuizRunner,
   hasPassedInlineQuiz,
@@ -365,6 +366,34 @@ export function StudentCourseSyllabus({
     }
     return undefined;
   };
+  const activeModuleBackendQuizItem = courseContentModule?.items.find(
+    (candidate) =>
+      candidate.type === "QUIZ" &&
+      Boolean(candidate.assignmentId) &&
+      candidate.required !== false,
+  );
+  const activeModuleBackendQuizLocked = activeModuleBackendQuizItem
+    ? Boolean(lockedLabForItem(activeModuleBackendQuizItem))
+    : false;
+  const activeModuleBackendQuiz = useCourseQuiz(
+    workspaceId,
+    activeModuleBackendQuizItem?.assignmentId ?? "",
+    Boolean(
+      client.mode === "backend" &&
+        activeModuleBackendQuizItem?.assignmentId &&
+        !activeModuleBackendQuizLocked &&
+        session.data?.user?.role === "student",
+    ),
+  );
+  const isBackendQuizPassed = (itemAssignmentId: string | null | undefined): boolean => {
+    if (!itemAssignmentId) return false;
+    if (labs.find((l) => l.assignmentId === itemAssignmentId)?.state === "PASSED") return true;
+    if (itemAssignmentId !== activeModuleBackendQuizItem?.assignmentId) return false;
+    return Boolean(
+      activeModuleBackendQuiz.data?.passed === true ||
+        activeModuleBackendQuiz.data?.runtimeUnlocked === true,
+    );
+  };
   const [inlineQuizTick, setInlineQuizTick] = useState(0);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -394,8 +423,24 @@ export function StudentCourseSyllabus({
         !candidate.assignmentId &&
         candidate.required !== false,
     );
-    if (!inlineQuiz) return undefined;
-    return isStandaloneQuizItemPassed(inlineQuiz) ? undefined : inlineQuiz;
+    if (inlineQuiz && !isStandaloneQuizItemPassed(inlineQuiz)) {
+      return inlineQuiz;
+    }
+    const backendQuiz = owner.items.find(
+      (candidate) =>
+        candidate.type === "QUIZ" &&
+        Boolean(candidate.assignmentId) &&
+        candidate.required !== false,
+    );
+    if (
+      backendQuiz &&
+      backendQuiz.assignmentId === activeModuleBackendQuizItem?.assignmentId &&
+      activeModuleBackendQuiz.data != null &&
+      !isBackendQuizPassed(backendQuiz.assignmentId)
+    ) {
+      return backendQuiz;
+    }
+    return undefined;
   };
 
   const isItemLockedLab = (item: OutlineItemData) =>
@@ -713,7 +758,10 @@ export function StudentCourseSyllabus({
                           ? labs.find((l) => l.assignmentId === item.assignmentId)
                           : undefined;
                       const isStandaloneQuizPassed = isStandaloneQuizItemPassed(item);
-                      const isPassed = linkedLab?.state === "PASSED" || isStandaloneQuizPassed;
+                      const isPassed =
+                        linkedLab?.state === "PASSED" ||
+                        isStandaloneQuizPassed ||
+                        (item.type === "QUIZ" && isBackendQuizPassed(item.assignmentId));
                       const isTheoryDone = item.type === "THEORY" && isTheoryCompleted(item.id);
                       const lockedLabRecord = lockedLabForItem(item);
                       const inlineQuizGate = inlineQuizGateItemFor(item);

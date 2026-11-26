@@ -2659,3 +2659,20 @@ test("E2E #07 RBAC & Navigation: guards /workspace-overview for students, scopes
     /roadmap\.data\?\.labs\.find\(\(item\) => item\.state !== "LOCKED"\)\?\.assignmentId/,
   );
 });
+
+
+test("E2E #08 Backend Quiz Gate & /studio SSR Hydration: gates runtime studio behind backend lab quiz and uses deterministic SSR state", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+  const studio = read("src/features/runtime/studio-workbench.tsx");
+  const live = read("src/features/runtime/live-studio-workbench.tsx");
+
+  assert.match(syllabus, /const activeModuleBackendQuiz = useCourseQuiz\(/);
+  assert.match(syllabus, /function isBackendQuizPassed|const isBackendQuizPassed =/);
+  assert.match(syllabus, /activeModuleBackendQuiz\.data != null &&\s*!isBackendQuizPassed\(backendQuiz\.assignmentId\)/);
+  assert.match(standalone, /const backendQuizGateItem = useMemo/);
+
+  assert.doesNotMatch(studio, /const nowIso = new Date\(\)\.toISOString\(\);/);
+  assert.match(studio, /const \[sandboxObservedAt, setSandboxObservedAt\] = useState\(""\);/);
+  assert.match(live, /const \[freshnessNow, setFreshnessNow\] = useState\(0\);/);
+});

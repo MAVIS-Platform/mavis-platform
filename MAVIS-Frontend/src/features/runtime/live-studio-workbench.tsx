@@ -681,7 +681,7 @@ export function LiveStudioWorkbench({
   const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [expanded, setExpanded] = useState(false);
   const dockExpanded = !bottomCollapsed && bottomHeight >= 320;
-  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+  const [freshnessNow, setFreshnessNow] = useState(0);
   const isLiveRunning = !isPreviewMode && data.executionStatus === "RUNNING";
   useEffect(() => {
     if (!isLiveRunning) return;

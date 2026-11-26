@@ -1175,6 +1175,7 @@ export function StudioObservability({
   const styleCfg = STUDIO_STYLES[activeStyleId];
   const isLight = !styleCfg.isDark;
   const { t } = useLocale();
+  const { locale } = useLocale();
   const [view, setView] = useState<"2D" | "3D">(defaultView);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("LAYERED");
   const [snapToGrid, setSnapToGrid] = useState(true);
@@ -3820,9 +3821,13 @@ export function StudioObservability({
       )}
 
       {!canvasOnly && !telemetry && <p role="status">{t("Waiting for observed telemetry from Runner.")}</p>}
-      {!canvasOnly && telemetry && (
-        <p className="text-sm text-muted-foreground">
-          {t("Observed at")} {new Date(telemetry.observedAt).toLocaleTimeString()}
+      {!canvasOnly && telemetry && telemetry.observedAt && (
+        <p className="text-sm text-muted-foreground" suppressHydrationWarning>
+          {t("Observed at")}{" "}
+          {new Date(telemetry.observedAt).toLocaleTimeString(
+            locale === "vi" ? "vi-VN" : "en-US",
+            locale === "vi" ? { hour12: false } : undefined,
+          )}
         </p>
       )}
       {!canvasOnly && impact && (

@@ -428,6 +428,36 @@ function StandaloneStudioContent() {
     t,
   ]);
 
+  const backendQuizGateItem = useMemo(() => {
+    if (isAuthorMode || canManage || !assignmentId) return undefined;
+    if (
+      !studentContext.data?.quiz ||
+      studentContext.data.quiz.runtimeUnlocked ||
+      studentContext.data.assignment?.labMode === "THEORY_ONLY"
+    ) {
+      return undefined;
+    }
+    const mods = publishedCourse.data?.snapshot?.modules ?? [];
+    for (const mod of mods) {
+      const match = mod.items.find(
+        (candidate) =>
+          candidate.type === "QUIZ" &&
+          candidate.assignmentId === assignmentId &&
+          candidate.required !== false,
+      );
+      if (match) return match;
+    }
+    return undefined;
+  }, [
+    isAuthorMode,
+    canManage,
+    assignmentId,
+    studentContext.data?.quiz,
+    studentContext.data?.assignment?.labMode,
+    publishedCourse.data?.snapshot?.modules,
+  ]);
+  const quizGateTarget = inlineQuizGateItem ?? backendQuizGateItem;
+
   const studentQuizLocked = Boolean(
     !isAuthorMode &&
     !canManage &&
@@ -1686,7 +1716,7 @@ function StandaloneStudioContent() {
               {t("Runtime access required", "Cần điều kiện truy cập Runtime")}
             </h1>
             <p className="text-xs leading-5 text-muted-foreground">
-              {inlineQuizGateItem
+              {quizGateTarget
                 ? t(
                     "Pass the Module Quiz (>= 70%) before starting your MAVIS Runtime Studio session.",
                     "Hoàn thành bài Quiz của Module (>= 70%) trước khi mở phòng thực hành MAVIS Runtime Studio.",
@@ -1699,12 +1729,12 @@ function StandaloneStudioContent() {
             <Button asChild size="sm">
               <Link
                 href={
-                  inlineQuizGateItem
-                    ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(inlineQuizGateItem.id)}`
+                  quizGateTarget
+                    ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(quizGateTarget.id)}`
                     : returnHref
                 }
               >
-                {inlineQuizGateItem ? t("Take Module Quiz", "Làm bài Quiz ngay") : t("Return to Lab", "Quay lại Lab")}
+                {quizGateTarget ? t("Take Module Quiz", "Làm bài Quiz ngay") : t("Return to Lab", "Quay lại Lab")}
               </Link>
             </Button>
           </div>

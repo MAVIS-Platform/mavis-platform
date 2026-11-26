@@ -679,6 +679,7 @@ export function StudioWorkbench() {
   const [customBlockType, setCustomBlockType] = useState("app-service");
   const [serviceSearch, setServiceSearch] = useState("");
   const [actionsLog, setActionsLog] = useState<StudioData["actions"]>([]);
+  const [sandboxObservedAt, setSandboxObservedAt] = useState("");
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>([]);
   const [snapshotNote, setSnapshotNote] = useState("");
   const [capturing, setCapturing] = useState(false);
@@ -1082,8 +1083,12 @@ export function StudioWorkbench() {
     });
   }, [customServices, baselineReplicasMap, replicasMap, nodeConfigs, nodeProfiles, template, activeEdges]);
 
+  useEffect(() => {
+    setSandboxObservedAt(new Date().toISOString());
+  }, [actionsLog.length, template.id]);
+
   const sandboxStudioData: StudioData = useMemo(() => {
-    const nowIso = new Date().toISOString();
+    const nowIso = sandboxObservedAt;
     const interactions = activeEdges.map((edge, idx) => ({
       traceId: `studio-trace-${idx + 1}`,
       fromService: edge.from,
@@ -1197,7 +1202,7 @@ export function StudioWorkbench() {
         digest: snap.digest,
       })),
     };
-  }, [template, customServices, activeEdges, replicasMap, actionsLog, localSnapshots, deploymentRows, nodeNames, nodeProfiles]);
+  }, [template, customServices, activeEdges, replicasMap, actionsLog, sandboxObservedAt, localSnapshots, deploymentRows, nodeNames, nodeProfiles]);
 
   const previousFaults = useRef<Set<string> | null>(null);
   useEffect(() => {
@@ -1987,8 +1992,8 @@ export function StudioWorkbench() {
                             {[
                               ["Estimated 5xx", `${clusterErrorRate}%`],
                               ["Estimated SLA", `${clusterSla}%`],
-                              ["Running pods", totalRunningPods.toLocaleString()],
-                              ["Services down", downServicesCount.toLocaleString()],
+                              ["Running pods", totalRunningPods.toLocaleString("en-US")],
+                              ["Services down", downServicesCount.toLocaleString("en-US")],
                             ].map(([label, value]) => (
                               <div key={label} className="flex items-baseline gap-2">
                                 <dt className="text-slate-400">{label}</dt>
@@ -2020,7 +2025,7 @@ export function StudioWorkbench() {
                             <div key={label} className="rounded-lg border border-slate-700/80 bg-slate-900 p-3">
                               <dt className="text-xs font-medium text-slate-300">{label}</dt>
                               <dd className={`mt-1 font-mono text-lg font-semibold tabular-nums ${warning ? "text-rose-300" : "text-slate-100"}`}>
-                                {value.toLocaleString()} <span className="text-[11px] text-slate-400">{unit}</span>
+                                {value.toLocaleString("en-US")} <span className="text-[11px] text-slate-400">{unit}</span>
                                 <span className="mt-1 block font-sans text-[11px] font-normal text-slate-400">{detail}</span>
                               </dd>
                             </div>
@@ -2035,13 +2040,13 @@ export function StudioWorkbench() {
                             { label: "CPU allocation", value: totalVcpuAllocated, max: maxServerVcpu, units: "vCPU",
                               detail: `${avgCpu.toFixed(1)}% average CPU load${peakCpuRow ? ` · Highest: ${nodeLabel(peakCpuRow.serviceName)}` : ""}` },
                             { label: "RAM usage", value: Math.round(totalRamMiB), max: maxServerRamMiB, units: "MiB",
-                              detail: `${Math.max(0, maxServerRamMiB - Math.round(totalRamMiB)).toLocaleString()} MiB free in simulated pool` },
+                              detail: `${Math.max(0, maxServerRamMiB - Math.round(totalRamMiB)).toLocaleString("en-US")} MiB free in simulated pool` },
                           ].map(({ label, value, max, units, detail }) => (
                             <div key={label} className="space-y-2 rounded-lg border border-slate-700/80 bg-slate-900 p-3">
                               <div className="flex flex-wrap items-baseline justify-between gap-1.5">
                                 <span className="text-xs font-semibold text-slate-200">{label}</span>
                                 <span className="font-mono text-xs tabular-nums text-slate-300">
-                                  {value.toLocaleString()} / {max.toLocaleString()} {units}
+                                  {value.toLocaleString("en-US")} / {max.toLocaleString("en-US")} {units}
                                 </span>
                               </div>
                               <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
@@ -2720,13 +2725,13 @@ export function StudioWorkbench() {
                         <div className="min-w-0 rounded-md bg-slate-950/70 p-2">
                           <p className="text-slate-400">Incoming demand</p>
                           <p className="mt-1 break-words font-mono font-semibold text-slate-100">
-                            {selectedRow.demandRps.toLocaleString()} <span className="font-normal text-slate-400">req/s</span>
+                            {selectedRow.demandRps.toLocaleString("en-US")} <span className="font-normal text-slate-400">req/s</span>
                           </p>
                         </div>
                         <div className="min-w-0 rounded-md bg-slate-950/70 p-2">
                           <p className="text-slate-400">Max capacity</p>
                           <p className="mt-1 break-words font-mono text-slate-100">
-                            <strong>{selectedRow.maxCapacityRps.toLocaleString()}</strong> <span className="text-slate-400">req/s</span>
+                            <strong>{selectedRow.maxCapacityRps.toLocaleString("en-US")}</strong> <span className="text-slate-400">req/s</span>
                           </p>
                         </div>
                       </div>
@@ -2737,10 +2742,10 @@ export function StudioWorkbench() {
                         />
                       </div>
                       <p className="text-[11px] text-slate-400">
-                        {(selectedRow.demandRps - selectedRow.droppedRps).toLocaleString()} req/s handled
+                        {(selectedRow.demandRps - selectedRow.droppedRps).toLocaleString("en-US")} req/s handled
                         {" · "}
                         <span className={selectedRow.droppedRps ? "font-semibold text-rose-300" : undefined}>
-                          {selectedRow.droppedRps.toLocaleString()} req/s dropped
+                          {selectedRow.droppedRps.toLocaleString("en-US")} req/s dropped
                         </span>
                       </p>
                     </section>
@@ -2749,9 +2754,9 @@ export function StudioWorkbench() {
                       <h3 className="text-xs font-semibold text-slate-100">Current configuration</h3>
                       <dl className="grid grid-cols-2 gap-2 text-[11px]">
                         {[
-                          ["Running pods", selectedRow.replicasNow.toLocaleString(), `Baseline: ${selectedRow.replicasBefore}`],
+                          ["Running pods", selectedRow.replicasNow.toLocaleString("en-US"), `Baseline: ${selectedRow.replicasBefore}`],
                           ["CPU allocated", `${selectedRow.totalVcpu.toFixed(1)} vCPU`, `${selectedRow.cfg.vcpuPerPod} vCPU per pod`],
-                          ["RAM usage", `${selectedRow.totalRam.toLocaleString()} MiB`, `${selectedRow.perPodRam} MiB per pod`],
+                          ["RAM usage", `${selectedRow.totalRam.toLocaleString("en-US")} MiB`, `${selectedRow.perPodRam} MiB per pod`],
                           ["Estimated p95", selectedRow.replicasNow ? `${selectedRow.p95Now} ms` : "—", "Current simulation"],
                         ].map(([label, value, detail]) => (
                           <div key={label} className="min-w-0 rounded-md bg-slate-950/70 p-2">
