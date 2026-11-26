@@ -144,6 +144,7 @@ export function LabStudioSection({
     if (
       !projectId ||
       !isRuntimeReady ||
+      setup.isPending ||
       exercise.isPending ||
       autoStudio.isPending ||
       buildImages.isPending ||
@@ -151,7 +152,10 @@ export function LabStudioSection({
     ) {
       return;
     }
-    if (assignment.referenceSource?.projectId && exercise.data) return;
+    const isFrozenActiveLab = setup.data?.status === "ACTIVE" && published;
+    if (isFrozenActiveLab || exercise.data?.runtimeProjectId || (assignment.referenceSource?.projectId && exercise.data)) {
+      return;
+    }
     autoLinkedRef.current = assignment.id;
     autoStudio.mutate(undefined, {
       onSuccess: () => {
@@ -164,6 +168,9 @@ export function LabStudioSection({
   }, [
     projectId,
     isRuntimeReady,
+    setup.isPending,
+    setup.data?.status,
+    published,
     exercise.isPending,
     exercise.data,
     assignment.id,

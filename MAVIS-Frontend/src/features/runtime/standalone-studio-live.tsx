@@ -278,7 +278,15 @@ function StandaloneStudioContent() {
     const base =
       parseStudioTopology(runtimeConfig.data?.profile?.["studioTopology"]) ??
       parseStudioTopology(readiness.data?.topology);
-    if (!base || !exercise.data?.initialState) return base;
+    if (!base) return undefined;
+    if (exercise.isPending && !exercise.data) {
+      return {
+        ...base,
+        blocks: base.blocks.map((b) => ({ ...b, initiallyStopped: false })),
+        connections: base.connections.map((c) => ({ ...c, initiallyStopped: false })),
+      };
+    }
+    if (!exercise.data?.initialState) return base;
     const stoppedSvcs = new Set(exercise.data.initialState.stoppedServices ?? []);
     const stoppedCtrls = new Set(exercise.data.initialState.stoppedControllers ?? []);
     return {
@@ -292,7 +300,13 @@ function StandaloneStudioContent() {
         initiallyStopped: stoppedCtrls.has(c.controllerService),
       })),
     };
-  }, [isAuthorMode, runtimeConfig.data?.profile, readiness.data?.topology, exercise.data?.initialState]);
+  }, [
+    isAuthorMode,
+    runtimeConfig.data?.profile,
+    readiness.data?.topology,
+    exercise.isPending,
+    exercise.data,
+  ]);
   const previewModelId =
     runtimeConfig.data?.modelId ??
     assignment?.referenceSource?.modelId ??
@@ -476,11 +490,16 @@ function StandaloneStudioContent() {
       !assignmentId ||
       !projectId ||
       !isRuntimeReady ||
+      setup.isPending ||
       assignments.isPending ||
       exercise.isPending ||
       autoStudio.isPending ||
       autoLinkedLabRef.current === assignmentId
     ) {
+      return;
+    }
+    const isFrozenActiveLab = setup.data?.status === "ACTIVE" && published;
+    if (isFrozenActiveLab || exercise.data?.runtimeProjectId) {
       return;
     }
     const missingLink = !assignment?.referenceSource?.projectId || !exercise.data;
@@ -501,6 +520,9 @@ function StandaloneStudioContent() {
     assignmentId,
     projectId,
     isRuntimeReady,
+    setup.isPending,
+    setup.data?.status,
+    published,
     assignments.isPending,
     exercise.isPending,
     exercise.data,
