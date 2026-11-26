@@ -108,8 +108,14 @@ export function localizeNotificationTitle(title: string, locale: NotificationLoc
 }
 
 export function localizeNotificationBody(body: string, locale: NotificationLocale): string {
-  const trimmed = body.trim();
-  if (!trimmed || locale === "en") return trimmed;
+  const rawTrimmed = body.trim();
+  if (!rawTrimmed) return rawTrimmed;
+  const normalized = rawTrimmed.replace(
+    /Repository khóa học\s*·\s*reference/gi,
+    locale === "en" ? "Course repository · reference" : "Kho mã nguồn khóa học · tham chiếu",
+  );
+  if (locale === "en") return normalized;
+  const trimmed = normalized;
   if (EXACT_BODY_MAP[trimmed]) return EXACT_BODY_MAP[trimmed];
 
   const executionMatch = /^(.+?)\.\s*Execution:\s*([^.]+)\.\s*Review evidence and cleanup\.$/i.exec(trimmed);

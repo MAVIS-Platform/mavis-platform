@@ -590,7 +590,7 @@ export function AdminStudioSetup() {
             ) : (
               t(
                 "Configure Studio Docker execution profiles (CPU, RAM, timeout, concurrency) and supervise live student sessions.",
-                "Cấu hình hồ sơ thực thi Studio Docker (CPU, RAM, timeout, đồng thời) và quản lý các phiên đang chạy.",
+                "Cấu hình hồ sơ thực thi Studio Docker (CPU, RAM, thời gian chờ, đồng thời) và quản lý các phiên đang chạy.",
               )
             )}
           </p>
@@ -646,7 +646,7 @@ export function AdminStudioSetup() {
           <Notice>
             {t(
               "Profile changes apply immediately to newly started Studio Live sessions. Review CPU, RAM, and timeout limits before enabling a profile.",
-              "Thay đổi hồ sơ sẽ áp dụng ngay cho các phiên Studio Live mới. Kiểm tra kỹ giới hạn CPU, RAM và timeout trước khi bật.",
+              "Thay đổi hồ sơ sẽ áp dụng ngay cho các phiên Studio Live mới. Kiểm tra kỹ giới hạn CPU, RAM và thời gian chờ trước khi bật.",
             )}
           </Notice>
           <RequestState query={q} empty={!q.data?.length}>
@@ -847,7 +847,7 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
   );
 }
 export function PlatformUsage() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [logSearch, setLogSearch] = useState("");
   const [logPage, setLogPage] = useState(1);
   const q = useApiQuery("adminAiUsage", {}, { refreshMs: 60000 });
@@ -980,7 +980,7 @@ export function PlatformUsage() {
               )}
             </p>
             <SearchInput
-              label={t("Search user, email, provider or model", "Tìm người dùng, email, nhà cung cấp hoặc model")}
+              label={t("Search user, email, provider or model", "Tìm người dùng, email, nhà cung cấp hoặc mô hình")}
               value={logSearch}
               onChange={(value) => {
                 setLogSearch(value);
@@ -1015,13 +1015,16 @@ export function PlatformUsage() {
                           dateTime={event.recordedAt}
                           className="whitespace-nowrap tabular-nums"
                         >
-                          {new Date(event.recordedAt).toLocaleString("vi-VN")}
+                          {new Date(event.recordedAt).toLocaleString(
+                            locale === "vi" ? "vi-VN" : "en-US",
+                            locale === "vi" ? { hour12: false } : undefined,
+                          )}
                         </time>
                       ),
                     },
                     {
                       key: "model",
-                      label: t("Provider / model", "Nhà cung cấp / model"),
+                      label: t("Provider / model", "Nhà cung cấp / mô hình"),
                       render: (event) => (
                         <div>
                           <p className="font-medium">
@@ -1094,7 +1097,11 @@ export function PlatformUsage() {
                   <div className="mt-4 space-y-4 text-sm">
                     {r.providerDataUpdatedAt && (
                       <p className="text-xs text-muted-foreground">
-                        {t("Checked", "Đã kiểm tra")} {new Date(r.providerDataUpdatedAt).toLocaleString()}
+                        {t("Checked", "Đã kiểm tra")}{" "}
+                        {new Date(r.providerDataUpdatedAt).toLocaleString(
+                          locale === "vi" ? "vi-VN" : "en-US",
+                          locale === "vi" ? { hour12: false } : undefined,
+                        )}
                       </p>
                     )}
                     {!r.providerUsage && !r.cost && !r.limits && !r.geminiQuota && (
@@ -1118,18 +1125,18 @@ export function PlatformUsage() {
                         {t("Project spend:", "Chi phí dự án:")}{" "}
                         {r.cost.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })}{" "}
                         {r.cost.currency.toUpperCase()} ·{" "}
-                        {new Date(r.cost.startTime).toLocaleDateString()} –{" "}
-                        {new Date(r.cost.endTime).toLocaleDateString()}
+                        {new Date(r.cost.startTime).toLocaleDateString(locale === "vi" ? "vi-VN" : "en-US")} –{" "}
+                        {new Date(r.cost.endTime).toLocaleDateString(locale === "vi" ? "vi-VN" : "en-US")}
                       </p>
                     )}
                     {r.limits && (
                       <DataTable
                         emptyDescription={t("Try clearing the filters or refresh to check for new records.", "Thử xóa bộ lọc hoặc làm mới để kiểm tra bản ghi mới.")}
-                        caption={t("Project model rate limits", "Giới hạn tần suất model của dự án")}
+                        caption={t("Project model rate limits", "Giới hạn tần suất mô hình của dự án")}
                         rows={r.limits.models}
                         rowKey={(x) => x.model}
                         columns={[
-                          { key: "m", label: t("Model", "Model"), render: (x) => x.model },
+                          { key: "m", label: t("Model", "Mô hình"), render: (x) => x.model },
                           {
                             key: "r",
                             label: t("Requests / minute", "Yêu cầu / phút"),
@@ -1158,7 +1165,7 @@ export function PlatformUsage() {
                           rows={r.geminiQuota.samples}
                           rowKey={(x) => x.model + x.metric + x.limitName + x.measuredAt}
                           columns={[
-                            { key: "m", label: t("Model", "Model"), render: (x) => x.model },
+                            { key: "m", label: t("Model", "Mô hình"), render: (x) => x.model },
                             {
                               key: "n",
                               label: t("Limit", "Giới hạn"),
@@ -1169,7 +1176,11 @@ export function PlatformUsage() {
                             {
                               key: "d",
                               label: t("Observed", "Thời điểm đo"),
-                              render: (x) => new Date(x.measuredAt).toLocaleString(),
+                              render: (x) =>
+                                new Date(x.measuredAt).toLocaleString(
+                                  locale === "vi" ? "vi-VN" : "en-US",
+                                  locale === "vi" ? { hour12: false } : undefined,
+                                ),
                             },
                           ]}
                         />
@@ -1222,8 +1233,23 @@ function AdminJobDetails({ job, returnTo }: { job: Response<"adminJobs">[number]
   );
 }
 
+function formatAdminProjectName(
+  projectName: string | null | undefined,
+  fallbackId: string,
+  locale: "en" | "vi",
+  t: (en: string, vi?: string) => string,
+): string {
+  if (!projectName) return `${t("Project", "Dự án")} ${fallbackId.slice(0, 8)}`;
+  if (/^Repository khóa học\s*·\s*reference$/i.test(projectName.trim())) {
+    return locale === "en"
+      ? "Course repository · reference"
+      : "Kho mã nguồn khóa học · tham chiếu";
+  }
+  return projectName;
+}
+
 export function AdminAnalysisJobs() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const q = useApiQuery("adminJobs", {}, { refreshMs: 30000 });
   const params = useSearchParams();
   const router = useRouter();
@@ -1329,7 +1355,7 @@ export function AdminAnalysisJobs() {
                 render: (j) => (
                   <div className="max-w-72">
                     <p className="font-medium text-foreground">
-                      {j.projectName ?? `${t("Project", "Dự án")} ${j.projectId.slice(0, 8)}`}
+                      {formatAdminProjectName(j.projectName, j.projectId, locale, t)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {j.workspaceName ? `${j.workspaceName} · ` : ""}
@@ -1377,21 +1403,37 @@ const AUDIT_ACTION_LABELS: Record<string, { en: string; vi: string }> = {
   USER_LOGIN: { en: "User sign-in", vi: "Đăng nhập tài khoản" },
   USER_LOGOUT: { en: "User sign-out", vi: "Đăng xuất" },
   USER_CREATE: { en: "Create account", vi: "Tạo tài khoản" },
+  ADMIN_CREATE_USER: { en: "Admin create account", vi: "Quản trị viên tạo tài khoản" },
+  AUTH_SUCCESS: { en: "Sign-in succeeded", vi: "Đăng nhập thành công" },
+  AUTH_FAILURE: { en: "Sign-in failed", vi: "Đăng nhập thất bại" },
   USER_LOCK: { en: "Lock account", vi: "Khóa tài khoản" },
   USER_UNLOCK: { en: "Unlock account", vi: "Mở khóa tài khoản" },
   USER_ROLE_UPDATE: { en: "Update role", vi: "Cập nhật vai trò" },
   PASSWORD_CHANGE: { en: "Change password", vi: "Đổi mật khẩu" },
   CONFIGURE_INTEGRATION: { en: "Configure integration", vi: "Cấu hình tích hợp" },
+  TEST_INTEGRATION: { en: "Test integration", vi: "Kiểm tra tích hợp" },
   CONFIGURE_RUNNER_PROFILE: { en: "Configure runtime profile", vi: "Cấu hình Runtime Profile" },
   WORKSPACE_CREATE: { en: "Create class", vi: "Tạo lớp học" },
   WORKSPACE_UPDATE: { en: "Update class", vi: "Cập nhật lớp học" },
   WORKSPACE_ARCHIVE: { en: "Archive class", vi: "Lưu trữ lớp học" },
+  COURSE_ENROLLED: { en: "Enrolled in course", vi: "Ghi danh khóa học" },
+  COURSE_LAB_PUBLISHED: { en: "Publish Lab", vi: "Công bố bài Lab" },
+  COURSE_PUBLISHED: { en: "Publish course", vi: "Công bố khóa học" },
+  COURSE_QUIZ_PUBLISHED: { en: "Publish Quiz", vi: "Công bố bài Quiz" },
+  COURSE_PASSKEY_CREATED: { en: "Create Passkey", vi: "Tạo Passkey lớp học" },
+  COURSE_PASSKEY_UPDATED: { en: "Update Passkey", vi: "Cập nhật Passkey" },
+  COURSE_PASSKEY_DELETED: { en: "Delete Passkey", vi: "Xóa Passkey" },
+  COURSE_PASSKEY_ISSUED: { en: "Issue Passkey", vi: "Cấp phát Passkey" },
+  COURSE_PASSKEY_REVOKED: { en: "Revoke Passkey", vi: "Thu hồi Passkey" },
+  COURSE_JAVA_COURSERA_SEEDED: { en: "Seed Java Microservices course", vi: "Khởi tạo khóa Java Microservices" },
+  COURSE_CSHARP_COURSERA_SEEDED: { en: "Seed C# Microservices course", vi: "Khởi tạo khóa C# Microservices" },
   ASSIGNMENT_CREATE: { en: "Create Lab", vi: "Tạo bài Lab" },
   ASSIGNMENT_UPDATE: { en: "Update Lab", vi: "Cập nhật bài Lab" },
   SUBMISSION_CREATE: { en: "Submit Lab", vi: "Nộp bài Lab" },
   SUBMISSION_REVIEW: { en: "Grade submission", vi: "Chấm điểm bài nộp" },
   RUNTIME_START: { en: "Start runtime session", vi: "Khởi chạy phiên Runtime" },
   RUNTIME_STOP: { en: "Stop runtime session", vi: "Dừng phiên Runtime" },
+  RUNTIME_FORCE_STOP: { en: "Force-stop runtime session", vi: "Dừng khẩn cấp phiên Runtime" },
   ANNOUNCEMENT_CREATE: { en: "Create announcement", vi: "Tạo thông báo" },
   ANNOUNCEMENT_PUBLISH: { en: "Publish announcement", vi: "Công bố thông báo" },
 };
@@ -1443,7 +1485,7 @@ export function AuditRecords() {
           variant={tab === "audit" ? "default" : "outline"}
           onClick={() => setTab("audit")}
         >
-          {t("Audit Trail", "Nhật ký kiểm toán")}
+          {t("Audit Trail", "Nhật ký hệ thống")}
         </Button>
         <Button
           type="button"

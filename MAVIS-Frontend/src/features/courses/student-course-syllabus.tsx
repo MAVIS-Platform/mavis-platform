@@ -1346,7 +1346,7 @@ export function StudentCourseSyllabus({
                 empty={!classSubmissions.length}
                 emptyMessage={t(
                   "You have not submitted any Labs in this class yet. Open Evidence & Submit in a Lab to submit.",
-                  "Bạn chưa nộp bài Lab nào trong lớp này. Hãy vào Evidence & Submit trong Lab để nộp bài.",
+                  "Bạn chưa nộp bài Lab nào trong lớp này. Hãy vào mục Tổng hợp & Nộp bài trong Lab để nộp bài.",
                 )}
               >
                 <div className="divide-y">
@@ -1367,7 +1367,10 @@ export function StudentCourseSyllabus({
                           )}
                         </Link>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(sub.submittedAt).toLocaleString()}
+                          {new Date(sub.submittedAt).toLocaleString(
+                            locale === "vi" ? "vi-VN" : "en-US",
+                            locale === "vi" ? { hour12: false } : undefined,
+                          )}
                           {sub.reviewScore != null
                             ? ` · ${formatTenScaleScore(sub.reviewScore, sub.reviewScoreTenScale)}`
                             : ""}

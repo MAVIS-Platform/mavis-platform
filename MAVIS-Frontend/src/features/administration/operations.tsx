@@ -42,14 +42,18 @@ export function AdminToolbar({
   updatedAt?: number;
   showRefresh?: boolean | undefined;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-3">{children}</div>
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         {updatedAt ? (
           <span className="mavis-tabular">
-            {t("Updated", "Cập nhật lúc")} {new Date(updatedAt).toLocaleTimeString()}
+            {t("Updated", "Cập nhật lúc")}{" "}
+            {new Date(updatedAt).toLocaleTimeString(
+              locale === "vi" ? "vi-VN" : "en-US",
+              locale === "vi" ? { hour12: false } : undefined,
+            )}
           </span>
         ) : null}
         {showRefresh && (
@@ -314,6 +318,7 @@ export function AdminCommandHeader({
 
 export function SystemHealth() {
   const { t } = useLocale();
+  const { locale } = useLocale();
   const health = useApiQuery("adminHealth", {}, { refreshMs: 30000 });
   const runtimeHealth = useApiQuery("adminRuntimeHealth", {}, { refreshMs: 15000 });
   const sweepOrphans = useApiMutation("adminSweepOrphans");
@@ -376,7 +381,10 @@ export function SystemHealth() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     {data.checks.filter((c) => c.status === "UP").length} / {data.checks.length}{" "}
                     {t("checks healthy · measured", "dịch vụ khỏe mạnh · đo lúc")}{" "}
-                    {new Date(data.checkedAt).toLocaleTimeString()}
+                    {new Date(data.checkedAt).toLocaleTimeString(
+                      locale === "vi" ? "vi-VN" : "en-US",
+                      locale === "vi" ? { hour12: false } : undefined,
+                    )}
                   </p>
                 </div>
               </div>

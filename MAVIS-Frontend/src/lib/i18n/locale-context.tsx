@@ -492,8 +492,10 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Attached: "Đã đính kèm",
   Audit: "Kiểm toán & Nhật ký",
   "Audit Logs": "Nhật ký hệ thống",
-  "Audit Records": "Hồ sơ kiểm toán & Nhật ký",
-  "Audit Trail": "Nhật ký kiểm toán",
+  "Audit Records": "Nhật ký hệ thống & Quản trị",
+  "Audit Trail": "Nhật ký hệ thống",
+  "REMOTE_WORKER mode without MAVIS_RUNNER_SANDBOX_REGISTRY: Dockerfile-built Labs need a shared registry so remote Worker VPSs can pull images.":
+    "Chế độ REMOTE_WORKER chưa cấu hình MAVIS_RUNNER_SANDBOX_REGISTRY: các bài Lab build từ Dockerfile cần một Registry dùng chung để Worker VPS từ xa có thể kéo image.",
   "Author & Analyze Projects": "Tạo & phân tích dự án",
   "Auto-confirm high confidence": "Tự động xác nhận mục có độ tin cậy cao",
   "Auto-detected scenario": "Kịch bản tự động nhận diện",

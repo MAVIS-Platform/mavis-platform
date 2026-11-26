@@ -2563,7 +2563,7 @@ export function CourseBuilder({
                   `Current version: v${data.publishedVersion} · ${course.versions.data.length} published versions`,
                   `Phiên bản hiện tại: v${data.publishedVersion} · ${course.versions.data.length} lần xuất bản`,
                 )
-              : t("No published version yet.", "Chưa có phiên bản được publish.")}
+              : t("No published version yet.", "Chưa có phiên bản được công bố.")}
           </div>
           {data.status === "PUBLISHED" && (
             <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">

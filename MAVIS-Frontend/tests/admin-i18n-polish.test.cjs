@@ -491,4 +491,51 @@ test("E2E #05 Admin UI: keeps hero tabs single-row, preserves KPIs, deduplicates
   assert.match(shell, /hideGroupHeading=\{role === "admin"\}/);
 });
 
+test("E2E #06 i18n parity: Admin diagnostics, 24h VI timestamps, audit actions, EN notifications, and course copy", () => {
+  const ops = read("src/features/administration/operations.tsx");
+  const screens = read("src/features/administration/screens.tsx");
+  const locale = read("src/lib/i18n/locale-context.tsx");
+  const builder = read("src/features/courses/course-builder.tsx");
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const notifySource = read("src/features/notifications/localize.ts");
+
+  assert.match(ops, /toLocaleTimeString\(\s*locale === "vi" \? "vi-VN" : "en-US",\s*locale === "vi" \? \{ hour12: false \} : undefined/);
+  assert.match(locale, /"REMOTE_WORKER mode without MAVIS_RUNNER_SANDBOX_REGISTRY: Dockerfile-built Labs need a shared registry so remote Worker VPSs can pull images\."/);
+  assert.match(locale, /"Audit Records": "Nhật ký hệ thống & Quản trị"/);
+
+  for (const actionKey of [
+    "ADMIN_CREATE_USER",
+    "AUTH_SUCCESS",
+    "COURSE_ENROLLED",
+    "COURSE_PASSKEY_CREATED",
+    "TEST_INTEGRATION",
+    "RUNTIME_FORCE_STOP",
+  ]) {
+    assert.ok(screens.includes(`${actionKey}:`), `Missing audit label for ${actionKey}`);
+  }
+  assert.doesNotMatch(screens, /CPU, RAM, timeout, đồng thời/);
+  assert.doesNotMatch(screens, /nhà cung cấp hoặc model/);
+  assert.match(screens, /function formatAdminProjectName/);
+
+  const ts = require("typescript");
+  const compiled = ts.transpileModule(notifySource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function("exports", "module", compiled)(mod.exports, mod);
+  const { localizeNotificationBody } = mod.exports;
+
+  assert.equal(
+    localizeNotificationBody("Repository khóa học · reference. Open the result to review the outcome.", "en"),
+    "Course repository · reference. Open the result to review the outcome.",
+  );
+  assert.equal(
+    localizeNotificationBody("Repository khóa học · reference. Open the result to review the outcome.", "vi"),
+    "Kho mã nguồn khóa học · tham chiếu. Mở kết quả để xem báo cáo phân tích chi tiết.",
+  );
+
+  assert.doesNotMatch(builder, /Chưa có phiên bản được publish\./);
+  assert.doesNotMatch(syllabus, /Hãy vào Evidence & Submit trong Lab để nộp bài\./);
+});
+
 
