@@ -1817,6 +1817,24 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Phiên bản dữ liệu đã thay đổi ở nơi khác. Hãy tải lại dữ liệu mới nhất trước khi lưu.",
   "Some values could not be accepted. Review the form and try again.":
     "Một số giá trị chưa hợp lệ. Vui lòng kiểm tra lại biểu mẫu và thử lại.",
+  "Every module must contain at least one learning item before publishing.":
+    "Mỗi học phần phải có ít nhất một nội dung học trước khi công bố.",
+  "A learning item links to a Lab outside this class.":
+    "Có nội dung đang liên kết tới Lab không thuộc lớp học này.",
+  "A Theory lesson is missing its content.": "Có bài Theory chưa có nội dung.",
+  "A Quiz must contain at least one question.": "Có Quiz chưa có câu hỏi.",
+  "A Quiz question is incomplete or has an invalid answer.":
+    "Có câu hỏi Quiz chưa hoàn chỉnh hoặc đáp án không hợp lệ.",
+  "A linked Lab Quiz must have a published version.":
+    "Quiz liên kết với Lab phải có phiên bản đã công bố.",
+  "A Practice item must link to a Lab in this class.":
+    "Nội dung Practice phải liên kết với một Lab trong lớp này.",
+  "A Studio Practice must use a Lab with Runtime/Studio configured.":
+    "Studio Practice phải sử dụng Lab đã cấu hình Runtime/Studio.",
+  "The Studio mission is configured, but its Docker runtime topology is not ready. Sync Docker before publishing.":
+    "Student Mission đã được cấu hình nhưng Docker runtime topology chưa sẵn sàng. Hãy Sync Docker trước khi công bố.",
+  "The Lab Reference Model or pinned source is not ready for publishing.":
+    "Reference Model hoặc source được ghim của Lab chưa sẵn sàng để công bố.",
   "Too many requests. Wait a moment before retrying.":
     "Quá nhiều yêu cầu liên tiếp. Vui lòng chờ giây lát rồi thử lại.",
   "The service could not complete this request. Please retry.":

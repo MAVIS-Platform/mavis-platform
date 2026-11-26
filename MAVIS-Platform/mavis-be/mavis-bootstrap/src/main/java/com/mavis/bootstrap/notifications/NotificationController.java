@@ -31,9 +31,7 @@ public class NotificationController {
         var currentUser = policy.requireCurrentActiveUser();
         UUID user = currentUser.getId();
         String roleCode = currentUser.getRole() != null ? currentUser.getRole().getCode() : null;
-        String roleScope = (roleCode == null || "SYSTEM_ADMIN".equalsIgnoreCase(roleCode))
-                ? ""
-                : " AND category <> 'SYSTEM' AND target_path NOT LIKE '/administration%'";
+        String roleScope = roleScope(roleCode);
         if(page<0||page>10000||size<1||size>50||(!category.isEmpty()&&!CATEGORIES.contains(category)))throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         Instant asOf=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         List<Object> args=new ArrayList<>(List.of(user,Timestamp.from(asOf)));
@@ -42,25 +40,25 @@ public class NotificationController {
         if(!category.isEmpty()){where+=" AND category=?";args.add(category);}
         Long total=jdbc.queryForObject("SELECT count(*) FROM user_notifications"+where,Long.class,args.toArray());
         Long unread=jdbc.queryForObject("SELECT count(*) FROM user_notifications WHERE recipient_id=? AND read_at IS NULL AND created_at<=?" + roleScope,Long.class,user,Timestamp.from(asOf));
+        Long actionCount=jdbc.queryForObject("SELECT count(*) FROM user_notifications WHERE recipient_id=? AND action_required AND resolved_at IS NULL AND created_at<=?" + roleScope,Long.class,user,Timestamp.from(asOf));
         args.add(size);args.add(page*size);
-        List<Map<String,Object>> items=jdbc.query("SELECT id,category,title,body,target_path,created_at,read_at FROM user_notifications"+where+" ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",(rs,row)->{
-            Map<String,Object> item=new LinkedHashMap<>();item.put("id",rs.getObject("id").toString());item.put("category",rs.getString("category"));item.put("title",rs.getString("title"));item.put("body",rs.getString("body"));item.put("targetPath",safePath(rs.getString("target_path")));item.put("createdAt",rs.getTimestamp("created_at").toInstant().toString());Timestamp read=rs.getTimestamp("read_at");item.put("readAt",read==null?null:read.toInstant().toString());return item;
+        List<Map<String,Object>> items=jdbc.query("SELECT id,category,title,body,target_path,created_at,read_at,action_required,resolved_at,assignment_id,workspace_id,context_label FROM user_notifications"+where+" ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",(rs,row)->{
+            Map<String,Object> item=new LinkedHashMap<>();item.put("id",rs.getObject("id").toString());item.put("category",rs.getString("category"));item.put("title",rs.getString("title"));item.put("body",rs.getString("body"));item.put("targetPath",safePath(rs.getString("target_path")));item.put("createdAt",rs.getTimestamp("created_at").toInstant().toString());Timestamp read=rs.getTimestamp("read_at");item.put("readAt",read==null?null:read.toInstant().toString());item.put("actionRequired",rs.getBoolean("action_required"));Timestamp resolved=rs.getTimestamp("resolved_at");item.put("resolvedAt",resolved==null?null:resolved.toInstant().toString());item.put("assignmentId",nullableUuid(rs.getObject("assignment_id")));item.put("workspaceId",nullableUuid(rs.getObject("workspace_id")));item.put("contextLabel",rs.getString("context_label"));return item;
         },args.toArray());
-        return ApiResponse.success(Map.of("items",items,"total",total,"unreadCount",unread,"page",page,"size",size,"asOf",asOf.toString(),"recipientId",user.toString()));
+        Map<String,Object> result=new LinkedHashMap<>();result.put("items",items);result.put("total",total);result.put("unreadCount",unread);result.put("actionCount",actionCount);result.put("page",page);result.put("size",size);result.put("asOf",asOf.toString());result.put("recipientId",user.toString());return ApiResponse.success(result);
     }
     private Map<String,Object> acknowledgement(UUID user,String roleScope,Instant asOf,Instant readAt){
         Long unread=jdbc.queryForObject("SELECT count(*) FROM user_notifications WHERE recipient_id=? AND read_at IS NULL AND created_at<=?" + roleScope,Long.class,user,Timestamp.from(asOf));
         if(unread==null)throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
-        Map<String,Object> result=new LinkedHashMap<>();result.put("ok",true);result.put("recipientId",user.toString());result.put("asOf",asOf.toString());result.put("readAt",readAt.toString());result.put("unreadCount",unread);return result;
+        Long actionCount=jdbc.queryForObject("SELECT count(*) FROM user_notifications WHERE recipient_id=? AND action_required AND resolved_at IS NULL AND created_at<=?" + roleScope,Long.class,user,Timestamp.from(asOf));
+        Map<String,Object> result=new LinkedHashMap<>();result.put("ok",true);result.put("recipientId",user.toString());result.put("asOf",asOf.toString());result.put("readAt",readAt.toString());result.put("unreadCount",unread);result.put("actionCount",actionCount);return result;
     }
     @PatchMapping("/{id}/read") @Transactional
     public ApiResponse<?> read(@PathVariable UUID id){
         var currentUser = policy.requireCurrentActiveUser();
         UUID user = currentUser.getId();
         String roleCode = currentUser.getRole() != null ? currentUser.getRole().getCode() : null;
-        String roleScope = (roleCode == null || "SYSTEM_ADMIN".equalsIgnoreCase(roleCode))
-                ? ""
-                : " AND category <> 'SYSTEM' AND target_path NOT LIKE '/administration%'";
+        String roleScope = roleScope(roleCode);
         Instant now=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         if(jdbc.update("UPDATE user_notifications SET read_at=coalesce(read_at,?) WHERE id=? AND recipient_id=?",Timestamp.from(now),id,user)==0)throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         Timestamp stored=jdbc.queryForObject("SELECT read_at FROM user_notifications WHERE id=? AND recipient_id=?",Timestamp.class,id,user);
@@ -74,9 +72,7 @@ public class NotificationController {
         var currentUser = policy.requireCurrentActiveUser();
         UUID user = currentUser.getId();
         String roleCode = currentUser.getRole() != null ? currentUser.getRole().getCode() : null;
-        String roleScope = (roleCode == null || "SYSTEM_ADMIN".equalsIgnoreCase(roleCode))
-                ? ""
-                : " AND category <> 'SYSTEM' AND target_path NOT LIKE '/administration%'";
+        String roleScope = roleScope(roleCode);
         Instant now=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);Instant requested=input.before().truncatedTo(java.time.temporal.ChronoUnit.MICROS);Instant cutoff=requested.isAfter(now)?now:requested;
         jdbc.update("UPDATE user_notifications SET read_at=? WHERE recipient_id=? AND read_at IS NULL AND created_at<=?",Timestamp.from(now),user,Timestamp.from(cutoff));
         var result=acknowledgement(user,roleScope,now,now);result.put("before",cutoff.toString());return ApiResponse.success(result);
@@ -85,6 +81,13 @@ public class NotificationController {
         if(path==null||path.contains("\\")||path.contains("\r")||path.contains("\n"))return "/notifications";
         return path.matches("^/(?:notifications|profile|home|courses|all-courses|roadmap|lab|workspace-overview|workspaces|assignments|members|references|submissions|analysis-history|architecture|project-overview|sessions|administration)(?:[/?#].*)?$")||path.equals("/")?path:"/notifications";
     }
+    private static String roleScope(String roleCode){
+        if("LECTURER".equalsIgnoreCase(roleCode))return " AND category = 'SUBMISSION' AND action_required";
+        return (roleCode == null || "SYSTEM_ADMIN".equalsIgnoreCase(roleCode))
+                ? ""
+                : " AND category <> 'SYSTEM' AND target_path NOT LIKE '/administration%'";
+    }
+    private static String nullableUuid(Object value){return value==null?null:value.toString();}
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<?> status(ResponseStatusException error){return ResponseEntity.status(error.getStatusCode()).body(Map.of("code",error.getStatusCode().value(),"message","Notification request unavailable"));}
     @ExceptionHandler({jakarta.validation.ConstraintViolationException.class,org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,

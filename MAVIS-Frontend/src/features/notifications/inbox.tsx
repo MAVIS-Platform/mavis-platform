@@ -51,7 +51,7 @@ export function visibleCategoriesForRole(role?: string | null) {
     return categories.filter((c) => c.value !== "SYSTEM" && c.value !== "ANALYSIS");
   }
   if (role === "lecturer") {
-    return categories.filter((c) => c.value !== "SYSTEM");
+    return categories.filter((c) => c.value === "" || c.value === "SUBMISSION");
   }
   return categories;
 }
@@ -66,7 +66,10 @@ export function groupDuplicateNotifications(
   const indexByKey = new Map<string, number>();
   const grouped: GroupedNotificationItem[] = [];
   for (const item of items) {
-    const key = `${item.category}|${item.title}|${item.body}|${item.targetPath}`;
+    const key =
+      item.actionRequired && item.assignmentId
+        ? `${item.category}|${item.assignmentId}|${item.resolvedAt ? "resolved" : "pending"}`
+        : `${item.category}|${item.title}|${item.body}|${item.targetPath}`;
     const existingIndex = indexByKey.get(key);
     if (existingIndex === undefined) {
       indexByKey.set(key, grouped.length);
@@ -91,11 +94,7 @@ const icons: Record<string, typeof Bell> = {
   ACCOUNT: Shield,
   SYSTEM: Activity,
 };
-function timeLabel(
-  value: string,
-  locale: "en" | "vi",
-  t: (en: string, vi?: string) => string,
-) {
+function timeLabel(value: string, locale: "en" | "vi", t: (en: string, vi?: string) => string) {
   const date = new Date(value),
     minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
   return minutes < 1
@@ -123,6 +122,14 @@ function NotificationList({
       {groupedItems.map((item) => {
         const Icon = icons[item.category] ?? Bell;
         const localized = localizeNotification(item, locale);
+        const displayTitle = item.actionRequired
+          ? item.duplicateCount > 1
+            ? t(
+                `${item.duplicateCount} submissions to review`,
+                `${item.duplicateCount} bài nộp cần chấm`,
+              )
+            : t("Submission to review", "Bài nộp cần chấm")
+          : localized.title;
         return (
           <li
             key={item.id}
@@ -143,9 +150,9 @@ function NotificationList({
                 <p
                   className={`break-words text-sm ${item.readAt ? "font-medium" : "font-semibold"}`}
                 >
-                  {localized.title}
+                  {displayTitle}
                 </p>
-                {item.duplicateCount > 1 && (
+                {item.duplicateCount > 1 && !item.actionRequired && (
                   <span className="mt-0.5 shrink-0 rounded-full border bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
                     ×{item.duplicateCount}
                   </span>
@@ -158,8 +165,21 @@ function NotificationList({
                 )}
               </div>
               <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-                {localized.body}
+                {item.actionRequired && item.contextLabel
+                  ? t(`Assignment: ${item.contextLabel}`, `Bài Lab: ${item.contextLabel}`)
+                  : localized.body}
               </p>
+              {item.actionRequired && (
+                <span
+                  className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    item.resolvedAt
+                      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  }`}
+                >
+                  {item.resolvedAt ? t("Reviewed", "Đã xử lý") : t("Needs review", "Cần chấm")}
+                </span>
+              )}
               <time
                 dateTime={item.createdAt}
                 title={new Date(item.createdAt).toLocaleString(locale === "vi" ? "vi-VN" : "en-US")}
@@ -174,7 +194,7 @@ function NotificationList({
                 size="icon"
                 className="size-8 shrink-0"
                 disabled={read.isPending}
-                aria-label={`${t("Mark as read", "Đánh dấu đã đọc")}: ${localized.title}`}
+                aria-label={`${t("Mark as read", "Đánh dấu đã đọc")}: ${displayTitle}`}
                 title={t("Mark as read", "Đánh dấu đã đọc")}
                 onClick={() => read.mutate({ notificationId: item.id })}
               >
@@ -195,23 +215,33 @@ function NotificationList({
     </ul>
   );
 }
-function InboxEmpty({ unreadOnly }: { unreadOnly: boolean }) {
+function InboxEmpty({ unreadOnly, lecturer = false }: { unreadOnly: boolean; lecturer?: boolean }) {
   const { t } = useLocale();
   return (
     <div className="space-y-2 px-5 py-9 text-center">
       <Inbox className="mx-auto size-7 text-muted-foreground" />
       <p className="text-sm font-medium">
-        {unreadOnly
-          ? t("You’re all caught up", "Bạn đã đọc hết thông báo")
-          : t("No notifications yet", "Chưa có thông báo nào")}
+        {lecturer
+          ? t("No submissions need review", "Không có bài nộp cần chấm")
+          : unreadOnly
+            ? t("You’re all caught up", "Bạn đã đọc hết thông báo")
+            : t("No notifications yet", "Chưa có thông báo nào")}
       </p>
       <p className="text-xs leading-5 text-muted-foreground">
-        {unreadOnly
-          ? t("There are no unread updates in this view.", "Không có cập nhật chưa đọc nào trong chế độ xem này.")
-          : t(
-              "Updates about your work and account will appear here.",
-              "Các cập nhật về bài học và tài khoản của bạn sẽ hiển thị tại đây.",
-            )}
+        {lecturer
+          ? t(
+              "New and resubmitted student work will appear here.",
+              "Bài nộp mới và bài nộp lại của sinh viên sẽ xuất hiện tại đây.",
+            )
+          : unreadOnly
+            ? t(
+                "There are no unread updates in this view.",
+                "Không có cập nhật chưa đọc nào trong chế độ xem này.",
+              )
+            : t(
+                "Updates about your work and account will appear here.",
+                "Các cập nhật về bài học và tài khoản của bạn sẽ hiển thị tại đây.",
+              )}
       </p>
     </div>
   );
@@ -239,15 +269,16 @@ export function NotificationBell() {
 function ConnectedNotificationBell() {
   const { t } = useLocale();
   const session = useSession();
+  const lecturer = session.data?.user?.role === "lecturer";
   const [open, setOpen] = useState(false),
     [unreadOnly, setUnreadOnly] = useState(false);
   const q = useApiQuery(
     "notifications",
-    { page: 0, size: 5, unreadOnly },
+    { page: 0, size: 5, unreadOnly: lecturer ? false : unreadOnly },
     { enabled: !!session.data?.user, refreshMs: 25000 },
   );
   const all = useApiMutation("readAllNotifications");
-  const count = q.isError ? undefined : q.data?.unreadCount;
+  const count = q.isError ? undefined : lecturer ? q.data?.actionCount : q.data?.unreadCount;
   return (
     <Popover
       open={open}
@@ -263,7 +294,9 @@ function ConnectedNotificationBell() {
           className="relative"
           aria-label={
             count
-              ? t(`Notifications, ${count} unread`, `Thông báo, ${count} chưa đọc`)
+              ? lecturer
+                ? t(`${count} submissions need review`, `${count} bài nộp cần chấm`)
+                : t(`Notifications, ${count} unread`, `Thông báo, ${count} chưa đọc`)
               : t("Notifications", "Thông báo")
           }
         >
@@ -282,41 +315,47 @@ function ConnectedNotificationBell() {
       >
         <div className="flex items-center justify-between gap-2 border-b p-4">
           <h2 className="text-sm font-semibold">
-            {t("Notifications", "Thông báo")}{" "}
+            {lecturer
+              ? t("Submissions to review", "Bài nộp cần chấm")
+              : t("Notifications", "Thông báo")}{" "}
             {count !== undefined && (
               <span className="ml-1 text-xs font-normal text-muted-foreground">
-                {count} {t("unread", "chưa đọc")}
+                {count} {lecturer ? t("pending", "chờ xử lý") : t("unread", "chưa đọc")}
               </span>
             )}
           </h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!count || all.isPending || !q.data}
-            onClick={() => q.data && all.mutate({ before: q.data.asOf })}
-            title={t("Mark all as read", "Đánh dấu tất cả đã đọc")}
-          >
-            {all.isPending ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <CheckCheck className="size-4" />
-            )}
-            <span className="sr-only">{t("Mark all as read", "Đánh dấu tất cả đã đọc")}</span>
-          </Button>
-        </div>
-        <div className="flex items-center gap-1 border-b px-3 py-2">
-          {[false, true].map((v) => (
+          {!lecturer && (
             <Button
-              key={String(v)}
-              variant={v === unreadOnly ? "secondary" : "ghost"}
+              variant="ghost"
               size="sm"
-              aria-pressed={v === unreadOnly}
-              onClick={() => setUnreadOnly(v)}
+              disabled={!count || all.isPending || !q.data}
+              onClick={() => q.data && all.mutate({ before: q.data.asOf })}
+              title={t("Mark all as read", "Đánh dấu tất cả đã đọc")}
             >
-              {v ? t("Unread", "Chưa đọc") : t("All", "Tất cả")}
+              {all.isPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <CheckCheck className="size-4" />
+              )}
+              <span className="sr-only">{t("Mark all as read", "Đánh dấu tất cả đã đọc")}</span>
             </Button>
-          ))}
+          )}
         </div>
+        {!lecturer && (
+          <div className="flex items-center gap-1 border-b px-3 py-2">
+            {[false, true].map((v) => (
+              <Button
+                key={String(v)}
+                variant={v === unreadOnly ? "secondary" : "ghost"}
+                size="sm"
+                aria-pressed={v === unreadOnly}
+                onClick={() => setUnreadOnly(v)}
+              >
+                {v ? t("Unread", "Chưa đọc") : t("All", "Tất cả")}
+              </Button>
+            ))}
+          </div>
+        )}
         <div className="max-h-[min(25rem,60vh)] overflow-y-auto" aria-busy={q.isFetching}>
           {q.isPending ? (
             <p role="status" className="p-5 text-sm text-muted-foreground">
@@ -331,13 +370,16 @@ function ConnectedNotificationBell() {
               {t("Refreshing unread notifications…", "Đang làm mới thông báo chưa đọc…")}
             </p>
           ) : (
-            <InboxEmpty unreadOnly={unreadOnly} />
+            <InboxEmpty unreadOnly={unreadOnly} lecturer={lecturer} />
           )}
         </div>
         <div className="border-t p-2">
           <Button asChild variant="ghost" className="w-full" onClick={() => setOpen(false)}>
             <Link href="/notifications">
-              {t("View all notifications", "Xem tất cả thông báo")} <ArrowUpRight className="size-4" />
+              {lecturer
+                ? t("View all submissions", "Xem tất cả bài nộp")
+                : t("View all notifications", "Xem tất cả thông báo")}{" "}
+              <ArrowUpRight className="size-4" />
             </Link>
           </Button>
         </div>
@@ -348,6 +390,7 @@ function ConnectedNotificationBell() {
 export function NotificationCenter() {
   const { t } = useLocale();
   const session = useSession();
+  const lecturer = session.data?.user?.role === "lecturer";
   const roleCategories = visibleCategoriesForRole(session.data?.user?.role);
   const [page, setPage] = useState(0),
     [unreadOnly, setUnreadOnly] = useState(false),
@@ -376,7 +419,9 @@ export function NotificationCenter() {
           {q.isError
             ? t("Inbox unavailable", "Hộp thư tạm thời không khả dụng")
             : q.data
-              ? `${q.data.unreadCount} ${t("unread updates", "thông báo chưa đọc")}`
+              ? lecturer
+                ? `${q.data.actionCount} ${t("submissions need review", "bài nộp cần chấm")}`
+                : `${q.data.unreadCount} ${t("unread updates", "thông báo chưa đọc")}`
               : t("Your activity inbox", "Hộp thư hoạt động của bạn")}{" "}
           · {t("refreshes automatically", "tự động làm mới")}
         </p>
@@ -390,52 +435,66 @@ export function NotificationCenter() {
             <RefreshCw className={q.isFetching ? "size-4 animate-spin" : "size-4"} />
             {t("Refresh", "Làm mới")}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!q.data?.unreadCount || all.isPending}
-            onClick={() => q.data && all.mutate({ before: q.data.asOf })}
-          >
-            {all.isPending ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <CheckCheck className="size-4" />
-            )}
-            {t("Mark all as read", "Đánh dấu tất cả đã đọc")}
-          </Button>
+          {!lecturer && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!q.data?.unreadCount || all.isPending}
+              onClick={() => q.data && all.mutate({ before: q.data.asOf })}
+            >
+              {all.isPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <CheckCheck className="size-4" />
+              )}
+              {t("Mark all as read", "Đánh dấu tất cả đã đọc")}
+            </Button>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap items-end gap-4 rounded-xl border bg-card p-4">
-        <div className="flex gap-1">
-          {[false, true].map((v) => (
-            <Button
-              key={String(v)}
-              variant={v === unreadOnly ? "secondary" : "ghost"}
-              size="sm"
-              aria-pressed={v === unreadOnly}
-              onClick={() => {
-                setUnreadOnly(v);
+        {!lecturer && (
+          <div className="flex gap-1">
+            {[false, true].map((v) => (
+              <Button
+                key={String(v)}
+                variant={v === unreadOnly ? "secondary" : "ghost"}
+                size="sm"
+                aria-pressed={v === unreadOnly}
+                onClick={() => {
+                  setUnreadOnly(v);
+                  setPage(0);
+                }}
+              >
+                {v ? t("Unread", "Chưa đọc") : t("All notifications", "Tất cả thông báo")}
+              </Button>
+            ))}
+          </div>
+        )}
+        {!lecturer && (
+          <div className="min-w-52 flex-1 sm:max-w-xs">
+            <SelectField
+              label={t("Activity type", "Loại hoạt động")}
+              value={category}
+              onChange={(v) => {
+                setCategory(v);
                 setPage(0);
               }}
-            >
-              {v ? t("Unread", "Chưa đọc") : t("All notifications", "Tất cả thông báo")}
-            </Button>
-          ))}
-        </div>
-        <div className="min-w-52 flex-1 sm:max-w-xs">
-          <SelectField
-            label={t("Activity type", "Loại hoạt động")}
-            value={category}
-            onChange={(v) => {
-              setCategory(v);
-              setPage(0);
-            }}
-            options={roleCategories.map((item) => ({
-              value: item.value,
-              label: t(item.label, categoryViLabels[item.label] ?? item.label),
-            }))}
-          />
-        </div>
+              options={roleCategories.map((item) => ({
+                value: item.value,
+                label: t(item.label, categoryViLabels[item.label] ?? item.label),
+              }))}
+            />
+          </div>
+        )}
+        {lecturer && (
+          <p className="text-sm text-muted-foreground">
+            {t(
+              "Only student submissions that require grading are shown here.",
+              "Chỉ hiển thị bài nộp của sinh viên cần giảng viên chấm.",
+            )}
+          </p>
+        )}
       </div>
       <section className="overflow-hidden rounded-xl border bg-card" aria-busy={q.isFetching}>
         {q.isPending ? (
@@ -451,7 +510,7 @@ export function NotificationCenter() {
             {t("Refreshing unread notifications…", "Đang làm mới thông báo chưa đọc…")}
           </p>
         ) : (
-          <InboxEmpty unreadOnly={unreadOnly} />
+          <InboxEmpty unreadOnly={unreadOnly} lecturer={lecturer} />
         )}
       </section>
       {q.data && (

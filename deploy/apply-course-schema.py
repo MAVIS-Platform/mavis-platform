@@ -129,6 +129,22 @@ SELECT CASE
     WHEN pg_get_functiondef('mavis_business_notifications()'::regprocedure) LIKE '%v49_notification_scope_dedupe%' THEN 'ready'
     ELSE 'missing' END;
 """),
+    "V50__Lecturer_Submission_Notification_Workflow.sql": (50, """
+WITH expected(present) AS (VALUES
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'user_notifications' AND column_name = 'action_required'
+             AND data_type = 'boolean')),
+    (to_regprocedure('mavis_classify_notification()') IS NOT NULL),
+    (to_regprocedure('mavis_resolve_submission_notification()') IS NOT NULL),
+    (EXISTS (SELECT FROM pg_trigger
+             WHERE tgname = 'trg_classify_notification' AND NOT tgisinternal)),
+    (EXISTS (SELECT FROM pg_trigger
+             WHERE tgname = 'trg_resolve_submission_notification' AND NOT tgisinternal))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V48__Allow_Inactive_Workspace_Status.sql": (48, """
 SELECT CASE
     WHEN to_regclass('workspaces') IS NULL THEN 'partial'

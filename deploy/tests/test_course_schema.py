@@ -90,6 +90,7 @@ class MigrationTest(unittest.TestCase):
             ("V47__Course_Quiz_Assets.sql", 47, "course_quiz_assets"),
             ("V48__Allow_Inactive_Workspace_Status.sql", 48, "workspaces_status_check"),
             ("V49__Scope_And_Deduplicate_Notifications.sql", 49, "v49_notification_scope_dedupe"),
+            ("V50__Lecturer_Submission_Notification_Workflow.sql", 50, "action_required"),
         ):
             registered, probe = module.MIGRATIONS[filename]
             self.assertEqual(registered, version)

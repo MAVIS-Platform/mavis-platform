@@ -11,6 +11,7 @@ const notificationReadAck = ok.extend({
   readAt: z.string().datetime().optional(),
   asOf: z.string().datetime().optional(),
   unreadCount: z.number().int().nonnegative().optional(),
+  actionCount: z.number().int().nonnegative().optional(),
   before: z.string().datetime().optional(),
   notificationId: z.string().uuid().optional(),
 });
@@ -38,6 +39,11 @@ const notificationItem = z.object({
   targetPath: z.string().refine((p) => /^\/(?!\/)/.test(p) && !p.includes("\\")),
   createdAt: z.string().datetime(),
   readAt: z.string().datetime().nullable(),
+  actionRequired: z.boolean().default(false),
+  resolvedAt: z.string().datetime().nullable().default(null),
+  assignmentId: z.string().uuid().nullable().optional(),
+  workspaceId: z.string().uuid().nullable().optional(),
+  contextLabel: z.string().nullable().optional(),
 });
 const announcementPriority = z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]);
 const announcementAudience = z.enum(["ALL", "STUDENT", "LECTURER", "WORKSPACE"]);
@@ -146,6 +152,7 @@ export const contracts = {
       items: z.array(notificationItem),
       total: z.number().int().nonnegative(),
       unreadCount: z.number().int().nonnegative(),
+      actionCount: z.number().int().nonnegative().default(0),
       page: z.number().int(),
       size: z.number().int(),
       asOf: z.string().datetime(),

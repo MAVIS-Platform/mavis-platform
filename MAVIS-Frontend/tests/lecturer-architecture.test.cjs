@@ -127,11 +127,25 @@ test("Add content uses a modal for Lesson, Quiz and Runtime Practice with event 
   assert.match(courseBuilder, /referenceVersions/);
   assert.match(courseBuilder, /Select Quiz/);
   assert.match(courseBuilder, /assignment\.requireRuntimeTrace/);
-  assert.match(courseBuilder, /Require a student explanation/);
+  assert.doesNotMatch(courseBuilder, /Require a student explanation|Assignment requirements/);
+  assert.match(courseBuilder, /managed in MAVIS Studio/);
+  assert.match(courseBuilder, /Due date \(optional\)/);
+  assert.match(courseBuilder, /Estimated duration \(min\)/);
   assert.match(courseBuilder, /role="alert"/);
   assert.match(courseBuilder, /toast\.success/);
   assert.match(courseBuilder, /toast\.error/);
   assert.doesNotMatch(courseBuilder, /isDraft && addingItemModule \? \(/);
+});
+
+test("Publish Changes reports actionable Module and learning-item validation errors", () => {
+  const courseBuilder = read("src/features/courses/course-builder.tsx");
+  const apiErrors = read("src/lib/errors/api-error.ts");
+  assert.match(courseBuilder, /function collectPublishIssues/);
+  assert.match(courseBuilder, /has no learning content/);
+  assert.match(courseBuilder, /Complete these items before publishing/);
+  assert.match(courseBuilder, /setPublishIssues\(\[message\]\)/);
+  assert.match(apiErrors, /COURSE_MODULE_EMPTY/);
+  assert.match(apiErrors, /COURSE_STUDIO_TOPOLOGY/);
 });
 
 test("Global Lecturer workspace hides its sidebar and uses a single Course Management heading", () => {
@@ -188,5 +202,6 @@ test("Commit #05 completes 6-step Lecturer setup with curated repos, lesson/quiz
   assert.match(quizLib, /staticDiagramQuizTemplate/);
   assert.match(quizLib, /<QuizBuilder/);
   assert.doesNotMatch(labAuthoring, /LabQuizSection|id: "quiz"|LabTheorySection/);
-  assert.match(labInfo, /essayPrompts/);
+  assert.doesNotMatch(labInfo, /essayPrompts|Essay & Rubric Prompts|Due date/);
+  assert.match(labInfo, /Description \(optional, Markdown\)/);
 });

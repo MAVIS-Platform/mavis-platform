@@ -59,8 +59,15 @@ class NotificationControllerTest {
   when(policy.requireCurrentActiveUser()).thenReturn(User.builder().id(user).role(studentRole).build());
   when(jdbc.queryForObject(anyString(),eq(Long.class),any(Object[].class))).thenReturn(0L);
   controller.list(0,20,false,"");
-  verify(jdbc,times(2)).queryForObject(contains("AND category <> 'SYSTEM' AND target_path NOT LIKE '/administration%'"),eq(Long.class),eq(user),any(Timestamp.class));
+  verify(jdbc,times(3)).queryForObject(contains("AND category <> 'SYSTEM' AND target_path NOT LIKE '/administration%'"),eq(Long.class),eq(user),any(Timestamp.class));
   assertThat(NotificationController.safePath("/roadmap?workspace=123")).isEqualTo("/roadmap?workspace=123");
   assertThat(NotificationController.safePath("/courses")).isEqualTo("/courses");
+ }
+ @Test void lecturerInboxContainsOnlyActionableStudentSubmissions() {
+  var lecturerRole=com.mavis.common.entity.Role.builder().code("LECTURER").build();
+  when(policy.requireCurrentActiveUser()).thenReturn(User.builder().id(user).role(lecturerRole).build());
+  when(jdbc.queryForObject(anyString(),eq(Long.class),any(Object[].class))).thenReturn(0L);
+  controller.list(0,20,false,"");
+  verify(jdbc,times(3)).queryForObject(contains("AND category = 'SUBMISSION' AND action_required"),eq(Long.class),eq(user),any(Timestamp.class));
  }
 }

@@ -431,13 +431,15 @@ test("Commit #08 scopes notification categories by role and coalesces duplicate 
   const inbox = read("src/features/notifications/inbox.tsx");
   assert.match(inbox, /export function visibleCategoriesForRole/);
   assert.match(inbox, /if \(role === "student"\)[\s\S]*c\.value !== "SYSTEM" && c\.value !== "ANALYSIS"/);
-  assert.match(inbox, /if \(role === "lecturer"\)[\s\S]*c\.value !== "SYSTEM"/);
+  assert.match(
+    inbox,
+    /if \(role === "lecturer"\)[\s\S]*c\.value === "" \|\| c\.value === "SUBMISSION"/,
+  );
   assert.match(inbox, /export function groupDuplicateNotifications/);
   assert.match(inbox, /visibleCategoriesForRole\(session\.data\?\.user\?\.role\)/);
   assert.match(inbox, /groupDuplicateNotifications\(items\)/);
   assert.match(inbox, /item\.duplicateCount > 1/);
 });
-
 test("Commit #10 strips legacy preview/CB tags across submission views, prevents profile stat word breaks, and cleans Quiz Gate copy", () => {
   const ts = require("typescript");
   const source = read("src/features/submissions/submission-text.ts");
@@ -474,8 +476,6 @@ test("Commit #10 strips legacy preview/CB tags across submission views, prevents
   const workspaces = read("src/features/workspaces/screens.tsx");
   assert.match(workspaces, /already published \(Active\)/);
 });
-
-
 test("E2E #05 Admin UI: keeps hero tabs single-row, preserves KPIs, deduplicates Refresh and sidebar heading", () => {
   const ops = read("src/features/administration/operations.tsx");
   const screens = read("src/features/administration/screens.tsx");
@@ -537,5 +537,3 @@ test("E2E #06 i18n parity: Admin diagnostics, 24h VI timestamps, audit actions, 
   assert.doesNotMatch(builder, /Chưa có phiên bản được publish\./);
   assert.doesNotMatch(syllabus, /Hãy vào Evidence & Submit trong Lab để nộp bài\./);
 });
-
-

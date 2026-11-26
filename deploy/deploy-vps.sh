@@ -265,6 +265,12 @@ if [ -e "$notifications_scope_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$notifications_scope_migration" /opt/mavis/db-backups/notifications-scope-before-v49.dump
 fi
+lecturer_notification_workflow_migration="$incoming/V50__Lecturer_Submission_Notification_Workflow.sql"
+if [ -e "$lecturer_notification_workflow_migration" ]; then
+  test -f "$notifications_scope_migration" && test -f "$schema_tool" || { echo "Incomplete Lecturer Notification Workflow schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$lecturer_notification_workflow_migration" /opt/mavis/db-backups/lecturer-notifications-before-v50.dump
+fi
 # Ensure persistent data volume upload and worker directories are writable by app user 1654:1654
 docker run --rm --mount source=mavis_data,target=/data alpine:3.20 sh -c "mkdir -p /data/uploads /data/worker-artifacts && chown -R 1654:1654 /data/uploads /data/worker-artifacts" >/dev/null 2>&1 || true
 drain_deadline=$((SECONDS + 360))

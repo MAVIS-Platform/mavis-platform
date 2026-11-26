@@ -2069,10 +2069,11 @@ test("Full-Course E2E hardening: user-scoped Quiz storage, WF-04 422 codes, Snap
 
   const info = read("src/features/assignments/lab-info-form.tsx");
   assert.match(info, /THEORY_QUIZ_STUDIO/);
-  assert.match(info, /type="datetime-local"/);
+  assert.doesNotMatch(info, /type="datetime-local"/);
 
   const builder = read("src/features/courses/course-builder.tsx");
   assert.match(builder, /estimatedMinutes/);
+  assert.match(builder, /dueAt/);
 
   const wsScreens = read("src/features/workspaces/screens.tsx");
   assert.match(wsScreens, /key:\s*"email"/);

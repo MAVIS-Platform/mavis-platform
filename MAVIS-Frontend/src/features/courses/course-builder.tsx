@@ -195,11 +195,7 @@ type ItemDraft = {
   referenceVersionId: string;
   referenceModelId: string;
   quizAssetId: string;
-  practiceRequirements: string;
-  explanationRequired: boolean;
-  explanationPrompt: string;
-  explanationMinLength: string;
-  evaluationCriteria: string;
+  dueAt: string;
 };
 
 const emptyDraft = (): ItemDraft => ({
@@ -219,11 +215,7 @@ const emptyDraft = (): ItemDraft => ({
   referenceVersionId: "",
   referenceModelId: "",
   quizAssetId: "",
-  practiceRequirements: "",
-  explanationRequired: false,
-  explanationPrompt: "",
-  explanationMinLength: "",
-  evaluationCriteria: "",
+  dueAt: "",
 });
 
 function parseRubric(value: string) {
@@ -278,18 +270,20 @@ function contentFromDraft(draft: ItemDraft): Record<string, unknown> {
       passPercent: draft.passPercent,
       questions: draft.quizQuestions,
     };
+  const parsedDue = draft.dueAt ? new Date(draft.dueAt) : null;
   return {
     ...meta,
-    practiceRequirements: draft.practiceRequirements.trim(),
-    explanationRequired: draft.explanationRequired,
-    ...(draft.explanationRequired
-      ? {
-          explanationPrompt: draft.explanationPrompt.trim(),
-          explanationMinLength: Number.parseInt(draft.explanationMinLength, 10) || 0,
-          evaluationCriteria: draft.evaluationCriteria.trim(),
-        }
-      : {}),
+    dueAt:
+      parsedDue && !Number.isNaN(parsedDue.getTime()) ? parsedDue.toISOString() : null,
   };
+}
+
+function toDateTimeLocalValue(value: unknown): string {
+  if (typeof value !== "string" || !value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
 }
 
 function draftFromItem(item: Item): ItemDraft {
@@ -319,17 +313,7 @@ function draftFromItem(item: Item): ItemDraft {
     referenceModelId:
       typeof content["referenceModelId"] === "string" ? content["referenceModelId"] : "",
     quizAssetId: typeof content["quizAssetId"] === "string" ? content["quizAssetId"] : "",
-    practiceRequirements:
-      typeof content["practiceRequirements"] === "string" ? content["practiceRequirements"] : "",
-    explanationRequired: content["explanationRequired"] === true,
-    explanationPrompt:
-      typeof content["explanationPrompt"] === "string" ? content["explanationPrompt"] : "",
-    explanationMinLength:
-      typeof content["explanationMinLength"] === "number"
-        ? String(content["explanationMinLength"])
-        : "",
-    evaluationCriteria:
-      typeof content["evaluationCriteria"] === "string" ? content["evaluationCriteria"] : "",
+    dueAt: toDateTimeLocalValue(content["dueAt"]),
   };
 }
 
@@ -372,14 +356,6 @@ function draftValid(draft: ItemDraft) {
   ) {
     return false;
   }
-  if (draft.type === "RUNTIME_LAB" && !draft.practiceRequirements.trim()) return false;
-  if (
-    draft.type === "RUNTIME_LAB" &&
-    draft.explanationRequired &&
-    !draft.explanationPrompt.trim()
-  ) {
-    return false;
-  }
   return true;
 }
 
@@ -397,6 +373,65 @@ function itemTypeForAssignment(assignment: {
 function itemEstimatedMinutes(item: Item): number | null {
   const raw = item.content?.["estimatedMinutes"];
   return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : null;
+}
+
+function collectPublishIssues(
+  modules: Module[],
+  assignments: AssignmentRow[],
+  t: (en: string, vi: string) => string,
+): string[] {
+  if (modules.length === 0) {
+    return [t("Add at least one Module before publishing.", "Hãy thêm ít nhất một học phần trước khi công bố.")];
+  }
+  const issues: string[] = [];
+  for (const module of modules) {
+    const moduleLabel = `${t("Module", "Học phần")} ${module.position} · ${module.title}`;
+    if (module.items.length === 0) {
+      issues.push(
+        t(
+          `${moduleLabel} has no learning content. Add a Lesson, Quiz, or Practice, or remove this Module.`,
+          `${moduleLabel} chưa có nội dung học. Hãy thêm Lesson, Quiz hoặc Practice, hoặc xóa học phần này.`,
+        ),
+      );
+      continue;
+    }
+    for (const item of module.items) {
+      const itemLabel = `${moduleLabel} › ${item.title}`;
+      if (
+        item.type === "THEORY" &&
+        (typeof item.content?.["body"] !== "string" || !item.content["body"].trim())
+      ) {
+        issues.push(t(`${itemLabel} is missing Theory content.`, `${itemLabel} chưa có nội dung Theory.`));
+      }
+      if (item.type === "QUIZ" && !item.assignmentId) {
+        const questions = item.content?.["questions"];
+        if (!Array.isArray(questions) || questions.length === 0) {
+          issues.push(t(`${itemLabel} has no Quiz questions.`, `${itemLabel} chưa có câu hỏi Quiz.`));
+        }
+      }
+      if (["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
+        const linked = item.assignmentId
+          ? assignments.find((assignment) => assignment.id === item.assignmentId)
+          : undefined;
+        if (!linked) {
+          issues.push(
+            t(
+              `${itemLabel} is not linked to an available Lab in this class.`,
+              `${itemLabel} chưa liên kết với Lab khả dụng trong lớp này.`,
+            ),
+          );
+        } else if (item.type === "RUNTIME_LAB" && !linked.requireRuntimeTrace) {
+          issues.push(
+            t(
+              `${itemLabel} requires a Lab with Runtime/Studio configured.`,
+              `${itemLabel} cần một Lab đã cấu hình Runtime/Studio.`,
+            ),
+          );
+        }
+      }
+    }
+  }
+  return issues;
 }
 
 function ItemFields({
@@ -502,7 +537,7 @@ function ItemFields({
           />
         </label>
         <label className="block space-y-1 text-xs font-medium">
-          <span>{t("Duration (min)", "Thời lượng (phút)")}</span>
+          <span>{t("Estimated duration (min)", "Thời gian dự kiến (phút)")}</span>
           <Input
             type="number"
             min={5}
@@ -514,6 +549,16 @@ function ItemFields({
           />
         </label>
       </div>
+      {needsAssignment && (
+        <label className="block space-y-1 text-xs font-medium">
+          <span>{t("Due date (optional)", "Hạn nộp (tùy chọn)")}</span>
+          <Input
+            type="datetime-local"
+            value={draft.dueAt}
+            onChange={(event) => onChange({ dueAt: event.target.value })}
+          />
+        </label>
+      )}
       {draft.type === "THEORY" && (
         <label className="block space-y-1 text-xs font-medium">
           <span>{t("Theory content", "Nội dung lý thuyết")}</span>
@@ -930,7 +975,6 @@ function AddContentDialog({
                         assignmentId: event.target.value,
                         title: lab?.title ?? "",
                         description: lab?.instructions?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 160) ?? "",
-                        practiceRequirements: lab?.instructions ?? "",
                       });
                     }}
                   >
@@ -944,32 +988,12 @@ function AddContentDialog({
                   </p>
                 )}
                 {selectedLab && (
-                  <label className="block space-y-1.5 text-sm font-medium">
-                    <span>{t("Assignment requirements", "Yêu cầu đề bài")}</span>
-                    <Textarea rows={4} value={draft.practiceRequirements} onChange={(event) => onChange({ practiceRequirements: event.target.value })} />
-                  </label>
-                )}
-                <label className="flex items-center gap-2 text-sm font-medium">
-                  <input type="checkbox" className="size-4 accent-primary" checked={draft.explanationRequired} onChange={(event) => onChange({ explanationRequired: event.target.checked })} />
-                  {t("Require a student explanation", "Yêu cầu sinh viên giải thích thêm")}
-                </label>
-                {draft.explanationRequired && (
-                  <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
-                    <label className="block space-y-1 text-sm font-medium">
-                      <span>{t("Explanation prompt", "Câu hỏi giải thích")}</span>
-                      <Textarea rows={3} value={draft.explanationPrompt} onChange={(event) => onChange({ explanationPrompt: event.target.value })} />
-                    </label>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="block space-y-1 text-sm font-medium">
-                        <span>{t("Minimum length", "Độ dài tối thiểu")}</span>
-                        <Input type="number" min={0} max={5000} value={draft.explanationMinLength} onChange={(event) => onChange({ explanationMinLength: event.target.value })} />
-                      </label>
-                      <label className="block space-y-1 text-sm font-medium">
-                        <span>{t("Evaluation criteria", "Tiêu chí đánh giá")}</span>
-                        <Input value={draft.evaluationCriteria} onChange={(event) => onChange({ evaluationCriteria: event.target.value })} />
-                      </label>
-                    </div>
-                  </div>
+                  <p className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
+                    {t(
+                      "The student mission and completion criteria are managed in MAVIS Studio.",
+                      "Nhiệm vụ sinh viên và tiêu chí hoàn thành được quản lý trong MAVIS Studio.",
+                    )}
+                  </p>
                 )}
               </div>
             )}
@@ -980,10 +1004,20 @@ function AddContentDialog({
                 <Input required maxLength={255} value={draft.title} onChange={(event) => onChange({ title: event.target.value })} />
               </label>
               <label className="block space-y-1 text-sm font-medium">
-                <span>{t("Duration (min)", "Thời lượng (phút)")}</span>
+                <span>{t("Estimated duration (min)", "Thời gian dự kiến (phút)")}</span>
                 <Input type="number" min={5} max={600} step={5} placeholder="45" value={draft.estimatedMinutes} onChange={(event) => onChange({ estimatedMinutes: event.target.value })} />
               </label>
             </div>
+            {contentKind === "PRACTICE" && (
+              <label className="block space-y-1 text-sm font-medium">
+                <span>{t("Due date (optional)", "Hạn nộp (tùy chọn)")}</span>
+                <Input
+                  type="datetime-local"
+                  value={draft.dueAt}
+                  onChange={(event) => onChange({ dueAt: event.target.value })}
+                />
+              </label>
+            )}
             <label className="block space-y-1 text-sm font-medium">
               <span>{t("Short description", "Mô tả ngắn")}</span>
               <Input value={draft.description} onChange={(event) => onChange({ description: event.target.value })} />
@@ -1051,6 +1085,7 @@ export function CourseBuilder({
   const [addingItemModuleId, setAddingItemModuleId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
   const [addContentError, setAddContentError] = useState<string | null>(null);
+  const [publishIssues, setPublishIssues] = useState<string[]>([]);
   const referenceVersions = useApiQuery(
     "referenceVersions",
     { workspaceId },
@@ -1090,6 +1125,10 @@ export function CourseBuilder({
     setTitle(course.data?.title ?? "");
     setDescription(course.data?.description ?? "");
   }, [course.data?.id, course.data?.title, course.data?.description]);
+
+  useEffect(() => {
+    setPublishIssues([]);
+  }, [course.data?.draftRevision]);
 
   const isDraft = course.data?.status === "DRAFT";
 
@@ -1335,6 +1374,55 @@ export function CourseBuilder({
     );
   };
 
+  const publishChanges = () => {
+    if (!workspaceName) return;
+    const issues = collectPublishIssues(modules, assignmentRows, t);
+    setPublishIssues(issues);
+    if (issues.length > 0) {
+      const emptyModuleIds = modules
+        .filter((module) => module.items.length === 0)
+        .map((module) => module.id);
+      if (emptyModuleIds.length > 0) {
+        setCollapsedModules((current) => {
+          const next = { ...current };
+          for (const moduleId of emptyModuleIds) next[moduleId] = false;
+          return next;
+        });
+      }
+      toast.error(
+        issues.length === 1
+          ? issues[0]
+          : t(
+              `${issues.length} issues must be fixed before publishing.`,
+              `Cần sửa ${issues.length} lỗi trước khi công bố.`,
+            ),
+      );
+      return;
+    }
+    activateCourse.mutate(
+      { workspaceId, name: workspaceName, status: "ACTIVE" },
+      {
+        onSuccess: () => {
+          setPublishIssues([]);
+          window.location.assign(
+            `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`,
+          );
+        },
+        onError: (cause) => {
+          const message =
+            cause instanceof Error
+              ? t(cause.message)
+              : t(
+                  "The Course could not be published. Review the highlighted issues and try again.",
+                  "Không thể công bố khóa học. Hãy kiểm tra các lỗi được hiển thị và thử lại.",
+                );
+          setPublishIssues([message]);
+          toast.error(message);
+        },
+      },
+    );
+  };
+
   const addModule = (event: React.FormEvent) => {
     event.preventDefault();
     if (!canCreateModules) return;
@@ -1396,14 +1484,6 @@ export function CourseBuilder({
     }
     if (draft.type === "RUNTIME_LAB" && !draft.assignmentId) {
       setAddContentError(t("Select a Runtime/Studio Lab.", "Hãy chọn Lab có Runtime/Studio."));
-      return;
-    }
-    if (draft.type === "RUNTIME_LAB" && !draft.practiceRequirements.trim()) {
-      setAddContentError(t("Enter the Practice requirements.", "Hãy nhập yêu cầu đề bài Practice."));
-      return;
-    }
-    if (draft.explanationRequired && !draft.explanationPrompt.trim()) {
-      setAddContentError(t("Enter the student explanation prompt.", "Hãy nhập câu hỏi yêu cầu sinh viên giải thích."));
       return;
     }
     if (!draftValid(draft)) {
@@ -1521,7 +1601,7 @@ export function CourseBuilder({
       t("Could not update the learning item.", "Không cập nhật được nội dung.")) ||
     (course.deleteItem.isError &&
       t("Could not delete the learning item.", "Không xóa được nội dung.")) ||
-    (activateCourse.isError &&
+    (activateCourse.isError && publishIssues.length === 0 &&
       t(
         "Could not publish and activate the Course. Check incomplete content and try again.",
         "Không thể publish và kích hoạt khóa học. Hãy kiểm tra nội dung chưa hoàn tất rồi thử lại.",
@@ -1574,19 +1654,7 @@ export function CourseBuilder({
               type="button"
               size="sm"
               disabled={busy || activateCourse.isPending}
-              onClick={() =>
-                activateCourse.mutate({
-                  workspaceId,
-                  name: workspaceName,
-                  status: "ACTIVE",
-                }, {
-                  onSuccess: () => {
-                    window.location.assign(
-                      `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`,
-                    );
-                  },
-                })
-              }
+              onClick={publishChanges}
             >
               <Send className="mr-1.5 size-3.5" aria-hidden="true" />
               {activateCourse.isPending
@@ -1664,6 +1732,21 @@ export function CourseBuilder({
           className="border-b bg-destructive/10 px-4 py-2 text-xs font-medium text-destructive"
         >
           {activeError}
+        </div>
+      )}
+      {publishIssues.length > 0 && (
+        <div
+          role="alert"
+          className="border-b border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <p className="font-semibold">
+            {t("Complete these items before publishing:", "Hoàn tất các mục sau trước khi công bố:")}
+          </p>
+          <ul className="mt-1.5 list-disc space-y-1 pl-5">
+            {publishIssues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
         </div>
       )}
       {/* Single-Column 1-Scroll Curriculum Accordion + Slide-Over Inspector Drawer */}

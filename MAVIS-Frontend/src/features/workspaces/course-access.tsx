@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   CalendarClock,
   Check,
@@ -1303,9 +1304,20 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
           ...(maxUses.trim() ? { maxUses: parsedMaxUses } : {}),
         });
       }
+      toast.success(
+        dialogMode === "renew"
+          ? t("Passkey extended successfully.", "Đã gia hạn Passkey.")
+          : dialogMode === "replace"
+            ? t("A new Passkey is ready.", "Passkey mới đã sẵn sàng.")
+            : t("Passkey created successfully.", "Đã tạo Passkey mới."),
+      );
       setDialogMode(null);
-    } catch {
-      // Mutation errors remain visible in the dialog context for a safe retry.
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : t("Could not update the Passkey.", "Không thể cập nhật Passkey."),
+      );
     }
   };
 

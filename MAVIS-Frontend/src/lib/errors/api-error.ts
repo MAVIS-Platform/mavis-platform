@@ -119,6 +119,18 @@ export const publicErrors = {
   RUN_COOLDOWN_ACTIVE: "Please wait a few seconds before starting another Studio Live session.",
   STUDIO_ACTION_NOT_ALLOWED: "This Docker action is not enabled for this Lab exercise.",
   REPLICA_BOUNDS_EXCEEDED: "Replica count must be between 1 and 3.",
+  COURSE_MODULE_EMPTY: "Every module must contain at least one learning item before publishing.",
+  COURSE_LAB_SCOPE: "A learning item links to a Lab outside this class.",
+  COURSE_THEORY_CONTENT: "A Theory lesson is missing its content.",
+  COURSE_QUIZ_EMPTY: "A Quiz must contain at least one question.",
+  COURSE_QUIZ_INVALID: "A Quiz question is incomplete or has an invalid answer.",
+  COURSE_QUIZ_VERSION: "A linked Lab Quiz must have a published version.",
+  COURSE_LAB_LINK: "A Practice item must link to a Lab in this class.",
+  COURSE_RUNTIME_REQUIRED: "A Studio Practice must use a Lab with Runtime/Studio configured.",
+  COURSE_STUDIO_TOPOLOGY:
+    "The Studio mission is configured, but its Docker runtime topology is not ready. Sync Docker before publishing.",
+  COURSE_REFERENCE_INVALID:
+    "The Lab Reference Model or pinned source is not ready for publishing.",
 } as const;
 export type PublicErrorCode = keyof typeof publicErrors;
 // Match only reviewed business messages. Arbitrary upstream text can contain secrets.
@@ -257,6 +269,36 @@ export function backendErrorCode(
     return "STUDIO_ACTION_NOT_ALLOWED";
   if (status === 400 && message.startsWith("REPLICA_BOUNDS_EXCEEDED"))
     return "REPLICA_BOUNDS_EXCEEDED";
+  if (status === 422 && message === "Every module must contain at least one learning item")
+    return "COURSE_MODULE_EMPTY";
+  if (status === 422 && message === "A course item references a Lab outside this workspace")
+    return "COURSE_LAB_SCOPE";
+  if (status === 422 && message === "Theory item requires content.body")
+    return "COURSE_THEORY_CONTENT";
+  if (status === 422 && message === "Quiz item requires at least one inline question")
+    return "COURSE_QUIZ_EMPTY";
+  if (
+    status === 422 &&
+    message === "Inline Quiz questions require a prompt, two options, and a valid answer"
+  )
+    return "COURSE_QUIZ_INVALID";
+  if (status === 422 && message === "Quiz item must link to a Lab with a published Quiz version")
+    return "COURSE_QUIZ_VERSION";
+  if (status === 422 && message === "Lab item must link to a published Workspace Assignment")
+    return "COURSE_LAB_LINK";
+  if (status === 422 && message === "Runtime Lab must require a runtime trace")
+    return "COURSE_RUNTIME_REQUIRED";
+  if (
+    status === 409 &&
+    message ===
+      "Studio Live exercise is configured, but Docker runtime topology is not ready yet. Run Sync Docker in Step 5 before publishing."
+  )
+    return "COURSE_STUDIO_TOPOLOGY";
+  if (
+    status === 400 &&
+    message === "Attach a published reference model and a pinned source archive before publishing the Lab"
+  )
+    return "COURSE_REFERENCE_INVALID";
   return undefined;
 }
 export function publicErrorCode(value: unknown): PublicErrorCode | undefined {

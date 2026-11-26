@@ -27,6 +27,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -456,6 +458,7 @@ public class CourseAuthoringService {
                 .assignmentId(request.assignmentId()).content(request.content() == null ? JsonNodeFactory.instance.objectNode() : request.content())
                 .required(request.required() == null || request.required()).build();
         items.save(item);
+        syncAssignmentDueDate(item.getItemType(), item.getAssignmentId(), item.getContent());
         bump(course);
         return view(course);
     }
@@ -567,6 +570,7 @@ public class CourseAuthoringService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course item not found"));
         applyItem(item, request);
         items.save(item);
+        syncAssignmentDueDate(item.getItemType(), item.getAssignmentId(), item.getContent());
         bump(course);
         return view(course);
     }
@@ -642,6 +646,39 @@ public class CourseAuthoringService {
         if (request.assignmentId() != null && !assignments.existsByIdAndWorkspaceId(request.assignmentId(), workspaceId)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Linked Lab must belong to this Workspace");
         }
+        if (isLabType(request.type())) {
+            parseDueAt(request.content());
+        }
+    }
+
+    private OffsetDateTime parseDueAt(JsonNode content) {
+        if (content == null || !content.has("dueAt") || content.get("dueAt").isNull()) {
+            return null;
+        }
+        JsonNode value = content.get("dueAt");
+        if (!value.isTextual() || value.asText().isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab due date must be an ISO-8601 date-time");
+        }
+        try {
+            return OffsetDateTime.parse(value.asText());
+        } catch (DateTimeParseException ex) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab due date must be an ISO-8601 date-time");
+        }
+    }
+
+    private boolean isLabType(String type) {
+        return type != null && Set.of("STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB")
+                .contains(type.trim().toUpperCase());
+    }
+
+    private void syncAssignmentDueDate(String type, UUID assignmentId, JsonNode content) {
+        if (!isLabType(type) || assignmentId == null) {
+            return;
+        }
+        assignments.findById(assignmentId).ifPresent(assignment -> {
+            assignment.setDueAt(parseDueAt(content));
+            assignments.save(assignment);
+        });
     }
 
     private void applyItem(CourseItem item, ItemRequest request) {

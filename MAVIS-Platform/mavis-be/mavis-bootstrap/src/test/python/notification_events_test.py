@@ -16,7 +16,7 @@ class NotificationEvents(unittest.TestCase):
   migration=Path(__file__).resolve().parents[2]/"main/resources/db/migration"
   with cls.c:
    with cls.c.cursor() as q:
-    for name in ["V1__Init_Database.sql","V7__Runtime_Versioned_Contract_And_Receipts.sql","V21__Submission_Review.sql","V22__User_Notifications.sql"]:q.execute((migration/name).read_text(encoding="utf-8-sig"))
+    for name in ["V1__Init_Database.sql","V7__Runtime_Versioned_Contract_And_Receipts.sql","V21__Submission_Review.sql","V22__User_Notifications.sql","V49__Scope_And_Deduplicate_Notifications.sql","V50__Lecturer_Submission_Notification_Workflow.sql"]:q.execute((migration/name).read_text(encoding="utf-8-sig"))
  @classmethod
  def tearDownClass(cls):
   cls.c.close()
@@ -63,6 +63,14 @@ class NotificationEvents(unittest.TestCase):
   self.q.execute("UPDATE submission_reviews SET status='GRADED' WHERE id=%s",(review,));self.assertEqual(len(self.notices(self.student)),1);self.assertNotIn('private draft',str(self.notices(self.student)))
  def test_submission_goes_to_teacher_and_receipt_to_submitter(self):
   self.submission();self.assertTrue(any('submission' in row[0].lower() for row in self.notices(self.teacher)));self.assertTrue(any('Submission received'==row[0] for row in self.notices(self.student)));self.assertEqual(self.notices(self.outsider),[])
+ def test_lecturer_submission_action_resolves_only_after_published_review(self):
+  submission=self.submission()
+  self.q.execute('SELECT action_required,resolved_at,context_label FROM user_notifications WHERE recipient_id=%s AND entity_id=%s',(self.teacher,submission));action,resolved,label=self.q.fetchone()
+  self.assertTrue(action);self.assertIsNone(resolved);self.assertEqual(label,'Assignment')
+  review=self.insert('submission_reviews',submission_id=submission,lecturer_id=self.teacher,status='DRAFT',summary='draft')
+  self.q.execute('SELECT resolved_at FROM user_notifications WHERE recipient_id=%s AND entity_id=%s',(self.teacher,submission));self.assertIsNone(self.q.fetchone()[0])
+  self.q.execute("UPDATE submission_reviews SET status='RETURNED' WHERE id=%s",(review,))
+  self.q.execute('SELECT resolved_at FROM user_notifications WHERE recipient_id=%s AND entity_id=%s',(self.teacher,submission));self.assertIsNotNone(self.q.fetchone()[0])
  def test_feedback_only_for_submission_author(self):
   submission=self.submission();self.q.execute('DELETE FROM user_notifications')
   self.insert('feedback_comments',submission_id=submission,lecturer_id=self.teacher,comment_text='private feedback')
