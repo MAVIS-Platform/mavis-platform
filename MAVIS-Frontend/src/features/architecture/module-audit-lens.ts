@@ -179,13 +179,9 @@ export function computeActiveLensFocus(
   // In C1 Context, keep the central system box illuminated when actors/externals are focused
   if (lens.defaultView === "CONTEXT") {
     focusNodeIds.add(`system:${model.projectId}`);
-    for (const diagram of model.diagrams ?? []) {
-      if (diagram.level === "CONTEXT") {
-        for (const node of diagram.layoutJson?.nodes ?? []) {
-          if (node.kind === "SYSTEM") {
-            focusNodeIds.add(node.id);
-          }
-        }
+    for (const el of model.elements) {
+      if (el.elementType === "SOFTWARE_SYSTEM") {
+        focusNodeIds.add(el.id);
       }
     }
   }

@@ -178,7 +178,7 @@ function CourseOutlineBody({
   isLoadingInitial: boolean;
   onRetry: () => void;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const session = useSession();
   const theoryStorageKey = theoryCompletionStorageKey(session.data?.user?.id, workspaceId);
   const [completedTheoryIds, setCompletedTheoryIds] = useState<string[]>([]);
@@ -587,7 +587,10 @@ function CourseOutlineBody({
                             ? resolveStaticAuditStepTitle(item.title, {
                                 courseCode: workspace?.code ?? courseTitle,
                                 modulePosition: module.position,
-                                curriculumCode: item.curriculumCode,
+                                curriculumCode:
+                                  typeof item.content?.["curriculumCode"] === "string"
+                                    ? item.content["curriculumCode"]
+                                    : undefined,
                                 locale,
                                 isStaticStep: effectiveType === "STATIC_LAB",
                               })
