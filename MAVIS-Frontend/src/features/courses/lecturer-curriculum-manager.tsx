@@ -18,7 +18,12 @@ export function LecturerCurriculumManager({
   return (
     <div className="space-y-6">
       {/* Passkey moved to CourseWorkspaceShell header next to ACTIVE badge (Active Class Passkeys: <CoursePasskey />) */}
-      <CourseOutline workspaceId={workspaceId} canManage={editable} active={active} />
+      <CourseOutline
+        workspaceId={workspaceId}
+        canManage={editable}
+        active={active}
+        lecturerPreview={active}
+      />
     </div>
   );
 }

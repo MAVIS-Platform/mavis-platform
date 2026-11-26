@@ -102,6 +102,22 @@ test("Active Lecturer courses lock Overview authoring but keep Grades, Students 
   assert.match(courseBuilder, /status: "ACTIVE"/);
 });
 
+test("Active Lecturer Overview uses nested view-only previews without student learning actions", () => {
+  const manager = read("src/features/courses/lecturer-curriculum-manager.tsx");
+  const outline = read("src/features/courses/course-outline.tsx");
+  const preview = read("src/features/courses/lecturer-active-course-preview.tsx");
+
+  assert.match(manager, /lecturerPreview=\{active\}/);
+  assert.match(outline, /<LecturerActiveCoursePreview/);
+  assert.match(preview, /function LecturerReadOnlyQuizPreview/);
+  assert.match(preview, /aria-controls=\{`lecturer-preview-module-/);
+  assert.match(preview, /aria-controls=\{`lecturer-preview-item-/);
+  assert.match(preview, /t\("View only", "Chỉ xem"\)/);
+  assert.match(preview, /assignment\?\.instructions\?\.trim\(\)/);
+  assert.match(preview, /<MarkdownPreview markdown=\{assignment\.instructions\}/);
+  assert.doesNotMatch(preview, /ChapterQuizRunner|CourseEssayItemPanel|href=|useMutation/);
+});
+
 test("Add content uses a modal for Lesson, Quiz and Runtime Practice with event errors", () => {
   const courseBuilder = read("src/features/courses/course-builder.tsx");
   assert.match(courseBuilder, /function AddContentDialog/);

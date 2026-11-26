@@ -45,6 +45,7 @@ import {
 import { resolveLabTier } from "@/features/assignments/requirements";
 import { courseSetupStepHref } from "./course-setup-flow-navigation";
 import { resolveStaticAuditStepTitle } from "./module-steps";
+import { LecturerActiveCoursePreview } from "./lecturer-active-course-preview";
 
 export function isMissingCourseError(error: unknown) {
   return error instanceof ApiError && error.status === 404;
@@ -107,13 +108,20 @@ export function CourseOutline({
   workspaceId,
   canManage,
   active,
+  lecturerPreview = false,
 }: {
   workspaceId: string;
   canManage: boolean;
   active: boolean;
+  lecturerPreview?: boolean;
 }) {
-  return canManage ? (
-    <LecturerCourseOutline workspaceId={workspaceId} active={active} />
+  return canManage || lecturerPreview ? (
+    <LecturerCourseOutline
+      workspaceId={workspaceId}
+      active={active}
+      canManage={canManage}
+      lecturerPreview={lecturerPreview}
+    />
   ) : (
     <StudentCourseOutline workspaceId={workspaceId} active={active} />
   );
@@ -122,16 +130,21 @@ export function CourseOutline({
 function LecturerCourseOutline({
   workspaceId,
   active,
+  canManage,
+  lecturerPreview,
 }: {
   workspaceId: string;
   active: boolean;
+  canManage: boolean;
+  lecturerPreview: boolean;
 }) {
   const authoring = useCourseAuthoring(workspaceId, true);
   return (
     <CourseOutlineBody
       workspaceId={workspaceId}
-      canManage
+      canManage={canManage}
       active={active}
+      lecturerPreview={lecturerPreview}
       published={authoring.published.data}
       draft={authoring.data}
       isLoadError={authoring.isError && !isMissingCourseError(authoring.error)}
@@ -172,6 +185,7 @@ function CourseOutlineBody({
   isLoadError,
   isLoadingInitial,
   onRetry,
+  lecturerPreview = false,
 }: {
   workspaceId: string;
   canManage: boolean;
@@ -181,6 +195,7 @@ function CourseOutlineBody({
   isLoadError: boolean;
   isLoadingInitial: boolean;
   onRetry: () => void;
+  lecturerPreview?: boolean;
 }) {
   const { t, locale } = useLocale();
   const session = useSession();
@@ -259,6 +274,41 @@ function CourseOutlineBody({
   }
 
   if (useLegacyOnly && legacyLabs.length > 0) {
+    if (lecturerPreview) {
+      return (
+        <LecturerActiveCoursePreview
+          modules={[
+            {
+              id: "legacy-course-content",
+              title: t("Class content", "Nội dung lớp"),
+              position: 1,
+              items: legacyLabs.map((lab) => {
+                const assignment = assignmentById.get(lab.assignmentId);
+                const tier = resolveLabTier(assignment);
+                return {
+                  id: lab.assignmentId,
+                  type:
+                    tier === "THEORY_QUIZ_STUDIO"
+                      ? "RUNTIME_LAB"
+                      : tier === "THEORY_ONLY"
+                        ? "STATIC_LAB"
+                        : "IMPACT_LAB",
+                  title: formatCourseLabTitle(lab.title, lab.position, lab.assignmentId),
+                  description: assignment?.instructions,
+                  position: lab.position,
+                  assignmentId: lab.assignmentId,
+                };
+              }),
+            },
+          ]}
+          workspaceId={workspaceId}
+          assignments={assignments.data ?? []}
+          resolveItemType={(item) => item.type}
+          resolveItemTitle={(item) => item.title}
+          resolveQuizQuestions={() => []}
+        />
+      );
+    }
     return (
       <section aria-labelledby="legacy-course-content" className="space-y-3">
         <div>
@@ -475,7 +525,38 @@ function CourseOutlineBody({
         </div>
       </div>
 
-      <ol className="space-y-3">
+      {lecturerPreview ? (
+        <LecturerActiveCoursePreview
+          modules={modules}
+          workspaceId={workspaceId}
+          assignments={assignments.data ?? []}
+          resolveItemType={(item) => resolveItemType(item as OutlineItem)}
+          resolveItemTitle={(item, module, effectiveType) =>
+            effectiveType === "STATIC_LAB" || /khám phá sơ đồ tĩnh|explore static diagrams/i.test(item.title)
+              ? resolveStaticAuditStepTitle(item.title, {
+                  courseCode: workspace?.code ?? courseTitle,
+                  modulePosition: module.position,
+                  curriculumCode:
+                    typeof item.content?.["curriculumCode"] === "string"
+                      ? item.content["curriculumCode"]
+                      : undefined,
+                  locale,
+                  isStaticStep: effectiveType === "STATIC_LAB",
+                })
+              : item.title
+          }
+          resolveQuizQuestions={(item, module) => {
+            if (item.type !== "QUIZ") return [];
+            const inlineQuestions = parseInlineQuizQuestions(item.content);
+            if (item.quizQuestions && item.quizQuestions.length > 0) return item.quizQuestions;
+            if (inlineQuestions.length > 0) return inlineQuestions;
+            return !item.assignmentId && isJavaCourseraWorkspace && !isCsharpCourse
+              ? matchQuizQuestionsForItem(module.position, item.title)
+              : [];
+          }}
+        />
+      ) : (
+        <ol className="space-y-3">
         {modules.map((module) => (
           <li key={module.id}>
             <details
@@ -747,7 +828,8 @@ function CourseOutlineBody({
             </details>
           </li>
         ))}
-      </ol>
+        </ol>
+      )}
     </section>
   );
 }
