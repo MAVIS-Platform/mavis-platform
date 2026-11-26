@@ -144,6 +144,44 @@ export function attemptStorageKey(
   return `mavis:curriculum-quiz-attempt:${userId || "anon"}:${workspaceId}:${assignmentId ?? "curriculum"}:${title}`;
 }
 
+export function inlineQuizPassStorageKey(
+  userId: string | null | undefined,
+  workspaceId: string,
+  itemId: string,
+) {
+  return `mavis:inline-quiz-pass:${userId || "anon"}:${workspaceId}:${itemId}`;
+}
+
+export function hasPassedInlineQuiz(
+  userId: string | null | undefined,
+  workspaceId: string,
+  itemId: string,
+  candidateTitles: string[] = [],
+): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (
+      itemId &&
+      window.localStorage.getItem(inlineQuizPassStorageKey(userId, workspaceId, itemId)) === "1"
+    ) {
+      return true;
+    }
+    for (const title of candidateTitles) {
+      if (!title) continue;
+      const raw = window.localStorage.getItem(attemptStorageKey(userId, workspaceId, null, title));
+      if (raw) {
+        const parsed = JSON.parse(raw) as { passed?: boolean; everPassed?: boolean };
+        if (parsed?.passed === true || parsed?.everPassed === true) {
+          return true;
+        }
+      }
+    }
+  } catch {
+    // Ignore private-mode / malformed localStorage entry
+  }
+  return false;
+}
+
 export function ChapterQuizRunner({
   title,
   questions,
@@ -215,6 +253,14 @@ export function ChapterQuizRunner({
     setAttempt(nextAttempt);
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(nextAttempt));
+      if (
+        courseItemId &&
+        nextAttempt.status === "SUBMITTED" &&
+        (nextAttempt.passed === true || nextAttempt.everPassed === true)
+      ) {
+        window.localStorage.setItem(inlineQuizPassStorageKey(userId, workspaceId, courseItemId), "1");
+        window.dispatchEvent(new CustomEvent("mavis:inline-quiz-updated"));
+      }
     } catch {
       // Interaction continues if browser storage is disabled.
     }

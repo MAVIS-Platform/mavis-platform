@@ -19,11 +19,13 @@ import {
   PublishCourseLab,
   useAutoConfigureStudio,
   useCourseSetup,
+  usePublishedCourse,
   useRuntimeSetupReadiness,
   useStartLabStudioSession,
   useStudentLabContext,
   useStudentLabStudioSessions,
 } from "@/features/workspaces/course-access";
+import { hasPassedInlineQuiz } from "@/features/courses/chapter-quiz-runner";
 import { LiveStudioWorkbench, type LiveStudioAuthoringProps } from "./live-studio-workbench";
 import {
   buildStudentExerciseInstructions,
@@ -231,6 +233,10 @@ function StandaloneStudioContent() {
     assignmentId,
     Boolean(workspaceId && assignmentId && !isAuthorMode),
   );
+  const publishedCourse = usePublishedCourse(
+    workspaceId,
+    Boolean(workspaceId && assignmentId && !isAuthorMode && !canManage),
+  );
 
   // Shared Lab Studio sessions & mutations
   const startStudio = useStartLabStudioSession(workspaceId, assignmentId);
@@ -385,12 +391,50 @@ function StandaloneStudioContent() {
     return verifiedOrCompleted?.id ?? "";
   }, [selectedSessionId, startStudio.data?.id, sessionList, assignmentId, isAuthorMode]);
 
+  const inlineQuizGateItem = useMemo(() => {
+    if (isAuthorMode || canManage || !assignmentId) return undefined;
+    const mods = publishedCourse.data?.snapshot?.modules ?? [];
+    const ownerMod = mods.find((m) =>
+      m.items.some(
+        (item) =>
+          item.assignmentId === assignmentId &&
+          ["RUNTIME_LAB", "STATIC_LAB", "IMPACT_LAB"].includes(item.type),
+      ),
+    );
+    if (!ownerMod) return undefined;
+    const inlineQuiz = ownerMod.items.find(
+      (candidate) =>
+        candidate.type === "QUIZ" &&
+        !candidate.assignmentId &&
+        candidate.required !== false,
+    );
+    if (!inlineQuiz) return undefined;
+    const normalizedTitle = inlineQuiz.title.replace(
+      /^Quiz Gate\s*·\s*/i,
+      `${t("Quiz", "Bài kiểm tra")} · `,
+    );
+    const passed = hasPassedInlineQuiz(session.data?.user?.id, workspaceId, inlineQuiz.id, [
+      normalizedTitle,
+      inlineQuiz.title,
+    ]);
+    return passed ? undefined : inlineQuiz;
+  }, [
+    isAuthorMode,
+    canManage,
+    assignmentId,
+    publishedCourse.data?.snapshot?.modules,
+    session.data?.user?.id,
+    workspaceId,
+    t,
+  ]);
+
   const studentQuizLocked = Boolean(
     !isAuthorMode &&
     !canManage &&
-    studentContext.data?.quiz &&
-    !studentContext.data.quiz.runtimeUnlocked &&
-    studentContext.data.assignment?.labMode !== "THEORY_ONLY",
+    ((studentContext.data?.quiz &&
+      !studentContext.data.quiz.runtimeUnlocked &&
+      studentContext.data.assignment?.labMode !== "THEORY_ONLY") ||
+      Boolean(inlineQuizGateItem)),
   );
 
   const autoLinkedLabRef = useRef<string | null>(null);
@@ -1401,7 +1445,9 @@ function StandaloneStudioContent() {
     isRuntimeReady || Boolean(previewTopology) || canvasOpened || sessionList.length > 0;
   const isInitialLoading =
     workspaces.isPending ||
-    (isAuthorMode ? assignments.isPending || (!projectId && setup.isPending) : studentContext.isPending);
+    (isAuthorMode
+      ? assignments.isPending || (!projectId && setup.isPending)
+      : studentContext.isPending || (!canManage && Boolean(workspaceId && assignmentId) && publishedCourse.isPending));
   const initialLoadError =
     workspaces.error ??
     (isAuthorMode ? assignments.error : studentContext.error) ??
@@ -1640,13 +1686,26 @@ function StandaloneStudioContent() {
               {t("Runtime access required", "Cần điều kiện truy cập Runtime")}
             </h1>
             <p className="text-xs leading-5 text-muted-foreground">
-              {t(
-                "Complete the required course work before starting your MAVIS Runtime Studio session.",
-                "Hoàn tất các yêu cầu của khóa học trước khi bắt đầu phiên MAVIS Runtime Studio.",
-              )}
+              {inlineQuizGateItem
+                ? t(
+                    "Pass the Module Quiz (>= 70%) before starting your MAVIS Runtime Studio session.",
+                    "Hoàn thành bài Quiz của Module (>= 70%) trước khi mở phòng thực hành MAVIS Runtime Studio.",
+                  )
+                : t(
+                    "Complete the required course work before starting your MAVIS Runtime Studio session.",
+                    "Hoàn tất các yêu cầu của khóa học trước khi bắt đầu phiên MAVIS Runtime Studio.",
+                  )}
             </p>
             <Button asChild size="sm">
-              <Link href={returnHref}>{t("Return to Lab", "Quay lại Lab")}</Link>
+              <Link
+                href={
+                  inlineQuizGateItem
+                    ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(inlineQuizGateItem.id)}`
+                    : returnHref
+                }
+              >
+                {inlineQuizGateItem ? t("Take Module Quiz", "Làm bài Quiz ngay") : t("Return to Lab", "Quay lại Lab")}
+              </Link>
             </Button>
           </div>
         ) : isAuthorMode && !projectId ? (

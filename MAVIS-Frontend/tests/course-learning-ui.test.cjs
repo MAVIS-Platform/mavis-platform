@@ -2608,3 +2608,17 @@ test("E2E #01 Passkey Create: rejects maxUses <= 0 inline instead of silently wi
   assert.match(access, /disabled=\{mutating \|\| maxUsesInvalid\}/);
   assert.doesNotMatch(access, /if \(next === "" \|\| Number\(next\) <= 0\) \{\s*setMaxUses\(""\);/);
 });
+
+
+test("E2E #02 Inline Quiz Gate: locks Studio Live until required inline Module Quiz is passed", () => {
+  const runner = read("src/features/courses/chapter-quiz-runner.tsx");
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const studio = read("src/features/runtime/standalone-studio-live.tsx");
+
+  assert.match(runner, /export function hasPassedInlineQuiz/);
+  assert.match(runner, /inlineQuizPassStorageKey\(userId, workspaceId, courseItemId\)/);
+  assert.match(syllabus, /function inlineQuizGateItemFor|const inlineQuizGateItemFor =/);
+  assert.match(syllabus, /if \(inlineQuizGateItemFor\(item\)\) return true;/);
+  assert.match(studio, /const inlineQuizGateItem = useMemo/);
+  assert.match(studio, /Boolean\(inlineQuizGateItem\)/);
+});

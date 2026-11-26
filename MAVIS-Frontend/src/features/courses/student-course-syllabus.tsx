@@ -38,8 +38,8 @@ import {
 } from "@/lib/coursera-ui-helpers";
 import { useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import {
-  attemptStorageKey,
   ChapterQuizRunner,
+  hasPassedInlineQuiz,
   parseInlineQuizPassPercent,
   parseInlineQuizQuestions,
 } from "./chapter-quiz-runner";
@@ -365,6 +365,39 @@ export function StudentCourseSyllabus({
     }
     return undefined;
   };
+  const [inlineQuizTick, setInlineQuizTick] = useState(0);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onQuizUpdated = () => setInlineQuizTick((v) => v + 1);
+    window.addEventListener("mavis:inline-quiz-updated", onQuizUpdated);
+    return () => window.removeEventListener("mavis:inline-quiz-updated", onQuizUpdated);
+  }, []);
+
+  const isStandaloneQuizItemPassed = (item: Pick<OutlineItemData, "id" | "type" | "assignmentId" | "title">) => {
+    void inlineQuizTick;
+    if (item.type !== "QUIZ" || item.assignmentId) return false;
+    return hasPassedInlineQuiz(session.data?.user?.id, workspaceId, item.id, [
+      formatSyllabusItemTitle(item, t),
+      item.title,
+    ]);
+  };
+
+  const inlineQuizGateItemFor = (item: OutlineItemData): OutlineItemData | undefined => {
+    if (resolveModuleFlowKind(item) !== "STUDIO_RUNTIME") return undefined;
+    const owner = syllabusModules.find((mod) =>
+      mod.items.some((candidate) => candidate.id === item.id),
+    );
+    if (!owner) return undefined;
+    const inlineQuiz = owner.items.find(
+      (candidate) =>
+        candidate.type === "QUIZ" &&
+        !candidate.assignmentId &&
+        candidate.required !== false,
+    );
+    if (!inlineQuiz) return undefined;
+    return isStandaloneQuizItemPassed(inlineQuiz) ? undefined : inlineQuiz;
+  };
+
   const isItemLockedLab = (item: OutlineItemData) =>
     Boolean(
       item.assignmentId &&
@@ -374,6 +407,7 @@ export function StudentCourseSyllabus({
   const isItemLocked = (item: OutlineItemData) => {
     if (item.type === "THEORY") return false;
     if (isItemLockedLab(item)) return true;
+    if (inlineQuizGateItemFor(item)) return true;
     return Boolean(lockedLabForItem(item));
   };
   const selectCurriculumItem = (item: OutlineItemData) => {
@@ -678,34 +712,11 @@ export function StudentCourseSyllabus({
                         hasAssignmentGate && item.assignmentId
                           ? labs.find((l) => l.assignmentId === item.assignmentId)
                           : undefined;
-                      const isStandaloneQuizPassed = (() => {
-                        if (item.type !== "QUIZ" || item.assignmentId || typeof window === "undefined") {
-                          return false;
-                        }
-                        const titles = [formatSyllabusItemTitle(item, t), item.title];
-                        for (const candidate of titles) {
-                          try {
-                            const raw = window.localStorage.getItem(
-                              attemptStorageKey(session.data?.user?.id, workspaceId, null, candidate),
-                            );
-                            if (raw) {
-                              const parsed = JSON.parse(raw) as {
-                                passed?: boolean;
-                                everPassed?: boolean;
-                              };
-                              if (parsed?.passed === true || parsed?.everPassed === true) {
-                                return true;
-                              }
-                            }
-                          } catch {
-                            // Ignore private-mode / malformed localStorage entry
-                          }
-                        }
-                        return false;
-                      })();
+                      const isStandaloneQuizPassed = isStandaloneQuizItemPassed(item);
                       const isPassed = linkedLab?.state === "PASSED" || isStandaloneQuizPassed;
                       const isTheoryDone = item.type === "THEORY" && isTheoryCompleted(item.id);
                       const lockedLabRecord = lockedLabForItem(item);
+                      const inlineQuizGate = inlineQuizGateItemFor(item);
                       const isLocked = isItemLocked(item);
                       return (
                         <button
@@ -739,7 +750,12 @@ export function StudentCourseSyllabus({
                               <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
                                 {lockedLabRecord?.reason === "COURSE_ARCHIVED"
                                   ? t("This archived course is read-only", "Khóa học đã lưu trữ · chỉ xem")
-                                  : t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
+                                  : inlineQuizGate
+                                    ? t(
+                                        "Pass the Quiz (>= 70%) to unlock Studio Live",
+                                        "Hoàn thành bài Quiz (>= 70%) để mở khóa MAVIS Studio",
+                                      )
+                                    : t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
                               </span>
                             )}
                           </div>
@@ -1065,7 +1081,7 @@ export function StudentCourseSyllabus({
                             )}
                             {chapterLabItem &&
                               chapterLabItem.assignmentId &&
-                              activeLabRecord?.state !== "LOCKED" && (
+                              !isItemLocked(chapterLabItem) && (
                                 <Button
                                   asChild
                                   size="sm"
