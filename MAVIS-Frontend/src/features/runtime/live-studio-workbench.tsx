@@ -6410,6 +6410,21 @@ export function LiveStudioWorkbench({
                 const themeSubtleText = styleCfg.subtleTextClass;
                 const themeRadius = styleCfg.controlRadiusClass;
 
+                const existingStageNames = new Set(blocks.map((b) => b.service));
+                const stageBlocks = [
+                  ...blocks,
+                  ...data.services
+                    .filter((name) => !existingStageNames.has(name))
+                    .map((name) => ({
+                      service: name,
+                      label: nodeNames[name] ?? name,
+                      canScale: false,
+                      initiallyStopped:
+                        authoring.initialStoppedServices.includes(name) ||
+                        authoring.initialStoppedControllers.includes(name),
+                    })),
+                ];
+
                 return (
                   <section
                     aria-label="Visual Studio Builder"
@@ -6424,7 +6439,7 @@ export function LiveStudioWorkbench({
                           style={{ fontSize: 11 }}
                           className={`font-semibold uppercase tracking-wide ${themeSubtleText}`}
                         >
-                          {t("Service on 3D Stage", "Service trên sân khấu 3D")} ({blocks.length})
+                          {t("Service on 3D Stage", "Service trên sân khấu 3D")} ({stageBlocks.length})
                         </label>
                         {canvasSelected && (
                           <button
@@ -6479,7 +6494,7 @@ export function LiveStudioWorkbench({
                           >
                             {t("Select service…", "Chọn service…")}
                           </SelectItem>
-                          {blocks.map((block) => {
+                          {stageBlocks.map((block) => {
                             const tags: string[] = [];
                             if (authoring.initialStoppedServices.includes(block.service)) {
                               tags.push(t("Down", "Tắt sẵn"));

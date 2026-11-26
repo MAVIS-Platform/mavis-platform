@@ -1997,7 +1997,7 @@ export function StudioObservability({
       {canvasOnly ? (
         <div
           data-tour="studio-3d-controls-group"
-          className="pointer-events-none absolute bottom-[76px] left-4 z-20 flex flex-col items-start gap-2"
+          className="pointer-events-none absolute bottom-4 left-[76px] z-20 flex flex-col items-start gap-2"
         >
           {view === "3D" && (
             <section

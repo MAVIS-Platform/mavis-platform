@@ -2960,3 +2960,18 @@ test("Studio Deep-Test Wave Fixes: anti-spoiler Outage Recovery, 120s finish tim
   );
   assert.ok(subEvSrc.includes("evidence.data.studioEvidence.finalExerciseEvaluation"));
 });
+
+
+test("E2E #03 Studio HUD: shifts 3D camera controls clear of left tool rail and counts all stage services", () => {
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  assert.match(obsSrc, /data-tour="studio-3d-controls-group"\s+className="pointer-events-none absolute bottom-4 left-\[76px\] z-20/);
+  assert.match(workbenchSrc, /const stageBlocks = \[/);
+  assert.match(workbenchSrc, /\{t\("Service on 3D Stage", "Service trên sân khấu 3D"\)\} \(\{stageBlocks\.length\}\)/);
+});

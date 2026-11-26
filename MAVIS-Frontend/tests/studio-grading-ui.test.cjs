@@ -58,7 +58,7 @@ test("Studio Live uses original MAVIS Architecture Workbench layout with 4 disti
   assert.match(styles, /wireMode: "orthogonal"/);
   assert.match(obs, /studioStyle\?: StudioStyleId/);
   assert.match(obs, /styleCfg\.deckTopFill/);
-  assert.match(obs, /absolute bottom-\[76px\] left-4/);
+  assert.match(obs, /absolute bottom-4 left-\[76px\]/);
   assert.match(live, /const \[studioStyle, setStudioStyle\] = useState<StudioStyleId>\("daylight"\)/);
   assert.match(live, /const \[bottomCollapsed, setBottomCollapsed\] = useState\(true\)/);
   assert.match(live, /defaultView="3D"/);
