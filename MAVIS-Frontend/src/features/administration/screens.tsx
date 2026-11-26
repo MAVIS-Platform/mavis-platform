@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AdminCommandHeader, AdminRuntimeSummary, AdminToolbar, PageResults, Notice } from "./operations";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowUpRight, Boxes, Plus } from "lucide-react";
+import { ArrowUpRight, Boxes, Plus, X } from "lucide-react";
 import { summarizeJobModel } from "@/lib/navigation/admin-job-review";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
@@ -104,6 +104,7 @@ export function Accounts() {
       <AdminToolbar
         fetching={query.isFetching}
         updatedAt={query.dataUpdatedAt}
+        showRefresh={false}
         refresh={() => void query.refetch()}
       >
         <p className="text-sm text-muted-foreground">
@@ -114,22 +115,27 @@ export function Accounts() {
         </p>
         <Button
           size="sm"
-          className="bg-emerald-600 text-white hover:bg-emerald-700"
+          variant={showCreate ? "outline" : "default"}
+          className={showCreate ? undefined : "bg-emerald-600 text-white hover:bg-emerald-700"}
           onClick={() => setShowCreate((open) => !open)}
         >
-          <Plus className="mr-1 size-4" aria-hidden="true" />
+          {showCreate ? (
+            <X className="mr-1 size-4" aria-hidden="true" />
+          ) : (
+            <Plus className="mr-1 size-4" aria-hidden="true" />
+          )}
           {showCreate ? t("Close form", "Đóng biểu mẫu") : t("Create Account", "Tạo tài khoản")}
         </Button>
       </AdminToolbar>
       {showCreate && (
         <div ref={createFormRef}>
           <DetailPanel title={t("Provision Active User Account", "Cấp tài khoản người dùng mới")}>
-            <form onSubmit={(e) => void submitCreate(e)} className="grid gap-3 md:grid-cols-4">
+            <form onSubmit={(e) => void submitCreate(e)} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Input
                 ref={createNameRef}
                 required
                 aria-label={t("Full name", "Họ và tên")}
-                placeholder={t("Full name (e.g. Dr. Nguyen)", "Họ và tên (VD: TS. Nguyễn Văn A)")}
+                placeholder={t("Full name", "Họ và tên")}
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
               />
@@ -145,15 +151,15 @@ export function Accounts() {
               required
               type="password"
               aria-label={t("Initial password", "Mật khẩu ban đầu")}
-              placeholder={t("Password (min 8 chars)", "Mật khẩu (tối thiểu 8 ký tự)")}
+              placeholder={t("Password (min 8 chars)", "Mật khẩu (từ 8 ký tự)")}
               value={password}
               minLength={8}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <select
                 aria-label={t("Account role", "Vai trò tài khoản")}
-                className="h-9 flex-1 rounded-md border bg-card px-3 text-sm"
+                className="h-9 min-w-0 flex-1 whitespace-nowrap rounded-md border bg-card px-2.5 text-sm"
                 value={newRole}
                 onChange={(e) =>
                   setNewRole(e.target.value as "student" | "lecturer" | "admin")
@@ -163,7 +169,7 @@ export function Accounts() {
                 <option value="student">{t("Student", "Sinh viên")}</option>
                 <option value="admin">{t("System Admin", "Quản trị viên")}</option>
               </select>
-              <Button size="sm" disabled={createAcc.isPending}>
+              <Button size="sm" className="shrink-0 whitespace-nowrap" disabled={createAcc.isPending}>
                 {createAcc.isPending ? t("Creating…", "Đang tạo…") : t("Create", "Tạo")}
               </Button>
             </div>
@@ -634,6 +640,7 @@ export function AdminStudioSetup() {
           <AdminToolbar
             fetching={q.isFetching}
             updatedAt={q.dataUpdatedAt}
+            showRefresh={false}
             refresh={() => void q.refetch()}
           />
           <Notice>
@@ -714,6 +721,7 @@ export function RuntimeProfiles() {
           <AdminToolbar
             fetching={q.isFetching}
             updatedAt={q.dataUpdatedAt}
+            showRefresh={false}
             refresh={() => void q.refetch()}
           />
           <Notice>
@@ -1455,6 +1463,7 @@ export function AuditRecords() {
           <AdminToolbar
             fetching={q.isFetching}
             updatedAt={q.dataUpdatedAt}
+            showRefresh={false}
             refresh={() => void q.refetch()}
           >
             <span className="text-sm text-muted-foreground">

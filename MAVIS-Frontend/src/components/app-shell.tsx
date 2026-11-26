@@ -466,7 +466,7 @@ function ShellChrome({
           ) : (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                {t("Learning & analysis", "Học tập & phân tích")}
+                {role === "admin" ? t("Control center", "Trung tâm điều hành") : t("Learning & analysis", "Học tập & phân tích")}
               </p>
               <p className="mt-1 text-xs font-medium">
                 {live
@@ -493,6 +493,7 @@ function ShellChrome({
             preview={Boolean(onPreviewNavigate)}
             onNavigate={navigatePreview}
             label="Global navigation"
+            hideGroupHeading={role === "admin"}
           />
           {groups.length > 0 && !(role === "lecturer" && scope === "workspace") && (
             <div className="mt-5 border-t pt-5">

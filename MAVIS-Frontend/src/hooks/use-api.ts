@@ -26,7 +26,7 @@ export function useSelection() {
 export function useApiQuery<K extends Operation>(
   operation: K,
   input: Request<K>,
-  options: { enabled?: boolean; poll?: boolean; refreshMs?: number } = {},
+  options: { enabled?: boolean; poll?: boolean; refreshMs?: number; staleTime?: number } = {},
 ) {
   const api = useApi();
   const client = useQueryClient();
@@ -34,6 +34,8 @@ export function useApiQuery<K extends Operation>(
     queryKey: ["api", operation, input],
     queryFn: ({ signal }) => api.execute(operation, input, signal),
     enabled: options.enabled ?? true,
+    ...(typeof options.staleTime === "number" ? { staleTime: options.staleTime } : {}),
+    placeholderData: (previousData) => previousData,
     ...(operation === "session" ? { refetchOnWindowFocus: true } : {}),
     refetchInterval: options.refreshMs
       ? Math.max(10000, options.refreshMs)

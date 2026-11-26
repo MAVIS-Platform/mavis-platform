@@ -34,11 +34,13 @@ export function AdminToolbar({
   fetching,
   refresh,
   updatedAt,
+  showRefresh = true,
 }: {
   children?: ReactNode;
   fetching: boolean;
   refresh: () => void;
   updatedAt?: number;
+  showRefresh?: boolean | undefined;
 }) {
   const { t } = useLocale();
   return (
@@ -50,10 +52,12 @@ export function AdminToolbar({
             {t("Updated", "Cập nhật lúc")} {new Date(updatedAt).toLocaleTimeString()}
           </span>
         ) : null}
-        <Button size="sm" variant="outline" disabled={fetching} onClick={refresh}>
-          <RefreshCw className={fetching ? "size-4 animate-spin" : "size-4"} />
-          {fetching ? t("Refreshing…", "Đang tải lại…") : t("Refresh", "Làm mới")}
-        </Button>
+        {showRefresh && (
+          <Button size="sm" variant="outline" disabled={fetching} onClick={refresh}>
+            <RefreshCw className={fetching ? "size-4 animate-spin" : "size-4"} />
+            {fetching ? t("Refreshing…", "Đang tải lại…") : t("Refresh", "Làm mới")}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -101,8 +105,8 @@ export function AdminCommandHeader({
   refreshing?: boolean;
 }) {
   const { t } = useLocale();
-  const health = useApiQuery("adminHealth", {}, { refreshMs: 30000 });
-  const counts = useApiQuery("platformSummary", {});
+  const health = useApiQuery("adminHealth", {}, { refreshMs: 30000, staleTime: 30000 });
+  const counts = useApiQuery("platformSummary", {}, { staleTime: 60000 });
   const isUp = health.data?.status === "UP";
   const isDegraded = health.data?.status === "DEGRADED";
   const pendingOrLocked =
@@ -117,13 +121,13 @@ export function AdminCommandHeader({
     {
       id: "health",
       href: "/administration/health",
-      label: t("System Overview", "Tổng quan Hệ thống"),
+      label: t("Overview", "Tổng quan"),
       icon: Activity,
     },
     {
       id: "users",
       href: "/administration/users",
-      label: t("Users & Roles", "Người dùng & Phân quyền"),
+      label: t("Users & Roles", "Người dùng"),
       icon: Users,
     },
     {
@@ -135,7 +139,7 @@ export function AdminCommandHeader({
     {
       id: "profiles",
       href: "/administration/profiles",
-      label: t("Governance & Audit", "Hồ sơ Runtime & Nhật ký"),
+      label: t("Runtime & Audit", "Runtime & Nhật ký"),
       icon: ShieldCheck,
     },
   ];
@@ -197,7 +201,7 @@ export function AdminCommandHeader({
 
         <nav
           aria-label={t("Admin Control Center Sections", "Khu vực quản trị")}
-          className="mt-5 flex flex-wrap gap-1.5 rounded-xl bg-black/25 p-1.5 backdrop-blur-sm"
+          className="mt-5 flex flex-nowrap gap-1.5 overflow-x-auto rounded-xl bg-black/25 p-1.5 backdrop-blur-sm"
         >
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -208,7 +212,7 @@ export function AdminCommandHeader({
                 key={tab.id}
                 href={tab.href}
                 aria-current={current ? "page" : undefined}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors sm:text-sm ${
+                className={`inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors sm:text-sm ${
                   current
                     ? "bg-white text-slate-900 shadow-sm"
                     : "text-white/85 hover:bg-white/15 hover:text-white"
@@ -253,7 +257,7 @@ export function AdminCommandHeader({
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-primary bg-card p-4 shadow-sm">
           <p className="text-xs font-medium text-muted-foreground">
-            {t("Total Accounts", "Tổng Tài Khoản")}
+            {t("Total Accounts", "Tổng tài khoản")}
           </p>
           <p className="mavis-tabular mt-1.5 text-2xl font-bold text-foreground">
             {counts.data?.users ?? "—"}
@@ -266,7 +270,7 @@ export function AdminCommandHeader({
         </div>
         <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-rose-500 bg-card p-4 shadow-sm">
           <p className="text-xs font-medium text-muted-foreground">
-            {t("Pending & Locked", "Chờ Duyệt & Đang Khóa")}
+            {t("Pending & Locked", "Chờ duyệt & Đang khóa")}
           </p>
           <p className="mavis-tabular mt-1.5 text-2xl font-bold text-foreground">
             {counts.data ? pendingOrLocked : "—"}
@@ -279,7 +283,7 @@ export function AdminCommandHeader({
         </div>
         <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-sky-500 bg-card p-4 shadow-sm">
           <p className="text-xs font-medium text-muted-foreground">
-            {t("Guided Labs & Projects", "Bài Lab & Dự Án")}
+            {t("Guided Labs & Projects", "Bài Lab & Dự án")}
           </p>
           <p className="mavis-tabular mt-1.5 text-2xl font-bold text-foreground">
             {counts.data?.totalGuidedLabs ?? "—"}
@@ -292,7 +296,7 @@ export function AdminCommandHeader({
         </div>
         <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-emerald-500 bg-card p-4 shadow-sm">
           <p className="text-xs font-medium text-muted-foreground">
-            {t("Running Sessions", "Phiên Thực Hành Đang Chạy")}
+            {t("Running Sessions", "Phiên thực hành đang chạy")}
           </p>
           <p className="mavis-tabular mt-1.5 text-2xl font-bold text-foreground">
             {counts.data?.runningSessions ?? "—"}
@@ -337,6 +341,7 @@ export function SystemHealth() {
       <AdminToolbar
         fetching={health.isFetching || runtimeHealth.isFetching}
         updatedAt={health.dataUpdatedAt}
+        showRefresh={false}
         refresh={() => {
           void health.refetch();
           void runtimeHealth.refetch();
@@ -592,7 +597,7 @@ export function SystemHealth() {
           {counts.data && (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <SummaryCard label={t("Projects", "Dự án")} value={counts.data.projects} />
-              <SummaryCard label={t("Total Accounts", "Tổng Tài Khoản")} value={counts.data.users} />
+              <SummaryCard label={t("Total Accounts", "Tổng tài khoản")} value={counts.data.users} />
               <SummaryCard label={t("Active Lecturers", "Giảng viên hoạt động")} value={counts.data.activeLecturers ?? "—"} />
               <SummaryCard label={t("Active Students", "Sinh viên hoạt động")} value={counts.data.activeStudents ?? "—"} />
               <SummaryCard

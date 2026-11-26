@@ -476,3 +476,19 @@ test("Commit #10 strips legacy preview/CB tags across submission views, prevents
 });
 
 
+test("E2E #05 Admin UI: keeps hero tabs single-row, preserves KPIs, deduplicates Refresh and sidebar heading", () => {
+  const ops = read("src/features/administration/operations.tsx");
+  const screens = read("src/features/administration/screens.tsx");
+  const shell = read("src/components/app-shell.tsx");
+  const useApi = read("src/hooks/use-api.ts");
+
+  assert.match(ops, /flex flex-nowrap gap-1\.5 overflow-x-auto/);
+  assert.match(ops, /showRefresh = true/);
+  assert.match(ops, /placeholderData|staleTime: 60000/);
+  assert.match(useApi, /placeholderData: \(previousData\) => previousData/);
+  assert.match(screens, /showCreate \? \(\s*<X className="mr-1 size-4"/);
+  assert.match(screens, /showRefresh=\{false\}/);
+  assert.match(shell, /hideGroupHeading=\{role === "admin"\}/);
+});
+
+
