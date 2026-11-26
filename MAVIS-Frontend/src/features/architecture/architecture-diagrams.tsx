@@ -7,7 +7,10 @@ import type { ArchitecturalModel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/shared/forms";
 import { DrawioEditor } from "./drawio-editor";
-import { ArchitectureSvgViewer } from "./architecture-svg-viewer";
+import {
+  ArchitectureSvgViewer,
+  type DiagramFocusFilter,
+} from "./architecture-svg-viewer";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
@@ -66,6 +69,7 @@ export function ArchitectureDiagrams({
   onServiceChange,
   onKindChange,
   hideKindSelector = false,
+  focusFilter,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
@@ -79,6 +83,7 @@ export function ArchitectureDiagrams({
   onServiceChange?: ((serviceId: string) => void) | undefined;
   onKindChange?: ((kind: DiagramKind, targetServiceId?: string) => void) | undefined;
   hideKindSelector?: boolean;
+  focusFilter?: DiagramFocusFilter | undefined;
 }) {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
@@ -512,6 +517,7 @@ export function ArchitectureDiagrams({
             <ArchitectureSvgViewer
               xml={xml}
               selectedId={selectedId}
+              focusFilter={focusFilter}
               onSelect={resolveCanvasSelect}
               onDoubleClickNode={
                 kind === "CONTAINER"
