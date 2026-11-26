@@ -59,6 +59,30 @@ export const CURATED_SAMPLE_REPOS: readonly CuratedSampleRepo[] = [
     summaryEn: "Minimal Studio Live starter topology for custom course labs.",
     summaryVi: "Khung khởi tạo Studio Live gọn nhẹ cho giảng viên tự thiết kế Lab.",
   },
+  {
+    id: "mavis-hypermesh-enterprise",
+    name: "mavis-hypermesh-enterprise",
+    stack: "Java 21 · Spring Boot 3 · Enterprise",
+    url: "https://github.com/MAVIS-Platform/mavis-hypermesh-enterprise",
+    summaryEn: "Enterprise 10-service e-commerce mesh with Fraud, Pricing, Outbox, and Saga.",
+    summaryVi: "Hệ thống microservices doanh nghiệp 10 dịch vụ với Fraud, Pricing, Outbox và Saga.",
+  },
+  {
+    id: "mavis-omnishop-studio",
+    name: "mavis-omnishop-studio",
+    stack: "Java + .NET 8 · Polyglot Studio Live",
+    url: "https://github.com/MAVIS-Platform/mavis-omnishop-studio",
+    summaryEn: "Polyglot Java & .NET Studio Live architecture with Kafka and multi-container fault injection.",
+    summaryVi: "Hệ thống đa ngôn ngữ Java & .NET Studio Live chạy Kafka và thực nghiệm lỗi đa container.",
+  },
+  {
+    id: "eshop-bookstore-dotnet-microservices",
+    name: "eshop-bookstore-dotnet-microservices",
+    stack: ".NET 8 · C# Microservices",
+    url: "https://github.com/MAVIS-Platform/eshop-bookstore-dotnet-microservices",
+    summaryEn: "Cloud Bookstore .NET 8 microservices with YARP Gateway, EF Core, Redis, RabbitMQ, and OTel.",
+    summaryVi: "Hệ thống nhà sách .NET 8 microservices với YARP Gateway, EF Core, Redis, RabbitMQ và OpenTelemetry.",
+  },
 ];
 
 export function AssignmentSourcePicker({

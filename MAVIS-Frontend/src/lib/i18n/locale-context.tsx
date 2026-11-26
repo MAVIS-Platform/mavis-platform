@@ -15,6 +15,26 @@ interface LocaleContextValue {
 const STORAGE_KEY = "mavis.locale";
 
 export const EXACT_VI_DICTIONARY: Record<string, string> = {
+  "The Lab source failed Runner validation. Ask your lecturer to check the Studio configuration.":
+    "Mã nguồn Lab chưa đạt kiểm tra Runner. Hãy báo Giảng viên kiểm tra lại cấu hình Studio.",
+  "The Lab source has unresolved Runner requirements.":
+    "Mã nguồn Lab còn thiếu điều kiện chạy trên Runner.",
+  "The Lab source Compose was rejected.":
+    "Tệp Docker Compose của Lab chưa hợp lệ với cấu hình Runner.",
+  "Complete a verified Start, Stop, or Scale action before finishing the Studio session.":
+    "Hãy thực hiện ít nhất một thao tác Start, Stop hoặc Scale được xác nhận trước khi kết thúc phiên Studio.",
+  "The Studio Live queue is currently full. Please retry in a few moments as active sessions finish.":
+    "Hàng chờ Studio Live đang đầy. Vui lòng thử lại sau ít phút khi các phiên hiện tại kết thúc.",
+  "One or more local Docker images are missing on the Runner host. Open Studio Settings -> Sync Docker to rebuild before running.":
+    "Runner đang thiếu image Docker cho Lab này. Giảng viên hãy mở Cài đặt Studio -> Đồng bộ Docker để build lại trước khi chạy.",
+  "Runtime profile is invalid or exceeds limits. Re-sync Docker configuration and try again.":
+    "Hồ sơ Runtime chưa hợp lệ hoặc vượt giới hạn tài nguyên. Hãy đồng bộ lại cấu hình Docker rồi thử lại.",
+  "Your Studio Live session must have a verified receipt and at least one confirmed action before submitting.":
+    "Phiên Studio Live cần có biên nhận đã xác minh và ít nhất một thao tác được ghi nhận trước khi nộp bài.",
+  "Capture at least one Studio Snapshot with your observation note before submitting.":
+    "Hãy chụp ít nhất 1 Snapshot kèm ghi chú quan sát trong Studio trước khi nộp bài.",
+  "Finish a verified Studio Live session before submitting this Lab.":
+    "Hãy hoàn thành một phiên Studio Live được xác nhận trước khi nộp bài Lab này.",
   Stats: "Thống kê",
   "Runtime topology and impact": "Sơ đồ runtime và tác động thay đổi",
   "Static dependencies (dashed)": "Phụ thuộc tĩnh (nét đứt)",

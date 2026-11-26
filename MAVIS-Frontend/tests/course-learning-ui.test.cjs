@@ -2622,3 +2622,22 @@ test("E2E #02 Inline Quiz Gate: locks Studio Live until required inline Module Q
   assert.match(studio, /const inlineQuizGateItem = useMemo/);
   assert.match(studio, /Boolean\(inlineQuizGateItem\)/);
 });
+
+
+test("E2E #04 Curated Repos & Runner Error i18n: exposes all 7 curated repos and translates PREFLIGHT_FAILED in VI", () => {
+  const picker = read("src/features/assignments/source-picker.tsx");
+  const localeCtx = read("src/lib/i18n/locale-context.tsx");
+
+  for (const repo of [
+    "Moc-Huong-Shop",
+    "mavis-commerce-seed",
+    "fruit-shop-dotnet-microservices",
+    "mavis-studio-live-demo",
+    "mavis-hypermesh-enterprise",
+    "mavis-omnishop-studio",
+    "eshop-bookstore-dotnet-microservices",
+  ]) {
+    assert.ok(picker.includes(`https://github.com/MAVIS-Platform/${repo}`), `Missing curated repo ${repo}`);
+  }
+  assert.match(localeCtx, /The Lab source failed Runner validation\. Ask your lecturer to check the Studio configuration\./);
+});
