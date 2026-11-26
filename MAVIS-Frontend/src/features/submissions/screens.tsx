@@ -402,7 +402,7 @@ function TeachingSubmissions() {
         >
           {sortedAssignments.length > 0 && (
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <SelectField
                   label={t("Assignment to review", "Lab cần chấm")}
                   value={selectedAssignmentId}
@@ -424,17 +424,6 @@ function TeachingSubmissions() {
                     { value: "PENDING", label: t("Pending review", "Chờ chấm") },
                     { value: "DRAFT", label: t("Draft", "Bản nháp") },
                     { value: "GRADED", label: t("Graded", "Đã chấm") },
-                  ]}
-                />
-                <SelectField
-                  label={t("Outcome", "Kết quả")}
-                  value={outcomeFilter}
-                  onChange={setOutcomeFilter}
-                  options={[
-                    { value: "ALL", label: t("All outcomes", "Tất cả kết quả") },
-                    { value: "PASSED", label: t("Passed", "Đạt") },
-                    { value: "NEEDS_REVISION", label: t("Needs revision", "Cần sửa") },
-                    { value: "PENDING", label: t("Pending", "Chưa có kết quả") },
                   ]}
                 />
               </div>

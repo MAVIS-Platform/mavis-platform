@@ -4,9 +4,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Pause, Pencil, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import {
+  CalendarClock,
+  Check,
+  Copy,
+  History,
+  KeyRound,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { DetailPanel } from "@/components/shared/data";
 import { FormField } from "@/components/shared/forms";
@@ -1193,495 +1209,363 @@ function generateStructuredPasskey(): string {
   return `MAVIS-${suffix}`;
 }
 
+type PasskeyDialogMode = "create" | "renew" | "replace";
+
+function isUsablePasskey(item: PasskeyItem): boolean {
+  return (
+    item.active &&
+    Boolean(item.code) &&
+    !item.revokedAt &&
+    new Date(item.expiresAt).getTime() > Date.now() &&
+    (item.maxUses == null || item.usedCount < item.maxUses)
+  );
+}
+
 export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const t = useCourseText();
   const passkeys = useCoursePasskeys(workspaceId);
   const createKey = useCreateCoursePasskey(workspaceId);
   const updateKey = useUpdateCoursePasskey(workspaceId);
-  const deleteKey = useDeleteCoursePasskey(workspaceId);
   const status = useQuery({
     queryKey: passkeyKey(workspaceId),
-    queryFn: ({ signal }) => courseApi<KeyStatus>(`workspaces/${workspaceId}/course-passkey`, { signal }),
+    queryFn: ({ signal }) =>
+      courseApi<KeyStatus>(`workspaces/${workspaceId}/course-passkey`, { signal }),
   });
-
-  const [showCreate, setShowCreate] = useState(false);
-  const [customCode, setCustomCode] = useState(() => generateStructuredPasskey());
+  const [dialogMode, setDialogMode] = useState<PasskeyDialogMode | null>(null);
   const [validHours, setValidHours] = useState(720);
-  const [maxUses, setMaxUses] = useState<string>("");
+  const [maxUses, setMaxUses] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editCode, setEditCode] = useState("");
-  const [editLabel, setEditLabel] = useState("");
-  const [editHours, setEditHours] = useState(720);
-  const [editMaxUses, setEditMaxUses] = useState<string>("");
+  const list = [...(passkeys.data ?? [])].sort(
+    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  );
+  const current = list.find(isUsablePasskey) ?? null;
+  const history = list.filter((item) => item.id !== current?.id);
+  const mutating = createKey.isPending || updateKey.isPending;
+  const maxUsesInvalid =
+    maxUses.trim() !== "" &&
+    (!Number.isInteger(Number(maxUses)) || Number(maxUses) < 1);
 
-  const list = passkeys.data ?? [];
-  const mutating = createKey.isPending || updateKey.isPending || deleteKey.isPending;
-  const createMaxUsesInvalid =
-    maxUses.trim() !== "" && (!Number.isInteger(Number(maxUses)) || Number(maxUses) < 1);
+  const openDialog = (mode: PasskeyDialogMode) => {
+    setValidHours(mode === "renew" ? 720 : 720);
+    setMaxUses(
+      mode === "renew" && current?.maxUses != null ? String(current.maxUses) : "",
+    );
+    setDialogMode(mode);
+  };
 
-  const handleCopy = (id: string, value: string) => {
+  const handleCopy = (item: PasskeyItem) => {
+    if (!item.code) return;
     const confirmCopied = () => {
-      setCopiedId(id);
-      window.setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 2200);
+      setCopiedId(item.id);
+      window.setTimeout(() => setCopiedId((value) => (value === item.id ? null : value)), 2200);
     };
     const fallbackCopy = () => {
-      try {
-        const input = document.createElement("textarea");
-        input.value = value;
-        input.style.position = "fixed";
-        input.style.opacity = "0";
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand("copy");
-        document.body.removeChild(input);
-        confirmCopied();
-      } catch {
-        setCopiedId(null);
-      }
+      const input = document.createElement("textarea");
+      input.value = item.code ?? "";
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+      confirmCopied();
     };
     if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(value).then(confirmCopied, fallbackCopy);
+      void navigator.clipboard.writeText(item.code).then(confirmCopied, fallbackCopy);
     } else {
       fallbackCopy();
     }
   };
 
-  const beginEdit = (item: PasskeyItem) => {
-    setEditingId(item.id);
-    setEditCode(item.code ?? "");
-    setEditLabel(item.label ?? "");
-    // Leave validHours blank (0) by default so editing code/label/maxUses preserves existing expiry.
-    setEditHours(0);
-    setEditMaxUses(item.maxUses != null ? String(item.maxUses) : "");
+  const submitDialog = async () => {
+    const parsedMaxUses = Number(maxUses);
+    if (maxUsesInvalid) return;
+    const boundedHours = Math.min(8760, Math.max(1, validHours || 720));
+    try {
+      if (dialogMode === "renew" && current) {
+        await updateKey.mutateAsync({
+          passkeyId: current.id,
+          validHours: boundedHours,
+          ...(maxUses.trim() ? { maxUses: parsedMaxUses } : {}),
+        });
+      } else {
+        if (dialogMode === "replace" && current) {
+          await Promise.all(
+            list
+              .filter((item) => item.active && !item.revokedAt)
+              .map((item) => updateKey.mutateAsync({ passkeyId: item.id, active: false })),
+          );
+        }
+        await createKey.mutateAsync({
+          customCode: generateStructuredPasskey(),
+          validHours: boundedHours,
+          ...(maxUses.trim() ? { maxUses: parsedMaxUses } : {}),
+        });
+      }
+      setDialogMode(null);
+    } catch {
+      // Mutation errors remain visible in the dialog context for a safe retry.
+    }
   };
+
+  const mutationError = createKey.error ?? updateKey.error;
 
   return (
     <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-0.5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
           <h3 className="flex items-center gap-2 text-base font-semibold">
             <KeyRound className="size-4 text-teal-600 dark:text-teal-400" aria-hidden="true" />
-            {t("Enrollment Passkeys", "Quản lý mã Passkey")}
+            {t("Class Passkey", "Passkey lớp học")}
           </h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {t(
-              "Students join this class using an active passkey. Click any code to copy.",
-              "Sinh viên dùng mã Passkey đang hoạt động để vào lớp. Bấm vào mã để sao chép nhanh.",
+              "Share the current Passkey so students can enroll in this class.",
+              "Chia sẻ Passkey hiện tại để sinh viên ghi danh vào lớp.",
             )}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {status.data && (
-            <span className="rounded-full border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
-              {t("Enrolled", "Đã ghi danh")}: {status.data.enrolledStudents}/
-              {status.data.maxStudents ?? t("Unlimited", "Không giới hạn")}
-            </span>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            variant={showCreate ? "outline" : "default"}
-            onClick={() =>
-              setShowCreate((open) => {
-                if (!open) setCustomCode(generateStructuredPasskey());
-                return !open;
-              })
-            }
-          >
-            {showCreate ? (
-              <>
-                <X className="mr-1.5 size-3.5" aria-hidden="true" />
-                {t("Cancel", "Hủy")}
-              </>
-            ) : (
-              <>
-                <Plus className="mr-1.5 size-3.5" aria-hidden="true" />
-                {t("New Passkey", "Tạo Passkey mới")}
-              </>
-            )}
-          </Button>
-        </div>
+        {status.data && (
+          <span className="rounded-full border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
+            {t("Enrolled", "Đã ghi danh")}: {status.data.enrolledStudents}/
+            {status.data.maxStudents ?? t("Unlimited", "Không giới hạn")}
+          </span>
+        )}
       </div>
 
-      {showCreate && (
-        <form
-          className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_9rem_11rem_auto]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const parsedMax = Number(maxUses);
-            if (maxUses.trim() !== "" && (!Number.isInteger(parsedMax) || parsedMax < 1)) {
-              return;
-            }
-            createKey.mutate(
-              {
-                customCode: customCode || generateStructuredPasskey(),
-                validHours: validHours > 0 ? Math.min(8760, validHours) : 720,
-                ...(maxUses.trim() ? { maxUses: parsedMax } : {}),
-              },
-              {
-                onSuccess: () => {
-                  setCustomCode(generateStructuredPasskey());
-                  setMaxUses("");
-                  setShowCreate(false);
-                },
-              },
-            );
-          }}
-        >
-          <FormField label={t("Passkey", "Mã Passkey")}>
-            {(props) => (
-              <div className="flex items-center gap-1.5">
-                <Input
-                  {...props}
-                  readOnly
-                  className="bg-muted/40 font-mono font-semibold tracking-wide"
-                  value={customCode}
-                />
-                <Button
+      {passkeys.isPending ? (
+        <p role="status" className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+          {t("Loading Passkey…", "Đang tải Passkey…")}
+        </p>
+      ) : current ? (
+        <div className="rounded-xl border bg-muted/15 p-4 sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
                   type="button"
-                  size="icon"
-                  variant="outline"
-                  aria-label={t("Regenerate passkey", "Tạo mã mới")}
-                  title={t("Regenerate passkey", "Tạo mã mới")}
-                  onClick={() => setCustomCode(generateStructuredPasskey())}
+                  onClick={() => handleCopy(current)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-teal-500/30 bg-teal-500/10 px-3 py-2 font-mono text-base font-bold tracking-wide text-teal-700 transition hover:bg-teal-500/20 dark:text-teal-300"
                 >
-                  <RefreshCw className="size-4" aria-hidden="true" />
-                </Button>
+                  {copiedId === current.id ? t("Copied!", "Đã sao chép!") : current.code}
+                  {copiedId === current.id ? (
+                    <Check className="size-4" aria-hidden="true" />
+                  ) : (
+                    <Copy className="size-4" aria-hidden="true" />
+                  )}
+                </button>
+                <Badge variant="success">{t("Valid", "Còn hạn")}</Badge>
               </div>
-            )}
-          </FormField>
-          <FormField label={t("Valid (hours)", "Hiệu lực (giờ)")}>
-            {(props) => (
-              <Input
-                {...props}
-                type="number"
-                min={1}
-                max={8760}
-                required
-                value={validHours || ""}
-                onChange={(event) => setValidHours(Number(event.target.value))}
-              />
-            )}
-          </FormField>
-          <FormField label={t("Max uses", "Giới hạn lượt")}>
-            {(props) => (
-              <div>
-                <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                  <CalendarClock className="size-4" aria-hidden="true" />
+                  {t("Expires", "Hết hạn")}: {new Date(current.expiresAt).toLocaleString()}
+                </span>
+                <span>
+                  {t("Used", "Đã sử dụng")}: {current.usedCount}/
+                  {current.maxUses ?? t("Unlimited", "Không giới hạn")}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => openDialog("renew")}>
+                <CalendarClock className="mr-1.5 size-4" aria-hidden="true" />
+                {t("Extend", "Gia hạn")}
+              </Button>
+              <Button type="button" onClick={() => openDialog("replace")}>
+                <RefreshCw className="mr-1.5 size-4" aria-hidden="true" />
+                {t("Regenerate", "Tạo lại mã")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid justify-items-center gap-3 rounded-xl border border-dashed p-7 text-center">
+          <span className="grid size-11 place-items-center rounded-full bg-primary/10 text-primary">
+            <KeyRound className="size-5" aria-hidden="true" />
+          </span>
+          <div>
+            <p className="font-semibold">{t("No current Passkey", "Chưa có Passkey")}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t(
+                "Create a Passkey so students can enroll in this class.",
+                "Tạo Passkey để sinh viên có thể ghi danh vào lớp.",
+              )}
+            </p>
+          </div>
+          <Button type="button" onClick={() => openDialog("create")}>
+            <Plus className="mr-1.5 size-4" aria-hidden="true" />
+            {t("Create Passkey", "Tạo Passkey")}
+          </Button>
+        </div>
+      )}
+
+      {mutationError && (
+        <p role="alert" className="text-sm text-destructive">
+          {mutationError.message ||
+            t("Could not update the Passkey.", "Không thể cập nhật Passkey.")}
+        </p>
+      )}
+
+      {history.length > 0 && (
+        <details className="group rounded-xl border">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-medium">
+            <span className="inline-flex items-center gap-2">
+              <History className="size-4 text-muted-foreground" aria-hidden="true" />
+              {t("Passkey history", "Lịch sử Passkey")} ({history.length})
+            </span>
+            <span className="text-xs text-muted-foreground group-open:hidden">
+              {t("Show", "Xem")}
+            </span>
+          </summary>
+          <div className="overflow-x-auto border-t">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-muted/40 text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">{t("Passkey", "Mã Passkey")}</th>
+                  <th className="px-4 py-2 font-medium">{t("Period", "Thời gian sử dụng")}</th>
+                  <th className="px-4 py-2 font-medium">{t("Usage", "Đã dùng")}</th>
+                  <th className="px-4 py-2 font-medium">{t("Status", "Trạng thái")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {history.map((item) => {
+                  const expired = new Date(item.expiresAt).getTime() <= Date.now();
+                  const exhausted = item.maxUses != null && item.usedCount >= item.maxUses;
+                  return (
+                    <tr key={item.id}>
+                      <td className="px-4 py-3 font-mono font-semibold">{item.code ?? "••••"}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                        {new Date(item.createdAt).toLocaleDateString()} – {new Date(item.expiresAt).toLocaleDateString()}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                        {item.usedCount}/{item.maxUses ?? "∞"}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        {expired
+                          ? t("Expired", "Đã hết hạn")
+                          : exhausted
+                            ? t("Usage limit reached", "Đã hết lượt")
+                            : t("Replaced", "Đã thay thế")}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+
+      <Dialog open={dialogMode != null} onOpenChange={(open) => !open && setDialogMode(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {dialogMode === "renew"
+                ? t("Extend Passkey", "Gia hạn Passkey")
+                : dialogMode === "replace"
+                  ? t("Regenerate Passkey", "Tạo lại Passkey")
+                  : t("Create Passkey", "Tạo Passkey")}
+            </DialogTitle>
+            <DialogDescription>
+              {dialogMode === "replace"
+                ? t(
+                    "The current Passkey will stop working immediately. Students who have not enrolled must use the new code.",
+                    "Passkey hiện tại sẽ mất hiệu lực ngay. Sinh viên chưa ghi danh phải sử dụng mã mới.",
+                  )
+                : t(
+                    "Choose how long the Passkey remains valid and optionally limit enrollments.",
+                    "Chọn thời hạn sử dụng và giới hạn số lượt ghi danh nếu cần.",
+                  )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{t("Validity", "Thời hạn")}</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { hours: 24, label: t("24 hours", "24 giờ") },
+                  { hours: 168, label: t("7 days", "7 ngày") },
+                  { hours: 720, label: t("30 days", "30 ngày") },
+                ].map((option) => (
+                  <Button
+                    key={option.hours}
+                    type="button"
+                    variant={validHours === option.hours ? "default" : "outline"}
+                    onClick={() => setValidHours(option.hours)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+              <FormField label={t("Custom duration (hours)", "Thời hạn tùy chỉnh (giờ)")}>
+                {(props) => (
                   <Input
                     {...props}
                     type="number"
                     min={1}
-                    max={10000}
-                    aria-invalid={createMaxUsesInvalid || undefined}
-                    className={createMaxUsesInvalid ? "border-destructive focus-visible:ring-destructive" : undefined}
-                    placeholder={t("Unlimited", "Không giới hạn")}
-                    value={maxUses}
-                    onChange={(event) => setMaxUses(event.target.value)}
+                    max={8760}
+                    value={validHours}
+                    onChange={(event) => setValidHours(Number(event.target.value))}
                   />
-                  {maxUses !== "" && (
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="outline"
-                      aria-label={t("Reset to unlimited", "Đặt lại không giới hạn")}
-                      title={t("Reset to unlimited", "Đặt lại không giới hạn")}
-                      onClick={() => setMaxUses("")}
-                    >
-                      <X className="size-4" aria-hidden="true" />
-                    </Button>
-                  )}
-                </div>
-                {createMaxUsesInvalid && (
-                  <p role="alert" className="mt-1 text-[11px] font-medium text-destructive">
-                    {t("Must be ≥ 1 (or leave blank for unlimited).", "Nhập số nguyên ≥ 1, hoặc để trống nếu không giới hạn.")}
-                  </p>
                 )}
-              </div>
+              </FormField>
+            </div>
+            <FormField label={t("Enrollment limit", "Giới hạn sinh viên")}>
+              {(props) => (
+                <Input
+                  {...props}
+                  type="number"
+                  min={1}
+                  max={10000}
+                  aria-invalid={maxUsesInvalid || undefined}
+                  className={
+                    maxUsesInvalid
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : undefined
+                  }
+                  placeholder={t("Unlimited", "Không giới hạn")}
+                  value={maxUses}
+                  onChange={(event) => setMaxUses(event.target.value)}
+                />
+              )}
+            </FormField>
+            {maxUsesInvalid && (
+              <p role="alert" className="text-sm text-destructive">
+                {t(
+                  "Enter an integer of at least 1, or leave blank for unlimited.",
+                  "Nhập số nguyên từ 1 trở lên, hoặc để trống nếu không giới hạn.",
+                )}
+              </p>
             )}
-          </FormField>
-          <div className="flex items-end">
-            <Button type="submit" className="w-full" disabled={mutating || createMaxUsesInvalid}>
-              {createKey.isPending ? t("Creating…", "Đang tạo…") : t("Create", "Tạo mã")}
-            </Button>
+            {mutationError && (
+              <p role="alert" className="text-sm text-destructive">
+                {mutationError.message ||
+                  t("Could not update the Passkey.", "Không thể cập nhật Passkey.")}
+              </p>
+            )}
           </div>
-        </form>
-      )}
-
-      {(createKey.error || updateKey.error || deleteKey.error) && (
-        <p role="alert" className="text-sm text-destructive">
-          {(createKey.error ?? updateKey.error ?? deleteKey.error)?.message ??
-            t("Could not update Passkey. Please verify code uniqueness and format.", "Chưa thể cập nhật Passkey. Vui lòng kiểm tra định dạng/trùng mã.")}
-        </p>
-      )}
-
-      {passkeys.isPending ? (
-        <p className="text-xs text-muted-foreground">{t("Loading passkeys…", "Đang tải danh sách mã lớp…")}</p>
-      ) : list.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-5 text-center text-xs text-muted-foreground">
-          {t("No passkeys yet. Click New Passkey to generate one for your students.", "Chưa có mã lớp nào. Bấm Tạo Passkey mới để tạo mã cho sinh viên.")}
-        </p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">{t("Passkey", "Mã Passkey")}</th>
-                <th className="hidden whitespace-nowrap px-2 py-2 font-medium xl:table-cell">{t("Label", "Nhãn")}</th>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">{t("Usage", "Đã dùng")}</th>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">{t("Expires", "Hết hạn")}</th>
-                <th className="whitespace-nowrap px-2 py-2 font-medium">{t("Status", "Trạng thái")}</th>
-                <th className="whitespace-nowrap px-2 py-2 text-right font-medium">{t("Actions", "Thao tác")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {list.map((item) => {
-                const expired = new Date(item.expiresAt).getTime() <= Date.now();
-                const isEditing = editingId === item.id;
-                const isCopied = copiedId === item.id;
-                const editMaxUsesInvalid =
-                  isEditing &&
-                  editMaxUses.trim() !== "" &&
-                  (!Number.isInteger(Number(editMaxUses)) || Number(editMaxUses) < 1);
-                return (
-                  <tr key={item.id} className="align-middle hover:bg-muted/20">
-                    <td className="px-2 py-2 font-mono">
-                      {isEditing ? (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            readOnly
-                            className="h-7 w-28 bg-muted/40 font-mono text-xs"
-                            value={editCode}
-                          />
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="outline"
-                            className="size-7 shrink-0"
-                            aria-label={t("Regenerate passkey", "Tạo mã mới")}
-                            title={t("Regenerate passkey", "Tạo mã mới")}
-                            onClick={() => setEditCode(generateStructuredPasskey())}
-                          >
-                            <RefreshCw className="size-3.5" aria-hidden="true" />
-                          </Button>
-                        </div>
-                      ) : item.code ? (
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(item.id, item.code!)}
-                          title={t("Click to copy passkey", "Bấm để sao chép")}
-                          aria-live="polite"
-                          className={`inline-flex whitespace-nowrap items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-xs font-semibold transition ${
-                            isCopied
-                              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                              : "border-teal-500/30 bg-teal-500/10 text-teal-700 hover:bg-teal-500/20 dark:text-teal-300"
-                          }`}
-                        >
-                          <span>{isCopied ? t("Copied!", "Đã chép!") : item.code}</span>
-                          {isCopied ? (
-                            <Check className="size-3 text-emerald-500" aria-hidden="true" />
-                          ) : (
-                            <Copy className="size-3 opacity-70" aria-hidden="true" />
-                          )}
-                        </button>
-                      ) : (
-                        <span className="text-muted-foreground">••••</span>
-                      )}
-                    </td>
-                    <td className="hidden px-2 py-2 text-foreground/90 xl:table-cell">
-                      {isEditing ? (
-                        <Input
-                          className="h-7 w-32 text-xs"
-                          value={editLabel}
-                          onChange={(e) => setEditLabel(e.target.value)}
-                        />
-                      ) : (
-                        <span
-                          className="block max-w-40 truncate"
-                          title={
-                            item.label === "Mã ghi danh lớp học" || item.label === "Class Passkey"
-                              ? t("Class Passkey", "Mã ghi danh lớp học")
-                              : item.label || undefined
-                          }
-                        >
-                          {item.label === "Mã ghi danh lớp học" || item.label === "Class Passkey" ? (
-                            t("Class Passkey", "Mã ghi danh lớp học")
-                          ) : (
-                            item.label || <span className="text-muted-foreground">—</span>
-                          )}
-                        </span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2 tabular-nums text-muted-foreground">
-                      {isEditing ? (
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number"
-                              className={`h-7 w-16 text-xs ${editMaxUsesInvalid ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                              min={1}
-                              placeholder="∞"
-                              aria-invalid={editMaxUsesInvalid || undefined}
-                              value={editMaxUses}
-                              onChange={(e) => setEditMaxUses(e.target.value)}
-                            />
-                            {editMaxUses !== "" && (
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="outline"
-                                className="size-7 shrink-0"
-                                aria-label={t("Reset to unlimited", "Đặt lại không giới hạn")}
-                                title={t("Reset to unlimited", "Đặt lại không giới hạn")}
-                                onClick={() => setEditMaxUses("")}
-                              >
-                                <X className="size-3.5" aria-hidden="true" />
-                              </Button>
-                            )}
-                          </div>
-                          {editMaxUsesInvalid && (
-                            <p role="alert" className="text-[11px] font-medium text-destructive">
-                              {t("Must be ≥ 1", "Phải ≥ 1")}
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        `${item.usedCount} / ${item.maxUses ?? "∞"}`
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          className="h-7 w-16 text-xs"
-                          min={1}
-                          value={editHours || ""}
-                          onChange={(e) => setEditHours(Number(e.target.value))}
-                        />
-                      ) : (
-                        new Date(item.expiresAt).toLocaleDateString()
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2">
-                      {item.active ? (
-                        <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-400">
-                          <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                          {t("Active", "Đang hoạt động")}
-                        </span>
-                      ) : expired ? (
-                        <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border border-rose-500/25 bg-rose-500/10 px-2 py-0.5 font-medium text-rose-700 dark:text-rose-400">
-                          <span className="size-1.5 rounded-full bg-rose-500" aria-hidden="true" />
-                          {t("Expired", "Đã hết hạn")}
-                        </span>
-                      ) : (
-                        <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-medium text-muted-foreground">
-                          <span className="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />
-                          {t("Paused", "Đang tạm khóa")}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <div className="flex flex-nowrap items-center justify-end gap-1">
-                        {isEditing ? (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="h-7 whitespace-nowrap px-2 text-xs"
-                              disabled={mutating || editMaxUsesInvalid}
-                              onClick={() => {
-                                const parsedEditMax = Number(editMaxUses);
-                                if (editMaxUses.trim() !== "" && (!Number.isInteger(parsedEditMax) || parsedEditMax < 1)) {
-                                  return;
-                                }
-                                updateKey.mutate(
-                                  {
-                                    passkeyId: item.id,
-                                    customCode: editCode.trim() || undefined,
-                                    label: editLabel.trim() || undefined,
-                                    validHours: editHours > 0 ? Math.min(8760, editHours) : undefined,
-                                    maxUses: editMaxUses.trim() ? parsedEditMax : undefined,
-                                  },
-                                  { onSuccess: () => setEditingId(null) },
-                                );
-                              }}
-                            >
-                              {t("Save", "Lưu")}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 whitespace-nowrap px-2 text-xs"
-                              onClick={() => setEditingId(null)}
-                            >
-                              {t("Cancel", "Hủy")}
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 whitespace-nowrap px-1.5 text-xs"
-                              disabled={mutating}
-                              onClick={() => beginEdit(item)}
-                            >
-                              <Pencil className="mr-1 size-3" aria-hidden="true" />
-                              {t("Edit", "Sửa")}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 whitespace-nowrap px-1.5 text-xs"
-                              disabled={mutating}
-                              onClick={() =>
-                                updateKey.mutate({ passkeyId: item.id, active: !item.active })
-                              }
-                            >
-                              {item.active ? (
-                                <>
-                                  <Pause className="mr-1 size-3" aria-hidden="true" />
-                                  {t("Pause", "Tạm khóa")}
-                                </>
-                              ) : (
-                                <>
-                                  <Play className="mr-1 size-3" aria-hidden="true" />
-                                  {t("Activate", "Bật lại")}
-                                </>
-                              )}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              disabled={mutating}
-                              aria-label={t("Delete passkey", "Xóa mã lớp")}
-                              title={t("Delete", "Xóa")}
-                              onClick={() => {
-                                if (window.confirm(t("Delete this Passkey permanently?", "Xóa vĩnh viễn mã lớp này?"))) {
-                                  deleteKey.mutate(item.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="size-3.5" aria-hidden="true" />
-                              <span className="sr-only">{t("Delete", "Xóa")}</span>
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDialogMode(null)}>
+              {t("Cancel", "Hủy")}
+            </Button>
+            <Button
+              type="button"
+              disabled={mutating || maxUsesInvalid}
+              onClick={() => void submitDialog()}
+            >
+              {mutating
+                ? t("Saving…", "Đang lưu…")
+                : dialogMode === "renew"
+                  ? t("Extend", "Gia hạn")
+                  : dialogMode === "replace"
+                    ? t("Regenerate", "Tạo lại mã")
+                    : t("Create Passkey", "Tạo Passkey")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

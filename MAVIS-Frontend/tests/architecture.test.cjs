@@ -5237,7 +5237,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(membersHtml, /Student A/);
   assert.match(membersHtml, /Settings/);
   const settingsHtml = renderComp(WorkspaceMembers, "ws-swd", "tab=settings");
-  assert.match(settingsHtml, /Enrollment Passkeys/);
+  assert.match(settingsHtml, /Class Passkey/);
   assert.match(
     settingsHtml,
     /Class settings/,

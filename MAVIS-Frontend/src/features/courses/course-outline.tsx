@@ -242,11 +242,6 @@ function CourseOutlineBody({
       workspace?.description ??
       "",
   );
-  const courseStatus = published
-    ? `v${published.version}`
-    : isCatalogFallback
-      ? t("Coursera Standard V2", "Giáo trình chuẩn V2")
-      : draft?.status ?? "";
   const labs = new Map((roadmap.data?.labs ?? []).map((lab) => [lab.assignmentId, lab]));
   const assignmentById = new Map((assignments.data ?? []).map((assignment) => [assignment.id, assignment]));
   const isCsharpCourse =
@@ -445,10 +440,6 @@ function CourseOutlineBody({
         <div className="space-y-3 px-5 py-5 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-                {t("Course Syllabus", "Đề cương học phần")}
-                {courseStatus ? ` · ${courseStatus}` : ""}
-              </p>
               <h2
                 id="course-outline-title"
                 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl"
