@@ -477,4 +477,38 @@ public class RuntimeSessionResponseDTO {
         }
         return node.get(field).asDouble();
     }
+
+    /** Strips Lecturer-only rubric/outage spoilers from scenarioConfig before returning to a Student. */
+    public static RuntimeSessionResponseDTO redactForStudent(RuntimeSessionResponseDTO dto) {
+        if (dto == null || dto.getScenarioConfig() == null || !dto.getScenarioConfig().isObject()) {
+            return dto;
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode cfg =
+                ((com.fasterxml.jackson.databind.node.ObjectNode) dto.getScenarioConfig()).deepCopy();
+        boolean isOutageRecovery = false;
+        if (cfg.path("exerciseCriteria").isObject()) {
+            com.fasterxml.jackson.databind.node.ObjectNode criteria =
+                    (com.fasterxml.jackson.databind.node.ObjectNode) cfg.get("exerciseCriteria");
+            isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(criteria.path("exerciseType").asText(""));
+            criteria.remove(java.util.List.of("rules", "minImpactF1", "expectedAffectedServices"));
+            if (isOutageRecovery) {
+                criteria.remove("targetChangeAction");
+            }
+        }
+        if (isOutageRecovery && cfg.path("profile").path("studioTopology").isObject()) {
+            com.fasterxml.jackson.databind.node.ObjectNode topo =
+                    (com.fasterxml.jackson.databind.node.ObjectNode) cfg.path("profile").path("studioTopology");
+            for (String key : java.util.List.of("blocks", "connections")) {
+                if (topo.path(key).isArray()) {
+                    for (JsonNode item : topo.path(key)) {
+                        if (item.isObject()) {
+                            ((com.fasterxml.jackson.databind.node.ObjectNode) item).put("initiallyStopped", false);
+                        }
+                    }
+                }
+            }
+        }
+        dto.setScenarioConfig(cfg);
+        return dto;
+    }
 }

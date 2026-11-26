@@ -109,6 +109,16 @@ export const publicErrors = {
     "Published Labs are part of the course roadmap and cannot be deleted.",
   ASSIGNMENT_PINNED_SOURCE: "A published Lab keeps its pinned reference source.",
   ACCOUNT_EMAIL_EXISTS: "An account with this email already exists.",
+  APPROVAL_SUMMARY_REQUIRED: "Enter written feedback before publishing this grade.",
+  REJECTION_REASON_REQUIRED: "Enter revision instructions before returning this submission.",
+  THEORY_ANSWER_REQUIRED: "Enter your written architectural explanation before submitting.",
+  LAB_SUBMISSION_AWAITING_REVIEW:
+    "Your submission is awaiting Lecturer grading and cannot be replaced until reviewed.",
+  USER_ACTIVE_SESSION_LIMIT:
+    "You already have an active Studio Live session running in another Lab. Stop or finish it first.",
+  RUN_COOLDOWN_ACTIVE: "Please wait a few seconds before starting another Studio Live session.",
+  STUDIO_ACTION_NOT_ALLOWED: "This Docker action is not enabled for this Lab exercise.",
+  REPLICA_BOUNDS_EXCEEDED: "Replica count must be between 1 and 3.",
 } as const;
 export type PublicErrorCode = keyof typeof publicErrors;
 // Match only reviewed business messages. Arbitrary upstream text can contain secrets.
@@ -136,6 +146,8 @@ export function backendErrorCode(
   }
   if (/^submissions\/[^/]+\/review$/.test(path)) {
     if (status === 409 && message === "PASSED_LAB_REVIEW_FINAL") return "REVIEW_PASSED_FINAL";
+    if (status === 400 && message === "APPROVAL_SUMMARY_REQUIRED") return "APPROVAL_SUMMARY_REQUIRED";
+    if (status === 400 && message === "REJECTION_REASON_REQUIRED") return "REJECTION_REASON_REQUIRED";
     if (status === 400 && message === "SNAPSHOT_GRADES_INCOMPLETE") return "REVIEW_SNAPSHOT_GRADES_INCOMPLETE";
     if (status === 400 && message === "INVALID_SNAPSHOT_GRADE_IDS") return "REVIEW_SNAPSHOT_GRADES_INVALID";
     if (status === 400 && ["SUBMISSION_SNAPSHOTS_REQUIRED", "INVALID_SUBMISSION_SNAPSHOTS"].includes(message))
@@ -143,6 +155,9 @@ export function backendErrorCode(
   }
   if (path === "submissions") {
     if (status === 409 && message === "LAB_SUBMISSION_ALREADY_PASSED") return "SUBMISSION_LAB_PASSED";
+    if (status === 409 && message === "LAB_SUBMISSION_AWAITING_REVIEW") return "LAB_SUBMISSION_AWAITING_REVIEW";
+    if ((status === 422 || status === 400) && message === "THEORY_ANSWER_REQUIRED")
+      return "THEORY_ANSWER_REQUIRED";
     if ((status === 422 || status === 400) && message === "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED")
       return "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED";
     if (status === 400 && message === "SUBMISSION_SNAPSHOT_IDS_INVALID")
@@ -234,6 +249,14 @@ export function backendErrorCode(
     return "ASSIGNMENT_PINNED_SOURCE";
   if (status === 409 && message.startsWith("Email đã tồn tại trong hệ thống"))
     return "ACCOUNT_EMAIL_EXISTS";
+  if (status === 409 && (message === "USER_ACTIVE_SESSION_LIMIT" || message.startsWith("You already have an active Studio Live session")))
+    return "USER_ACTIVE_SESSION_LIMIT";
+  if (status === 409 && (message === "RUN_COOLDOWN_ACTIVE" || message.startsWith("Please wait ") && message.includes("Studio Live session")))
+    return "RUN_COOLDOWN_ACTIVE";
+  if (status === 403 && message === "STUDIO_ACTION_NOT_ALLOWED")
+    return "STUDIO_ACTION_NOT_ALLOWED";
+  if (status === 400 && message.startsWith("REPLICA_BOUNDS_EXCEEDED"))
+    return "REPLICA_BOUNDS_EXCEEDED";
   return undefined;
 }
 export function publicErrorCode(value: unknown): PublicErrorCode | undefined {

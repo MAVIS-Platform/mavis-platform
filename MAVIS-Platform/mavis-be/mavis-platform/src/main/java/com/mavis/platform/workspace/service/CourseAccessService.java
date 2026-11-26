@@ -384,12 +384,16 @@ public class CourseAccessService {
         workspace.setCourseMode(true);
         workspaces.save(workspace);
 
-        int validHours = (req != null && req.validHours() != null && req.validHours() > 0)
-                ? req.validHours()
-                : 720;
+        if (req != null && req.validHours() != null && (req.validHours() < 1 || req.validHours() > 8760)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Valid hours must be between 1 and 8760");
+        }
+        int validHours = (req != null && req.validHours() != null) ? req.validHours() : 720;
         String label = (req != null && req.label() != null && !req.label().isBlank())
                 ? req.label().trim()
                 : "Mã ghi danh lớp học";
+        if (label.length() > 120) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Passkey label must be 120 characters or fewer");
+        }
         Integer maxUses = req != null ? req.maxUses() : null;
         if (maxUses != null && maxUses < 1) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Max uses must be at least 1");
@@ -472,10 +476,19 @@ public class CourseAccessService {
             nextDigest = candidateDigest;
         }
 
+        if (req != null && req.validHours() != null && (req.validHours() < 1 || req.validHours() > 8760)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Valid hours must be between 1 and 8760");
+        }
+        if (req != null && req.maxUses() != null && req.maxUses() < 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Max uses must be at least 1");
+        }
         String nextLabel = (req != null && req.label() != null && !req.label().isBlank())
                 ? req.label().trim()
                 : existing.label();
-        OffsetDateTime nextExpires = (req != null && req.validHours() != null && req.validHours() > 0)
+        if (nextLabel != null && nextLabel.length() > 120) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Passkey label must be 120 characters or fewer");
+        }
+        OffsetDateTime nextExpires = (req != null && req.validHours() != null)
                 ? OffsetDateTime.now().plusHours(req.validHours())
                 : existing.expiresAt();
         Integer nextMaxUses = (req != null && req.maxUses() != null)

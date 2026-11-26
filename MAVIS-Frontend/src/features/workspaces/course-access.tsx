@@ -706,16 +706,19 @@ export type StudentLabContext = {
   } | null;
 };
 
+const UUID_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function useStudentLabContext(workspaceId: string, assignmentId: string, enabled = true) {
   const client = useApi();
+  const validIds = UUID_SEGMENT_RE.test(workspaceId) && UUID_SEGMENT_RE.test(assignmentId);
   return useQuery({
     queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
     queryFn: ({ signal }) =>
       courseApi<StudentLabContext>(
-        `workspaces/${workspaceId}/course-labs/${assignmentId}/student-context`,
+        `workspaces/${encodeURIComponent(workspaceId)}/course-labs/${encodeURIComponent(assignmentId)}/student-context`,
         { signal },
       ),
-    enabled: client.mode === "backend" && enabled && Boolean(workspaceId && assignmentId),
+    enabled: client.mode === "backend" && enabled && validIds,
     refetchOnMount: "always",
     retry: false,
   });
@@ -727,14 +730,15 @@ export function useStudentLabStudioSessions(
   enabled = true,
 ) {
   const client = useApi();
+  const validIds = UUID_SEGMENT_RE.test(workspaceId) && UUID_SEGMENT_RE.test(assignmentId);
   return useQuery({
     queryKey: ["api", "student-lab-studio-sessions", workspaceId, assignmentId],
     queryFn: ({ signal }) =>
       courseApi<StudentLabStudioSession[]>(
-        `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-sessions`,
+        `workspaces/${encodeURIComponent(workspaceId)}/course-labs/${encodeURIComponent(assignmentId)}/studio-sessions`,
         { signal },
       ),
-    enabled: client.mode === "backend" && enabled && Boolean(workspaceId && assignmentId),
+    enabled: client.mode === "backend" && enabled && validIds,
     refetchOnMount: "always",
     refetchInterval: (query) => {
       const items = query.state.data;
@@ -929,6 +933,7 @@ export function CourseEnrollment({
   });
   if (client.mode !== "backend") return null;
   const status = redeem.error instanceof ApiError ? redeem.error.status : undefined;
+  const formatInvalid = code.length > 0 && !/^[A-Za-z0-9_-]{4,32}$/.test(code);
   return (
     <DetailPanel title={t("Join a class with Passkey", "Tham gia lớp bằng Passkey")}>
       <p className="text-xs text-muted-foreground">
@@ -938,9 +943,13 @@ export function CourseEnrollment({
         )}
       </p>
       <form
+        noValidate
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
           event.preventDefault();
+          if (code.length < 4 || code.length > 32 || !/^[A-Za-z0-9_-]{4,32}$/.test(code)) {
+            return;
+          }
           const id = requestId ?? crypto.randomUUID();
           setRequestId(id);
           redeem.mutate(id);
@@ -957,7 +966,6 @@ export function CourseEnrollment({
                 required
                 className="font-mono tracking-wider"
                 placeholder={t("Enter class passkey", "Nhập mã Passkey của lớp")}
-                pattern="[A-Za-z0-9_\-]{4,32}"
                 minLength={4}
                 maxLength={32}
                 autoComplete="off"
@@ -973,10 +981,21 @@ export function CourseEnrollment({
             )}
           </FormField>
         </div>
-        <Button disabled={redeem.isPending || code.length < 4 || code.length > 32}>
+        <Button disabled={redeem.isPending || code.length < 4 || code.length > 32 || formatInvalid}>
           {redeem.isPending ? t("Joining…", "Đang tham gia…") : t("Join class", "Vào lớp")}
         </Button>
       </form>
+      {formatInvalid && (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+        >
+          {t(
+            "Passkey must be 4–32 characters using only letters, numbers, hyphens (-), or underscores (_).",
+            "Mã Passkey phải gồm 4–32 ký tự và chỉ chứa chữ cái, chữ số, dấu gạch ngang (-) hoặc gạch dưới (_).",
+          )}
+        </p>
+      )}
       {redeem.error && (
         <p
           role="alert"
@@ -984,13 +1003,13 @@ export function CourseEnrollment({
         >
           {status === 409
             ? t(
-                "Check My Classes. You may already be enrolled.",
-                "Hãy kiểm tra Lớp học của tôi. Bạn có thể đã ghi danh vào lớp này.",
+                "You are already enrolled in this class. Open My Courses to continue learning.",
+                "Bạn đã ghi danh vào lớp học này rồi. Hãy mở Khóa học của tôi để tiếp tục học.",
               )
             : status === 400 || status === 422 || status === 404
               ? t(
-                  "Passkey is invalid, expired, or revoked — enrollment status remains NOT_ENROLLED.",
-                  "Mã ghi danh không hợp lệ, đã hết hạn hoặc bị thu hồi — Trạng thái giữ nguyên NOT_ENROLLED.",
+                  "This passkey is invalid, expired, or revoked. Please check with your Lecturer and try again.",
+                  "Mã ghi danh không hợp lệ, đã hết hạn hoặc đã bị thu hồi. Vui lòng kiểm tra lại với Giảng viên.",
                 )
               : t(
                   "Could not join the class. Please retry.",
@@ -1227,7 +1246,8 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
     setEditingId(item.id);
     setEditCode(item.code ?? "");
     setEditLabel(item.label ?? "");
-    setEditHours(720);
+    // Leave validHours blank (0) by default so editing code/label/maxUses preserves existing expiry.
+    setEditHours(0);
     setEditMaxUses(item.maxUses != null ? String(item.maxUses) : "");
   };
 
@@ -1285,11 +1305,14 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
           onSubmit={(event) => {
             event.preventDefault();
             const parsedMax = Number(maxUses);
+            if (maxUses.trim() !== "" && (!Number.isInteger(parsedMax) || parsedMax < 1)) {
+              return;
+            }
             createKey.mutate(
               {
                 customCode: customCode || generateStructuredPasskey(),
-                validHours: validHours > 0 ? validHours : 720,
-                ...(maxUses.trim() && parsedMax > 0 ? { maxUses: parsedMax } : {}),
+                validHours: validHours > 0 ? Math.min(8760, validHours) : 720,
+                ...(maxUses.trim() ? { maxUses: parsedMax } : {}),
               },
               {
                 onSuccess: () => {
@@ -1552,13 +1575,16 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               disabled={mutating}
                               onClick={() => {
                                 const parsedEditMax = Number(editMaxUses);
+                                if (editMaxUses.trim() !== "" && (!Number.isInteger(parsedEditMax) || parsedEditMax < 1)) {
+                                  return;
+                                }
                                 updateKey.mutate(
                                   {
                                     passkeyId: item.id,
                                     customCode: editCode.trim() || undefined,
                                     label: editLabel.trim() || undefined,
-                                    validHours: editHours > 0 ? editHours : undefined,
-                                    maxUses: editMaxUses.trim() && parsedEditMax > 0 ? parsedEditMax : undefined,
+                                    validHours: editHours > 0 ? Math.min(8760, editHours) : undefined,
+                                    maxUses: editMaxUses.trim() ? parsedEditMax : undefined,
                                   },
                                   { onSuccess: () => setEditingId(null) },
                                 );

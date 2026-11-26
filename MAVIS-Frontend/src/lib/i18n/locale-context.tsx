@@ -1780,6 +1780,44 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "A published Lab keeps its pinned reference source.":
     "Lab đã xuất bản không thể thay đổi mã nguồn mẫu đã ghim.",
   "An account with this email already exists.": "Email này đã tồn tại trong hệ thống.",
+  "The request is invalid. Review your selections and try again.":
+    "Yêu cầu không hợp lệ. Vui lòng kiểm tra lại lựa chọn và thử lại.",
+  "Your session has expired or sign-in is required.":
+    "Phiên đăng nhập đã hết hạn hoặc yêu cầu đăng nhập lại.",
+  "You do not have permission to perform this action.":
+    "Bạn không có quyền truy cập hoặc thực hiện thao tác này.",
+  "This resource is no longer available. Refresh your selection.":
+    "Tài nguyên này không còn khả dụng. Vui lòng quay lại và chọn lại.",
+  "This version has changed. Reload the latest version before saving again.":
+    "Phiên bản dữ liệu đã thay đổi ở nơi khác. Hãy tải lại dữ liệu mới nhất trước khi lưu.",
+  "Some values could not be accepted. Review the form and try again.":
+    "Một số giá trị chưa hợp lệ. Vui lòng kiểm tra lại biểu mẫu và thử lại.",
+  "Too many requests. Wait a moment before retrying.":
+    "Quá nhiều yêu cầu liên tiếp. Vui lòng chờ giây lát rồi thử lại.",
+  "The service could not complete this request. Please retry.":
+    "Hệ thống chưa thể hoàn tất yêu cầu. Vui lòng thử lại.",
+  "The service could not be reached. Check your connection and retry.":
+    "Không thể kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.",
+  "Enter written feedback before publishing this grade.":
+    "Vui lòng nhập nhận xét cho sinh viên trước khi công bố điểm.",
+  "Enter revision instructions before returning this submission.":
+    "Vui lòng nhập hướng dẫn chỉnh sửa trước khi trả bài.",
+  "Enter your written architectural explanation before submitting.":
+    "Vui lòng nhập phần giải thích kiến trúc trước khi nộp bài.",
+  "Your submission is awaiting Lecturer grading and cannot be replaced until reviewed.":
+    "Bài nộp đang chờ Giảng viên chấm điểm nên chưa thể nộp đè cho tới khi có kết quả.",
+  "You already have an active Studio Live session running in another Lab. Stop or finish it first.":
+    "Bạn đang có một phiên MAVIS Studio khác đang chạy. Hãy kết thúc hoặc hủy phiên đó trước.",
+  "Please wait a few seconds before starting another Studio Live session.":
+    "Vui lòng chờ vài giây trước khi khởi chạy phiên MAVIS Studio mới.",
+  "This Docker action is not enabled for this Lab exercise.":
+    "Thao tác Docker này không nằm trong phạm vi cho phép của bài Lab.",
+  "Replica count must be between 1 and 3.": "Số lượng replica phải nằm trong khoảng từ 1 đến 3.",
+  "Loading workspace…": "Đang tải không gian làm việc…",
+  "Loading Studio Live…": "Đang tải Studio Live…",
+  "Submit to Assignment →": "Nộp sang bài tập →",
+  "Archive this class when the term ends. You can reopen it later.":
+    "Lưu trữ lớp học khi kết thúc học kỳ. Bạn có thể mở lại sau.",
   "Zoom to fit": "Căn vừa khung hình",
   "active session": "Phiên đang hoạt động",
   "activity events": "sự kiện hoạt động",

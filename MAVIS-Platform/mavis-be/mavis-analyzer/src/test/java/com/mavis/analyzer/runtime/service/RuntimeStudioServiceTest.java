@@ -548,4 +548,49 @@ class RuntimeStudioServiceTest {
                 UUID.randomUUID(), "STOP", "orders-payment-route", null));
         assertEquals(1, disconnectOk.path("actions").size());
     }
+
+    @Test
+    void studentViewerRedactsEvaluationOutageSpoilersAndBlocksOtherUsersSessions() throws Exception {
+        UUID studentId = UUID.randomUUID();
+        var studentRole = com.mavis.common.entity.Role.builder().code("STUDENT").build();
+        var studentUser = com.mavis.common.entity.User.builder().id(studentId).role(studentRole).build();
+        var otherUser = com.mavis.common.entity.User.builder().id(UUID.randomUUID()).role(studentRole).build();
+        session.setTriggeredBy(studentUser);
+        session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
+        session.setConfirmedServiceMappings(Map.of("orders", UUID.randomUUID().toString(), "payment", UUID.randomUUID().toString()));
+        var config = (ObjectNode) session.getScenarioConfig();
+        config.set("profile", mapper.readTree("""
+          {"studioTopology":{"version":1,
+            "blocks":[
+              {"service":"orders","label":"Orders","canScale":true,"initiallyStopped":false},
+              {"service":"payment","label":"Payment","canScale":false,"initiallyStopped":true}
+            ],"connections":[]}}
+          """));
+        var criteria = config.putObject("exerciseCriteria");
+        criteria.put("exerciseType", "CIRCUIT_BREAKER").put("minImpactF1", 0.7);
+        criteria.putObject("targetChangeAction").put("action", "START").put("service", "payment");
+        criteria.putArray("rules").addObject().put("metric", "errorRate");
+
+        when(access.requireCurrentActiveUser()).thenReturn(studentUser);
+        var state = service.state(id);
+        assertFalse(state.has("exerciseEvaluation"));
+        assertFalse(state.path("exerciseCriteria").has("rules"));
+        assertFalse(state.path("exerciseCriteria").has("minImpactF1"));
+        assertFalse(state.path("exerciseCriteria").has("targetChangeAction"));
+        assertFalse(state.path("topology").path("blocks").get(1).path("initiallyStopped").asBoolean());
+
+        var telem = mapper.createObjectNode().put("observedAt", "2026-11-26T10:00:00Z");
+        telem.putArray("services").addObject().put("service", "orders").put("replicas", 1).put("runningReplicas", 1);
+        service.telemetry(id, new RuntimeStudioService.TelemetryRequest(id, session.getResourceProject(), telem));
+
+        var captured = service.capture(id, new RuntimeStudioService.CaptureRequest("Student obs", null, "2026-11-26T10:00:00Z"));
+        assertFalse(captured.has("exerciseEvaluation"));
+        UUID snapId = UUID.fromString(captured.path("id").asText());
+        assertFalse(service.snapshot(id, snapId).has("exerciseEvaluation"));
+
+        // Different student cannot read this session
+        when(access.requireCurrentActiveUser()).thenReturn(otherUser);
+        var forbidden = assertThrows(BusinessException.class, () -> service.state(id));
+        assertEquals(com.mavis.common.exception.ErrorCode.FORBIDDEN, forbidden.getErrorCode());
+    }
 }

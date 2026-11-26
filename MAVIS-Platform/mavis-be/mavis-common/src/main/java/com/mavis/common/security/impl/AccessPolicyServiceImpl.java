@@ -189,8 +189,21 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
                 || Boolean.TRUE.equals(project.getIsReferenceTemplate())) {
             return false;
         }
-        return lab.getReferenceModel().getSourceSnapshot().getId().equals(project.getReferenceSnapshotId())
-                && courseLabs.canOpen(lab, user);
+        UUID staticSnapshotId = lab.getReferenceModel().getSourceSnapshot().getId();
+        UUID runtimeSnapshotId = null;
+        if (lab.getStudioExerciseSnapshot() != null) {
+            String rawRuntimeId = lab.getStudioExerciseSnapshot().path("runtimeSnapshotId").asText("");
+            if (!rawRuntimeId.isBlank()) {
+                try {
+                    runtimeSnapshotId = UUID.fromString(rawRuntimeId.trim());
+                } catch (IllegalArgumentException ignored) {
+                    runtimeSnapshotId = null;
+                }
+            }
+        }
+        boolean snapshotMatches = staticSnapshotId.equals(project.getReferenceSnapshotId())
+                || (runtimeSnapshotId != null && runtimeSnapshotId.equals(project.getReferenceSnapshotId()));
+        return snapshotMatches && courseLabs.canOpen(lab, user);
     }
 
     private Optional<Workspace> workspace(UUID workspaceId) {

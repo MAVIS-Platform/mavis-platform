@@ -155,7 +155,7 @@ public class CourseAuthoringService {
 
     @Transactional(readOnly = true)
     public PublishedView version(UUID workspaceId, int versionNumber) {
-        access.requireWorkspaceMember(workspaceId);
+        access.requireWorkspaceLecturer(workspaceId);
         CourseDefinition course = courses.findByWorkspaceId(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course not found"));
         CourseVersion version = versions.findByCourseIdAndVersion(course.getId(), versionNumber)

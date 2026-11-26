@@ -262,6 +262,8 @@ public class CourseLabStudentService {
             if (liveEx != null) {
                 studioExerciseView = exerciseToNode(liveEx);
             }
+        } else {
+            studioExerciseView = redactStudioExerciseForStudent(studioExerciseView);
         }
 
         return new StudentLabContextView(
@@ -295,10 +297,37 @@ public class CourseLabStudentService {
                 merged.putIfAbsent(s.getId(), s);
             }
         }
+        boolean studentViewer = CourseLabPolicy.isStudent(actor);
         return merged.values().stream()
                 .sorted(Comparator.comparing(RuntimeSession::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .map(RuntimeSessionResponseDTO::fromEntity)
+                .map(dto -> studentViewer ? RuntimeSessionResponseDTO.redactForStudent(dto) : dto)
                 .toList();
+    }
+
+    private static JsonNode redactStudioExerciseForStudent(JsonNode exercise) {
+        if (exercise == null || !exercise.isObject()) {
+            return exercise;
+        }
+        ObjectNode copy = ((ObjectNode) exercise).deepCopy();
+        String exerciseType = copy.path("exerciseType").asText("");
+        if (exerciseType.isBlank()) {
+            exerciseType = copy.path("successCriteria").path("exerciseType").asText("");
+        }
+        boolean isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(exerciseType);
+        if (copy.path("successCriteria").isObject()) {
+            ObjectNode sc = (ObjectNode) copy.get("successCriteria");
+            sc.remove(List.of("rules", "minImpactF1", "expectedAffectedServices"));
+            if (isOutageRecovery) {
+                sc.remove("targetChangeAction");
+            }
+        }
+        if (isOutageRecovery && copy.path("initialState").isObject()) {
+            ObjectNode init = (ObjectNode) copy.get("initialState");
+            init.putArray("stoppedServices");
+            init.putArray("stoppedControllers");
+        }
+        return copy;
     }
 
     public RuntimeSessionResponseDTO startLabStudioSession(UUID workspaceId, UUID assignmentId) {
@@ -346,7 +375,9 @@ public class CourseLabStudentService {
         var startLock = startSessionLocks[stripe];
         startLock.lock();
         try {
-            return startLabStudioSessionLocked(workspaceId, assignmentId, actor, lab, runtimeModel, activeExercise, exercise, isStudentActor);
+            RuntimeSessionResponseDTO started = startLabStudioSessionLocked(
+                    workspaceId, assignmentId, actor, lab, runtimeModel, activeExercise, exercise, isStudentActor);
+            return isStudentActor ? RuntimeSessionResponseDTO.redactForStudent(started) : started;
         } finally {
             startLock.unlock();
         }

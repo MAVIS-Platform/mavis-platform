@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Maximize2, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiQuery } from "@/hooks/use-api";
@@ -506,67 +507,71 @@ export function StudioSnapshotPreviewCard({
         </div>
       </div>
 
-      {lightboxOpen && imageSrc && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Studio Snapshot #${index + 1}`}
-          onClick={() => setLightboxOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-xs"
-        >
+      {lightboxOpen &&
+        imageSrc &&
+        typeof document !== "undefined" &&
+        createPortal(
           <div
-            onClick={(event) => event.stopPropagation()}
-            className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 text-slate-100 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Studio Snapshot #${index + 1}`}
+            onClick={() => setLightboxOpen(false)}
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur-xs"
           >
-            <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-emerald-500/20 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-300">
-                    {t("SNAPSHOT", "ẢNH CHỤP")} #{index + 1}
-                  </span>
-                  {exerciseBadge && (
-                    <span
-                      className="rounded px-2 py-0.5 font-mono text-[10px] font-bold text-slate-950"
-                      style={{ backgroundColor: accentColor ?? "#38bdf8" }}
-                    >
-                      {exerciseBadge}
+            <div
+              onClick={(event) => event.stopPropagation()}
+              className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 text-slate-100 shadow-2xl"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-emerald-500/20 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-300">
+                      {t("SNAPSHOT", "ẢNH CHỤP")} #{index + 1}
                     </span>
-                  )}
-                  <span className="text-xs text-slate-400">
-                    {new Date(snapshot.capturedAt).toLocaleString()}
-                  </span>
+                    {exerciseBadge && (
+                      <span
+                        className="rounded px-2 py-0.5 font-mono text-[10px] font-bold text-slate-950"
+                        style={{ backgroundColor: accentColor ?? "#38bdf8" }}
+                      >
+                        {exerciseBadge}
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-400">
+                      {new Date(snapshot.capturedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-slate-200">{snapshot.explanation}</p>
                 </div>
-                <p className="mt-1 truncate text-xs text-slate-200">{snapshot.explanation}</p>
+                <div className="flex shrink-0 items-center gap-2">
+                  <a
+                    href={imageSrc}
+                    download={`mavis-snapshot-${index + 1}-${snapshot.id.slice(0, 8)}.${fileExt}`}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-700 bg-slate-800 px-3 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                  >
+                    <Download aria-hidden="true" className="size-3.5" />
+                    {t("Download Image", "Tải ảnh")}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setLightboxOpen(false)}
+                    aria-label={t("Close preview", "Đóng xem trước")}
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  >
+                    <X aria-hidden="true" className="size-4" />
+                  </button>
+                </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <a
-                  href={imageSrc}
-                  download={`mavis-snapshot-${index + 1}-${snapshot.id.slice(0, 8)}.${fileExt}`}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-700 bg-slate-800 px-3 text-xs font-medium text-slate-100 hover:bg-slate-700"
-                >
-                  <Download aria-hidden="true" className="size-3.5" />
-                  {t("Download Image", "Tải ảnh")}
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setLightboxOpen(false)}
-                  aria-label={t("Close preview", "Đóng xem trước")}
-                  className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-                >
-                  <X aria-hidden="true" className="size-4" />
-                </button>
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#070b14] p-3">
+                <img
+                  src={imageSrc}
+                  alt={`Studio Snapshot #${index + 1}`}
+                  className="max-h-[78vh] w-auto max-w-full rounded-lg object-contain"
+                />
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#070b14] p-3">
-              <img
-                src={imageSrc}
-                alt={`Studio Snapshot #${index + 1}`}
-                className="max-h-[78vh] w-auto max-w-full rounded-lg object-contain"
-              />
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

@@ -58,7 +58,7 @@ test("Studio Live uses original MAVIS Architecture Workbench layout with 4 disti
   assert.match(styles, /wireMode: "orthogonal"/);
   assert.match(obs, /studioStyle\?: StudioStyleId/);
   assert.match(obs, /styleCfg\.deckTopFill/);
-  assert.match(obs, /absolute bottom-4 left-4/);
+  assert.match(obs, /absolute bottom-\[76px\] left-4/);
   assert.match(live, /const \[studioStyle, setStudioStyle\] = useState<StudioStyleId>\("daylight"\)/);
   assert.match(live, /const \[bottomCollapsed, setBottomCollapsed\] = useState\(true\)/);
   assert.match(live, /defaultView="3D"/);
@@ -91,4 +91,27 @@ test("Phase 2: Studio Lab dossiers without a per-Lab quiz never render contradic
   assert.match(components, /const isTheoryOnly =\s*!isStudioLab/);
   assert.match(screens, /courseQuizEvidence\?\.status === "NOT_REQUIRED" &&[\s\S]*labMode !== "THEORY_QUIZ_STUDIO"/);
   assert.match(frozen, /quizEv\.status !== "NOT_REQUIRED"/);
+});
+
+test("Adversarial QA hardening: portal lightbox, WebGL release, UUID URL guards, clean Passkey UX, 409 reload & strict > 50 KPI", () => {
+  const evidence = read("src/features/runtime/studio-evidence.tsx");
+  const three = read("src/features/runtime/studio-three-stage.tsx");
+  const access = read("src/features/workspaces/course-access.tsx");
+  const grading = read("src/features/submissions/grading.tsx");
+  const courseScreens = read("src/features/courses/screens.tsx");
+  const theoryLib = read("src/features/workspaces/theory-library.tsx");
+  const apiError = read("src/lib/errors/api-error.ts");
+
+  assert.match(evidence, /createPortal\(/);
+  assert.match(three, /forceContextLoss\(\)/);
+  assert.match(access, /UUID_SEGMENT_RE\.test\(workspaceId\)/);
+  assert.doesNotMatch(access, /NOT_ENROLLED/);
+  assert.match(access, /setEditHours\(0\)/);
+  assert.match(grading, /onReloadLatest\?\.\(\)/);
+  assert.match(grading, /reviseHref/);
+  assert.match(grading, /tooManyDecimals/);
+  assert.match(courseScreens, /score > 50/);
+  assert.match(theoryLib, /usePermission\("workspace:manage"\)/);
+  assert.match(apiError, /APPROVAL_SUMMARY_REQUIRED/);
+  assert.match(apiError, /REPLICA_BOUNDS_EXCEEDED/);
 });

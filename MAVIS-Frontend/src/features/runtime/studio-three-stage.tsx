@@ -3303,6 +3303,7 @@ export function StudioThreeStage({
         sharedTexRef.current.softGlow.dispose();
         sharedTexRef.current = null;
       }
+      rendererRef.current?.forceContextLoss();
       rendererRef.current?.dispose();
       rendererRef.current = null;
       sceneRef.current = null;

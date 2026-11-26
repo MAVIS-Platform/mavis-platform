@@ -69,14 +69,14 @@ public class RuntimeStudioService {
                                    @NotNull JsonNode telemetry) {}
     public record CaptureRequest(@NotBlank @Size(max=4000) String explanation,
         @Size(max=450000) String imageData, @Size(max=100) String observedAt,
-        @Size(max=3500000) String videoData) {
+        @Size(max=5000000) String videoData) {
         public CaptureRequest(String explanation) {this(explanation,null,null,null);}
         public CaptureRequest(String explanation, String imageData, String observedAt) {this(explanation,imageData,observedAt,null);}
     }
     @Transactional(readOnly = true)
     public JsonNode receipt(UUID id) {
         RuntimeSession session=sessions.findById(id).orElseThrow(()->error(ErrorCode.NOT_FOUND,"Runtime session not found."));
-        access.requireProjectReadAccess(session.getProject());
+        requireSessionReadAccess(session);
         ObjectNode control=control(session);
         if(session.getRunnerReceiptJson()==null) throw error(ErrorCode.NOT_FOUND,"Runner receipt has not been committed.");
         ObjectNode result=mapper.createObjectNode().put("sessionId",id.toString()).put("digest",session.getReceiptDigest());
@@ -87,9 +87,17 @@ public class RuntimeStudioService {
     @Transactional(readOnly = true)
     public JsonNode snapshot(UUID id, UUID snapshotId) {
         RuntimeSession session=sessions.findById(id).orElseThrow(()->error(ErrorCode.NOT_FOUND,"Runtime session not found."));
-        access.requireProjectReadAccess(session.getProject());
+        requireSessionReadAccess(session);
+        boolean student = isStudentActor();
         for(JsonNode snapshot:control(session).withArray("snapshots"))
-            if(snapshotId.toString().equals(snapshot.path("id").asText())) return snapshot;
+            if(snapshotId.toString().equals(snapshot.path("id").asText())) {
+                if (student && snapshot.isObject()) {
+                    ObjectNode copy = ((ObjectNode) snapshot).deepCopy();
+                    copy.remove("exerciseEvaluation");
+                    return copy;
+                }
+                return snapshot;
+            }
         throw error(ErrorCode.NOT_FOUND,"Studio snapshot not found.");
     }
 
@@ -208,13 +216,18 @@ public class RuntimeStudioService {
         control.put("lastUiActivityAt", OffsetDateTime.now().toString());
         save(session, control);
         notifyStateAfterCommit(session);
+        if (isStudentActor()) {
+            ObjectNode copy = evidence.deepCopy();
+            copy.remove("exerciseEvaluation");
+            return copy;
+        }
         return evidence;
     }
 
     @Transactional(readOnly = true)
     public JsonNode state(UUID id) {
         RuntimeSession session = sessions.findById(id).orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
-        access.requireProjectReadAccess(session.getProject());
+        requireSessionReadAccess(session);
         if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
         return view(session);
     }
@@ -223,7 +236,7 @@ public class RuntimeStudioService {
     @Transactional(readOnly = true)
     public org.springframework.web.servlet.mvc.method.annotation.SseEmitter subscribeStream(UUID id) {
         RuntimeSession session = sessions.findById(id).orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
-        access.requireProjectReadAccess(session.getProject());
+        requireSessionReadAccess(session);
         if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
         JsonNode initial = view(session);
         if (telemetryHub == null) {
@@ -656,6 +669,10 @@ public class RuntimeStudioService {
         return object;
     }
     private JsonNode view(RuntimeSession session) {
+        return view(session, isStudentActor());
+    }
+
+    private JsonNode view(RuntimeSession session, boolean redactForStudent) {
         boolean interactive = session.getScenarioConfig() != null && session.getScenarioConfig().path("interactiveStudio").asBoolean();
         ObjectNode result = interactive ? control(session) : mapper.createObjectNode().put("finishRequested", false);
         if (!result.has("finishRequested") || !result.get("finishRequested").isBoolean()) result.put("finishRequested", false);
@@ -720,12 +737,76 @@ public class RuntimeStudioService {
             result.put("activeSlots", queueCoordinator.countActiveSessions());
             result.put("maxSlots", queueCoordinator.getMaxActiveStudioSessions());
         }
-        return result.put("sessionId", session.getId().toString()).put("interactive", interactive)
+        ObjectNode out = result.put("sessionId", session.getId().toString()).put("interactive", interactive)
             .put("projectId", session.getProject().getId() == null ? "" : session.getProject().getId().toString())
             .put("modelVersionId", session.getModelVersion() == null ? "" : session.getModelVersion().getId().toString())
             .put("sourceSnapshotId", session.getSourceSnapshot() == null ? "" : session.getSourceSnapshot().getId().toString())
             .put("receiptDigest", session.getReceiptDigest())
             .put("executionStatus", execution).put("cleanupStatus", session.getCleanupStatus() == null ? "UNKNOWN" : session.getCleanupStatus());
+        if (redactForStudent) {
+            redactStudioViewForStudent(out);
+        }
+        return out;
+    }
+
+    private boolean isStudentActor() {
+        try {
+            var actor = access.requireCurrentActiveUser();
+            return actor != null && actor.getRole() != null
+                    && "STUDENT".equalsIgnoreCase(actor.getRole().getCode());
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isStudentSession(RuntimeSession session) {
+        if (session == null || session.getTriggeredBy() == null || session.getTriggeredBy().getRole() == null) {
+            return false;
+        }
+        return "STUDENT".equalsIgnoreCase(session.getTriggeredBy().getRole().getCode());
+    }
+
+    private void requireSessionReadAccess(RuntimeSession session) {
+        access.requireProjectReadAccess(session.getProject());
+        if (!isStudentActor()) return;
+        var actor = access.requireCurrentActiveUser();
+        // Prevent Students from reading Lecturer validation sessions on shared TEACHER_REFERENCE projects.
+        if (actor != null && actor.getId() != null
+                && (session.getTriggeredBy() == null || !actor.getId().equals(session.getTriggeredBy().getId()))) {
+            throw error(ErrorCode.FORBIDDEN, "You can only access your own Studio session.");
+        }
+    }
+
+    private static void redactStudioViewForStudent(ObjectNode node) {
+        node.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
+        if (node.path("snapshots").isArray()) {
+            for (JsonNode snap : node.path("snapshots")) {
+                if (snap.isObject()) {
+                    ((ObjectNode) snap).remove("exerciseEvaluation");
+                }
+            }
+        }
+        boolean isOutageRecovery = false;
+        if (node.path("exerciseCriteria").isObject()) {
+            ObjectNode criteria = (ObjectNode) node.get("exerciseCriteria");
+            isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(criteria.path("exerciseType").asText(""));
+            criteria.remove(java.util.List.of("rules", "minImpactF1", "expectedAffectedServices"));
+            if (isOutageRecovery) {
+                criteria.remove("targetChangeAction");
+            }
+        }
+        if (isOutageRecovery && node.path("topology").isObject()) {
+            ObjectNode topo = (ObjectNode) node.get("topology");
+            for (String key : java.util.List.of("blocks", "connections")) {
+                if (topo.path(key).isArray()) {
+                    for (JsonNode item : topo.path(key)) {
+                        if (item.isObject()) {
+                            ((ObjectNode) item).put("initiallyStopped", false);
+                        }
+                    }
+                }
+            }
+        }
     }
     private void requireRunning(RuntimeSession session) {
         if (!"RUNNING".equals(session.getExecutionStatus()) || session.getCancelRequestedAt() != null || session.getRunnerReceiptJson() != null)
@@ -743,7 +824,7 @@ public class RuntimeStudioService {
     private void notifyStateAfterCommit(RuntimeSession session) {
         if (telemetryHub == null || session == null || session.getId() == null) return;
         UUID sessionId = session.getId();
-        JsonNode snapshot = view(session);
+        JsonNode snapshot = view(session, isStudentActor() || isStudentSession(session));
         if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
             org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
                     new org.springframework.transaction.support.TransactionSynchronization() {

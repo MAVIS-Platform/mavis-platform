@@ -112,6 +112,7 @@ export function useStudioSession(sessionId: string) {
   } | null>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
   const sawQueuedRef = useRef(false);
+  const sendingRef = useRef(false);
   const [cancelledWhileQueued, setCancelledWhileQueued] = useState(false);
 
   // Reset transient per-session UI state when switching or restarting sessions.
@@ -297,7 +298,8 @@ export function useStudioSession(sessionId: string) {
     targetRps?: number,
     extra?: { envKey?: string; envValue?: string; targetImage?: string },
   ) {
-    if (!data) return;
+    if (!data || action.isPending || sendingRef.current) return;
+    sendingRef.current = true;
     const requestedReplicas = overrideReplicas ?? replicas;
     if (overrideReplicas !== undefined) {
       setReplicas(overrideReplicas);
@@ -339,6 +341,8 @@ export function useStudioSession(sessionId: string) {
         error instanceof Error ? error : new Error("Studio action was not confirmed"),
       );
       await state.refetch();
+    } finally {
+      sendingRef.current = false;
     }
   }
 
@@ -383,9 +387,11 @@ export function useStudioSession(sessionId: string) {
   }, [data?.executionStatus, data?.receiptDigest, queryClient]);
 
   async function finishStudio() {
+    if (finish.isPending) return;
     if (capturePromiseRef.current) {
       await capturePromiseRef.current.catch(() => {});
     }
+    setActionError(null);
     try {
       const finished = await finish.mutateAsync({ sessionId });
       // Transition cached state out of LIVE immediately and close SSE before teardown begins.
@@ -403,6 +409,8 @@ export function useStudioSession(sessionId: string) {
       setCachedStatus((prev) =>
         TERMINAL_STUDIO_STATUSES.has(prev) ? prev : "FINISHING",
       );
+    } catch (error) {
+      setActionError(error instanceof Error ? error : new Error("Could not finish Studio session"));
     } finally {
       await state.refetch();
       await Promise.all([
@@ -414,8 +422,12 @@ export function useStudioSession(sessionId: string) {
   }
 
   async function cancelStudio() {
+    if (cancel.isPending) return;
+    setActionError(null);
     try {
       await cancel.mutateAsync({ sessionId, action: "cancel" });
+    } catch (error) {
+      setActionError(error instanceof Error ? error : new Error("Could not cancel Studio session"));
     } finally {
       await state.refetch();
       void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
@@ -431,11 +443,12 @@ export function useStudioSession(sessionId: string) {
       videoData?: string;
       posterImageData?: string;
     },
-  ) {
+  ): Promise<boolean> {
     const finalExplanation = (options?.explanationOverride ?? explanation).trim();
-    if (!data || !finalExplanation) return;
+    if (!data || !finalExplanation || capturePromiseRef.current) return false;
     setCapturing(true);
     setDownloadError(null);
+    let succeeded = false;
     const task = (async () => {
       try {
         const sessionUser = queryClient.getQueryData<ApiResponse<"session">>([
@@ -474,6 +487,7 @@ export function useStudioSession(sessionId: string) {
             ...(options?.videoData ? { videoData: options.videoData, hasVideo: true } : {}),
           });
         }
+        succeeded = true;
         setExplanation("");
         await queryClient.invalidateQueries({ queryKey: ["api", "studioState", { sessionId }] });
         void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
@@ -487,6 +501,7 @@ export function useStudioSession(sessionId: string) {
     })();
     capturePromiseRef.current = task;
     await task;
+    return succeeded;
   }
 
   async function downloadReceipt() {

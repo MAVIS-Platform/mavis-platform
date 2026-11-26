@@ -8,6 +8,7 @@ import { useApi, useSession } from "@/hooks/use-api";
 import { hasPermission, type Permission } from "@/lib/auth/permissions";
 import { LoadingState, ErrorState } from "@/components/shared/request-state";
 import { Button } from "@/components/ui/button";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 function LoginRedirect() {
   const router = useRouter();
@@ -34,10 +35,11 @@ export function RequireSession({
 }) {
   const session = useSession();
   const api = useApi();
+  const { t } = useLocale();
   if (session.isPending)
     return (
       <div className="mx-auto max-w-lg p-8">
-        <LoadingState label="Checking session…" />
+        <LoadingState label={t("Checking session…", "Đang kiểm tra phiên làm việc…")} />
       </div>
     );
   if (session.isError)
@@ -50,7 +52,7 @@ export function RequireSession({
           }}
         />
         <Button asChild className="mt-4" variant="outline">
-          <Link href="/login">Sign in options</Link>
+          <Link href="/login">{t("Sign in options", "Về trang đăng nhập")}</Link>
         </Button>
       </div>
     );
@@ -62,9 +64,12 @@ export function RequireSession({
   )
     return (
       <div className="mx-auto max-w-lg space-y-4 p-8" role="alert">
-        <h1 className="text-xl font-semibold">Access unavailable</h1>
+        <h1 className="text-xl font-semibold">{t("Access unavailable", "Không thể truy cập")}</h1>
         <p className="text-sm text-muted-foreground">
-          Your account does not have permission to view this page.
+          {t(
+            "Your account does not have permission to view this page.",
+            "Tài khoản của bạn không có quyền xem trang này.",
+          )}
         </p>
         <Button asChild variant="outline">
           <Link
@@ -74,7 +79,7 @@ export function RequireSession({
                 : defaultLoginDestination(session.data.user.role)
             }
           >
-            Return to your workspace
+            {t("Return to your workspace", "Quay lại trang chính")}
           </Link>
         </Button>
       </div>

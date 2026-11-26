@@ -36,8 +36,8 @@ class SubmissionReviewServiceTest {
  }
  @Test void lecturerGradeIsVersionedAndDoesNotModifySubmittedArtifacts(){
   when(access.requireCurrentActiveUser()).thenReturn(teacher);when(reviews.findBySubmissionId(id)).thenReturn(Optional.empty());when(reviews.saveAndFlush(any())).thenAnswer(call->call.getArgument(0));
-  var result=service.save(id,new SubmissionReviewService.Save(0,"GRADED",BigDecimal.ZERO,"Approved with remediation notes"));
-  assertThat(result.revision()).isEqualTo(1);assertThat(result.score()).isEqualByComparingTo("0");
+  var result=service.save(id,new SubmissionReviewService.Save(0,"GRADED",new BigDecimal("85"),"Approved with remediation notes"));
+  assertThat(result.revision()).isEqualTo(1);assertThat(result.score()).isEqualByComparingTo("85");
   verify(access).requireWorkspaceLecturer(workspace);verify(entityManager).lock(submission,LockModeType.PESSIMISTIC_WRITE);verify(submissions,never()).save(any());
   verify(courseProgression).recordFinalizedResult(id,1,true);
  }
@@ -152,5 +152,16 @@ class SubmissionReviewServiceTest {
           new SubmissionReviewService.Save(0, "GRADED", BigDecimal.TEN, "Legacy Lab review")))
           .isInstanceOf(BusinessException.class).hasMessageContaining("SNAPSHOT_GRADES_INCOMPLETE");
   verify(reviews, never()).saveAndFlush(any());
+ }
+
+ @Test
+ void nonGuidedExactFiftyScoreRequiresRevisionInsteadOfPassing() {
+  when(access.requireCurrentActiveUser()).thenReturn(teacher);
+  when(reviews.findBySubmissionId(id)).thenReturn(Optional.empty());
+  when(reviews.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+
+  var result = service.save(id, new SubmissionReviewService.Save(0, "GRADED", new BigDecimal("50"), "Needs more detail"));
+  assertThat(result.labOutcome()).isEqualTo("NEEDS_REVISION");
+  verify(courseProgression).recordFinalizedResult(id, 1, false);
  }
 }

@@ -446,6 +446,7 @@ function StandaloneStudioContent() {
     if (autoStartedRef.current) return;
     if (
       client.mode !== "backend" ||
+      workspaces.isPending ||
       isAuthorMode ||
       studentQuizLocked ||
       !workspaceId ||
@@ -1480,7 +1481,7 @@ function StandaloneStudioContent() {
       </div>
 
       {isAuthorMode && setupLab?.topologyFrozen && (
-        <Badge variant="success" className="hidden md:inline-flex">
+        <Badge variant="success" className="hidden shrink-0 whitespace-nowrap lg:inline-flex">
           {t("Frozen", "Đã khóa")}
         </Badge>
       )}
@@ -1488,7 +1489,7 @@ function StandaloneStudioContent() {
   );
 
   const headerRight = (
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className="flex shrink-0 items-center gap-1">
       {isAuthorMode && projectId && (
         <>
           {published && assignmentId && (
@@ -1505,7 +1506,7 @@ function StandaloneStudioContent() {
             size="sm"
             variant="outline"
             title={t("Test as Student", "Thử vai Sinh viên")}
-            className="h-8 whitespace-nowrap px-2.5 text-[12.5px]"
+            className="h-8 shrink-0 whitespace-nowrap px-2 text-xs"
           >
             <Link
               href={buildStudioLiveHref({
@@ -1522,10 +1523,11 @@ function StandaloneStudioContent() {
           <Button
             asChild
             size="sm"
-            className="h-8 whitespace-nowrap bg-emerald-600 px-2.5 text-[12.5px] text-white hover:bg-emerald-500"
+            className="h-8 shrink-0 whitespace-nowrap bg-emerald-600 px-2 text-xs text-white hover:bg-emerald-500"
           >
             <Link href={publishHref}>
-              {t("Done · Course Builder", "Xong · Khung khóa học")}
+              <span className="hidden xl:inline">{t("Done · Course Builder", "Xong · Khung khóa học")}</span>
+              <span className="xl:hidden">{t("Done", "Xong")}</span>
               <ArrowRight className="ml-1 size-3" aria-hidden="true" />
             </Link>
           </Button>
@@ -1577,7 +1579,7 @@ function StandaloneStudioContent() {
   }, [isAuthorMode, studentQuizLocked, studentExercise, liveStudioVerified, submitHref]);
 
   return (
-    <div className="flex h-svh w-screen flex-col overflow-hidden bg-[#FBFBF8] text-foreground">
+    <div className="flex h-svh w-screen flex-col overflow-hidden bg-background text-foreground">
       {/* Fallback App Bar only on loading/prepare/locked screens; when canvas is active, merged into 1 single top bar */}
       {!isWorkbenchActive && (
         <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3.5">
@@ -1586,11 +1588,11 @@ function StandaloneStudioContent() {
         </header>
       )}
 
-      {/* Error strips if any mutation fails (suppress stale startStudio 409 once an active session is attached) */}
-      {(autoStudio.error || (startStudio.error && !activeSessionId)) && (
+      {/* Error strips if any mutation fails (suppress duplicate strip when full-screen initialLoadError is already shown) */}
+      {(autoStudio.error || (startStudio.error && !activeSessionId && !initialLoadError)) && (
         <div className="shrink-0 space-y-1 border-b border-destructive/30 bg-destructive/10 px-4 py-2">
           {autoStudio.error && <ErrorState error={autoStudio.error} />}
-          {startStudio.error && !activeSessionId && <ErrorState error={startStudio.error} />}
+          {startStudio.error && !activeSessionId && !initialLoadError && <ErrorState error={startStudio.error} />}
         </div>
       )}
 
@@ -1614,17 +1616,41 @@ function StandaloneStudioContent() {
           </div>
         ) : initialLoadError ? (
           <div className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-            <ErrorState
-              error={initialLoadError}
-              onRetry={() => {
-                void workspaces.refetch();
-                if (isAuthorMode) void assignments.refetch();
-                else void studentContext.refetch();
-              }}
-            />
-            <Button asChild size="sm" variant="outline">
-              <Link href={returnHref}>{t("Return to MAVIS", "Quay lại MAVIS")}</Link>
-            </Button>
+            {initialLoadError instanceof ApiError && initialLoadError.status === 403 ? (
+              <>
+                <Lock className="mx-auto size-7 text-amber-500" aria-hidden="true" />
+                <h1 className="text-base font-semibold text-foreground">
+                  {t("This Lab is currently locked", "Bài Lab này hiện chưa được mở khóa")}
+                </h1>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t(
+                    "Complete the prerequisite Lab(s) on your Course Roadmap before accessing MAVIS Studio here.",
+                    "Hãy hoàn thành các bài Lab tiên quyết trên Lộ trình khóa học trước khi mở MAVIS Studio tại đây.",
+                  )}
+                </p>
+                <Button asChild size="sm">
+                  <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+                    {t("Back to Course Roadmap", "Quay lại Lộ trình khóa học")}
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <ErrorState
+                  error={initialLoadError}
+                  onRetry={() => {
+                    void workspaces.refetch();
+                    if (isAuthorMode) void assignments.refetch();
+                    else void studentContext.refetch();
+                  }}
+                />
+                <Button asChild size="sm" variant="outline">
+                  <Link href={workspaceId ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}` : returnHref}>
+                    {t("Return to MAVIS", "Quay lại MAVIS")}
+                  </Link>
+                </Button>
+              </>
+            )}
           </div>
         ) : studentQuizLocked ? (
           <div className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">

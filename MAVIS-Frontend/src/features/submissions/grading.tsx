@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useApiMutation, useApiQuery, usePermission } from "@/hooks/use-api";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
@@ -55,10 +56,12 @@ export function GradingPanel({
   submissionId,
   studentSnapshots,
   guidedLab,
+  reviseHref,
 }: {
   submissionId: string;
   studentSnapshots?: StudentSnapshotItem[] | undefined;
   guidedLab: boolean;
+  reviseHref?: string | undefined;
 }) {
   const { locale, t } = useLocale();
   const canReview = usePermission("submission:review");
@@ -100,7 +103,8 @@ export function GradingPanel({
             </div>
             {query.data.snapshotGrades &&
               query.data.snapshotGrades.length > 0 &&
-              (new Set(query.data.snapshotGrades.map((g) => g.score)).size > 1 ||
+              (resolveSubmissionOutcome(query.data) === "NEEDS REVISION" ||
+                new Set(query.data.snapshotGrades.map((g) => g.score)).size > 1 ||
                 query.data.snapshotGrades.some((g) => Boolean(g.comment?.trim()))) && (
                 <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3 text-xs">
                   <p className="font-medium">
@@ -142,13 +146,22 @@ export function GradingPanel({
                 {stripLegacySubmissionNoise(query.data.summary)}
               </p>
             )}
-            {query.data.status === "RETURNED" && !canReview && (
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  "Open the Lab submission step to revise your explanation or Studio evidence and resubmit.",
-                  "Hãy mở lại bước nộp bài Lab để bổ sung giải thích hoặc minh chứng Studio và nộp lại.",
+            {(query.data.status === "RETURNED" || query.data.labOutcome === "NEEDS_REVISION") && !canReview && (
+              <div className="space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3">
+                <p className="text-xs text-amber-900 dark:text-amber-200">
+                  {t(
+                    "Open the Lab submission step to revise your explanation or Studio evidence and resubmit.",
+                    "Hãy mở lại bước nộp bài Lab để bổ sung giải thích hoặc minh chứng Studio và nộp lại.",
+                  )}
+                </p>
+                {reviseHref && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={reviseHref}>
+                      {t("Revise and resubmit", "Chỉnh sửa và nộp lại")}
+                    </Link>
+                  </Button>
                 )}
-              </p>
+              </div>
             )}
             {query.data.updatedAt && (
               <p className="text-xs text-muted-foreground">
@@ -177,6 +190,9 @@ export function GradingPanel({
                   review={query.data}
                   studentSnapshots={studentSnapshots}
                   guidedLab={guidedLab}
+                  onReloadLatest={() => {
+                    void query.refetch();
+                  }}
                 />
               )}
           </div>
@@ -258,10 +274,12 @@ export function GradeForm({
   review,
   studentSnapshots,
   guidedLab,
+  onReloadLatest,
 }: {
   review: Response<"submissionReview">;
   studentSnapshots?: StudentSnapshotItem[] | undefined;
   guidedLab: boolean;
+  onReloadLatest?: (() => void) | undefined;
 }) {
   const { locale, t } = useLocale();
   const save = useApiMutation("gradeSubmission");
@@ -336,20 +354,28 @@ export function GradeForm({
   const computedScale100 =
     computedTenScale !== null ? Number((computedTenScale * 10).toFixed(2)) : null;
 
-  const manualTenValue = score.trim() === "" ? null : Number(score);
+  const trimmedScore = score.trim();
+  const manualTenValue = trimmedScore === "" ? null : Number(trimmedScore);
   const manualScale100 =
     manualTenValue !== null && Number.isFinite(manualTenValue)
       ? Number((manualTenValue * 10).toFixed(2))
       : null;
 
   const value = usePerSnapshot ? computedScale100 : manualScale100;
+  const tooManyDecimals =
+    !usePerSnapshot &&
+    manualTenValue !== null &&
+    Number.isFinite(manualTenValue) &&
+    manualTenValue >= 0 &&
+    manualTenValue <= 10 &&
+    !/^\d+(\.\d{1,2})?$/.test(trimmedScore);
   const valid = usePerSnapshot
     ? parsedSnapshots.complete
     : manualTenValue === null ||
       (Number.isFinite(manualTenValue) &&
         manualTenValue >= 0 &&
         manualTenValue <= 10 &&
-        /^\d+(\.\d{1,2})?$/.test(score));
+        /^\d+(\.\d{1,2})?$/.test(trimmedScore));
 
   const outcome = usePerSnapshot
     ? parsedSnapshots.complete
@@ -643,12 +669,20 @@ export function GradeForm({
       </FormField>
       {!valid && (!usePerSnapshot || parsedSnapshots.invalid) && (
         <p role="alert" className="text-sm text-destructive">
-          {usePerSnapshot
-            ? t("Enter a score between 0.0 and 10.0 for every snapshot (above 5.0 to pass).")
-            : t(
-                "Enter a score between 0 and 10 with at most two decimal places.",
-                "Nhập điểm từ 0 đến 10 với tối đa hai chữ số thập phân.",
-              )}
+          {tooManyDecimals
+            ? t(
+                "Use at most 2 decimal places (e.g., 4.55 or 8.5).",
+                "Chỉ được nhập tối đa 2 chữ số thập phân (vd: 4.55 hoặc 8.5).",
+              )
+            : usePerSnapshot
+              ? t(
+                  "Enter a score between 0.0 and 10.0 for every snapshot (max 2 decimal places; above 5.0 to pass).",
+                  "Nhập điểm từ 0.0 đến 10.0 cho từng mục (tối đa 2 chữ số thập phân; trên 5.0 để đạt).",
+                )
+              : t(
+                  "Enter a score between 0 and 10 with at most two decimal places.",
+                  "Nhập điểm từ 0 đến 10 với tối đa hai chữ số thập phân.",
+                )}
         </p>
       )}
       {usePerSnapshot && !parsedSnapshots.complete && !parsedSnapshots.invalid && (
@@ -709,7 +743,11 @@ export function GradeForm({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          disabled={save.isPending || (usePerSnapshot ? parsedSnapshots.invalid : !valid)}
+          disabled={
+            save.isPending ||
+            (usePerSnapshot ? parsedSnapshots.invalid : !valid) ||
+            (review.status === "GRADED" && !summary.trim())
+          }
           onClick={() => submit("DRAFT")}
         >
           {t("Save grading draft", "Lưu nháp")}
@@ -743,7 +781,16 @@ export function GradeForm({
           {t("Complete & publish grade", "Hoàn tất & Công bố điểm")}
         </Button>
       </div>
-      {save.error && <ErrorState error={save.error} />}
+      {save.error && (
+        <ErrorState
+          error={save.error}
+          onRetry={() => {
+            save.reset();
+            setDirty(false);
+            onReloadLatest?.();
+          }}
+        />
+      )}
     </div>
   );
 }

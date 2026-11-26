@@ -469,19 +469,6 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     }
 
     private void validateLecturerOrCreatorPermission(Workspace workspace, UUID currentUserId) {
-        User actor = accessPolicyService.requireCurrentActiveUser();
-        if (actor != null && actor.getRole()!=null && "SYSTEM_ADMIN".equals(actor.getRole().getCode())) return;
-        boolean isCreator = workspace.getCreatedBy() != null && currentUserId.equals(workspace.getCreatedBy().getId());
-        if (isCreator) {
-            return;
-        }
-
-        boolean isLecturer = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), currentUserId)
-                .map(wm -> "LECTURER".equalsIgnoreCase(wm.getMemberRole()))
-                .orElse(false);
-
-        if (!isLecturer) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Chỉ Giảng viên của lớp mới có quyền chỉnh sửa Workspace");
-        }
+        accessPolicyService.requireWorkspaceLecturer(workspace.getId());
     }
 }

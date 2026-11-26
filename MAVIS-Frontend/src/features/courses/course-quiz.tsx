@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, CheckCircle2, Lock, RotateCcw, XCircle } from "lucide-react";
 import { DetailPanel } from "@/components/shared/data";
@@ -200,10 +200,12 @@ function AttemptForm({
     setRetakeMode(true);
     submit.reset();
   };
+  const attemptIdRef = useRef<string | undefined>(undefined);
   const answered = quiz.questions.every((_, index) => (answers[index]?.length ?? 0) > 0);
   const triggerSubmit = () => {
     if (!answered || submit.isPending) return;
-    const id = attemptId ?? crypto.randomUUID();
+    const id = attemptIdRef.current ?? attemptId ?? crypto.randomUUID();
+    attemptIdRef.current = id;
     setAttemptId(id);
     submit.mutate(id);
   };
@@ -218,6 +220,7 @@ function AttemptForm({
         : [optionIndex];
       return { ...current, [questionIndex]: next };
     });
+    attemptIdRef.current = undefined;
     setAttemptId(undefined);
     submit.reset();
   };
@@ -386,10 +389,7 @@ function AttemptForm({
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!answered) return;
-            const id = attemptId ?? crypto.randomUUID();
-            setAttemptId(id);
-            submit.mutate(id);
+            triggerSubmit();
           }}
         >
           <div

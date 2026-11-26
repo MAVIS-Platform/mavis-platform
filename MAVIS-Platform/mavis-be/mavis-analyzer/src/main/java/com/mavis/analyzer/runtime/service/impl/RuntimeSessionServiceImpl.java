@@ -752,12 +752,21 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         User triggeredBy = null;
-        UUID triggerId = request.getTriggeredById();
+        UUID authenticatedUserId = null;
+        try {
+            authenticatedUserId = com.mavis.common.utils.SecurityUtils.getCurrentUserId();
+        } catch (RuntimeException ignored) {
+            authenticatedUserId = null;
+        }
+        // Never allow non-admin callers to spoof triggeredById and bypass per-user session/cooldown limits.
+        UUID triggerId = authenticatedUserId;
         if (triggerId == null) {
-            try {
-                triggerId = com.mavis.common.utils.SecurityUtils.getCurrentUserId();
-            } catch (RuntimeException ignored) {
-                triggerId = null;
+            triggerId = request.getTriggeredById();
+        } else if (request.getTriggeredById() != null && !triggerId.equals(request.getTriggeredById())) {
+            User currentActor = userRepository.findById(triggerId).orElse(null);
+            if (currentActor != null && currentActor.getRole() != null
+                    && "SYSTEM_ADMIN".equalsIgnoreCase(currentActor.getRole().getCode())) {
+                triggerId = request.getTriggeredById();
             }
         }
         if (triggerId != null) {
@@ -1589,9 +1598,13 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
         accessPolicyService.requireProjectReadAccess(project);
 
+        User actor = currentActiveActorOrNull();
+        boolean studentOnly = isStudentActor(actor);
         List<RuntimeSession> sessions = runtimeSessionRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         return sessions.stream()
-                .map(this::toSessionResponse)
+                .filter(s -> !studentOnly || (actor.getId() != null && s.getTriggeredBy() != null
+                        && actor.getId().equals(s.getTriggeredBy().getId())))
+                .map(s -> studentOnly ? RuntimeSessionResponseDTO.redactForStudent(toSessionResponse(s)) : toSessionResponse(s))
                 .collect(Collectors.toList());
     }
 
@@ -1601,7 +1614,27 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         RuntimeSession session = runtimeSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
         accessPolicyService.requireProjectReadAccess(session.getProject());
-        return toSessionResponse(session);
+        User actor = currentActiveActorOrNull();
+        boolean studentOnly = isStudentActor(actor);
+        if (studentOnly && actor.getId() != null
+                && (session.getTriggeredBy() == null || !actor.getId().equals(session.getTriggeredBy().getId()))) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "You can only access your own runtime session.");
+        }
+        RuntimeSessionResponseDTO dto = toSessionResponse(session);
+        return studentOnly ? RuntimeSessionResponseDTO.redactForStudent(dto) : dto;
+    }
+
+    private User currentActiveActorOrNull() {
+        try {
+            return accessPolicyService.requireCurrentActiveUser();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static boolean isStudentActor(User actor) {
+        return actor != null && actor.getRole() != null
+                && "STUDENT".equalsIgnoreCase(actor.getRole().getCode());
     }
 
     private RuntimeSessionResponseDTO toSessionResponse(RuntimeSession session) {

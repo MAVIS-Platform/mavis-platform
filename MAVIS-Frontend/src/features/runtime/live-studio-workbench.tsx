@@ -1385,13 +1385,18 @@ export function LiveStudioWorkbench({
         const videoData = await blobToDataUrl(video.blob).catch(() => undefined);
         if (videoData && videoData.length <= 4_900_000) {
           const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ?? null;
-          await captureSnapshot(svg, {
+          attachedToSession = await captureSnapshot(svg, {
             explanationOverride: videoNote,
             videoData,
             ...(video.posterImageData ? { posterImageData: video.posterImageData } : {}),
             smartOverlay: activeSmartOverlay,
           });
-          attachedToSession = true;
+          if (!attachedToSession) {
+            fallbackReason = t(
+              "Could not upload the recorded clip to the session — saved locally only. Retry or capture a Snapshot.",
+              "Không thể tải video lên phiên Studio — chỉ lưu tạm trên trình duyệt. Hãy thử lại hoặc chụp Snapshot.",
+            );
+          }
         } else if (videoData && videoData.length > 4_900_000) {
           fallbackReason = t(
             "Video exceeded the 20s / 3.7 MB upload limit — saved locally only (not attached to Lab submission). Record a shorter clip (<= 18s) to submit.",
@@ -2041,7 +2046,7 @@ export function LiveStudioWorkbench({
               <span className="inline-flex items-center gap-1.5 font-semibold">
                 <span
                   className={`size-2 rounded-full ${
-                    faultedServices.length > 0
+                    data.executionStatus === "RUNNING" && faultedServices.length > 0
                       ? "bg-rose-500"
                       : data.executionStatus === "RUNNING"
                         ? "bg-emerald-500"
@@ -2049,16 +2054,22 @@ export function LiveStudioWorkbench({
                   }`}
                   aria-hidden="true"
                 />
-                {healthyCount}/{services.length || 0}
+                {data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED"
+                  ? `${healthyCount}/${services.length || 0}`
+                  : `0/${services.length || 0}`}
               </span>
               <span className={`hidden sm:inline ${isLight ? "text-slate-300" : "text-slate-600"}`}>·</span>
               <span className="hidden font-mono sm:inline">
-                {liveRps != null ? `${liveRps} rps` : `${totalRunningReplicas} pods`}
+                {data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED"
+                  ? liveRps != null
+                    ? `${liveRps} rps`
+                    : `${totalRunningReplicas} pods`
+                  : t("Idle", "Chờ chạy")}
               </span>
-              {liveP95Ms != null && (
+              {(data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED") && liveP95Ms != null && (
                 <span className="hidden font-mono xl:inline">· {liveP95Ms}ms</span>
               )}
-              {liveErrorPct != null && (
+              {(data.executionStatus === "RUNNING" || data.executionStatus === "COMPLETED") && liveErrorPct != null && (
                 <span
                   className={`hidden font-mono font-semibold md:inline ${
                     liveErrorPct > 0
@@ -2074,7 +2085,11 @@ export function LiveStudioWorkbench({
 
             {telemetryPopoverOpen && (
               <div
-                className={`absolute right-0 top-full z-40 mt-2 w-72 space-y-2.5 p-3.5 ${styleCfg.floatingCardClass}`}
+                className={`absolute right-0 top-full z-40 mt-2 w-72 space-y-2.5 rounded-xl border p-3.5 shadow-xl ${
+                  isLight
+                    ? "border-slate-200 bg-white text-slate-900"
+                    : "border-slate-700 bg-slate-950 text-slate-100"
+                }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -2090,7 +2105,8 @@ export function LiveStudioWorkbench({
                   </button>
                 </div>
                 <p className="font-mono text-[11.5px] text-muted-foreground">
-                  {totalRunningReplicas} {t("running pods", "pod chạy")} · {snapshotCount}{" "}
+                  {data.executionStatus === "RUNNING" ? totalRunningReplicas : 0}{" "}
+                  {t("running pods", "pod chạy")} · {snapshotCount}{" "}
                   {t("snapshots", "minh chứng")}
                 </p>
                 {(!authoring || !isPreviewMode || isBooting) && (
@@ -4332,7 +4348,7 @@ export function LiveStudioWorkbench({
                     value={explanation}
                     maxLength={4000}
                     onChange={(event) => setExplanation(event.target.value)}
-                    className={`h-9 w-full text-xs ${!isPreviewMode && data.telemetry ? "pr-24" : ""} ${
+                    className={`h-9 w-full text-xs ${!isPreviewMode && data.telemetry ? "pr-32" : ""} ${
                       isLight
                         ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
                         : "border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500"
@@ -4355,7 +4371,7 @@ export function LiveStudioWorkbench({
                   )}
                 </div>
 
-                {/* Primary 1-click verified snapshot capture (auto-fills suggested note if blank so there is zero double-click friction) */}
+                {/* Primary 1-click verified snapshot capture (blocks explicit whitespace-only input; auto-fills when completely empty) */}
                 <Button
                   type="button"
                   size="sm"
@@ -4365,9 +4381,11 @@ export function LiveStudioWorkbench({
                     capture.isPending ||
                     capturing ||
                     waiting ||
+                    (explanation.length > 0 && !explanation.trim()) ||
                     (data.snapshots?.length ?? 0) >= 8
                   }
                   onClick={() => {
+                    if (explanation.length > 0 && !explanation.trim()) return;
                     const effectiveNote = explanation.trim() || smartSnapshotPlan.suggestedNote;
                     if (!explanation.trim()) setExplanation(effectiveNote);
                     void captureSnapshot(

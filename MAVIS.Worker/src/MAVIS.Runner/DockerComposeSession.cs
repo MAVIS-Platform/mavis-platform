@@ -459,19 +459,41 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 appliedEnvVal = item.EnvValue!;
                 if (!_actionEnvOverrides.TryGetValue(service, out var envMap))
                     _actionEnvOverrides[service] = envMap = new Dictionary<string, string>(StringComparer.Ordinal);
+                var hadPrevEnv = envMap.TryGetValue(appliedEnvKey, out var prevEnvVal);
                 envMap[appliedEnvKey] = appliedEnvVal;
                 await WriteActionOverrideAsync(ct);
-                await Require(["up", "--detach", "--no-deps", "--force-recreate", "--no-build", "--pull", "never",
-                    "--wait", "--wait-timeout", actionWaitTimeout, service], ct);
+                try
+                {
+                    await Require(["up", "--detach", "--no-deps", "--force-recreate", "--no-build", "--pull", "never",
+                        "--wait", "--wait-timeout", actionWaitTimeout, service], ct);
+                }
+                catch
+                {
+                    if (hadPrevEnv) envMap[appliedEnvKey] = prevEnvVal!;
+                    else envMap.Remove(appliedEnvKey);
+                    await WriteActionOverrideAsync(CancellationToken.None);
+                    throw;
+                }
             }
             else if (action == "SWAP_VERSION")
             {
                 imageBefore = _actionImageOverrides.GetValueOrDefault(service) ?? _originalPinnedImages.GetValueOrDefault(service) ?? "";
                 imageAfter = item.TargetImage!.Trim();
+                var hadPrevImage = _actionImageOverrides.TryGetValue(service, out var prevImgVal);
                 _actionImageOverrides[service] = imageAfter;
                 await WriteActionOverrideAsync(ct);
-                await Require(["up", "--detach", "--no-deps", "--force-recreate", "--no-build", "--pull", "never",
-                    "--wait", "--wait-timeout", actionWaitTimeout, service], ct);
+                try
+                {
+                    await Require(["up", "--detach", "--no-deps", "--force-recreate", "--no-build", "--pull", "never",
+                        "--wait", "--wait-timeout", actionWaitTimeout, service], ct);
+                }
+                catch
+                {
+                    if (hadPrevImage) _actionImageOverrides[service] = prevImgVal!;
+                    else _actionImageOverrides.Remove(service);
+                    await WriteActionOverrideAsync(CancellationToken.None);
+                    throw;
+                }
             }
             else await Require(["up", "--detach", "--no-deps", "--no-recreate", "--no-build", "--pull", "never",
                 "--wait", "--wait-timeout", actionWaitTimeout, "--scale", service + "=" + item.Replicas, service], ct);

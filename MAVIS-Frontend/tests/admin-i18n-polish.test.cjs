@@ -315,7 +315,7 @@ test("Task #07 Navigation & Layout: SectionHeader supports backHref, /submission
   assert.doesNotMatch(courses, /lg:grid-cols-\[276px_minmax\(0,1fr\)\]/);
   assert.match(courses, /<Sheet open=\{tocOpen\}/);
   assert.doesNotMatch(courses, /sticky bottom-3/);
-  assert.match(courses, /id="lab-switcher"[\s\S]*min-w-\[240px\] max-w-\[380px\]/);
+  assert.match(courses, /id="lab-switcher"[\s\S]*sm:min-w-\[240px\] sm:max-w-\[380px\]/);
 });
 
 test("Task #09 i18n, Modal Overlay & Navigation Polish: Inspector Evidence localized, double-escaped generics decoded, CourseBuilder prefix deduplicated, and Admin tabs/AppShell fixed", () => {

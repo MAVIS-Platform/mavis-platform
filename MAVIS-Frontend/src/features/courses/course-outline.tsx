@@ -545,11 +545,11 @@ function CourseOutlineBody({
                       : t("Take Quiz", "Làm Trắc Nghiệm")
                     : canManage
                       ? t(
-                          `View Question Bank (${quizQuestions.length} Qs)`,
+                          `View Question Bank (${quizQuestions.length} ${quizQuestions.length === 1 ? "Q" : "Qs"})`,
                           `Xem Bộ Câu Hỏi (${quizQuestions.length} câu)`,
                         )
                       : t(
-                          `Take Quiz (${quizQuestions.length} Qs)`,
+                          `Take Quiz (${quizQuestions.length} ${quizQuestions.length === 1 ? "Q" : "Qs"})`,
                           `Làm Trắc Nghiệm (${quizQuestions.length} câu)`,
                         );
                   return (

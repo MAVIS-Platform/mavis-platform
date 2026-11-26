@@ -15,7 +15,7 @@ import {
   extractMarkdownTheme,
   type MarkdownTheme,
 } from "@/components/shared/markdown-preview";
-import { useSelection } from "@/hooks/use-api";
+import { usePermission, useSelection } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
@@ -116,12 +116,13 @@ function shortDate(value: string) {
 
 export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
   const { t, locale } = useLocale();
+  const canManage = usePermission("workspace:manage");
   const params = useSearchParams();
   const selection = useSelection();
   const workspaceId = params?.get("workspace") || selection.workspaceId;
   const flowMode = params?.get("flow") === "setup" ? "setup" : "content";
   const cache = useQueryClient();
-  const course = useCourseAuthoring(workspaceId);
+  const course = useCourseAuthoring(canManage ? workspaceId : "");
   const [search, setSearch] = useState("");
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogTrack, setCatalogTrack] = useState<"ALL" | "JAVA" | "CSHARP" | "OTHER">("ALL");
@@ -140,7 +141,7 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
     queryKey: ["api", "theory-assets", workspaceId],
     queryFn: ({ signal }) =>
       api<TheoryAsset[]>(`workspaces/${workspaceId}/theory-assets`, { signal }),
-    enabled: Boolean(workspaceId),
+    enabled: canManage && Boolean(workspaceId),
     retry: false,
   });
 
@@ -302,6 +303,20 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
     setError("");
   };
   const editing = editorId !== null;
+
+  if (!canManage) {
+    return (
+      <div className="mx-auto max-w-lg space-y-3 rounded-xl border bg-card p-6 text-center" role="alert">
+        <h2 className="text-base font-semibold">{t("Access unavailable", "Không thể truy cập")}</h2>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            "Only Lecturers can manage the Theory Library for this class.",
+            "Chỉ Giảng viên mới có quyền quản lý Thư viện lý thuyết của lớp học này.",
+          )}
+        </p>
+      </div>
+    );
+  }
 
   const content = (
     <div className="space-y-4">

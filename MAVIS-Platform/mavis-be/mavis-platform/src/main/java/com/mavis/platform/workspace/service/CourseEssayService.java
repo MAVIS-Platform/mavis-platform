@@ -36,7 +36,7 @@ public class CourseEssayService {
     public List<EssaySubmissionView> listForWorkspace(UUID workspaceId) {
         access.requireWorkspaceMember(workspaceId);
         User actor = access.requireCurrentActiveUser();
-        boolean studentOnly = CourseLabPolicy.isStudent(actor) && !isWorkspaceLecturer(workspaceId, actor.getId());
+        boolean studentOnly = CourseLabPolicy.isStudent(actor);
 
         if (studentOnly) {
             return jdbc.query("""
@@ -98,6 +98,10 @@ public class CourseEssayService {
                 ON CONFLICT (course_item_id, student_id) DO UPDATE
                 SET answer_markdown = EXCLUDED.answer_markdown,
                     status = 'SUBMITTED',
+                    score = NULL,
+                    feedback = NULL,
+                    graded_by = NULL,
+                    graded_at = NULL,
                     submitted_at = EXCLUDED.submitted_at
                 """, id, workspaceId, itemId, actor.getId(), markdown, now);
 

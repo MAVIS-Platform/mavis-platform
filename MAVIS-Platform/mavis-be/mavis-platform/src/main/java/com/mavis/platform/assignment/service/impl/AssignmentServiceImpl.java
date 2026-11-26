@@ -359,18 +359,7 @@ public class AssignmentServiceImpl implements AssignmentService {
         if (workspace == null) {
             return;
         }
-        boolean isCreator = workspace.getCreatedBy() != null && currentUserId.equals(workspace.getCreatedBy().getId());
-        if (isCreator) {
-            return;
-        }
-
-        boolean isLecturer = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), currentUserId)
-                .map(wm -> "LECTURER".equalsIgnoreCase(wm.getMemberRole()))
-                .orElse(false);
-
-        if (!isLecturer) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Chỉ Giảng viên của lớp mới có quyền tạo/chỉnh sửa đề bài tập");
-        }
+        accessPolicyService.requireWorkspaceLecturer(workspace.getId());
     }
 
     private AssignmentResponseDTO toDTO(Assignment assignment, long submissionCount) {

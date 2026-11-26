@@ -403,8 +403,13 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
             var sessionSource = runtimeSession.getSourceSnapshot();
             var sessionModel = runtimeSession.getModelVersion();
+            UUID configuredRuntimeSnapshotId = parseUuidOrNull(
+                    assignment.getStudioExerciseSnapshot() == null
+                            ? null
+                            : assignment.getStudioExerciseSnapshot().path("runtimeSnapshotId").asText(null));
             boolean sameSource = sessionSource != null
                     && (sourceSnapshot.getId().equals(sessionSource.getId())
+                        || (configuredRuntimeSnapshotId != null && configuredRuntimeSnapshotId.equals(sessionSource.getId()))
                         || (sourceSnapshot.getArtifactHash() != null
                             && sourceSnapshot.getArtifactHash().equals(sessionSource.getArtifactHash())));
             boolean sameModel = sessionModel != null
@@ -614,11 +619,33 @@ public class SubmissionServiceImpl implements SubmissionService {
         log.debug("Lấy danh sách bài nộp theo projectId: {}", projectId);
         accessPolicyService.requireProjectReadAccess(projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Project not found")));
+        User actor = accessPolicyService.requireCurrentActiveUser();
+        boolean studentOnly = actor != null && actor.getRole() != null
+                && "STUDENT".equalsIgnoreCase(actor.getRole().getCode());
         if (jdbc != null) {
-            return querySubmissionsLightweight("s.project_id = ?", List.of(projectId), false);
+            // Students may read shared TEACHER_REFERENCE projects, so scope project submission queries to their own rows.
+            if (studentOnly && actor.getId() != null) {
+                return querySubmissionsLightweight("s.project_id = ? AND s.submitted_by = ?",
+                        List.of(projectId, actor.getId()), false);
+            }
+            return querySubmissionsLightweight("s.project_id = ?", List.of(projectId), !studentOnly);
         }
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByProjectIdOrderBySubmittedAtDesc(projectId);
-        return mapToResponseListWithFeedbackCount(submissions, false);
+        if (studentOnly && actor.getId() != null) {
+            submissions = submissions.stream()
+                    .filter(s -> s.getSubmittedBy() != null && actor.getId().equals(s.getSubmittedBy().getId()))
+                    .toList();
+        }
+        return mapToResponseListWithFeedbackCount(submissions, !studentOnly);
+    }
+
+    private static UUID parseUuidOrNull(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return UUID.fromString(raw.trim());
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     @Override

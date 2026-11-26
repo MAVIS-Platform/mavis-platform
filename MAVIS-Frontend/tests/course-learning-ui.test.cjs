@@ -1497,7 +1497,7 @@ test("Round 5 guards strip Theory theme metadata, check quizVersion > 0, hydrate
   assert.match(labScreens, /setupLab\?\.quizPublished && \(setupLab\?\.quizVersion \?\? 0\) > 0/);
   assert.doesNotMatch(authoring, /quizPublished|LabQuizSection|id: "quiz"/);
   assert.match(submissionV2, /const latest =\s*mine\[0\] \?\?\s*\(initialSubmission/);
-  assert.match(submissionV2, /activeReview\?\.labOutcome !== "PASSED"/);
+  assert.match(submissionV2, /activeReview\?\.labOutcome === "NEEDS_REVISION"/);
   assert.match(apiError, /STUDIO_VALIDATION_REQUIRED/);
 });
 

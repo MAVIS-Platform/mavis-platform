@@ -392,7 +392,7 @@ export function Courses() {
     const list = submissions.data ?? [];
     const passedCount = list.filter((s) => {
       const score = s.reviewScore;
-      return s.labOutcome === "PASSED" || (typeof score === "number" && score >= 50);
+      return s.labOutcome === "PASSED" || (s.labOutcome == null && typeof score === "number" && score > 50);
     }).length;
     const scored = list.map((s) => s.reviewScore).filter((v): v is number => typeof v === "number");
     const avgScore = scored.length
@@ -1011,12 +1011,12 @@ export function LabWorkspace() {
                 >
                   ← {t("Back to course", "Quay lại khóa học")}
                 </Link>
-                <span className="shrink-0 text-white/50">/</span>
-                <span className="max-w-[42%] truncate font-medium text-white/90">{workspace.name}</span>
+                <span className="hidden shrink-0 text-white/50 sm:inline">/</span>
+                <span className="hidden max-w-[42%] truncate font-medium text-white/90 sm:inline">{workspace.name}</span>
                 {currentModule && (
                   <>
-                    <span className="shrink-0 text-white/50">/</span>
-                    <span className="min-w-0 flex-1 truncate text-sky-100">
+                    <span className="hidden shrink-0 text-white/50 md:inline">/</span>
+                    <span className="hidden min-w-0 flex-1 truncate text-sky-100 md:inline">
                       {/^(?:Module|Chương)\s+\d+/i.test(currentModule.title.trim())
                         ? currentModule.title
                         : `${t("Module", "Chương")} ${currentModule.position}: ${currentModule.title}`}
@@ -1130,7 +1130,7 @@ export function LabWorkspace() {
               className="flex flex-wrap items-center justify-between gap-2.5"
             >
               {(roadmap.data?.labs.length ?? 0) > 1 ? (
-                <div className="min-w-0">
+                <div className="w-full min-w-0 sm:w-auto">
                   <label className="sr-only" htmlFor="lab-switcher">
                     {t("Switch Lab", "Chuyển bài Lab")}
                   </label>
@@ -1145,7 +1145,7 @@ export function LabWorkspace() {
                         );
                       }
                     }}
-                    className="h-8 min-w-[240px] max-w-[380px] truncate rounded-lg border border-white/30 bg-white/15 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/25"
+                    className="h-8 w-full max-w-full truncate rounded-lg border border-white/30 bg-white/15 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/25 sm:w-auto sm:min-w-[240px] sm:max-w-[380px]"
                   >
                     {(roadmap.data?.labs ?? []).map((item) => {
                       const icon =
@@ -2419,7 +2419,9 @@ function StepContent({
           className="space-y-4"
           aria-label={t("Summary and submission", "Xem lại và xác nhận nộp bài")}
         >
-          {requiresRuntime && !liveStudioVerified && !preview ? (
+          {requiresRuntime && !liveStudioVerified && !preview && studentContextLoading ? (
+            <LoadingState label={t("Loading submission status…", "Đang tải trạng thái bài nộp…")} />
+          ) : requiresRuntime && !liveStudioVerified && !preview ? (
             <DetailPanel
               title={t("Studio practice required", "Hoàn thành phiên thực hành MAVIS Studio")}
             >

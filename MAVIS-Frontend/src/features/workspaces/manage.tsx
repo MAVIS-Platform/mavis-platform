@@ -131,6 +131,7 @@ export function WorkspaceControls({
   mode?: "overview" | "members" | "all";
   onSaved?: () => void;
 }) {
+  const { t } = useLocale();
   const session = useSession(),
     add = useApiMutation("addWorkspaceMember"),
     remove = useApiMutation("removeWorkspaceMember"),
@@ -268,7 +269,10 @@ export function WorkspaceControls({
       {showOverview && workspace.status !== "ARCHIVED" && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
           <p className="mb-3 text-xs text-muted-foreground">
-            Archive this class when the term ends. You can reopen it later.
+            {t(
+              "Archive this class when the term ends. You can reopen it later.",
+              "Lưu trữ lớp học khi kết thúc học kỳ. Bạn có thể mở lại sau.",
+            )}
           </p>
           <Button
             variant="destructive"

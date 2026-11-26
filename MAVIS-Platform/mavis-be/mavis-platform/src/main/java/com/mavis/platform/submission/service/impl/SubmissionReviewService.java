@@ -159,7 +159,10 @@ public class SubmissionReviewService {
             }
         }
 
-        boolean passed = "GRADED".equals(request.status()) && (!hasSnapshotGrades || allSnapshotsPassed);
+        boolean overallPassed = resolvedScore != null
+                && resolvedScore.compareTo(new BigDecimal("50")) > 0;
+        boolean passed = "GRADED".equals(request.status())
+                && (hasSnapshotGrades ? allSnapshotsPassed : overallPassed);
         String labOutcome = "GRADED".equals(request.status())
                 ? (passed ? "PASSED" : "NEEDS_REVISION")
                 : ("RETURNED".equals(request.status()) ? "NEEDS_REVISION" : "PENDING");

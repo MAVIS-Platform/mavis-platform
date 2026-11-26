@@ -711,7 +711,7 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
             key: "assignment",
             label: t("Lab", "Bài Lab"),
             render: (s) => (
-              <span className="line-clamp-2 max-w-44 text-xs font-medium">
+              <span className="line-clamp-2 max-w-36 text-xs font-medium">
                 {formatCourseLabTitle(s.assignmentTitle, s.labOrder, s.assignmentId)}
               </span>
             ),
@@ -720,16 +720,9 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
             key: "student",
             label: t("Student", "Sinh viên"),
             render: (s) => (
-              <span className="block max-w-36 truncate text-xs">
+              <span className="block max-w-32 truncate text-xs">
                 {s.studentName || s.studentId}
               </span>
-            ),
-          },
-          {
-            key: "model",
-            label: t("Model", "Mô hình"),
-            render: (s) => (
-              <span className="whitespace-nowrap font-mono text-xs">Rev {s.model.revision}</span>
             ),
           },
           {
@@ -738,19 +731,10 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
             render: (s) => <SubmissionResult submission={s} />,
           },
           {
-            key: "reviewer",
-            label: t("Graded by", "Giảng viên chấm"),
-            render: (s) => (
-              <span className="block max-w-28 truncate text-xs text-muted-foreground">
-                {s.gradedByName || "—"}
-              </span>
-            ),
-          },
-          {
             key: "date",
             label: t("Submitted", "Đã nộp"),
             render: (s) => (
-              <span className="whitespace-nowrap text-xs">
+              <span className="block max-w-28 text-xs leading-4">
                 {s.submittedAt
                   ? new Date(s.submittedAt).toLocaleString()
                   : t("Not submitted", "Chưa nộp")}
@@ -927,6 +911,11 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
                 submissionId={query.data.id}
                 guidedLab={query.data.guidedLab === true}
                 studentSnapshots={query.data.studentSnapshots ?? undefined}
+                reviseHref={
+                  !canReview && query.data.workspaceId && query.data.assignmentId
+                    ? `/lab?workspace=${encodeURIComponent(query.data.workspaceId)}&assignment=${encodeURIComponent(query.data.assignmentId)}&step=3`
+                    : undefined
+                }
               />
             </aside>
           </div>

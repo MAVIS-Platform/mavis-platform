@@ -346,6 +346,10 @@ export function LabSubmissionV2({
               activeReview.status !== "DRAFT" && (() => {
                 const needsRevision =
                   activeReview.status === "RETURNED" || activeReview.labOutcome === "NEEDS_REVISION";
+                const snapGrades =
+                  "snapshotGrades" in activeReview && Array.isArray(activeReview.snapshotGrades)
+                    ? activeReview.snapshotGrades
+                    : [];
                 return (
                 <div className="space-y-2 rounded-md border bg-background p-3 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
@@ -369,6 +373,31 @@ export function LabSubmissionV2({
                       </span>
                     )}
                   </div>
+                  {needsRevision &&
+                    typeof activeReview.score === "number" &&
+                    activeReview.score > 50 && (
+                      <p className="rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-900 dark:text-amber-200">
+                        {t(
+                          "Every required rubric item must score strictly above 5.0 / 10 to pass, even if the overall average is above 5.0.",
+                          "Mọi mục chấm bắt buộc đều phải đạt > 5.0 / 10 để qua bài Lab, kể cả khi điểm trung bình trên 5.0.",
+                        )}
+                      </p>
+                    )}
+                  {snapGrades.length > 0 && (
+                    <div className="space-y-1">
+                      {snapGrades.map((g, idx) => (
+                        <div
+                          key={`${g.snapshotId}-${idx}`}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded border bg-muted/30 px-2 py-1"
+                        >
+                          <span className="font-medium">{g.title || g.snapshotId}</span>
+                          <Badge variant={g.score > 5 ? "success" : "warning"}>
+                            {g.score.toFixed(2)} / 10
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {activeReview.summary && (
                     <p className="whitespace-pre-wrap">{activeReview.summary}</p>
                   )}
@@ -376,7 +405,7 @@ export function LabSubmissionV2({
                 );
               })()}
 
-            {activeReview?.labOutcome !== "PASSED" && (
+            {(activeReview?.status === "RETURNED" || activeReview?.labOutcome === "NEEDS_REVISION") && (
               <div className="flex justify-end pt-1">
                 <Button
                   type="button"
@@ -416,6 +445,28 @@ export function LabSubmissionV2({
         title={t("Review & Confirm Lab Submission", "Xem lại bài thực hành & Xác nhận nộp bài")}
       >
         <div className="space-y-4">
+          {revising && activeReview && (activeReview.status === "RETURNED" || activeReview.labOutcome === "NEEDS_REVISION") && (
+            <div className="space-y-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-amber-900 dark:text-amber-200">
+                  {t("Lecturer feedback to address", "Nhận xét của Giảng viên cần chỉnh sửa")}
+                </span>
+                {activeReview.score !== null && (
+                  <span className="rounded bg-amber-200/80 px-2 py-0.5 font-bold text-amber-950 dark:bg-amber-500/25 dark:text-amber-100">
+                    {formatTenScaleScore(
+                      activeReview.score,
+                      "scoreTenScale" in activeReview ? activeReview.scoreTenScale : undefined,
+                    )}
+                  </span>
+                )}
+              </div>
+              {activeReview.summary && (
+                <p className="whitespace-pre-wrap text-amber-950 dark:text-amber-100">
+                  {activeReview.summary}
+                </p>
+              )}
+            </div>
+          )}
           {studioPracticeSummary}
 
           {!studio &&
@@ -550,7 +601,7 @@ export function LabSubmissionV2({
           )}
           {submit.error && (
             <p role="alert" className="text-sm text-destructive">
-              {submit.error.message}
+              {t(submit.error.message)}
             </p>
           )}
 
@@ -569,10 +620,21 @@ export function LabSubmissionV2({
                 </span>
               )}
             </div>
-            <Button
-              type="button"
-              size="lg"
-              className="bg-teal-600 px-6 font-semibold text-white hover:bg-teal-700"
+            <div className="flex flex-wrap items-center gap-2">
+              {revising && latest && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={submit.isPending}
+                  onClick={() => setRevising(false)}
+                >
+                  {t("Cancel", "Hủy chỉnh sửa")}
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="lg"
+                className="bg-teal-600 px-6 font-semibold text-white hover:bg-teal-700"
               disabled={submit.isPending || missingStudioSnapshot}
               onClick={() => {
                 if (!canSubmit) {
@@ -639,6 +701,7 @@ export function LabSubmissionV2({
                 ? t("Submitting…", "Đang nộp bài…")
                 : t("Confirm & Submit for Grading", "Xác nhận nộp bài")}
             </Button>
+            </div>
           </div>
         </div>
       </DetailPanel>

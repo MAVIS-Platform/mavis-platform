@@ -395,6 +395,7 @@ export function ChapterQuizRunner({
   };
 
   const submitAttempt = () => {
+    if (backendQuizEnabled && submitBackendAttempt.isPending) return;
     const pickedCorrect = displayedQuestions.filter((question) =>
       isLocalQuestionCorrect(question, toSelectedIndexes(activeAttempt.answers[question.id])),
     ).length;

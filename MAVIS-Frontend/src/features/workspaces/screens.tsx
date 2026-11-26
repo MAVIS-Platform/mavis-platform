@@ -692,19 +692,34 @@ export function WorkspaceMembers() {
                       </div>
                     ),
                   },
-                  {
-                    key: "email",
-                    label: t("Email", "Email"),
-                    render: (m) => (
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {m.email || "—"}
-                      </span>
-                    ),
-                  },
+                  ...(canManage
+                    ? [
+                        {
+                          key: "email",
+                          label: t("Email", "Email"),
+                          render: (m: { email?: string | undefined }) => (
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {m.email || "—"}
+                            </span>
+                          ),
+                        },
+                      ]
+                    : []),
                   {
                     key: "status",
                     label: t("Status", "Trạng thái"),
                     render: (m) => {
+                      if (!canManage) {
+                        return (
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            <span
+                              className="size-1.5 rounded-full bg-emerald-500"
+                              aria-hidden="true"
+                            />
+                            {t("Enrolled", "Đã tham gia")}
+                          </span>
+                        );
+                      }
                       if (gradebookLoading) {
                         return (
                           <span className="text-xs text-muted-foreground">
@@ -717,7 +732,7 @@ export function WorkspaceMembers() {
                       const completed = totalLabs > 0 && passed >= totalLabs;
                       const inProgress = passed > 0 || stats?.averageScore != null;
                       return completed ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                           <span
                             className="size-1.5 rounded-full bg-emerald-500"
                             aria-hidden="true"
@@ -725,12 +740,12 @@ export function WorkspaceMembers() {
                           {t("Completed", "Hoàn thành")}
                         </span>
                       ) : inProgress ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-400">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-400">
                           <span className="size-1.5 rounded-full bg-sky-500" aria-hidden="true" />
                           {t("In Progress", "Đang học")}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
                           <span
                             className="size-1.5 rounded-full bg-muted-foreground"
                             aria-hidden="true"
@@ -740,89 +755,93 @@ export function WorkspaceMembers() {
                       );
                     },
                   },
-                  {
-                    key: "progress",
-                    label: t("Learning Progress", "Tiến độ học tập"),
-                    render: (m) => {
-                      if (gradebookLoading) {
-                        return (
-                          <span className="text-xs text-muted-foreground">
-                            {t("Loading…", "Đang tải…")}
-                          </span>
-                        );
-                      }
-                      if (gradebookFailed) {
-                        return (
-                          <button
-                            type="button"
-                            className="text-xs text-primary hover:underline"
-                            onClick={() => void gradebook.refetch()}
-                          >
-                            {t("Retry", "Tải lại")}
-                          </button>
-                        );
-                      }
-                      const stats = lookupStats(m);
-                      const passed = stats?.passedLabs ?? 0;
-                      const pct = totalLabs > 0 ? Math.round((passed / totalLabs) * 100) : 0;
-                      return (
-                        <div className="min-w-36 space-y-1">
-                          <div className="flex justify-between text-[11px] font-medium">
-                            <span className="text-emerald-700 dark:text-emerald-400">
-                              {passed}/{totalLabs}{" "}
-                              {totalLabs === 1 ? t("Lab", "Lab") : t("Labs", "Labs")}
-                            </span>
-                            <span className="text-muted-foreground">{pct}%</span>
-                          </div>
-                          <div
-                            role="progressbar"
-                            aria-label={t("Student Lab progress", "Tiến độ Lab sinh viên")}
-                            aria-valuemin={0}
-                            aria-valuemax={totalLabs || 1}
-                            aria-valuenow={passed}
-                            className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-                          >
-                            <div
-                              className="h-full rounded-full bg-emerald-500 transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    },
-                  },
-                  {
-                    key: "avgScore",
-                    label: t("Average Score", "Điểm trung bình"),
-                    render: (m) => {
-                      if (gradebookLoading) {
-                        return (
-                          <span className="text-xs text-muted-foreground">
-                            {t("Loading…", "Đang tải…")}
-                          </span>
-                        );
-                      }
-                      const stats = lookupStats(m);
-                      const tenScale = toTenScaleScore(
-                        stats?.averageScore,
-                        stats?.averageScoreTenScale,
-                      );
-                      if (tenScale === null) {
-                        return <span className="text-xs text-muted-foreground">—</span>;
-                      }
-                      return (
-                        <span
-                          className={
-                            tenScale > 5
-                              ? "font-semibold text-emerald-700 dark:text-emerald-400"
-                              : "font-semibold text-amber-700 dark:text-amber-400"
-                          }
-                        >
-                          {formatTenScaleScore(stats?.averageScore, stats?.averageScoreTenScale)}
-                        </span>
-                      );
-                    },
-                  },
+                  ...(canManage
+                    ? [
+                        {
+                          key: "progress",
+                          label: t("Learning Progress", "Tiến độ học tập"),
+                          render: (m: { id: string; email?: string | undefined }) => {
+                            if (gradebookLoading) {
+                              return (
+                                <span className="text-xs text-muted-foreground">
+                                  {t("Loading…", "Đang tải…")}
+                                </span>
+                              );
+                            }
+                            if (gradebookFailed) {
+                              return (
+                                <button
+                                  type="button"
+                                  className="text-xs text-primary hover:underline"
+                                  onClick={() => void gradebook.refetch()}
+                                >
+                                  {t("Retry", "Tải lại")}
+                                </button>
+                              );
+                            }
+                            const stats = lookupStats(m);
+                            const passed = stats?.passedLabs ?? 0;
+                            const pct = totalLabs > 0 ? Math.round((passed / totalLabs) * 100) : 0;
+                            return (
+                              <div className="min-w-36 space-y-1">
+                                <div className="flex justify-between text-[11px] font-medium">
+                                  <span className="text-emerald-700 dark:text-emerald-400">
+                                    {passed}/{totalLabs}{" "}
+                                    {totalLabs === 1 ? t("Lab", "Lab") : t("Labs", "Labs")}
+                                  </span>
+                                  <span className="text-muted-foreground">{pct}%</span>
+                                </div>
+                                <div
+                                  role="progressbar"
+                                  aria-label={t("Student Lab progress", "Tiến độ Lab sinh viên")}
+                                  aria-valuemin={0}
+                                  aria-valuemax={totalLabs || 1}
+                                  aria-valuenow={passed}
+                                  className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                                >
+                                  <div
+                                    className="h-full rounded-full bg-emerald-500 transition-all"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          },
+                        },
+                        {
+                          key: "avgScore",
+                          label: t("Average Score", "Điểm trung bình"),
+                          render: (m: { id: string; email?: string | undefined }) => {
+                            if (gradebookLoading) {
+                              return (
+                                <span className="text-xs text-muted-foreground">
+                                  {t("Loading…", "Đang tải…")}
+                                </span>
+                              );
+                            }
+                            const stats = lookupStats(m);
+                            const tenScale = toTenScaleScore(
+                              stats?.averageScore,
+                              stats?.averageScoreTenScale,
+                            );
+                            if (tenScale === null) {
+                              return <span className="text-xs text-muted-foreground">—</span>;
+                            }
+                            return (
+                              <span
+                                className={
+                                  tenScale > 5
+                                    ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                                    : "font-semibold text-amber-700 dark:text-amber-400"
+                                }
+                              >
+                                {formatTenScaleScore(stats?.averageScore, stats?.averageScoreTenScale)}
+                              </span>
+                            );
+                          },
+                        },
+                      ]
+                    : []),
                   ...(canManage
                     ? [
                         {

@@ -147,7 +147,7 @@ export function ArchitectureWorkspace({
                     <Link
                       href={`/assignments?workspace=${encodeURIComponent(project.data.workspaceId)}${project.data.assignmentId ? `#assignment-${encodeURIComponent(project.data.assignmentId)}` : ""}`}
                     >
-                      Submit to Assignment →
+                      {t("Submit to Assignment →", "Nộp sang bài tập →")}
                     </Link>
                   </Button>
                 )}

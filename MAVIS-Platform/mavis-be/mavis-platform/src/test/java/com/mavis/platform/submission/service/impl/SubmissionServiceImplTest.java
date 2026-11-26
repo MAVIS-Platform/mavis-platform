@@ -961,6 +961,26 @@ class SubmissionServiceImplTest {
     }
 
     @Test
+    void projectSubmissionListFiltersOutClassmatesForStudentsOnSharedReferenceProject() {
+        student.setRole(Role.builder().code("STUDENT").build());
+        User classmate = User.builder().id(UUID.randomUUID()).email("other@mavis.edu.vn").fullName("Other Student")
+                .role(Role.builder().code("STUDENT").build()).build();
+        SubmissionSnapshot ownSub = SubmissionSnapshot.builder().id(UUID.randomUUID()).project(project)
+                .assignment(assignment).submittedBy(student).build();
+        SubmissionSnapshot otherSub = SubmissionSnapshot.builder().id(UUID.randomUUID()).project(project)
+                .assignment(assignment).submittedBy(classmate).build();
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+        when(submissionSnapshotRepository.findByProjectIdOrderBySubmittedAtDesc(projectId)).thenReturn(List.of(ownSub, otherSub));
+        when(feedbackCommentRepository.countFeedbacksBySubmissionIds(any())).thenReturn(List.of());
+        when(submissionReviewRepository.findBySubmissionIdIn(any())).thenReturn(List.of());
+
+        List<SubmissionResponseDTO> result = submissionService.getSubmissionsByProject(projectId);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getSubmittedById()).isEqualTo(student.getId());
+    }
+
+    @Test
     void submissionExportRejectsUnrelatedUserBeforeLoadingArtifacts() {
         UUID id = UUID.randomUUID();
         SubmissionSnapshot entry = SubmissionSnapshot.builder().id(id).project(project).build();
