@@ -2676,3 +2676,11 @@ test("E2E #08 Backend Quiz Gate & /studio SSR Hydration: gates runtime studio be
   assert.match(studio, /const \[sandboxObservedAt, setSandboxObservedAt\] = useState\(""\);/);
   assert.match(live, /const \[freshnessNow, setFreshnessNow\] = useState\(0\);/);
 });
+
+
+test("E2E #09 StudioWorkbench SSR Guard: defers StudioWorkbench mount to client and gates runtimeReadSessions on projectId", () => {
+  const studio = read("src/features/runtime/studio-workbench.tsx");
+  assert.match(studio, /export function StudioWorkbench\(\) \{\s*const \[mounted, setMounted\] = useState\(false\);/);
+  assert.match(studio, /function StudioWorkbenchInner\(\)/);
+  assert.match(studio, /useApiQuery\(\s*"runtimeReadSessions",\s*\{ projectId: projectId \|\| "\*" \},\s*\{ enabled: Boolean\(projectId\) \}/);
+});

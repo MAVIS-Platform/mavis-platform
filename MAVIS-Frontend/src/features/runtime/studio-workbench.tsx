@@ -621,6 +621,24 @@ function renderComponentIcon(keyOrName: string, className = "size-4") {
 }
 
 export function StudioWorkbench() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted) {
+    return (
+      <div
+        className="flex h-screen w-screen items-center justify-center bg-[#090d16] text-xs text-slate-400"
+        role="status"
+      >
+        Loading MAVIS Studio…
+      </div>
+    );
+  }
+  return <StudioWorkbenchInner />;
+}
+
+function StudioWorkbenchInner() {
   const { soundEnabled, toggleSound, volume, changeVolume, playSound } = useStudioSound();
   const { t } = useLocale();
   const params = useSearchParams();
@@ -748,7 +766,11 @@ export function StudioWorkbench() {
     window.addEventListener("pointerup", onPointerUp);
   }
 
-  const sessionsQuery = useApiQuery("runtimeReadSessions", { projectId: projectId || "*" });
+  const sessionsQuery = useApiQuery(
+    "runtimeReadSessions",
+    { projectId: projectId || "*" },
+    { enabled: Boolean(projectId) },
+  );
   const liveSessions = useMemo(
     () =>
       (sessionsQuery.data ?? []).filter(
