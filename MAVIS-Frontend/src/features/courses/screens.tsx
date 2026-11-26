@@ -898,6 +898,10 @@ export function LabWorkspace() {
     rawSidebarItems,
     assignments.data ?? [],
     locale,
+    {
+      courseCode: workspace?.code,
+      modulePosition: currentModule?.position ?? lab?.labOrder,
+    },
   );
   const flowItemHref = (item: OutlineItemData): string => {
     if (item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
