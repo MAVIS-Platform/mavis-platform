@@ -903,8 +903,8 @@ export function LiveStudioWorkbench({
       const nextX = initial.x + (moveEvent.clientX - startX);
       const nextY = initial.y + (moveEvent.clientY - startY);
       const minY = -8;
-      const bottomReserved = bottomCollapsed ? 44 : Math.min(Math.max(120, ph - 120), bottomHeight + 12);
-      const maxY = Math.max(-8, ph - bottomReserved - 52);
+      const bottomReserved = bottomCollapsed ? 56 : Math.min(Math.max(120, ph - 120), bottomHeight + 24);
+      const maxY = Math.max(-8, ph - bottomReserved - 80);
       const clampedY = Math.max(minY, Math.min(maxY, Math.round(nextY)));
       const clampedX =
         panel === "right"
@@ -1082,8 +1082,8 @@ export function LiveStudioWorkbench({
       const stageEl = graphRef.current?.parentElement;
       const pw = stageEl?.clientWidth ?? window.innerWidth;
       const ph = stageEl?.clientHeight ?? window.innerHeight;
-      const bottomReserved = bottomCollapsed ? 44 : Math.min(Math.max(120, ph - 120), bottomHeight + 12);
-      const maxY = Math.max(-8, ph - bottomReserved - 52);
+      const bottomReserved = bottomCollapsed ? 56 : Math.min(Math.max(120, ph - 120), bottomHeight + 24);
+      const maxY = Math.max(-8, ph - bottomReserved - 80);
       setRightOffset((prev) => {
         const minX = 16 - Math.max(8, pw - rightWidth - 8);
         const cx = Math.max(minX, Math.min(8, prev.x));
@@ -4792,7 +4792,7 @@ export function LiveStudioWorkbench({
           const rightBottomReserve = !bottomCollapsed
             ? bottomHeight + 24
             : rightHeight != null || rightOffset.y !== 0
-              ? 16
+              ? 56
               : 100;
           return (
           <aside

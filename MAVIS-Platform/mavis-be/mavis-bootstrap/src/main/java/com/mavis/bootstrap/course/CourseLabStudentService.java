@@ -375,7 +375,11 @@ public class CourseLabStudentService {
         var exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
         JsonNode frozenExercise = lab.getStudioExerciseSnapshot();
         boolean isStudentActor = CourseLabPolicy.isStudent(actor);
-        JsonNode activeExercise = isStudentActor
+        boolean isActivePublishedLab = lab.getLabOrder() != null
+                && lab.getWorkspace() != null
+                && lab.getWorkspace().isCourseMode()
+                && "ACTIVE".equalsIgnoreCase(lab.getWorkspace().getStatus());
+        JsonNode activeExercise = (isStudentActor || isActivePublishedLab)
                 ? (frozenExercise != null ? frozenExercise : exerciseToNode(exercise))
                 : (exercise != null ? exerciseToNode(exercise) : frozenExercise);
         UUID runtimeModelId = activeExercise != null && activeExercise.hasNonNull("runtimeModelId")

@@ -198,4 +198,37 @@ class LabStudioExerciseServiceTest {
         assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
                 new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, badScaleAction, "bad")));
     }
+
+    @Test
+    void getPrefersFrozenStudioExerciseSnapshotOnPublishedActiveCourseLab() throws Exception {
+        workspace.setCourseMode(true);
+        workspace.setStatus("ACTIVE");
+        lab.setLabOrder(3);
+        lab.setStudioExerciseSnapshot(json.readTree("""
+                {
+                  "initialState": { "stoppedServices": ["inventory-service"], "stoppedControllers": [] },
+                  "allowedActions": ["START", "STOP"],
+                  "successCriteria": {
+                    "exerciseType": "CIRCUIT_BREAKER",
+                    "maxErrorRatePercent": 0,
+                    "targetChangeAction": { "action": "START", "service": "inventory-service" }
+                  },
+                  "instructions": "Khôi phục sự cố",
+                  "revision": 2
+                }
+                """));
+        LabStudioExercise staleDraft = LabStudioExercise.builder()
+                .assignment(lab)
+                .initialState(json.readTree("""
+                        { "stoppedServices": ["payment-service"], "stoppedControllers": [] }
+                        """))
+                .revision(5)
+                .build();
+        when(assignments.findById(labId)).thenReturn(Optional.of(lab));
+        when(exercises.findByAssignmentId(labId)).thenReturn(Optional.of(staleDraft));
+
+        var view = service.get(workspaceId, labId);
+        assertEquals(List.of("inventory-service"), view.initialState().stoppedServices());
+        assertEquals("inventory-service", view.successCriteria().targetChangeAction().service());
+    }
 }

@@ -94,8 +94,28 @@ public class LabStudioExerciseService {
     @Transactional(readOnly = true)
     public ExerciseView get(UUID workspaceId, UUID assignmentId) {
         access.requireWorkspaceLecturer(workspaceId);
-        lab(workspaceId, assignmentId);
-        return exercises.findByAssignmentId(assignmentId).map(this::view).orElse(null);
+        Assignment lab = lab(workspaceId, assignmentId);
+        LabStudioExercise draft = exercises.findByAssignmentId(assignmentId).orElse(null);
+        if (isFrozenActiveCourseLab(lab)) {
+            return viewFromSnapshot(lab.getStudioExerciseSnapshot(), draft);
+        }
+        if (draft != null) {
+            return view(draft);
+        }
+        if (lab.getStudioExerciseSnapshot() != null && lab.getStudioExerciseSnapshot().isObject()) {
+            return viewFromSnapshot(lab.getStudioExerciseSnapshot(), null);
+        }
+        return null;
+    }
+
+    private static boolean isFrozenActiveCourseLab(Assignment lab) {
+        return lab != null
+                && lab.getLabOrder() != null
+                && lab.getWorkspace() != null
+                && lab.getWorkspace().isCourseMode()
+                && "ACTIVE".equalsIgnoreCase(lab.getWorkspace().getStatus())
+                && lab.getStudioExerciseSnapshot() != null
+                && lab.getStudioExerciseSnapshot().isObject();
     }
 
     @Transactional
@@ -326,6 +346,39 @@ public class LabStudioExerciseService {
                 json.convertValue(exercise.getSuccessCriteria() == null ? json.createObjectNode() : exercise.getSuccessCriteria(),
                         SuccessCriteria.class),
                 exercise.getInstructions(), exercise.getRevision(), exercise.getUpdatedAt());
+    }
+
+    private ExerciseView viewFromSnapshot(com.fasterxml.jackson.databind.JsonNode snap, LabStudioExercise fallback) {
+        UUID runtimeProjectId = uuidField(snap, "runtimeProjectId", fallback == null ? null : fallback.getRuntimeProjectId());
+        UUID runtimeModelId = uuidField(snap, "runtimeModelId", fallback == null ? null : fallback.getRuntimeModelId());
+        UUID runtimeSnapshotId = uuidField(snap, "runtimeSnapshotId", fallback == null ? null : fallback.getRuntimeSnapshotId());
+        var baselineNode = snap.hasNonNull("baselineRequests") ? snap.get("baselineRequests") : json.createArrayNode();
+        var initialNode = snap.hasNonNull("initialState") ? snap.get("initialState") : json.createObjectNode();
+        var allowedNode = snap.hasNonNull("allowedActions") ? snap.get("allowedActions") : json.createArrayNode();
+        var criteriaNode = snap.hasNonNull("successCriteria") ? snap.get("successCriteria") : json.createObjectNode();
+        String instructions = snap.hasNonNull("instructions") ? snap.path("instructions").asText("") : (fallback == null ? "" : fallback.getInstructions());
+        int revision = snap.path("revision").asInt(fallback != null && fallback.getRevision() != null ? fallback.getRevision() : 1);
+        return new ExerciseView(
+                runtimeProjectId,
+                runtimeModelId,
+                runtimeSnapshotId,
+                json.convertValue(baselineNode, json.getTypeFactory().constructCollectionType(List.class, BaselineRequest.class)),
+                json.convertValue(initialNode, InitialState.class),
+                json.convertValue(allowedNode, json.getTypeFactory().constructCollectionType(List.class, String.class)),
+                json.convertValue(criteriaNode, SuccessCriteria.class),
+                instructions,
+                revision,
+                fallback == null ? null : fallback.getUpdatedAt());
+    }
+
+    private static UUID uuidField(com.fasterxml.jackson.databind.JsonNode node, String key, UUID fallback) {
+        String raw = node == null ? "" : node.path(key).asText("").trim();
+        if (raw.isEmpty()) return fallback;
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException ignored) {
+            return fallback;
+        }
     }
 
     private static BusinessException invalid(String message) {
