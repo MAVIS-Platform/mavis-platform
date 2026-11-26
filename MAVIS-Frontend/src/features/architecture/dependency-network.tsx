@@ -159,6 +159,10 @@ export function DependencyNetwork({
       graph.current?.fit(undefined, 28);
     });
   }, [overlayFullscreen]);
+  const isVi =
+    typeof document !== "undefined" &&
+    Boolean(document.documentElement?.lang?.toLowerCase().startsWith("vi"));
+  const t = (en: string, vi: string) => (isVi ? vi : en);
   const [elementPage, setElementPage] = useState(1);
   const [hovered, setHovered] = useState<string | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -774,29 +778,37 @@ export function DependencyNetwork({
           className={`${fillHeight && !dockToolsOpen ? "!hidden" : ""} flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground`}
         >
           {relationshipScopeCount > 0 && (
-            <span>{relationshipScopeCount} relationships hidden by type/uncertainty filters.</span>
+            <span>
+              {t(
+                `${relationshipScopeCount} relationships hidden by type/uncertainty filters.`,
+                `Đang ẩn ${relationshipScopeCount} kết nối theo bộ lọc loại/độ tin cậy.`,
+              )}
+            </span>
           )}
           {projection.unassignedElements > 0 && (
             <span>
-              {projection.unassignedElements} unassigned internal elements and{" "}
-              {projection.unassignedRelationships} related connections hidden. Expand service
-              internals to inspect; ownership is unknown.
+              {t(
+                `${projection.unassignedElements} unassigned internal elements and ${projection.unassignedRelationships} related connections hidden. Expand service internals to inspect; ownership is unknown.`,
+                `Đang ẩn ${projection.unassignedElements} phần tử nội bộ chưa gán và ${projection.unassignedRelationships} kết nối liên quan. Hãy mở chi tiết nội bộ Service để kiểm tra.`,
+              )}
             </span>
           )}
           {hiddenCategories.length > 0 && (
             <span>
-              {baseProjection.model.elements.length - nodes.length} elements and{" "}
-              {baseProjection.model.edges.length - edges.length} connections hidden by type.
+              {t(
+                `${baseProjection.model.elements.length - nodes.length} elements and ${baseProjection.model.edges.length - edges.length} connections hidden by type.`,
+                `Đang ẩn ${baseProjection.model.elements.length - nodes.length} thành phần và ${baseProjection.model.edges.length - edges.length} kết nối theo loại phân tầng.`,
+              )}
             </span>
           )}
           {query.trim() !== "" && (
             <span>
-              <strong className="text-foreground">Search:</strong>{" "}
+              <strong className="text-foreground">{t("Search:", "Tìm kiếm:")}</strong>{" "}
               {
                 nodes.filter((n) => n.name.toLowerCase().includes(query.trim().toLowerCase()))
                   .length
               }
-              /{nodes.length} elements highlighted
+              /{nodes.length} {t("elements highlighted", "thành phần khớp")}
             </span>
           )}
           {nodes.length > 300 && (

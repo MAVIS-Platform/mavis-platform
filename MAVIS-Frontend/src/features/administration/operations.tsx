@@ -619,11 +619,21 @@ export function AdminRuntimeSummary() {
   const forceStop = useApiMutation("forceStopRuntimeSession");
   const [page, setPage] = useState(1);
   const rows = q.data ?? [],
-    active = rows.filter((r) => ["RUNNING", "ALLOCATED", "CANCELLING"].includes(r.executionStatus));
-  const stoppable = (status: string) =>
-    ["NOT_STARTED", "PENDING", "READY_FOR_DISPATCH", "APPROVED", "ALLOCATED", "RUNNING"].includes(
-      status,
+    active = rows.filter((r) =>
+      ["QUEUED", "READY_FOR_DISPATCH", "RUNNING", "ALLOCATED", "CANCELLING"].includes(
+        r.executionStatus,
+      ),
     );
+  const stoppable = (status: string) =>
+    [
+      "NOT_STARTED",
+      "PENDING",
+      "QUEUED",
+      "READY_FOR_DISPATCH",
+      "APPROVED",
+      "ALLOCATED",
+      "RUNNING",
+    ].includes(status);
   return (
     <div className="space-y-5">
       <AdminToolbar

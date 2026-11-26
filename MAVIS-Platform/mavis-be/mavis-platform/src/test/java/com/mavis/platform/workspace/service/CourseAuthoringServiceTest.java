@@ -385,4 +385,48 @@ class CourseAuthoringServiceTest {
         assertEquals("NEEDS_RETRY", failed.status());
         assertFalse(failed.questionResults().get(0).correct());
     }
+
+    @Test
+    void multiChoiceStandaloneQuizPublishesAndHonorsConfiguredPassPercent() {
+        var q1 = JsonNodeFactory.instance.objectNode()
+                .put("prompt", "Select gateway & discovery")
+                .put("type", "MULTI_CHOICE");
+        q1.set("options", JsonNodeFactory.instance.arrayNode().add("api-gateway").add("eureka").add("redis"));
+        q1.set("correctOptions", JsonNodeFactory.instance.arrayNode().add(0).add(1));
+
+        var q2 = JsonNodeFactory.instance.objectNode()
+                .put("prompt", "Select order store")
+                .put("correctOption", 0);
+        q2.set("options", JsonNodeFactory.instance.arrayNode().add("postgres").add("smtp"));
+
+        var content = JsonNodeFactory.instance.objectNode();
+        content.put("passPercent", 80);
+        content.set("questions", JsonNodeFactory.instance.arrayNode().add(q1).add(q2));
+
+        UUID itemId = UUID.randomUUID();
+        CourseItem quiz = CourseItem.builder().id(itemId).module(module).itemType("QUIZ")
+                .title("Multi Choice Quiz").position(1).content(content).required(true).build();
+        when(items.findByModuleIdOrderByPositionAsc(moduleId)).thenReturn(List.of(quiz));
+        when(versions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CourseAuthoringService.PublishedView published;
+        try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
+            security.when(SecurityUtils::getCurrentUserId).thenReturn(lecturerId);
+            published = service.publish(workspaceId);
+            assertEquals(1, published.version());
+        }
+
+        CourseVersion version = CourseVersion.builder().course(course).version(1).draftRevision(1)
+                .snapshot(published.snapshot()).snapshotDigest(published.snapshotDigest()).build();
+        when(versions.findByCourseIdAndVersion(course.getId(), 1)).thenReturn(Optional.of(version));
+
+        // 1/2 (50%) must be NEEDS_RETRY against passPercent=80, 2/2 (100%) must PASS
+        var half = service.checkInlineQuiz(workspaceId, itemId, List.of(List.of(0, 1), List.of(1)));
+        assertEquals(1, half.correctCount());
+        assertEquals("NEEDS_RETRY", half.status());
+
+        var full = service.checkInlineQuiz(workspaceId, itemId, List.of(List.of(0, 1), List.of(0)));
+        assertEquals(2, full.correctCount());
+        assertEquals("PASSED", full.status());
+    }
 }

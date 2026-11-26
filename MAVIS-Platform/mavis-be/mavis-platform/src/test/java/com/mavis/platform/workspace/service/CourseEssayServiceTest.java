@@ -109,4 +109,16 @@ class CourseEssayServiceTest {
         assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
                 () -> service.submitEssay(workspaceId, itemId, new SubmitEssayRequest("text"))).getErrorCode());
     }
+
+    @Test
+    void rejectsSubmissionWhenWorkspaceIsArchived() {
+        UUID workspaceId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        Workspace ws = Workspace.builder().id(workspaceId).status("ARCHIVED").build();
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
+        when(workspaces.findById(workspaceId)).thenReturn(Optional.of(ws));
+
+        assertEquals(ErrorCode.CONFLICT, assertThrows(BusinessException.class,
+                () -> service.submitEssay(workspaceId, itemId, new SubmitEssayRequest("text"))).getErrorCode());
+    }
 }

@@ -178,6 +178,7 @@ export function AIExplanationPanel({
     if (!elementId || api.mode !== "backend") return;
     let cancelled = false;
     const controller = new AbortController();
+    setAi3E(null);
     setAi3ELoading(true);
     fetch("/api/ai-diagram-semantics", {
       method: "POST",
@@ -191,9 +192,11 @@ export function AIExplanationPanel({
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { threeEEnrichment?: ThreeEAiSimplifiedExplanation } | null) => {
-        if (!cancelled && data?.threeEEnrichment) setAi3E(data.threeEEnrichment);
+        if (!cancelled) setAi3E(data?.threeEEnrichment ?? null);
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setAi3E(null);
+      })
       .finally(() => {
         if (!cancelled) setAi3ELoading(false);
       });
@@ -271,14 +274,18 @@ export function AIExplanationPanel({
           <div className="space-y-2 rounded-md border bg-background/80 p-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-semibold text-foreground">
-                2. Explore (Source Code &amp; Configuration Evidence · {concreteEvidences.length})
+                {concreteEvidences.some((ev) => ev.origin !== "preview")
+                  ? `2. Explore (Source Code & Configuration Evidence · ${concreteEvidences.length})`
+                  : `2. Explore (Model Metadata Previews · ${concreteEvidences.length})`}
               </p>
             </div>
             <p className="text-muted-foreground">{active3E.exploreSimple}</p>
             {concreteEvidences.length > 0 && (
               <details className="group rounded border bg-card/70 p-2">
                 <summary className="cursor-pointer select-none font-medium text-primary hover:underline">
-                  View {concreteEvidences.length} source/config evidence snippet(s)
+                  {concreteEvidences.some((ev) => ev.origin !== "preview")
+                    ? `View ${concreteEvidences.length} source/config evidence snippet(s)`
+                    : `View ${concreteEvidences.length} reconstructed metadata preview(s)`}
                 </summary>
                 <div className="mt-2 max-h-64 overflow-y-auto pr-1">
                   <ThreeEEvidence

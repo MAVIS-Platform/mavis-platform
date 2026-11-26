@@ -145,6 +145,65 @@ export function resolveModuleAuditLens(
   };
 }
 
+const SERVICE_ALIASES: Record<string, string[]> = {
+  "identity-service": ["auth-service", "user-service"],
+  "catalog-service": ["inventory-service", "product-service"],
+  "service-discovery": ["discovery-service", "eureka-server", "consul"],
+};
+
+export function adaptAuditLensToModel(
+  lens: ModuleAuditLens,
+  model: ArchitecturalModel | null | undefined,
+): ModuleAuditLens {
+  if (!model || model.elements.length === 0) return lens;
+  const serviceNames = new Map(
+    model.elements
+      .filter((el) => el.elementType === "SERVICE_CONTAINER")
+      .map((el) => [el.name.toLowerCase(), el.name]),
+  );
+  if (serviceNames.size === 0) return lens;
+
+  const mapServiceName = (raw: string): string => {
+    const exact = serviceNames.get(raw.toLowerCase());
+    if (exact) return exact;
+    for (const alt of SERVICE_ALIASES[raw.toLowerCase()] ?? []) {
+      const found = serviceNames.get(alt.toLowerCase());
+      if (found) return found;
+    }
+    return raw;
+  };
+
+  const adaptedFocusNames = Array.from(new Set(lens.focusNodeNames.map(mapServiceName)));
+  const adaptedChips = lens.quickChips
+    .map((chip): AuditLensQuickChip | null => {
+      if (!chip.targetServiceName) return chip;
+      const resolvedSvc = mapServiceName(chip.targetServiceName);
+      if (!serviceNames.has(resolvedSvc.toLowerCase())) {
+        return null;
+      }
+      if (resolvedSvc === chip.targetServiceName) return chip;
+      return {
+        ...chip,
+        targetServiceName: resolvedSvc,
+        labelEn: chip.labelEn.replace(chip.targetServiceName, resolvedSvc),
+        labelVi: chip.labelVi.replace(chip.targetServiceName, resolvedSvc),
+      };
+    })
+    .filter((chip): chip is AuditLensQuickChip => chip !== null);
+
+  return {
+    ...lens,
+    focusNodeNames: adaptedFocusNames,
+    ...(lens.defaultC3ServiceName
+      ? { defaultC3ServiceName: mapServiceName(lens.defaultC3ServiceName) }
+      : {}),
+    ...(lens.defaultSelectedNodeName
+      ? { defaultSelectedNodeName: mapServiceName(lens.defaultSelectedNodeName) }
+      : {}),
+    quickChips: adaptedChips,
+  };
+}
+
 export function resolveModelElementByName(
   model: ArchitecturalModel | null | undefined,
   name: string | undefined,

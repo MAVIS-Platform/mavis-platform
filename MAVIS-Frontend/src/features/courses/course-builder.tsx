@@ -347,13 +347,22 @@ function draftValid(draft: ItemDraft) {
     draft.type === "QUIZ" &&
     (!draft.quizAssetId ||
       draft.quizQuestions.length < 1 ||
-      draft.quizQuestions.some(
-        (question) =>
+      draft.quizQuestions.some((question) => {
+        const multi = (question as { correctOptions?: unknown }).correctOptions;
+        const validMulti =
+          Array.isArray(multi) &&
+          multi.length > 0 &&
+          multi.every(
+            (idx) => typeof idx === "number" && idx >= 0 && idx < question.options.length,
+          );
+        const validSingle =
+          question.correctOption >= 0 && question.correctOption < question.options.length;
+        return (
           !question.prompt.trim() ||
           question.options.filter((option) => option.trim()).length < 2 ||
-          question.correctOption < 0 ||
-          question.correctOption >= question.options.length,
-      ))
+          (!validSingle && !validMulti)
+        );
+      }))
   ) {
     return false;
   }

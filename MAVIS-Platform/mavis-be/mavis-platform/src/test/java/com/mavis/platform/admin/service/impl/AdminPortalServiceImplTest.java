@@ -249,4 +249,17 @@ class AdminPortalServiceImplTest {
         assertThat(created.getStatus()).isEqualTo("ACTIVE");
         verify(auditLogService).recordAuditLog(eq("ADMIN_CREATE_USER"), eq("USER"), any(UUID.class), anyMap());
     }
+
+    @Test
+    void dashboardStatsCountsBothLockedAndInactiveUsersAndQueuedSessions() {
+        User uLocked = User.builder().id(UUID.randomUUID()).status("LOCKED").role(studentRole).build();
+        User uInactive = User.builder().id(UUID.randomUUID()).status("INACTIVE").role(studentRole).build();
+        when(userRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(user, uLocked, uInactive));
+        when(runtimeSessionRepository.countByExecutionStatusIn(any())).thenReturn(3L);
+
+        AdminDashboardStatsDTO stats = adminPortalService.getDashboardStats();
+        assertThat(stats.getLockedUsers()).isEqualTo(2L);
+        assertThat(stats.getActiveStudents()).isEqualTo(1L);
+        assertThat(stats.getRunningRuntimeSessions()).isEqualTo(3L);
+    }
 }

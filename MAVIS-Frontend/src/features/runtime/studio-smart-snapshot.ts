@@ -258,11 +258,19 @@ export function buildSmartSnapshotPlan(
       options?.selectedService ??
       null;
 
-    const observedAffected = evaluation?.observedAffectedServices ?? [];
-    const predicted = evaluation?.predictedServices ?? data.prediction?.predictedServices ?? [];
     const failingEdges = (data.telemetry?.serviceGraph ?? [])
       .filter((sg) => sg.errorRatePercent > 0)
       .flatMap((sg) => [sg.client, sg.server]);
+    const liveDerivedAffected = Array.from(
+      new Set(
+        failingEdges.filter((svc) => Boolean(svc) && svc !== primaryService),
+      ),
+    );
+    const observedAffected =
+      evaluation?.observedAffectedServices && evaluation.observedAffectedServices.length > 0
+        ? evaluation.observedAffectedServices
+        : liveDerivedAffected;
+    const predicted = evaluation?.predictedServices ?? data.prediction?.predictedServices ?? [];
     const upstreamFallback = primaryService ? findDirectNeighbors(primaryService, data, "upstream") : [];
 
     focusCandidates = [

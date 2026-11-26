@@ -295,6 +295,7 @@ export function SelectionThreeE({
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    setAi3E(null);
     setAi3ELoading(true);
     fetch("/api/ai-diagram-semantics", {
       method: "POST",
@@ -308,12 +309,12 @@ export function SelectionThreeE({
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { threeEEnrichment?: ThreeEAiSimplifiedExplanation } | null) => {
-        if (!cancelled && data?.threeEEnrichment) {
-          setAi3E(data.threeEEnrichment);
+        if (!cancelled) {
+          setAi3E(data?.threeEEnrichment ?? null);
         }
       })
       .catch(() => {
-        // fallback deterministic3E remains active
+        if (!cancelled) setAi3E(null);
       })
       .finally(() => {
         if (!cancelled) setAi3ELoading(false);

@@ -68,7 +68,7 @@ function MySubmissions() {
   );
   const workspace = workspaces.data?.find((item) => item.id === (urlWorkspaceId || workspaceId));
   const list = (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <div>
           <div className="mb-2">
@@ -132,6 +132,41 @@ function MySubmissions() {
               )
         }
       >
+        <div className="space-y-3 sm:hidden">
+          {rows.map((s) => (
+            <article key={s.id} className="space-y-2.5 rounded-xl border bg-card p-3.5 shadow-xs">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 space-y-0.5">
+                  {!workspaceId && s.workspaceName && (
+                    <p className="truncate text-[11px] font-medium text-muted-foreground">
+                      {s.workspaceName}
+                    </p>
+                  )}
+                  <Link
+                    className="block font-medium text-foreground underline underline-offset-4 hover:text-primary"
+                    href={`/submissions/${encodeURIComponent(s.id)}`}
+                  >
+                    {formatCourseLabTitle(s.assignmentTitle, s.labOrder, s.assignmentId)}
+                  </Link>
+                </div>
+                <Button asChild size="sm" variant="outline" className="shrink-0">
+                  <Link href={`/submissions/${encodeURIComponent(s.id)}`}>
+                    {t("View dossier", "Xem hồ sơ")}
+                  </Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <SubmissionResult submission={s} />
+                <span className="text-[11px] text-muted-foreground">
+                  {s.submittedAt
+                    ? new Date(s.submittedAt).toLocaleDateString()
+                    : t("Not submitted", "Chưa nộp")}
+                </span>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="hidden sm:block">
         <DataTable
           caption={t("My Submissions", "Bài nộp của tôi")}
           rows={rows}
@@ -223,6 +258,7 @@ function MySubmissions() {
             },
           ]}
         />
+        </div>
       </RequestState>
     </div>
   );

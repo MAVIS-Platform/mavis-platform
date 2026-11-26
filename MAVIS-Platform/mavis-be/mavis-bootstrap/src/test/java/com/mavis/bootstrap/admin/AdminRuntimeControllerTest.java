@@ -86,4 +86,40 @@ class AdminRuntimeControllerTest {
         verify(sessionsRepo).findTop50ByOrderByCreatedAtDesc();
         verifyNoMoreInteractions(sessionsRepo);
     }
+
+    @Test
+    void sessionsUsesLightweightJdbcProjectionWithoutHydratingToastEntitiesWhenAvailable() {
+        var policy = mock(AccessPolicyService.class);
+        var sessionsRepo = mock(RuntimeSessionRepository.class);
+        var jdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+        var sessionId = UUID.randomUUID();
+        var dto = RuntimeSessionResponseDTO.builder()
+                .id(sessionId)
+                .executionStatus("COMPLETED")
+                .cleanupStatus("CONFIRMED")
+                .studioVerified(true)
+                .build();
+        when(jdbc.query(contains("FROM runtime_sessions s"), org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.RowMapper<RuntimeSessionResponseDTO>>any()))
+                .thenReturn(List.of(dto));
+
+        var controller = new AdminRuntimeController(
+                policy,
+                new PlatformRuntimeSettings(),
+                mock(AuditLogService.class),
+                mock(ApiKeyProvider.class),
+                mock(JobRepository.class),
+                sessionsRepo,
+                mock(RuntimeSessionService.class));
+        controller.setJdbcTemplate(jdbc);
+
+        var response = controller.sessions();
+        assertEquals(ErrorCode.SUCCESS.getCode(), response.getCode());
+        @SuppressWarnings("unchecked")
+        var list = (List<RuntimeSessionResponseDTO>) response.getData();
+        assertEquals(1, list.size());
+        assertEquals(sessionId, list.getFirst().getId());
+        assertTrue(list.getFirst().isStudioVerified());
+        verify(policy).requireSystemAdmin();
+        verifyNoInteractions(sessionsRepo);
+    }
 }

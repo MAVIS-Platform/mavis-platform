@@ -285,8 +285,10 @@ public class WorkspaceGradebookService {
         try {
             String placeholders = String.join(",", assignmentIds.stream().map(id -> "?").toList());
             jdbcTemplate.query(
-                    "SELECT assignment_id, student_id, correct_count, passed FROM course_quiz_attempts WHERE assignment_id IN ("
-                            + placeholders + ")",
+                    "SELECT a.assignment_id, a.student_id, a.correct_count, a.passed FROM course_quiz_attempts a "
+                            + "WHERE a.assignment_id IN (" + placeholders + ") "
+                            + "AND (NOT EXISTS (SELECT 1 FROM course_quizzes q WHERE q.assignment_id = a.assignment_id) "
+                            + "OR a.quiz_version = (SELECT MAX(q2.version) FROM course_quizzes q2 WHERE q2.assignment_id = a.assignment_id))",
                     (rs) -> {
                         UUID aId = rs.getObject(1, UUID.class);
                         UUID sId = rs.getObject(2, UUID.class);

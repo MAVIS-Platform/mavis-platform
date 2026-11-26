@@ -4861,7 +4861,7 @@ export function formatPackageCellValue(pkg: UmlPackageNode): string {
     pkg.memberNames.length > 0
       ? pkg.memberNames.map((n) => `• ${escapeHtmlText(n)}`).join("<br/>")
       : "<i>(empty package)</i>";
-  return `<b>&laquo;package&raquo; ${escapeHtmlAttrOrHtml(pkg.qualifiedName)}</b><hr size="1"/>${membersText}`;
+  return `<b>«package» ${escapeHtmlAttrOrHtml(pkg.qualifiedName)}</b><hr size="1"/>${membersText}`;
 }
 
 export function getPackageCellStyle(): string {

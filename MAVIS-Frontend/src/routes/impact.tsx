@@ -289,7 +289,7 @@ function BlastRadiusVisualMap({
 function ImpactResults({ model }: { model: ArchitecturalModel }) {
   const api = useApi();
   const searchParams = useSearchParams();
-  const elementParam = searchParams.get("element");
+  const elementParam = searchParams.get("element") ?? searchParams.get("target");
   const [scope, setScope] = useState<ImpactScopeMode>("all");
 
   // Prioritize elements that participate in edges so the default selection immediately shows meaningful paths

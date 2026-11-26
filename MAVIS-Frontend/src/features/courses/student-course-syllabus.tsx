@@ -40,6 +40,7 @@ import { useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/cour
 import {
   attemptStorageKey,
   ChapterQuizRunner,
+  parseInlineQuizPassPercent,
   parseInlineQuizQuestions,
 } from "./chapter-quiz-runner";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
@@ -687,8 +688,14 @@ export function StudentCourseSyllabus({
                             const raw = window.localStorage.getItem(
                               attemptStorageKey(session.data?.user?.id, workspaceId, null, candidate),
                             );
-                            if (raw && (JSON.parse(raw) as { passed?: boolean })?.passed === true) {
-                              return true;
+                            if (raw) {
+                              const parsed = JSON.parse(raw) as {
+                                passed?: boolean;
+                                everPassed?: boolean;
+                              };
+                              if (parsed?.passed === true || parsed?.everPassed === true) {
+                                return true;
+                              }
                             }
                           } catch {
                             // Ignore private-mode / malformed localStorage entry
@@ -923,11 +930,28 @@ export function StudentCourseSyllabus({
                       <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                         {formatSyllabusItemTitle(activeItem, t)}
                       </h2>
-                      {activeItem.description && (
-                        <p className="text-sm text-muted-foreground">
-                          {formatSyllabusItemDescription(activeItem.description, t)}
-                        </p>
-                      )}
+                      {activeItem.description &&
+                        !(
+                          activeItem.type === "THEORY" &&
+                          typeof activeItem.content?.["body"] === "string" &&
+                          (activeItem.description === "Theory from the workspace library" ||
+                            String(activeItem.content["body"])
+                              .replace(/[#*_>`-]/g, " ")
+                              .replace(/\s+/g, " ")
+                              .trim()
+                              .toLowerCase()
+                              .startsWith(
+                                activeItem.description
+                                  .replace(/\s+/g, " ")
+                                  .trim()
+                                  .slice(0, 48)
+                                  .toLowerCase(),
+                              ))
+                        ) && (
+                          <p className="text-sm text-muted-foreground">
+                            {formatSyllabusItemDescription(activeItem.description, t)}
+                          </p>
+                        )}
                     </div>
                   </div>
 
@@ -939,6 +963,7 @@ export function StudentCourseSyllabus({
                           <MarkdownPreview markdown={String(activeItem.content["body"])} />
                         </div>
 
+                        {(!session.data?.user?.role || session.data.user.role === "student") && (
                         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3.5">
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-foreground">
@@ -976,6 +1001,7 @@ export function StudentCourseSyllabus({
                               : t("Mark as completed", "Đánh dấu đã hoàn thành")}
                           </Button>
                         </div>
+                        )}
 
                         {/* OLP-inspired Chapter Practice Box directly under Lesson */}
                         <div className="hidden space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:p-5">
@@ -1073,6 +1099,7 @@ export function StudentCourseSyllabus({
                               workspaceId={workspaceId}
                               assignmentId={chapterQuizItem.assignmentId}
                               courseItemId={chapterQuizItem.id}
+                              inlinePassPercent={parseInlineQuizPassPercent(chapterQuizItem.content)}
                             />
                           )}
 
@@ -1121,6 +1148,7 @@ export function StudentCourseSyllabus({
                       workspaceId={workspaceId}
                       assignmentId={activeItem.assignmentId}
                       courseItemId={activeItem.id}
+                      inlinePassPercent={parseInlineQuizPassPercent(activeItem.content)}
                     />
                   )}
 

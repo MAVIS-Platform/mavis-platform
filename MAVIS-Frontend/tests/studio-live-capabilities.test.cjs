@@ -2731,3 +2731,114 @@ test("Wave-2 audit fixes: timeout waterfall fallback, root-cause diagnostics tre
   assert.ok(useApi.includes('"platformSummary"'));
   assert.ok(!submissionPage.includes('backHref="/submissions"'));
 });
+
+test("Post-Upgrade Deep Test Regressions: MULTI_CHOICE inline quiz, HyperMesh lens alias, UML guillemets, redacted Smart Snapshot HUD, and empty-code watermark", () => {
+  const {
+    parseInlineQuizQuestions,
+    parseInlineQuizPassPercent,
+  } = require("../src/features/courses/chapter-quiz-runner.tsx");
+  const {
+    adaptAuditLensToModel,
+    resolveModuleAuditLens,
+  } = require("../src/features/architecture/module-audit-lens.ts");
+  const { formatPackageCellValue } = require("../src/features/architecture/uml-diagrams.ts");
+  const { buildSmartSnapshotPlan } = require("../src/features/runtime/studio-smart-snapshot.ts");
+  const { formatSnapshotWatermark } = require("../src/features/runtime/studio-observability.tsx");
+
+  // 1. MULTI_CHOICE inline quiz + configured passPercent
+  const content = {
+    passPercent: 80,
+    questions: [
+      {
+        id: "q-multi",
+        prompt: "Which services handle auth & gateway?",
+        type: "MULTI_CHOICE",
+        options: ["api-gateway", "auth-service", "redis"],
+        correctOptions: [0, 1],
+      },
+    ],
+  };
+  assert.equal(parseInlineQuizPassPercent(content), 80);
+  const parsedQs = parseInlineQuizQuestions(content);
+  assert.equal(parsedQs.length, 1);
+  assert.equal(parsedQs[0].type, "MULTI_CHOICE");
+  assert.deepEqual(parsedQs[0].correctOptions, [0, 1]);
+
+  // 2. HyperMesh Java repo adapts identity-service -> auth-service in Module 1 lens
+  const m1Lens = resolveModuleAuditLens("JAVA", 1);
+  const hyperMeshModel = {
+    id: "m-hm",
+    projectId: "p-hm",
+    snapshotId: "s-hm",
+    revision: 1,
+    label: "HyperMesh",
+    elements: [
+      { id: "e1", name: "api-gateway", elementType: "SERVICE_CONTAINER", parentId: null, properties: {}, evidence: [] },
+      { id: "e2", name: "auth-service", elementType: "SERVICE_CONTAINER", parentId: null, properties: {}, evidence: [] },
+      { id: "e3", name: "order-service", elementType: "SERVICE_CONTAINER", parentId: null, properties: {}, evidence: [] },
+    ],
+    edges: [],
+  };
+  const adapted = adaptAuditLensToModel(m1Lens, hyperMeshModel);
+  const c3Chip = adapted.quickChips.find((c) => c.targetView === "COMPONENT");
+  assert.ok(c3Chip);
+  assert.equal(c3Chip.targetServiceName, "auth-service");
+  assert.match(c3Chip.labelVi, /auth-service/);
+
+  // 3. UML Package cell uses UTF-8 guillemets instead of raw &laquo; HTML entities
+  const pkgXml = formatPackageCellValue({
+    id: "pkg-1",
+    qualifiedName: "com.mavis.orders",
+    memberNames: ["OrderService"],
+  });
+  assert.ok(pkgXml.includes("«package»"));
+  assert.ok(!pkgXml.includes("&laquo;"));
+
+  // 4. Student-redacted Smart Snapshot HUD derives affected services from live failing edges
+  const plan = buildSmartSnapshotPlan(
+    {
+      sessionId: "sess-1",
+      executionStatus: "RUNNING",
+      services: ["api-gateway", "order-service", "payment-service"],
+      exerciseCriteria: {
+        exerciseType: "CHANGE_IMPACT",
+        targetChangeAction: { action: "PAUSE", service: "payment-service" },
+      },
+      exerciseEvaluation: null,
+      actions: [
+        {
+          id: "act-1",
+          action: "PAUSE",
+          service: "payment-service",
+          status: "CONFIRMED",
+          requestedAt: "2026-11-26T16:00:00Z",
+        },
+      ],
+      prediction: { predictedServices: ["order-service", "api-gateway"] },
+      telemetry: {
+        observedAt: "2026-11-26T16:01:00Z",
+        probe: { errorRatePercent: 100, p95Ms: 2280 },
+        services: [],
+        spans: [],
+        logs: [],
+        serviceGraph: [
+          { client: "api-gateway", server: "order-service", requestCount: 5, errorCount: 5, errorRatePercent: 100, p95LatencyMs: 2280 },
+          { client: "order-service", server: "payment-service", requestCount: 5, errorCount: 5, errorRatePercent: 100, p95LatencyMs: 2200 },
+        ],
+      },
+    },
+    { locale: "vi" },
+  );
+  const impactStat = plan.stats.find((s) => s.label === "Ảnh hưởng thực tế");
+  assert.ok(impactStat);
+  assert.ok(!impactStat.value.includes("Chưa lan lỗi"));
+  assert.match(impactStat.value, /order-service|api-gateway/);
+
+  // 5. Watermark strips empty () even when student has no numeric MSSV code
+  const wmNoCode = formatSnapshotWatermark({
+    studentName: "Nguyễn Văn Audit ()",
+    studentEmail: "sv.audit@mavis.edu.vn",
+    snapshotIndex: 1,
+  });
+  assert.ok(!wmNoCode.left.includes("()"));
+});

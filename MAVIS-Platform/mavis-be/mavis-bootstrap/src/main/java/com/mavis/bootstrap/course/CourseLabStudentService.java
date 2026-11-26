@@ -579,7 +579,11 @@ public class CourseLabStudentService {
 
         JsonNode studioState = runtimeStudioService.bootstrapSimulatedSandbox(sessionId);
         RuntimeSession refreshed = runtimeSessions.findById(sessionId).orElse(session);
-        return new BootstrapStudioView(RuntimeSessionResponseDTO.fromEntity(refreshed), studioState);
+        RuntimeSessionResponseDTO dto = RuntimeSessionResponseDTO.fromEntity(refreshed);
+        if (CourseLabPolicy.isStudent(actor)) {
+            dto = RuntimeSessionResponseDTO.redactForStudent(dto);
+        }
+        return new BootstrapStudioView(dto, studioState);
     }
 
     private Assignment requireLab(UUID workspaceId, UUID assignmentId) {

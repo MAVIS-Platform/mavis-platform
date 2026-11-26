@@ -223,7 +223,10 @@ public class CourseAuthoringService {
             if (isCorrect) correctCount++;
             results.add(new InlineQuestionResult(qId, isCorrect, q.path("explanation").asText("")));
         }
-        String status = (correctCount * 100 >= total * 70) ? "PASSED" : "NEEDS_RETRY";
+        int passPercent = targetItem.path("content").path("passPercent").isNumber()
+                ? Math.max(1, Math.min(100, targetItem.path("content").path("passPercent").asInt(70)))
+                : 70;
+        String status = (correctCount * 100 >= total * passPercent) ? "PASSED" : "NEEDS_RETRY";
         return new InlineQuizResult(correctCount, total, status, results);
     }
 
@@ -335,10 +338,21 @@ public class CourseAuthoringService {
             for (JsonNode question : questions) {
                 JsonNode prompt = question.get("prompt");
                 JsonNode options = question.get("options");
+                int optSize = options != null && options.isArray() ? options.size() : 0;
                 int correctOption = question.path("correctOption").asInt(-1);
+                JsonNode correctOptions = question.get("correctOptions");
+                boolean validMulti = correctOptions != null && correctOptions.isArray() && !correctOptions.isEmpty();
+                if (validMulti) {
+                    for (JsonNode idxNode : correctOptions) {
+                        if (!idxNode.isInt() || idxNode.asInt(-1) < 0 || idxNode.asInt(-1) >= optSize) {
+                            validMulti = false;
+                            break;
+                        }
+                    }
+                }
+                boolean validSingle = correctOption >= 0 && correctOption < optSize;
                 if (prompt == null || !prompt.isTextual() || prompt.asText().isBlank()
-                        || options == null || !options.isArray() || options.size() < 2
-                        || correctOption < 0 || correctOption >= options.size()) {
+                        || optSize < 2 || (!validSingle && !validMulti)) {
                     throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
                             "Inline Quiz questions require a prompt, two options, and a valid answer");
                 }

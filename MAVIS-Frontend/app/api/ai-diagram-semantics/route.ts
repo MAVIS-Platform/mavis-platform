@@ -405,7 +405,10 @@ export async function POST(request: NextRequest) {
           userQuestion: q,
         }),
         1024,
-      ).catch(() => null);
+      ).catch((err) => {
+        if (err instanceof AiRateLimitError) throw err;
+        return null;
+      });
 
       const allowed = new Set(tCtx.codeSnippets.map(({ id }) => id));
       const citedAnswer = typeof parsedChat?.answer === "string" &&
@@ -477,7 +480,10 @@ export async function POST(request: NextRequest) {
         userId,
         threeESystemPrompt,
         userPayload,
-      ).catch(() => null);
+      ).catch((err) => {
+        if (err instanceof AiRateLimitError) throw err;
+        return null;
+      });
       const merged3E: ThreeEAiSimplifiedExplanation = {
         ...normalizeThreeE(parsed3E, tCtx, locale),
         tokenStats: {

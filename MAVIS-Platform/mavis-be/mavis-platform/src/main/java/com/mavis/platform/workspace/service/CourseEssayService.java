@@ -68,8 +68,11 @@ public class CourseEssayService {
     public EssaySubmissionView submitEssay(UUID workspaceId, UUID itemId, SubmitEssayRequest req) {
         access.requireWorkspaceMember(workspaceId);
         User actor = access.requireCurrentActiveUser();
-        workspaces.findById(workspaceId)
+        var workspace = workspaces.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
+        if ("ARCHIVED".equalsIgnoreCase(workspace.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Workspace is archived; essay submissions are closed");
+        }
 
         var item = courseItems.findById(itemId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course essay item not found"));

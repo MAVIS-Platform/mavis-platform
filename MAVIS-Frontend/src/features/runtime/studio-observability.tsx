@@ -4014,7 +4014,11 @@ export function formatSnapshotWatermark(watermark?: StudioSnapshotWatermark): {
         .replace(/\s*[·•|\-–—]\s*$/, "")
         .replace(/\s{2,}/g, " ")
         .trim()
-    : rawName;
+    : rawName
+        .replace(/\(\s*(?:Sinh\s*Vi[êe]n|Student|MSSV)?\s*:?\s*\)/gi, "")
+        .replace(/\(\s*\)/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
 
   const leftParts: string[] = [];
   if (code) leftParts.push(`MSSV: ${code}`);

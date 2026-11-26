@@ -727,7 +727,7 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
             {visible.map((asset) => (
               <li
                 key={asset.id}
-                className="grid gap-x-4 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_8rem_8rem] md:items-center"
+                className="grid gap-x-4 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center"
               >
                 <div className="min-w-0">
                   <p className="truncate text-[15px] font-semibold">{asset.title}</p>

@@ -956,6 +956,8 @@ test("course BFF paths allow enrollment and Quiz without opening general workspa
  assert.equal(allowedBackendPath("course-curriculum"),true);
  assert.equal(allowedBackendPath(`workspaces/${workspace}/course-labs/${lab}/quiz/curriculum`),true);
  assert.equal(allowedBackendPath("course-curriculum/answers"),false);
+ assert.equal(allowedBackendPath(`workspaces/${workspace}/course/items/${lab}/quiz-check`),true);
+ assert.equal(allowedBackendPath(`workspaces/${workspace.toUpperCase()}/course/items/${lab.toUpperCase()}/quiz-check`),true);
  for (const path of [`workspaces/${workspace}/course`,`workspaces/${workspace}/course/draft`,`workspaces/${workspace}/course/draft/start`,`workspaces/${workspace}/course/publish`,`workspaces/${workspace}/course/versions`,`workspaces/${workspace}/course/versions/1`,`workspaces/${workspace}/course/published`,`workspaces/${workspace}/course/modules`,`workspaces/${workspace}/course/modules/${lab}/items`,
    `workspaces/${workspace}/course-roadmap`,`workspaces/${workspace}/course-labs/${lab}/publish`,`workspaces/${workspace}/course-labs/${lab}/quiz`,`workspaces/${workspace}/course-labs/${lab}/quiz/attempts`,`workspaces/${workspace}/course-passkey`,`workspaces/${workspace}/course-passkey/revoke`,"course-enrollments/redeem"])
   assert.equal(allowedBackendPath(path),true,path);

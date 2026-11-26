@@ -410,6 +410,8 @@ function parseDiagramXml(xml: string): ParsedDiagram | null {
         .replace(/<[^>]+>/g, "")
         .replace(/&nbsp;/g, " ")
         .replace(/&amp;/g, "&")
+        .replace(/&laquo;/gi, "«")
+        .replace(/&raquo;/gi, "»")
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&quot;/g, '"')
@@ -889,6 +891,15 @@ export function ArchitectureSvgViewer({
 
   const parsed = useMemo(() => parseDiagramXml(xml), [xml]);
 
+  const effectiveFocusFilter = useMemo<DiagramFocusFilter | undefined>(() => {
+    if (!focusFilter?.active || !parsed) return focusFilter;
+    if (focusFilter.focusNodeIds.size === 0) return focusFilter;
+    const nonBoundary = parsed.nodes.filter((n) => n.shape !== "boundary");
+    if (nonBoundary.length === 0) return focusFilter;
+    const anyMatch = nonBoundary.some((n) => isSvgNodeFocused(n, focusFilter));
+    return anyMatch ? focusFilter : undefined;
+  }, [focusFilter, parsed]);
+
   const fitToView = useCallback(() => {
     if (!parsed) return;
     const viewport = viewportRef.current;
@@ -1197,7 +1208,7 @@ export function ArchitectureSvgViewer({
                 y: (startPt.y + endPt.y) / 2,
               };
 
-              const isFocusedEdge = isSvgEdgeFocused(edge, focusFilter, parsed.resolvedById);
+              const isFocusedEdge = isSvgEdgeFocused(edge, effectiveFocusFilter, parsed.resolvedById);
               return (
                 <g
                   key={edge.id}
@@ -1270,8 +1281,10 @@ export function ArchitectureSvgViewer({
                 const cylRy = Math.min(14, node.height * 0.12);
                 const cylPath = `M 0 ${cylRy} L 0 ${node.height - cylRy} A ${node.width / 2} ${cylRy} 0 0 0 ${node.width} ${node.height - cylRy} L ${node.width} ${cylRy} Z`;
 
-                const isFocusedNode = isSvgNodeFocused(node, focusFilter);
-                const showFocusHalo = Boolean(focusFilter?.active && isFocusedNode && !isSelected);
+                const isFocusedNode = isSvgNodeFocused(node, effectiveFocusFilter);
+                const showFocusHalo = Boolean(
+                  effectiveFocusFilter?.active && isFocusedNode && !isSelected,
+                );
 
                 return (
                   <g

@@ -69,6 +69,7 @@ import { ArchitectureGraph, ElementDetailsPanel, type InspectorTab } from "@/fea
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import type { GraphCategory } from "@/features/architecture/graph-projection";
 import {
+  adaptAuditLensToModel,
   computeActiveLensFocus,
   detectAuditTrack,
   resolveModelElementByName,
@@ -1171,7 +1172,7 @@ export function LabWorkspace() {
                         );
                       }
                     }}
-                    className="h-8 w-full max-w-full truncate rounded-lg border border-white/30 bg-white/15 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/25 sm:w-auto sm:min-w-[240px] sm:max-w-[380px]"
+                    className="h-8 w-full max-w-full truncate rounded-lg border border-white/30 bg-white/15 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/25 sm:w-auto sm:min-w-[240px] sm:max-w-[380px] md:max-w-[440px]"
                   >
                     {(roadmap.data?.labs ?? []).map((item) => {
                       const icon =
@@ -1600,18 +1601,22 @@ function StepContent({
     { enabled: !inlineReferenceModel && Boolean(modelId) && Boolean(studentContext) && step === 1 },
   );
   const activeModel = inlineReferenceModel ?? fallbackModelQuery.data;
+  const adaptedLens = useMemo(
+    () => adaptAuditLensToModel(activeLens, activeModel),
+    [activeLens, activeModel],
+  );
 
   const lensFocus = useMemo(
-    () => computeActiveLensFocus(activeLens, activeModel),
-    [activeLens, activeModel],
+    () => computeActiveLensFocus(adaptedLens, activeModel),
+    [adaptedLens, activeModel],
   );
   const diagramFocusFilter = useMemo(
     () => ({
-      active: lensFocusEnabled && activeLens.dimOthersByDefault,
+      active: lensFocusEnabled && adaptedLens.dimOthersByDefault,
       focusNodeIds: lensFocus.focusNodeIds,
       focusEdgeIds: lensFocus.focusEdgeIds,
     }),
-    [lensFocusEnabled, activeLens.dimOthersByDefault, lensFocus],
+    [lensFocusEnabled, adaptedLens.dimOthersByDefault, lensFocus],
   );
   const lensFocusNodeIdList = useMemo(
     () => Array.from(lensFocus.focusNodeIds),
@@ -1623,14 +1628,20 @@ function StepContent({
   );
 
   useEffect(() => {
-    const lensKey = `${labId}:${activeLens.track}:${activeLens.moduleIndex}:${activeModel?.id ?? "none"}`;
+    const lensKey = `${labId}:${adaptedLens.track}:${adaptedLens.moduleIndex}:${activeModel?.id ?? "none"}`;
     if (initializedLensModelKeyRef.current === lensKey) return;
     initializedLensModelKeyRef.current = lensKey;
 
-    setLensFocusEnabled(activeLens.dimOthersByDefault);
+    setLensFocusEnabled(adaptedLens.dimOthersByDefault);
     setActiveLensChipId(null);
+    setTutorReply(null);
+    setTutorHistory([]);
+    setTutorInput("");
+    setImpactAnalysisOpen(false);
+    setImpactHighlightIds([]);
+    setInspectorTab("overview");
     setGraphHiddenCategories(
-      activeLens.defaultGraphHiddenCategories ?? [
+      adaptedLens.defaultGraphHiddenCategories ?? [
         "database",
         "messaging",
         "component",
@@ -1639,23 +1650,24 @@ function StepContent({
       ],
     );
 
-    if (!activeModel) return;
+    if (!activeModel) {
+      setInlineC3Service(undefined);
+      setSelectedGraphId(null);
+      return;
+    }
 
     const targetService = resolveModelElementByName(
       activeModel,
-      activeLens.defaultC3ServiceName,
+      adaptedLens.defaultC3ServiceName,
     );
     setInlineC3Service(targetService?.id);
 
     const targetNode = resolveModelElementByName(
       activeModel,
-      activeLens.defaultSelectedNodeName,
+      adaptedLens.defaultSelectedNodeName,
     );
     setSelectedGraphId(targetNode?.id ?? null);
-    if (targetNode) {
-      setInspectorTab("overview");
-    }
-  }, [labId, activeLens, activeModel]);
+  }, [labId, adaptedLens, activeModel]);
 
   const handleSelectLensChip = (chip: AuditLensQuickChip) => {
     setActiveLensChipId(chip.id);
@@ -2211,7 +2223,7 @@ function StepContent({
                 aria-label={t("Architecture workspace", "Không gian kiến trúc")}
               >
                 <ModuleAuditLensBar
-                  lens={activeLens}
+                  lens={adaptedLens}
                   activeView={inlineC4View}
                   activeChipId={activeLensChipId}
                   focusEnabled={lensFocusEnabled}
@@ -2260,7 +2272,10 @@ function StepContent({
                           guidedStatic
                           controlledKind={inlineC4View}
                           controlledService={inlineC3Service}
-                          onServiceChange={setInlineC3Service}
+                          onServiceChange={(svcId) => {
+                            setActiveLensChipId(null);
+                            setInlineC3Service(svcId);
+                          }}
                           onKindChange={(nextKind, svcId) => {
                             if (svcId) setInlineC3Service(svcId);
                             if (
@@ -2272,7 +2287,12 @@ function StepContent({
                             }
                           }}
                           hideKindSelector
-                          systemName={referenceArchitecture?.projectName || "Mộc Hương Shop Platform"}
+                          systemName={
+                            referenceArchitecture?.projectName ||
+                            (adaptedLens.track === "CSHARP"
+                              ? "Mộc Hương Fruit Store (.NET)"
+                              : "Mộc Hương Shop Platform")
+                          }
                           selectedId={selectedGraphId}
                           onSelect={setSelectedGraphId}
                           focusFilter={diagramFocusFilter}

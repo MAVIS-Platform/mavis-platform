@@ -42,6 +42,7 @@ type StoredQuizAttempt = {
   submittedAt?: string | undefined;
   scorePercent?: number;
   passed?: boolean;
+  everPassed?: boolean;
   questionResults?: BackendQuestionResult[] | undefined;
 };
 
@@ -65,19 +66,39 @@ function makeAttemptId() {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+export function parseInlineQuizPassPercent(
+  content: Record<string, unknown> | null | undefined,
+): number {
+  const raw = content?.["passPercent"];
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return Math.max(1, Math.min(100, Math.round(raw)));
+  }
+  return PASS_PERCENT;
+}
+
 export function parseInlineQuizQuestions(
   content: Record<string, unknown> | null | undefined,
-): QuizQuestionData[] {
+): RunnerQuestionData[] {
   const raw = content?.["questions"];
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((entry, idx): QuizQuestionData | null => {
+    .map((entry, idx): RunnerQuestionData | null => {
       if (!entry || typeof entry !== "object") return null;
       const rec = entry as Record<string, unknown>;
       const prompt = typeof rec["prompt"] === "string" ? rec["prompt"].trim() : "";
       const options = Array.isArray(rec["options"])
-        ? rec["options"].map((opt) => String(opt ?? "").trim()).filter(Boolean)
+        ? rec["options"].map((opt) => String(opt ?? "").trim())
         : [];
+      if (!prompt || options.length < 2 || options.some((opt) => !opt)) {
+        return null;
+      }
+      const rawMulti = Array.isArray(rec["correctOptions"])
+        ? rec["correctOptions"].filter(
+            (v): v is number => typeof v === "number" && Number.isInteger(v),
+          )
+        : [];
+      const hasMulti = rawMulti.length > 0;
+      const validMulti = hasMulti && rawMulti.every((v) => v >= 0 && v < options.length);
       const hasCorrectOption =
         rec["correctOption"] !== undefined && rec["correctOption"] !== null;
       const correctOption = hasCorrectOption
@@ -85,25 +106,31 @@ export function parseInlineQuizQuestions(
           ? rec["correctOption"]
           : -2
         : -1;
-      if (
-        !prompt ||
-        options.length < 2 ||
-        (hasCorrectOption && (correctOption < 0 || correctOption >= options.length))
-      ) {
+      if (hasMulti && !validMulti) return null;
+      if (!hasMulti && hasCorrectOption && (correctOption < 0 || correctOption >= options.length)) {
         return null;
       }
+      const rawType = typeof rec["type"] === "string" ? rec["type"].toUpperCase() : "";
+      const type: QuestionType =
+        rawType === "MULTI_CHOICE" || validMulti
+          ? "MULTI_CHOICE"
+          : rawType === "TRUE_FALSE"
+            ? "TRUE_FALSE"
+            : "SINGLE_CHOICE";
       return {
         id:
           typeof rec["id"] === "string" && rec["id"].trim()
             ? rec["id"].trim()
             : `inline-q-${idx + 1}`,
         prompt,
+        type,
         options,
-        correctOption,
+        correctOption: validMulti ? (rawMulti[0] ?? -1) : correctOption,
+        ...(validMulti ? { correctOptions: rawMulti } : {}),
         explanation: typeof rec["explanation"] === "string" ? rec["explanation"] : "",
       };
     })
-    .filter((q): q is QuizQuestionData => q !== null);
+    .filter((q): q is RunnerQuestionData => q !== null);
 }
 
 /** The curriculum fixture has no quiz-attempt API. This explicit device-local store
@@ -124,16 +151,18 @@ export function ChapterQuizRunner({
   workspaceId,
   assignmentId,
   courseItemId,
+  inlinePassPercent,
   nextLessonTitle,
   onNextLesson,
   hideTitle,
 }: {
   title: string;
-  questions: QuizQuestionData[];
+  questions: RunnerQuestionData[];
   canManage: boolean;
   workspaceId: string;
   assignmentId?: string | null | undefined;
   courseItemId?: string | null | undefined;
+  inlinePassPercent?: number | undefined;
   nextLessonTitle?: string | undefined;
   onNextLesson?: (() => void) | undefined;
   hideTitle?: boolean | undefined;
@@ -154,7 +183,7 @@ export function ChapterQuizRunner({
   const backendQuiz = useCourseQuiz(workspaceId, assignmentId ?? "", hasAssignmentBackend);
   const passPercent = backendQuizEnabled
     ? (backendQuiz.data?.passPercent ?? PASS_PERCENT)
-    : PASS_PERCENT;
+    : (inlinePassPercent ?? PASS_PERCENT);
   const storageKey = useMemo(
     () => attemptStorageKey(userId, workspaceId, assignmentId, title),
     [assignmentId, title, userId, workspaceId],
@@ -264,6 +293,7 @@ export function ChapterQuizRunner({
     onSuccess: (result, nextAttempt) => {
       const submittedAtIso = new Date().toISOString();
       const total = Math.max(result.totalQuestions, 1);
+      const passedNow = result.status === "PASSED";
       updateAttempt({
         attemptId: nextAttempt.attemptId,
         status: "SUBMITTED",
@@ -273,7 +303,8 @@ export function ChapterQuizRunner({
         submittedAt: submittedAtIso,
         correctCount: result.correctCount,
         scorePercent: Math.round((result.correctCount / total) * 100),
-        passed: result.status === "PASSED",
+        passed: passedNow,
+        everPassed: passedNow || Boolean(nextAttempt.everPassed || attempt?.passed || attempt?.everPassed),
         questionResults: result.questionResults ?? [],
       });
       if (result.questionResults?.length) {
@@ -455,6 +486,7 @@ export function ChapterQuizRunner({
       isLocalQuestionCorrect(question, toSelectedIndexes(activeAttempt.answers[question.id])),
     ).length;
     const computedScore = Math.round((pickedCorrect / Math.max(1, displayedQuestions.length)) * 100);
+    const passedNow = computedScore >= passPercent;
     const nextAttempt: StoredQuizAttempt = {
       attemptId: activeAttempt.attemptId || makeAttemptId(),
       status: "SUBMITTED",
@@ -464,7 +496,8 @@ export function ChapterQuizRunner({
       submittedAt: new Date().toISOString(),
       correctCount: pickedCorrect,
       scorePercent: computedScore,
-      passed: computedScore >= passPercent,
+      passed: passedNow,
+      everPassed: passedNow || Boolean(activeAttempt.passed || activeAttempt.everPassed),
     };
     if (backendQuizEnabled) submitBackendAttempt.mutate(nextAttempt);
     else if (inlineBackendQuizEnabled) submitInlineBackendAttempt.mutate(nextAttempt);
@@ -528,6 +561,7 @@ export function ChapterQuizRunner({
             answers: {},
             startedAt: new Date().toISOString(),
             durationSeconds,
+            ...(currentAttempt.passed || currentAttempt.everPassed ? { everPassed: true } : {}),
           });
         }}
       />

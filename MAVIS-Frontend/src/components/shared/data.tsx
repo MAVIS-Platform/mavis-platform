@@ -115,7 +115,7 @@ export function DataTable<T>({
       />
     );
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
+    <div className="w-full max-w-full min-w-0 overflow-x-auto rounded-xl border bg-card">
       <table className="w-full text-left text-sm">
         <caption className="sr-only">{t(caption)}</caption>
         <thead>

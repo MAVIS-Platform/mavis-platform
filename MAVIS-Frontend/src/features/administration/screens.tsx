@@ -66,13 +66,13 @@ export function Accounts() {
   };
   const submitCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !email.trim()) return;
+    if (!fullName.trim() || !email.trim() || password.trim().length < 8) return;
     try {
       await createAcc.mutateAsync({
         fullName: fullName.trim(),
         email: email.trim(),
         role: newRole,
-        ...(password.trim() ? { password: password.trim() } : {}),
+        password: password.trim(),
       });
       setFullName("");
       setEmail("");
@@ -142,11 +142,12 @@ export function Accounts() {
               onChange={(e) => setEmail(e.target.value)}
             />
             <Input
+              required
               type="password"
-              aria-label={t("Initial password (optional)", "Mật khẩu ban đầu (tùy chọn)")}
-              placeholder={t("Password (min 6 chars)", "Mật khẩu (tối thiểu 6 ký tự)")}
+              aria-label={t("Initial password", "Mật khẩu ban đầu")}
+              placeholder={t("Password (min 8 chars)", "Mật khẩu (tối thiểu 8 ký tự)")}
               value={password}
-              minLength={6}
+              minLength={8}
               onChange={(e) => setPassword(e.target.value)}
             />
             <div className="flex gap-2">
@@ -241,7 +242,7 @@ export function Accounts() {
         />
       </div>
       <RequestState query={query}>
-        <div className="space-y-4 [&_thead]:bg-muted/50 [&_th]:px-3 [&_th]:py-3 [&_th]:font-semibold [&_td]:px-3 [&_td]:py-3">
+        <div className="min-w-0 space-y-4 [&_thead]:bg-muted/50 [&_th]:whitespace-nowrap [&_th]:px-2.5 [&_th]:py-2.5 [&_th]:font-semibold [&_td]:px-2.5 [&_td]:py-2.5">
           <DataTable
             emptyDescription={t(
               "Try clearing the filters or refresh to check for new records.",
@@ -255,7 +256,7 @@ export function Accounts() {
                 key: "name",
                 label: t("Account", "Tài khoản"),
                 render: (a) => (
-                  <div className="flex min-w-0 max-w-[210px] items-center gap-2">
+                  <div className="flex min-w-0 max-w-[180px] items-center gap-2">
                     <UserAvatar name={a.name} avatarUrl={a.avatarUrl} size="sm" />
                     <div className="min-w-0 space-y-0.5">
                       <p className="truncate font-semibold text-foreground">{a.name}</p>
@@ -429,11 +430,19 @@ export function Integrations() {
                   {tested && (
                     <StatusBadge
                       status={
-                        tested.reachable
-                          ? `${t("Connected", "Kết nối tốt")} · ${tested.latencyMs}ms`
-                          : `${t("Unreachable", "Không kết nối được")} · ${tested.status}`
+                        tested.status?.toUpperCase() === "DEGRADED"
+                          ? `${t("Degraded", "Suy giảm")} · ${tested.latencyMs}ms`
+                          : tested.reachable
+                            ? `${t("Connected", "Kết nối tốt")} · ${tested.latencyMs}ms`
+                            : `${t("Unreachable", "Không kết nối được")} · ${tested.status}`
                       }
-                      variant={tested.reachable ? "success" : "warning"}
+                      variant={
+                        tested.status?.toUpperCase() === "DEGRADED"
+                          ? "warning"
+                          : tested.reachable
+                            ? "success"
+                            : "warning"
+                      }
                     />
                   )}
                 </div>
@@ -443,10 +452,14 @@ export function Integrations() {
                     ? t("Credentials configured.", "Đã cấu hình khóa xác thực.")
                     : item.status === "PUBLIC_ONLY"
                       ? t("Public repositories only.", "Chỉ truy cập repository công khai.")
-                      : t("Configuration unavailable.", "Chưa có cấu hình.")}{" "}
-                  {verified
-                    ? t("Connection verified.", "Đã xác minh kết nối.")
-                    : t("Connection not verified.", "Chưa xác minh kết nối.")}
+                      : item.status === "UNVERIFIED"
+                        ? t("Runtime probe integration.", "Tích hợp giám sát Runtime.")
+                        : t("Configuration unavailable.", "Chưa có cấu hình.")}{" "}
+                  {tested?.status?.toUpperCase() === "DEGRADED"
+                    ? t("Connection degraded.", "Kết nối đang suy giảm.")
+                    : verified
+                      ? t("Connection verified.", "Đã xác minh kết nối.")
+                      : t("Connection not verified.", "Chưa xác minh kết nối.")}
                 </p>
                 {tested && (
                   <p role="status" className="rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground">
@@ -1416,6 +1429,8 @@ export function AuditRecords() {
       <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("Audit and Jobs Views", "Nhật ký và tác vụ nền")}>
         <Button
           type="button"
+          role="tab"
+          aria-selected={tab === "audit"}
           size="sm"
           variant={tab === "audit" ? "default" : "outline"}
           onClick={() => setTab("audit")}
@@ -1424,6 +1439,8 @@ export function AuditRecords() {
         </Button>
         <Button
           type="button"
+          role="tab"
+          aria-selected={tab === "jobs"}
           size="sm"
           variant={tab === "jobs" ? "default" : "outline"}
           onClick={() => setTab("jobs")}

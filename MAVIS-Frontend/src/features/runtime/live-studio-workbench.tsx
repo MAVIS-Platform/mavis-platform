@@ -2180,7 +2180,11 @@ export function LiveStudioWorkbench({
               variant="outline"
               disabled={savingReplay}
               onClick={() => void stopAndSaveLiveReplay()}
-              className="h-8 border-rose-500/50 bg-rose-500/15 px-2.5 font-mono text-xs text-rose-600 dark:text-rose-200"
+              className={`h-8 px-2.5 font-mono text-xs font-semibold ${
+                isLight
+                  ? "border-rose-300 bg-rose-100 text-rose-800 hover:bg-rose-200"
+                  : "border-rose-500/50 bg-rose-500/20 text-rose-200 hover:bg-rose-500/30"
+              }`}
             >
               <span className="mr-1.5 size-1.5 animate-pulse rounded-full bg-rose-500" aria-hidden="true" />
               REC {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
@@ -4443,10 +4447,10 @@ export function LiveStudioWorkbench({
                     <>
                       <span
                         role="status"
-                        className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 font-mono text-[11px] font-medium ${
+                        className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 font-mono text-[11px] font-semibold ${
                           isLight
-                            ? "border-rose-300 bg-rose-50 text-rose-700"
-                            : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                            ? "border-rose-300 bg-rose-100 text-rose-800"
+                            : "border-rose-500/40 bg-rose-500/20 text-rose-200"
                         }`}
                       >
                         <span
@@ -7147,7 +7151,7 @@ export function LiveStudioWorkbench({
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs text-slate-500">P95 Latency</p>
+                <p className="text-xs text-slate-500">{t("P95 Latency", "Độ trễ P95")}</p>
                 <p className="mt-0.5 font-mono text-sm font-bold text-slate-900">
                   {liveP95Ms != null ? `${liveP95Ms} ms` : "—"}
                 </p>
@@ -7161,6 +7165,19 @@ export function LiveStudioWorkbench({
                 </p>
               </div>
             </div>
+            {data.receiptDigest && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-left">
+                <p className="text-[11px] font-semibold text-emerald-800">
+                  {t("SHA-256 Receipt Digest", "Mã băm biên nhận SHA-256")}
+                </p>
+                <p
+                  className="mt-0.5 truncate font-mono text-[11px] text-emerald-950"
+                  title={data.receiptDigest}
+                >
+                  {data.receiptDigest}
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-2.5 pt-1">
               <Button
                 type="button"

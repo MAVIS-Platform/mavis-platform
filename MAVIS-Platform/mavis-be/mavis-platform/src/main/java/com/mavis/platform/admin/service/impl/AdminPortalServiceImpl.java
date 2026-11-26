@@ -201,7 +201,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
                     else if ("STUDENT".equals(rc)) activeStudents++;
                 } else if ("PENDING_VERIFICATION".equals(st)) {
                     pendingUsers++;
-                } else if ("LOCKED".equals(st)) {
+                } else if ("LOCKED".equals(st) || "INACTIVE".equals(st)) {
                     lockedUsers++;
                 }
             }
@@ -211,7 +211,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
                 : 0L;
 
         return AdminDashboardStatsDTO.builder()
-                .runningRuntimeSessions(runtimeSessionRepository.countByExecutionStatusIn(List.of("ALLOCATED","RUNNING","CANCELLING")))
+                .runningRuntimeSessions(runtimeSessionRepository.countByExecutionStatusIn(List.of("QUEUED","READY_FOR_DISPATCH","ALLOCATED","RUNNING","CANCELLING")))
                 .healthStatus("unknown")
                 .liveHealthStatus("HEALTHY")
                 .activeLecturers(activeLecturers)

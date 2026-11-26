@@ -27,7 +27,10 @@ public class AdminRuntimeController {
  private final RuntimeSessionService runtime;
  @org.springframework.beans.factory.annotation.Autowired(required = false)
  private com.mavis.analyzer.runtime.service.impl.RuntimeQueueCoordinator queueCoordinator;
+ @org.springframework.beans.factory.annotation.Autowired(required = false)
+ private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
  public AdminRuntimeController(AccessPolicyService policy,PlatformRuntimeSettings settings,AuditLogService audit,ApiKeyProvider keys,JobRepository jobs,RuntimeSessionRepository sessions,RuntimeSessionService runtime){this.policy=policy;this.settings=settings;this.audit=audit;this.keys=keys;this.jobs=jobs;this.sessions=sessions;this.runtime=runtime;}
+ void setJdbcTemplate(org.springframework.jdbc.core.JdbcTemplate jdbcTemplate){this.jdbcTemplate=jdbcTemplate;}
  public record Toggle(@NotNull Boolean enabled,@Min(1) int expectedRevision){}
  public record ProfileUpdate(@NotNull Boolean enabled,@Min(1) int expectedRevision,@Min(64) @Max(2048) Integer memoryMiB,@DecimalMin("0.01") @DecimalMax("4") Double cpus,@Min(1) @Max(300) Integer timeoutSeconds){}
  private Map<String,Object> integration(PlatformRuntimeSettings.Integration i){return Map.of("id",i.id(),"name",i.name(),"enabled",i.enabled(),"revision",i.revision(),"status",i.id().equals("github")?"PUBLIC_ONLY":i.id().equals("gemini-ai")?(keys.hasValidKey()?"CONFIGURED":"NOT_CONFIGURED"):"UNVERIFIED","persistence","PROCESS_LOCAL_RESETS_ON_RESTART","connectionVerified",false);}
@@ -102,7 +105,84 @@ public class AdminRuntimeController {
  @GetMapping({"/profiles","/runner-profiles"}) public ApiResponse<?> profiles(){policy.requireSystemAdmin();return ApiResponse.success(settings.profiles());}
  @PatchMapping({"/profiles/{id}","/runner-profiles/{id}"}) public ApiResponse<?> profile(@PathVariable String id,@Valid @RequestBody ProfileUpdate r){policy.requireSystemAdmin();return ApiResponse.success(settings.updateProfile(id,r.enabled(),r.expectedRevision(),r.memoryMiB(),r.cpus(),r.timeoutSeconds(),n->record("CONFIGURE_RUNNER_PROFILE","RUNNER_PROFILE",id,Map.of("enabled",n.enabled(),"revision",n.revision(),"memoryMiB",n.memoryMiB(),"cpus",n.cpus(),"timeoutSeconds",n.timeoutSeconds()))));}
  private void record(String action,String type,String id,Map<String,Object> values){var details=new HashMap<>(values);details.put("configurationId",id);details.put("persistence","PROCESS_LOCAL");audit.recordAuditLog(action,type,UUID.nameUUIDFromBytes((type+":"+id).getBytes(StandardCharsets.UTF_8)),details);}
- @GetMapping("/runtime-sessions") @Transactional(readOnly=true) public ApiResponse<?> sessions(){policy.requireSystemAdmin();return ApiResponse.success(sessions.findTop50ByOrderByCreatedAtDesc().stream().map(RuntimeSessionResponseDTO::fromEntity).toList());}
+ @GetMapping("/runtime-sessions") @Transactional(readOnly=true)
+ public ApiResponse<?> sessions() {
+  policy.requireSystemAdmin();
+  // Skip loading multi-MB studio_control TOAST blobs (snapshots/3D videos) when listing 50 admin summary rows.
+  if (jdbcTemplate == null) {
+   return ApiResponse.success(sessions.findTop50ByOrderByCreatedAtDesc().stream().map(RuntimeSessionResponseDTO::fromEntity).toList());
+  }
+  List<RuntimeSessionResponseDTO> rows = jdbcTemplate.query("""
+          SELECT s.id, s.project_id, s.source_snapshot_id, s.model_version_id, s.enriched_model_version_id,
+                 s.assignment_id, a.title AS lab_title, s.triggered_by, u.full_name AS triggered_by_name,
+                 s.profile_name, s.scenario_name, s.execution_status, s.scenario_status,
+                 s.evidence_status, s.cleanup_status, s.trace_quality, s.mapping_status,
+                 s.publication_gate_status, s.trace_status, s.sandbox_enforcement_confirmed,
+                 s.resource_project, s.cancel_requested_at, s.started_at, s.completed_at, s.created_at,
+                 (s.receipt_digest IS NOT NULL AND s.receipt_digest <> '') AS studio_verified,
+                 CASE WHEN jsonb_typeof(s.runner_receipt_json->'outcome'->'trace'->'spans') = 'array'
+                      THEN jsonb_array_length(s.runner_receipt_json->'outcome'->'trace'->'spans')
+                      ELSE NULL END AS captured_span_count,
+                 COALESCE(s.recovery_result_json->>'reason', s.recovery_result_json->>'message') AS recovery_reason,
+                 s.recovery_result_json->>'code' AS recovery_code
+          FROM runtime_sessions s
+          LEFT JOIN assignments a ON a.id = s.assignment_id
+          LEFT JOIN users u ON u.id = s.triggered_by
+          ORDER BY s.created_at DESC
+          LIMIT 50
+          """, (rs, rowNum) -> {
+   String exec = Objects.toString(rs.getString("execution_status"), "");
+   String scen = Objects.toString(rs.getString("scenario_status"), "");
+   String recReason = rs.getString("recovery_reason");
+   String recCode = rs.getString("recovery_code");
+   List<String> diags = new ArrayList<>();
+   if (recCode != null && !recCode.isBlank()) diags.add(com.mavis.analyzer.runtime.util.SecretRedactor.redactString(recCode.trim()));
+   String failureReason = (recReason != null && !recReason.isBlank()) ? com.mavis.analyzer.runtime.util.SecretRedactor.redactString(recReason.trim()) : null;
+   if (failureReason == null) {
+    if ("CANCELLED".equalsIgnoreCase(exec) || "CANCELLED".equalsIgnoreCase(scen)) {
+     failureReason = "Runtime session was cancelled before completion.";
+    } else if ("TIMED_OUT".equalsIgnoreCase(exec) || "TIMEOUT".equalsIgnoreCase(exec) || "TIMEOUT".equalsIgnoreCase(scen)) {
+     failureReason = "Runtime session exceeded the execution deadline.";
+    } else if ("FAILED".equalsIgnoreCase(exec) || "FAILED".equalsIgnoreCase(scen)) {
+     failureReason = "Runtime execution failed before scenario verification completed.";
+    }
+   }
+   Number spanNum = (Number) rs.getObject("captured_span_count");
+   return RuntimeSessionResponseDTO.builder()
+           .id(rs.getObject("id", UUID.class))
+           .projectId(rs.getObject("project_id", UUID.class))
+           .sourceSnapshotId(rs.getObject("source_snapshot_id", UUID.class))
+           .modelVersionId(rs.getObject("model_version_id", UUID.class))
+           .enrichedModelVersionId(rs.getObject("enriched_model_version_id", UUID.class))
+           .assignmentId(rs.getObject("assignment_id", UUID.class))
+           .labTitle(rs.getString("lab_title"))
+           .triggeredById(rs.getObject("triggered_by", UUID.class))
+           .triggeredByName(rs.getString("triggered_by_name"))
+           .profileName(rs.getString("profile_name"))
+           .scenarioName(rs.getString("scenario_name"))
+           .executionStatus(rs.getString("execution_status"))
+           .scenarioStatus(rs.getString("scenario_status"))
+           .evidenceStatus(rs.getString("evidence_status"))
+           .cleanupStatus(rs.getString("cleanup_status"))
+           .traceQuality(rs.getString("trace_quality"))
+           .mappingStatus(rs.getString("mapping_status"))
+           .publicationGateStatus(rs.getString("publication_gate_status"))
+           .traceStatus(rs.getString("trace_status"))
+           .sandboxEnforcementConfirmed(rs.getObject("sandbox_enforcement_confirmed", Boolean.class))
+           .resourceProject(rs.getString("resource_project"))
+           .studioVerified(rs.getBoolean("studio_verified"))
+           .capturedSpanCount(spanNum != null ? spanNum.intValue() : null)
+           .failureReason(failureReason)
+           .diagnostics(diags)
+           .stepResults(List.of())
+           .cancelRequestedAt(rs.getObject("cancel_requested_at", OffsetDateTime.class))
+           .startedAt(rs.getObject("started_at", OffsetDateTime.class))
+           .completedAt(rs.getObject("completed_at", OffsetDateTime.class))
+           .createdAt(rs.getObject("created_at", OffsetDateTime.class))
+           .build();
+  });
+  return ApiResponse.success(rows);
+ }
  @PostMapping("/runtime-sessions/{sessionId}/force-stop") @Transactional
  public ApiResponse<?> forceStopSession(@PathVariable UUID sessionId) {
   policy.requireSystemAdmin();

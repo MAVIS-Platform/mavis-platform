@@ -390,7 +390,23 @@ export function LabSubmissionV2({
                           key={`${g.snapshotId}-${idx}`}
                           className="flex flex-wrap items-center justify-between gap-2 rounded border bg-muted/30 px-2 py-1"
                         >
-                          <span className="font-medium">{g.title || g.snapshotId}</span>
+                          <span className="font-medium">
+                            {(() => {
+                              const rawTitle = (g.title || g.snapshotId).trim();
+                              if (/^theory explanation$/i.test(rawTitle)) {
+                                return t("Theory explanation", "Giải trình lý thuyết");
+                              }
+                              const snapMatch = /^studio snapshot\s*#?(\d+)$/i.exec(rawTitle);
+                              if (snapMatch) {
+                                return t(`Studio snapshot ${snapMatch[1]}`, `Ảnh chụp Studio #${snapMatch[1]}`);
+                              }
+                              const vidMatch = /^studio video\s*#?(\d+)$/i.exec(rawTitle);
+                              if (vidMatch) {
+                                return t(`Studio video ${vidMatch[1]}`, `Video Studio #${vidMatch[1]}`);
+                              }
+                              return rawTitle;
+                            })()}
+                          </span>
                           <Badge variant={g.score > 5 ? "success" : "warning"}>
                             {g.score.toFixed(2)} / 10
                           </Badge>

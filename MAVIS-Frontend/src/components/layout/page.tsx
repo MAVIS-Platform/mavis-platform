@@ -17,7 +17,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "space-y-6",
+        "min-w-0 space-y-6",
         variant === "reading" && "max-w-(--reading-max)",
         variant === "form" && "max-w-(--form-max)",
       )}

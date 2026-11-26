@@ -250,7 +250,7 @@ export function LabAuthoring() {
                       `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
                     );
                   }}
-                  className="h-9 w-44 2xl:w-52 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-slate-300 bg-card px-2.5 text-xs font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
+                  className="h-9 w-56 sm:w-64 2xl:w-80 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-slate-300 bg-card px-2.5 text-xs font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
                 >
                   <option value="">{t("Switch Lab…", "Chuyển nhanh bài Lab…")}</option>
                   {allLabs.map((item) => (

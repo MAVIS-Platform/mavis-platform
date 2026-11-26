@@ -634,17 +634,26 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
             >
               {t("All Categories", "Tất cả danh mục")}
             </Button>
-            {catalog.data?.categories.map((item) => (
-              <Button
-                key={item}
-                type="button"
-                size="sm"
-                variant={category === item ? "default" : "outline"}
-                onClick={() => setCategory(item)}
-              >
-                {item}
-              </Button>
-            ))}
+            {(catalog.data?.categories ?? [])
+              .filter(
+                (item) =>
+                  item.trim().length >= 3 &&
+                  item.trim().length <= 42 &&
+                  !/^\d+$/.test(item.trim()) &&
+                  !/^(abc|test|qa\b|\[qa)/i.test(item.trim()),
+              )
+              .slice(0, 10)
+              .map((item) => (
+                <Button
+                  key={item}
+                  type="button"
+                  size="sm"
+                  variant={category === item ? "default" : "outline"}
+                  onClick={() => setCategory(item)}
+                >
+                  {item}
+                </Button>
+              ))}
           </div>
         </section>
         <section aria-labelledby="all-courses" className="space-y-4">

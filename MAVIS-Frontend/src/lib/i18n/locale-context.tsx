@@ -236,6 +236,9 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Per-snapshot grading (0–10)": "Chấm điểm từng Snapshot (thang 0–10)",
   "PASS (> 5.0)": "ĐẠT (> 5.0)",
   "NEEDS REVISION (<= 5.0)": "CẦN SỬA (<= 5.0)",
+  "Needs revision": "Cần chỉnh sửa",
+  "needs revision": "Cần chỉnh sửa",
+  NEEDS_REVISION: "Cần chỉnh sửa",
   "Snapshot comment (optional)": "Nhận xét cho Snapshot (tùy chọn)",
   "Computed overall equivalent": "Điểm tổng quy đổi tự động",
   "Enter a score between 0.0 and 10.0 for every snapshot (above 5.0 to pass).":

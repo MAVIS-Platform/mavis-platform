@@ -31,7 +31,11 @@ import { useApiQuery, useSession } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
-import { ChapterQuizRunner, parseInlineQuizQuestions } from "./chapter-quiz-runner";
+import {
+  ChapterQuizRunner,
+  parseInlineQuizPassPercent,
+  parseInlineQuizQuestions,
+} from "./chapter-quiz-runner";
 import {
   JAVA_COURSERA_COURSE_TITLE,
   buildCourseraModulesWithLabLinks,
@@ -652,6 +656,7 @@ function CourseOutlineBody({
                             workspaceId={workspaceId}
                             assignmentId={item.assignmentId}
                             courseItemId={item.id}
+                            inlinePassPercent={parseInlineQuizPassPercent(item.content)}
                           />
                         )}
                         {item.type === "ESSAY" && typeof item.content?.["prompt"] === "string" && (
@@ -740,6 +745,7 @@ function LazyOutlineQuizDetails({
   workspaceId,
   assignmentId,
   courseItemId,
+  inlinePassPercent,
 }: {
   summaryLabel: string;
   title: string;
@@ -748,6 +754,7 @@ function LazyOutlineQuizDetails({
   workspaceId: string;
   assignmentId?: string | null | undefined;
   courseItemId?: string | null | undefined;
+  inlinePassPercent?: number | undefined;
 }) {
   const [opened, setOpened] = useState(false);
   return (
@@ -768,6 +775,7 @@ function LazyOutlineQuizDetails({
           workspaceId={workspaceId}
           assignmentId={assignmentId}
           courseItemId={courseItemId}
+          inlinePassPercent={inlinePassPercent}
         />
       )}
     </details>

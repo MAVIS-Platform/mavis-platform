@@ -1057,7 +1057,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         log.info("Đã tạo RuntimeSession thành công với ID: {}, resourceProject: {}, pinnedModelVersion: {}",
                 saved.getId(), resourceProject, pinnedModel.getId());
 
-        return RuntimeSessionResponseDTO.fromEntity(saved);
+        return redactIfStudentCaller(RuntimeSessionResponseDTO.fromEntity(saved));
+    }
+
+    private RuntimeSessionResponseDTO redactIfStudentCaller(RuntimeSessionResponseDTO dto) {
+        return isStudentActor(currentActiveActorOrNull()) ? RuntimeSessionResponseDTO.redactForStudent(dto) : dto;
     }
 
     @Override
@@ -1074,7 +1078,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         if (session.getReceiptDigest() != null || session.getRunnerReceiptJson() != null || session.getCompletedAt() != null
                 || Set.of("ALLOCATED", "RUNNING", "CANCELLING", "COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT").contains(currentExec)) {
             log.info("Phiên thực nghiệm {} đã ở trạng thái {}, trả về idempotent khi approve", sessionId, currentExec);
-            return RuntimeSessionResponseDTO.fromEntity(session);
+            return redactIfStudentCaller(RuntimeSessionResponseDTO.fromEntity(session));
         }
 
         validateAdministrativeLimits(session);
@@ -1153,7 +1157,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         if (shouldQueue && runtimeQueueCoordinator != null) {
             response.setQueuePosition(runtimeQueueCoordinator.queuePosition(updated));
         }
-        return response;
+        return redactIfStudentCaller(response);
     }
 
     @Override
@@ -1242,7 +1246,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 session.setExecutionStatus(recorded);
                 session.setCleanupStatus("CONFIRMED");
                 if (session.getCompletedAt() == null) session.setCompletedAt(OffsetDateTime.now());
-                return RuntimeSessionResponseDTO.fromEntity(runtimeSessionRepository.save(session));
+                return redactIfStudentCaller(RuntimeSessionResponseDTO.fromEntity(runtimeSessionRepository.save(session)));
             }
         }
 
@@ -1251,7 +1255,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 || "TIMED_OUT".equals(executionStatus) || "TIMEDOUT".equals(executionStatus) || "TIMEOUT".equals(executionStatus)
                 || ("CANCELLED".equals(executionStatus) && session.getRunnerReceiptJson() != null)) {
             log.info("Phiên thực nghiệm {} đã kết thúc ở trạng thái {}. Trả về idempotent.", sessionId, executionStatus);
-            return RuntimeSessionResponseDTO.fromEntity(session);
+            return redactIfStudentCaller(RuntimeSessionResponseDTO.fromEntity(session));
         }
 
         // [CHẶNG 11] Nhánh 1: Stop-before-start (NOT_STARTED, PENDING, APPROVED, QUEUED, READY_FOR_DISPATCH)
@@ -1279,7 +1283,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 }
             }
             log.info("Phiên thực nghiệm {} dừng trước khi chạy (Stop-before-start). Đặt CANCELLED.", sessionId);
-            return RuntimeSessionResponseDTO.fromEntity(updated);
+            return redactIfStudentCaller(RuntimeSessionResponseDTO.fromEntity(updated));
         }
 
         // [CHẶNG 11] Nhánh 2: Stop-while-running (ALLOCATED, RUNNING, CANCELLING)
@@ -1290,7 +1294,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             session.setCleanupStatus("NOT_APPLICABLE");
             session.setCancelRequestedAt(OffsetDateTime.now());
             session.setCompletedAt(OffsetDateTime.now());
-            return RuntimeSessionResponseDTO.fromEntity(runtimeSessionRepository.save(session));
+            return redactIfStudentCaller(RuntimeSessionResponseDTO.fromEntity(runtimeSessionRepository.save(session)));
         }
         boolean interactiveStudio = session.getScenarioConfig() != null
                 && session.getScenarioConfig().path("interactiveStudio").asBoolean(false);
@@ -1328,7 +1332,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         RuntimeSession updated = runtimeSessionRepository.save(session);
         log.info("Phiên thực nghiệm {} đang dừng (Stop-while-running), trạng thái CANCELLING, chờ Receipt cleanup.", sessionId);
-        return RuntimeSessionResponseDTO.fromEntity(updated);
+        return redactIfStudentCaller(RuntimeSessionResponseDTO.fromEntity(updated));
     }
 
     private void validateLabStudioCompose(SourceSnapshot snapshot, ObjectNode profile) {
