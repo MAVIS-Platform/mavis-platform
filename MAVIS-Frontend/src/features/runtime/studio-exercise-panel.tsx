@@ -228,6 +228,7 @@ export function StudioExercisePanel({
                 </div>
                 <Input
                   value={rationale}
+                  maxLength={2000}
                   onChange={(e) => setRationale(e.target.value)}
                   placeholder={t("Short hypothesis (optional)…", "Giả thuyết ngắn gọn (tùy chọn)…")}
                   className={`h-7 text-[11px] ${

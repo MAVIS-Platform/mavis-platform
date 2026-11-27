@@ -655,11 +655,12 @@ public class RuntimeStudioService {
     /** Longest legitimate action: compose wait (60s) + readiness (60s) + workload replay (150s), plus margin. */
     private static final java.time.Duration ACTION_STALE_AFTER = java.time.Duration.ofSeconds(300);
 
-    /** A runner that died mid-action never acks; without this the session's Submit/Capture/Finish stay blocked forever. */
+    /** A runner that died mid-action or before polling never acks; expire both PENDING and RUNNING so UI never deadlocks. */
     static void expireStaleActions(ObjectNode control) {
         OffsetDateTime cutoff = OffsetDateTime.now().minus(ACTION_STALE_AFTER);
         for (JsonNode node : control.withArray("actions")) {
-            if (!"RUNNING".equals(node.path("status").asText())) continue;
+            String st = node.path("status").asText();
+            if (!"RUNNING".equals(st) && !"PENDING".equals(st)) continue;
             try {
                 if (OffsetDateTime.parse(node.path("requestedAt").asText()).isBefore(cutoff))
                     ((ObjectNode) node).put("status", "INTERRUPTED");
@@ -693,6 +694,8 @@ public class RuntimeStudioService {
             for (JsonNode action : result.withArray("actions"))
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
                     ((ObjectNode) action).put("status", "INTERRUPTED");
+        else
+            expireStaleActions(result);
         java.util.List<JsonNode> historyList = java.util.List.of();
         if (interactive && telemetryHub != null && !terminal) {
             var liveOpt = telemetryHub.latest(session.getId());

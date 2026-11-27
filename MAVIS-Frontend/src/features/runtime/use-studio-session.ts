@@ -194,17 +194,34 @@ export function useStudioSession(sessionId: string) {
     !data?.finishRequested &&
     !TERMINAL_STUDIO_STATUSES.has(executionStatus);
 
+  const [sseRetryNonce, setSseRetryNonce] = useState(0);
   // Subscribe to live SSE frames from the backend ring buffer; automatically falls back to polling if disconnected.
   useEffect(() => {
     if (!streamEnabled || typeof EventSource === "undefined") {
       setSseConnected(false);
       return;
     }
+    let reconnectTimer: number | null = null;
     const source = new EventSource(
       `/api/backend/analyzer/runtime/sessions/${sessionId}/studio/stream`,
     );
-    const onOpen = () => setSseConnected(true);
-    const onError = () => setSseConnected(false);
+    const onOpen = () => {
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      setSseConnected(true);
+    };
+    const onError = () => {
+      setSseConnected(false);
+      // If proxy/network closes EventSource permanently (CLOSED), recreate it after a short backoff.
+      if (source.readyState === EventSource.CLOSED && reconnectTimer === null) {
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = null;
+          setSseRetryNonce((n) => n + 1);
+        }, 3000);
+      }
+    };
     const onTelemetry = (event: MessageEvent<string>) => {
       try {
         const payload = JSON.parse(event.data) as {
@@ -272,6 +289,7 @@ export function useStudioSession(sessionId: string) {
     source.addEventListener("telemetry", onTelemetry as EventListener);
     source.addEventListener("state", onState as EventListener);
     return () => {
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       source.removeEventListener("open", onOpen);
       source.removeEventListener("error", onError);
       source.removeEventListener("telemetry", onTelemetry as EventListener);
@@ -279,7 +297,7 @@ export function useStudioSession(sessionId: string) {
       source.close();
       setSseConnected(false);
     };
-  }, [sessionId, streamEnabled, queryClient]);
+  }, [sessionId, streamEnabled, queryClient, sseRetryNonce]);
   const services = data?.services ?? [];
   const target = services.includes(service) ? service : (services[0] ?? "");
   const waiting =

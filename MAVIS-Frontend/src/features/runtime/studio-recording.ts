@@ -337,18 +337,26 @@ export function startStudioRecording(
           // Ignore if browser does not support explicit requestData before stop
         }
         recorder.stop();
+        try {
+          const blob = await complete;
+          return {
+            blob,
+            durationMs,
+            mimeType: blob.type || mimeType || "video/webm",
+            ...(posterImageData ? { posterImageData } : {}),
+          };
+        } finally {
+          stream.getTracks().forEach((track) => track.stop());
+        }
       }
-      try {
-        const blob = await complete;
-        return {
-          blob,
-          durationMs,
-          mimeType: blob.type || mimeType || "video/webm",
-          ...(posterImageData ? { posterImageData } : {}),
-        };
-      } finally {
-        stream.getTracks().forEach((track) => track.stop());
-      }
+      stream.getTracks().forEach((track) => track.stop());
+      const fallbackBlob = new Blob(chunks, { type: mimeType || "video/webm" });
+      return {
+        blob: fallbackBlob,
+        durationMs,
+        mimeType: fallbackBlob.type || mimeType || "video/webm",
+        ...(posterImageData ? { posterImageData } : {}),
+      };
     },
   };
 }

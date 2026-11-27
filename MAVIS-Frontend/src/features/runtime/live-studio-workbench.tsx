@@ -1060,14 +1060,15 @@ export function LiveStudioWorkbench({
     };
   }, [activeSessionId, evidenceScopeId]);
 
+  const savingReplayRef = useRef(false);
   useEffect(() => {
     if (!recordingSteps) return;
     const started = replayCaptureRef.current?.started ?? performance.now();
     const timer = window.setInterval(() => {
       const secs = Math.floor((performance.now() - started) / 1000);
       setRecordingSeconds(secs);
-      // Auto-stop cleanly at 20s so 1.5 Mbps HD video always stays safely below the 4.9 MB server upload cap.
-      if (secs >= 20 && !savingReplay) {
+      // Auto-stop cleanly at 20s using ref guard (avoids stale closure duplicate saves).
+      if (secs >= 20 && !savingReplayRef.current) {
         void stopAndSaveLiveReplay();
       }
     }, 1000);
@@ -1075,9 +1076,21 @@ export function LiveStudioWorkbench({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingSteps > 0]);
 
+  // Stop any active 3D video recorder if the session ends, cancels, or switches.
+  useEffect(() => {
+    if (!recordingSteps) return;
+    if (data.executionStatus !== "RUNNING" || data.finishRequested) {
+      void videoRecorderRef.current?.stop().catch(() => undefined);
+      videoRecorderRef.current = null;
+      replayCaptureRef.current = null;
+      setRecordingSteps(0);
+      setRecordingSeconds(0);
+    }
+  }, [recordingSteps, data.executionStatus, data.finishRequested, activeSessionId]);
+
   useEffect(
     () => () => {
-      void videoRecorderRef.current?.stop();
+      void videoRecorderRef.current?.stop().catch(() => undefined);
     },
     [],
   );
@@ -1147,7 +1160,7 @@ export function LiveStudioWorkbench({
     reclamp();
     window.addEventListener("resize", reclamp);
     return () => window.removeEventListener("resize", reclamp);
-  }, [bottomCollapsed, bottomHeight, rightWidth, missionWidth]);
+  }, [bottomCollapsed, bottomHeight, rightWidth, missionWidth, showLeft, leftWidth]);
 
   const confirmedActions = data.actions.filter((item) => item.status === "CONFIRMED" && item.result);
   const firstConfirmed = confirmedActions[0];
@@ -1396,6 +1409,10 @@ export function LiveStudioWorkbench({
       return;
     }
     const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
+    if (videoRecorderRef.current) {
+      void videoRecorderRef.current.stop().catch(() => undefined);
+      videoRecorderRef.current = null;
+    }
     if (svg) {
       try {
         const sessionUser = queryClient.getQueryData<Response<"session">>([
@@ -1430,7 +1447,8 @@ export function LiveStudioWorkbench({
 
   async function stopAndSaveLiveReplay() {
     const rec = replayCaptureRef.current;
-    if (!rec) return;
+    if (!rec || savingReplayRef.current) return;
+    savingReplayRef.current = true;
     setSavingReplay(true);
     setReplayError("");
     try {
@@ -1516,6 +1534,7 @@ export function LiveStudioWorkbench({
     } catch (cause) {
       setReplayError(cause instanceof Error ? cause.message : "Could not save runtime replay.");
     } finally {
+      savingReplayRef.current = false;
       setSavingReplay(false);
     }
   }
@@ -7224,7 +7243,7 @@ export function LiveStudioWorkbench({
                               type="button"
                               size="sm"
                               variant="outline"
-                              disabled={busy}
+                              disabled={busy || liveSvcPhase === "stopped"}
                               onClick={() =>
                                 void studio.send(
                                   liveSvcPhase === "paused" ? "RESUME" : "PAUSE",
@@ -7240,7 +7259,7 @@ export function LiveStudioWorkbench({
                               type="button"
                               size="sm"
                               variant="outline"
-                              disabled={busy}
+                              disabled={busy || liveSvcPhase === "paused"}
                               onClick={() =>
                                 void dispatchCommand(
                                   liveSvcPhase === "stopped" ? "START" : "STOP",
@@ -7256,7 +7275,7 @@ export function LiveStudioWorkbench({
                               type="button"
                               size="sm"
                               variant="outline"
-                              disabled={busy || !canScaleFor(svc)}
+                              disabled={busy || !canScaleFor(svc) || liveSvcPhase !== "running"}
                               onClick={() => void dispatchCommand("SCALE", svc, 2)}
                               style={{ fontSize: 12 }}
                               className={`h-8 border ${themeRadius} ${themeIdleBtn}`}
@@ -7267,7 +7286,7 @@ export function LiveStudioWorkbench({
                               type="button"
                               size="sm"
                               variant="outline"
-                              disabled={busy}
+                              disabled={busy || liveSvcPhase !== "running"}
                               onClick={() => void studio.send("THROTTLE_CPU", svc, undefined, 25)}
                               style={{ fontSize: 12 }}
                               className={`h-8 border ${themeRadius} ${themeIdleBtn}`}
