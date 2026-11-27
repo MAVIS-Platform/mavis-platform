@@ -658,7 +658,7 @@ class RuntimeStudioServiceTest {
         session.setRunnerReceiptJson(receiptJson);
         session.setReceiptDigest("sha256:test");
         when(access.requireCurrentActiveUser()).thenReturn(studentUser);
-        JsonNode studentReceipt = service.receipt(id);
+        var studentReceipt = service.receipt(id);
         assertFalse(studentReceipt.toString().contains("exerciseEvaluation"));
         assertFalse(studentReceipt.toString().contains("finalExerciseEvaluation"));
 
@@ -673,7 +673,7 @@ class RuntimeStudioServiceTest {
                 .put("requestedAt", java.time.OffsetDateTime.now().minusMinutes(10).toString());
         session.setStudioControl(control);
 
-        JsonNode pollRes = service.poll(id, session.getResourceProject());
+        var pollRes = service.poll(id, session.getResourceProject());
         assertFalse(pollRes.has("command"), "Stale RUNNING action must be expired instead of re-dispatched");
         assertEquals("INTERRUPTED", session.getStudioControl().withArray("actions").get(0).path("status").asText());
     }
