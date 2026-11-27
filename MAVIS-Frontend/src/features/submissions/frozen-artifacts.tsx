@@ -31,8 +31,11 @@ export function downloadArtifact(name: string, content: string, type = "applicat
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = name;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
   anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 function projectionDsl(payload: Record<string, unknown>): string | null {
   if (!Array.isArray(payload["nodes"]) || !Array.isArray(payload["edges"])) return null;

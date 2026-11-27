@@ -113,6 +113,7 @@ export function useStudioSession(sessionId: string) {
   const prevStatusRef = useRef<string | undefined>(undefined);
   const sawQueuedRef = useRef(false);
   const sendingRef = useRef(false);
+  const sseRetryAttemptRef = useRef(0);
   const [cancelledWhileQueued, setCancelledWhileQueued] = useState(false);
 
   // Reset transient per-session UI state when switching or restarting sessions.
@@ -131,6 +132,7 @@ export function useStudioSession(sessionId: string) {
     pending.current = null;
     prevStatusRef.current = undefined;
     sawQueuedRef.current = false;
+    sseRetryAttemptRef.current = 0;
     resetAction();
     resetPrediction();
     resetFinish();
@@ -194,6 +196,7 @@ export function useStudioSession(sessionId: string) {
     !data?.finishRequested &&
     !TERMINAL_STUDIO_STATUSES.has(executionStatus);
 
+  const MAX_SSE_RETRIES = 8;
   const [sseRetryNonce, setSseRetryNonce] = useState(0);
   // Subscribe to live SSE frames from the backend ring buffer; automatically falls back to polling if disconnected.
   useEffect(() => {
@@ -210,16 +213,35 @@ export function useStudioSession(sessionId: string) {
         window.clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+      sseRetryAttemptRef.current = 0;
       setSseConnected(true);
     };
     const onError = () => {
       setSseConnected(false);
-      // If proxy/network closes EventSource permanently (CLOSED), recreate it after a short backoff.
-      if (source.readyState === EventSource.CLOSED && reconnectTimer === null) {
+      // Bounded exponential backoff when proxy/network closes EventSource permanently (CLOSED).
+      if (
+        source.readyState === EventSource.CLOSED &&
+        reconnectTimer === null &&
+        sseRetryAttemptRef.current < MAX_SSE_RETRIES &&
+        (typeof document === "undefined" || document.visibilityState === "visible")
+      ) {
+        const delayMs = Math.min(30_000, 3_000 * 2 ** sseRetryAttemptRef.current);
+        sseRetryAttemptRef.current += 1;
         reconnectTimer = window.setTimeout(() => {
           reconnectTimer = null;
           setSseRetryNonce((n) => n + 1);
-        }, 3000);
+        }, delayMs);
+      }
+    };
+    const onVisibilityResume = () => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState === "visible" &&
+        source.readyState === EventSource.CLOSED &&
+        reconnectTimer === null
+      ) {
+        sseRetryAttemptRef.current = 0;
+        setSseRetryNonce((n) => n + 1);
       }
     };
     const onTelemetry = (event: MessageEvent<string>) => {
@@ -288,8 +310,14 @@ export function useStudioSession(sessionId: string) {
     source.addEventListener("error", onError);
     source.addEventListener("telemetry", onTelemetry as EventListener);
     source.addEventListener("state", onState as EventListener);
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityResume);
+    }
     return () => {
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityResume);
+      }
       source.removeEventListener("open", onOpen);
       source.removeEventListener("error", onError);
       source.removeEventListener("telemetry", onTelemetry as EventListener);

@@ -143,3 +143,35 @@ test("Lecturer Submission Review Refactor: 2 clean left sections (Quiz + Written
   assert.doesNotMatch(grading, /giải trình/i);
   assert.doesNotMatch(frozen, /giải trình/i);
 });
+
+test("Branch 4 hardening: CSV formula injection defense, DOM-attached artifact download, and localized confirms", () => {
+  const ts = require("typescript");
+  const screens = read("src/features/submissions/screens.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  const grading = read("src/features/submissions/grading.tsx");
+  const workspacesScreens = read("src/features/workspaces/screens.tsx");
+
+  const match = screens.match(/export function escapeGradebookCsvCell[\s\S]*?\n\}/);
+  assert.ok(match, "escapeGradebookCsvCell export must exist in submissions/screens.tsx");
+  const compiled = ts.transpileModule(match[0], {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function("exports", "module", compiled)(mod.exports, mod);
+  const { escapeGradebookCsvCell } = mod.exports;
+
+  assert.equal(escapeGradebookCsvCell("=CMD|'/C calc'!A0"), `"'=CMD|'/C calc'!A0"`);
+  assert.equal(escapeGradebookCsvCell("+1+1"), `"'+1+1"`);
+  assert.equal(escapeGradebookCsvCell("-2"), `"'-2"`);
+  assert.equal(escapeGradebookCsvCell("@SUM(A1)"), `"'@SUM(A1)"`);
+  assert.equal(escapeGradebookCsvCell("\tcmd"), `"'\tcmd"`);
+  assert.equal(escapeGradebookCsvCell('Nguyễn "A"'), `"Nguyễn ""A"""`);
+
+  assert.match(screens, /document\.body\.appendChild\(a\)/);
+  assert.match(screens, /a\.remove\(\)/);
+  assert.match(frozen, /document\.body\.appendChild\(anchor\)/);
+  assert.match(frozen, /anchor\.remove\(\)/);
+  assert.match(grading, /t\("Publish this score and summary to the student\?", "Công bố điểm số và nhận xét này cho sinh viên\?"\)/);
+  assert.match(grading, /t\("Return this submission with change requests\?", "Trả lại bài nộp này kèm yêu cầu chỉnh sửa\?"\)/);
+  assert.match(workspacesScreens, /Xóa \$\{m\.name\} khỏi lớp học này\?/);
+});
