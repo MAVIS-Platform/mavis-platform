@@ -18,7 +18,7 @@ public final class StudioExerciseEvaluator {
 
     private static final double ERROR_DELTA_THRESHOLD_PCT = 5.0;
     private static final double P95_RELATIVE_JUMP = 0.40;
-    private static final double P95_ABSOLUTE_JUMP_MS = 20.0;
+    private static final double P95_ABSOLUTE_JUMP_MS = 80.0;
     private static final double DEFAULT_MIN_IMPACT_F1 = 0.70;
 
     private StudioExerciseEvaluator() {}
@@ -337,9 +337,14 @@ public final class StudioExerciseEvaluator {
             Double curP95 = after.avgP95();
             if (prevP95 != null && curP95 != null && isLatencyRegression(prevP95, curP95)) {
                 double delta = curP95 - prevP95;
-                for (String endpoint : List.of(after.client, after.server)) {
-                    if (isIgnoredServiceEndpoint(endpoint)) continue;
-                    ServiceImpact imp = map.computeIfAbsent(endpoint, ServiceImpact::new);
+                // Only attribute pure latency jump to caller (and callee if already impacted) so client thread contention never blames healthy sibling servers.
+                if (!isIgnoredServiceEndpoint(after.client)) {
+                    ServiceImpact imp = map.computeIfAbsent(after.client, ServiceImpact::new);
+                    imp.reasons.add("EDGE_LATENCY_DEGRADATION:" + after.client + "->" + after.server);
+                    imp.p95DeltaMs = maxAbs(imp.p95DeltaMs, delta);
+                }
+                if (!isIgnoredServiceEndpoint(after.server) && map.containsKey(after.server)) {
+                    ServiceImpact imp = map.get(after.server);
                     imp.reasons.add("EDGE_LATENCY_DEGRADATION:" + after.client + "->" + after.server);
                     imp.p95DeltaMs = maxAbs(imp.p95DeltaMs, delta);
                 }
@@ -464,7 +469,7 @@ public final class StudioExerciseEvaluator {
         Double observed = switch (spec.metric) {
             case "IMPACT_F1" -> f1Score;
             case "REPLICAS" -> resolveReplicas(spec.target, latestTelemetry, confirmedActions);
-            case "TRACE_EDGE" -> resolveTraceEdgeObserved(spec.target, latestTelemetry, split.after(), canonicalServices);
+            case "TRACE_EDGE" -> resolveTraceEdgeObserved(spec.target, latestTelemetry, split, canonicalServices);
             case "ERROR_RATE" -> resolveErrorRate(spec.target, latestTelemetry, split.after(), confirmedActions, canonicalServices);
             case "EDGE_ERROR_RATE" -> resolveEdgeErrorRate(spec.target, latestTelemetry, split.after(), canonicalServices);
             case "P95_MS" -> resolveP95Ms(spec.target, latestTelemetry, split.after(), confirmedActions, canonicalServices);
@@ -503,36 +508,40 @@ public final class StudioExerciseEvaluator {
         return null;
     }
 
-    private static Double resolveTraceEdgeObserved(String edgeTarget, JsonNode latestTelemetry, List<JsonNode> afterFrames, Map<String, String> canonicalServices) {
+    private static Double resolveTraceEdgeObserved(String edgeTarget, JsonNode latestTelemetry, WindowSplit split, Map<String, String> canonicalServices) {
         String[] parts = edgeTarget.split("->");
         if (parts.length != 2) return 0.0;
         String from = normalizeServiceName(parts[0], canonicalServices);
         String to = normalizeServiceName(parts[1], canonicalServices);
-        if (latestTelemetry != null) {
-            for (JsonNode edge : latestTelemetry.path("interactions")) {
-                if (from.equals(normalizeServiceName(edge.path("fromService").asText(), canonicalServices))
-                        && to.equals(normalizeServiceName(edge.path("toService").asText(), canonicalServices))) {
-                    return 1.0;
-                }
-            }
-            for (JsonNode sg : latestTelemetry.path("serviceGraph")) {
-                if (from.equals(normalizeServiceName(sg.path("client").asText(), canonicalServices))
-                        && to.equals(normalizeServiceName(sg.path("server").asText(), canonicalServices))
-                        && sg.path("rps").asDouble(0) > 0) {
-                    return 1.0;
-                }
-            }
+        if (hasTraceEdgeInFrame(latestTelemetry, from, to, canonicalServices)) {
+            return 1.0;
         }
-        for (JsonNode frame : afterFrames) {
-            for (JsonNode sg : frame.path("serviceGraph")) {
-                if (from.equals(normalizeServiceName(sg.path("client").asText(), canonicalServices))
-                        && to.equals(normalizeServiceName(sg.path("server").asText(), canonicalServices))
-                        && sg.path("rps").asDouble(0) > 0) {
-                    return 1.0;
-                }
-            }
+        for (JsonNode frame : split.after()) {
+            if (hasTraceEdgeInFrame(frame, from, to, canonicalServices)) return 1.0;
+        }
+        // When target service is PAUSED/STOPPED it stops emitting server spans (so post-fault OTel logs caller -> unknown); baseline frames prove the edge was exercised.
+        for (JsonNode frame : split.before()) {
+            if (hasTraceEdgeInFrame(frame, from, to, canonicalServices)) return 1.0;
         }
         return 0.0;
+    }
+
+    private static boolean hasTraceEdgeInFrame(JsonNode frame, String from, String to, Map<String, String> canonicalServices) {
+        if (frame == null) return false;
+        for (JsonNode edge : frame.path("interactions")) {
+            if (from.equals(normalizeServiceName(edge.path("fromService").asText(), canonicalServices))
+                    && to.equals(normalizeServiceName(edge.path("toService").asText(), canonicalServices))) {
+                return true;
+            }
+        }
+        for (JsonNode sg : frame.path("serviceGraph")) {
+            if (from.equals(normalizeServiceName(sg.path("client").asText(), canonicalServices))
+                    && to.equals(normalizeServiceName(sg.path("server").asText(), canonicalServices))
+                    && sg.path("rps").asDouble(0) > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Double resolveErrorRate(String target, JsonNode latestTelemetry, List<JsonNode> afterFrames, List<JsonNode> confirmedActions, Map<String, String> canonicalServices) {

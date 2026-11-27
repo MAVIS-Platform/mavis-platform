@@ -521,30 +521,37 @@ export function LabSubmissionV2({
                     )
                   : t("Your written assignment", "Bài làm tự luận của bạn")}
               </span>
-              {studio && capturedSnapshots && capturedSnapshots.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const notes = capturedSnapshots
-                      .map((snap, idx) => {
-                        const text = snap.explanation?.trim();
-                        return text ? `${idx + 1}. ${text}` : "";
-                      })
-                      .filter(Boolean)
-                      .join("\n");
-                    if (!notes) return;
-                    setAnswer(notes);
-                    try {
-                      window.localStorage.setItem(draftKey, notes);
-                    } catch {
-                      // Ignore storage quota / private-mode restrictions
-                    }
-                  }}
-                  className="rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs font-medium text-primary transition hover:bg-primary/10"
-                >
-                  {t("Fill from Snapshot notes", "Điền từ ghi chú Snapshot")}
-                </button>
-              )}
+              {studio && capturedSnapshots && capturedSnapshots.length > 0 && (() => {
+                const filledNotes = capturedSnapshots
+                  .map((snap, idx) => {
+                    const text = snap.explanation?.trim();
+                    return text ? `${idx + 1}. ${text}` : "";
+                  })
+                  .filter(Boolean)
+                  .join("\n");
+                const notesLoading = studioStateLoading && !filledNotes;
+                if (!filledNotes && !notesLoading) return null;
+                return (
+                  <button
+                    type="button"
+                    disabled={notesLoading}
+                    onClick={() => {
+                      if (!filledNotes) return;
+                      setAnswer(filledNotes);
+                      try {
+                        window.localStorage.setItem(draftKey, filledNotes);
+                      } catch {
+                        // Ignore storage quota / private-mode restrictions
+                      }
+                    }}
+                    className="rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs font-medium text-primary transition hover:bg-primary/10 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {notesLoading
+                      ? t("Loading snapshot notes…", "Đang tải ghi chú Snapshot…")
+                      : t("Fill from Snapshot notes", "Điền từ ghi chú Snapshot")}
+                  </button>
+                );
+              })()}
             </span>
             <textarea
               className="min-h-36 w-full rounded-lg border bg-background p-3 text-sm"

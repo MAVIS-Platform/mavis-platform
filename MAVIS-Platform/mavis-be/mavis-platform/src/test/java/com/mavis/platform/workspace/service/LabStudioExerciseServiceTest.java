@@ -230,5 +230,11 @@ class LabStudioExerciseServiceTest {
         var view = service.get(workspaceId, labId);
         assertEquals(List.of("inventory-service"), view.initialState().stoppedServices());
         assertEquals("inventory-service", view.successCriteria().targetChangeAction().service());
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.save(
+                workspaceId, labId,
+                new LabStudioExerciseService.ExerciseRequest(
+                        null, null, null, List.of(), null, List.of("START"), null, "Edited while active")));
+        assertTrue(ex.getMessage().contains("frozen"));
     }
 }

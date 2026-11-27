@@ -4,8 +4,8 @@ export const JAVA_AUDIT_LENSES: Record<AuditModuleNumber, ModuleAuditLens> = {
   1: {
     moduleIndex: 1,
     track: "JAVA",
-    stepTitleEn: "Audit C1–C3 Decomposition & Bounded Context · Moc Huong Shop",
-    stepTitleVi: "Kiểm toán Phân rã C1–C3 & Bounded Context · Mộc Hương Shop",
+    stepTitleEn: "Audit C1–C3 Decomposition & Bounded Context",
+    stepTitleVi: "Kiểm toán Phân rã C1–C3 & Bounded Context",
     stepDescriptionEn:
       "Inspect C1 System Context actors, C2 Bounded Contexts, and clean 3-tier C3 boundaries.",
     stepDescriptionVi:
@@ -205,8 +205,8 @@ export const JAVA_AUDIT_LENSES: Record<AuditModuleNumber, ModuleAuditLens> = {
   5: {
     moduleIndex: 5,
     track: "JAVA",
-    stepTitleEn: "Overall Architecture & Production-Readiness Audit · Moc Huong Shop",
-    stepTitleVi: "Kiểm toán Tổng thể Kiến trúc & Production-Readiness · Mộc Hương Shop",
+    stepTitleEn: "Overall Architecture & Production-Readiness Audit",
+    stepTitleVi: "Kiểm toán Tổng thể Kiến trúc & Production-Readiness",
     stepDescriptionEn:
       "Review all 6 services, isolated DBs, Resilience4j, Kafka Outbox, and OpenTelemetry for production readiness.",
     stepDescriptionVi:

@@ -122,6 +122,10 @@ public class LabStudioExerciseService {
     public ExerciseView save(UUID workspaceId, UUID assignmentId, ExerciseRequest request) {
         access.requireWorkspaceLecturer(workspaceId);
         Assignment lab = lab(workspaceId, assignmentId);
+        if (isFrozenActiveCourseLab(lab)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_EXERCISE_FROZEN",
+                    "This Lab belongs to an active published course whose Studio exercise is frozen.");
+        }
         validateSource(workspaceId, request);
         List<BaselineRequest> baseline = normalizeBaseline(request == null ? null : request.baselineRequests());
         InitialState initialState = normalizeInitialState(request == null ? null : request.initialState());

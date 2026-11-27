@@ -273,6 +273,56 @@ class StudioExerciseEvaluatorTest {
         assertTrue(eval.path("passed").asBoolean());
     }
 
+    @Test
+    void pauseTargetStillSatisfiesRequiredTraceEdgeFromBaselineAndIgnoresHealthySiblingJitter() {
+        ObjectNode criteria = mapper.createObjectNode()
+                .put("exerciseType", "CHANGE_IMPACT")
+                .put("predictionRequired", true)
+                .put("minImpactF1", 0.70);
+        criteria.putObject("targetChangeAction").put("action", "PAUSE").put("service", "payment-service");
+        criteria.putObject("requiredTraceEdge").put("from", "order-service").put("to", "payment-service");
+
+        ObjectNode control = mapper.createObjectNode();
+        control.putObject("prediction").putArray("predictedServices").add("api-gateway").add("order-service");
+        ObjectNode pause = control.putArray("actions").addObject()
+                .put("action", "PAUSE").put("service", "payment-service").put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-27T10:00:10Z").put("completedAt", "2026-11-27T10:00:12Z");
+        pause.putObject("result").put("replicasBefore", 1).put("replicasAfter", 0);
+
+        ObjectNode beforeFrame = mapper.createObjectNode().put("observedAt", "2026-11-27T10:00:05Z");
+        ArrayNode beforeSvcs = beforeFrame.putArray("services");
+        beforeSvcs.addObject().put("service", "api-gateway").put("replicas", 1).put("runningReplicas", 1);
+        beforeSvcs.addObject().put("service", "order-service").put("replicas", 1).put("runningReplicas", 1);
+        beforeSvcs.addObject().put("service", "payment-service").put("replicas", 1).put("runningReplicas", 1);
+        beforeSvcs.addObject().put("service", "cart-service").put("replicas", 1).put("runningReplicas", 1);
+        ArrayNode beforeSg = beforeFrame.putArray("serviceGraph");
+        beforeSg.addObject().put("client", "api-gateway").put("server", "order-service").put("rps", 1.0).put("errorRatePercent", 0.0).put("p95Ms", 15.0);
+        beforeSg.addObject().put("client", "order-service").put("server", "payment-service").put("rps", 1.0).put("errorRatePercent", 0.0).put("p95Ms", 12.0);
+        beforeSg.addObject().put("client", "order-service").put("server", "cart-service").put("rps", 1.0).put("errorRatePercent", 0.0).put("p95Ms", 14.0);
+
+        ObjectNode afterFrame = mapper.createObjectNode().put("observedAt", "2026-11-27T10:00:18Z");
+        ArrayNode afterSvcs = afterFrame.putArray("services");
+        afterSvcs.addObject().put("service", "api-gateway").put("replicas", 1).put("runningReplicas", 1);
+        afterSvcs.addObject().put("service", "order-service").put("replicas", 1).put("runningReplicas", 1);
+        afterSvcs.addObject().put("service", "payment-service").put("replicas", 1).put("runningReplicas", 0);
+        afterSvcs.addObject().put("service", "cart-service").put("replicas", 1).put("runningReplicas", 1);
+        ArrayNode afterSg = afterFrame.putArray("serviceGraph");
+        afterSg.addObject().put("client", "api-gateway").put("server", "order-service").put("rps", 1.0).put("errorRatePercent", 100.0).put("p95Ms", 2300.0);
+        afterSg.addObject().put("client", "order-service").put("server", "unknown").put("rps", 1.0).put("errorRatePercent", 100.0).put("p95Ms", 2200.0);
+        // Healthy sibling experiences mild +120ms client-side contention jitter without error
+        afterSg.addObject().put("client", "order-service").put("server", "cart-service").put("rps", 1.0).put("errorRatePercent", 0.0).put("p95Ms", 134.0);
+
+        ObjectNode eval = StudioExerciseEvaluator.evaluate(mapper, criteria, control, afterFrame, List.of(beforeFrame, afterFrame));
+
+        assertEquals(1.0, eval.path("impact").path("f1Score").asDouble(), 0.001);
+        assertEquals(0, eval.path("impact").path("falseNegatives").size());
+        JsonNode traceRule = findRule(eval, "TRACE_EDGE");
+        assertNotNull(traceRule);
+        assertTrue(traceRule.path("passed").asBoolean());
+        assertEquals(1.0, traceRule.path("observedValue").asDouble(), 0.001);
+        assertTrue(eval.path("passed").asBoolean());
+    }
+
     private ObjectNode frame(String observedAt, int ordersRep, int paymentRep,
                              double probeErr, double probeP95, double edgeErr, double edgeP95) {
         ObjectNode f = mapper.createObjectNode().put("observedAt", observedAt);

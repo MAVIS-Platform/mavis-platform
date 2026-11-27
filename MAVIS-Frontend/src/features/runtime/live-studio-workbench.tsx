@@ -254,6 +254,7 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   endpointOptions?: readonly EndpointOption[] | undefined;
   replicaService: string;
   replicaCount: string;
+  frozen?: boolean | undefined;
   saving?: boolean | undefined;
   saved?: boolean | undefined;
   syncingDocker?: boolean | undefined;
@@ -683,6 +684,19 @@ export function LiveStudioWorkbench({
     }
     prevFinishSuccessRef.current = finish.isSuccess;
   }, [finish.isSuccess]);
+  // Fallback poll while sealing modal is open in case SSE closes early on completion.
+  useEffect(() => {
+    if (!verifiedModalOpen || !activeSessionId) return;
+    const done =
+      data.executionStatus === "COMPLETED" ||
+      data.executionStatus === "FAILED" ||
+      data.executionStatus === "CANCELLED";
+    if (done) return;
+    const id = window.setInterval(() => {
+      void state.refetch();
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [verifiedModalOpen, activeSessionId, data.executionStatus, state]);
   const [leftWidth, setLeftWidth] = useState(244);
   const [rightWidth, setRightWidth] = useState(() => (authoring ? 360 : 340));
   const [rightHeight, setRightHeight] = useState<number | null>(null);
@@ -1863,8 +1877,8 @@ export function LiveStudioWorkbench({
             )
           : !hasConfirmedAction
             ? t(
-                "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
-                "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
+                "Run at least one confirmed action (Pause, Resume, Stop, Start, Scale, CPU Throttle, or Set Load) and capture a snapshot before finishing",
+                "Thực hiện ít nhất 1 thao tác được xác nhận (Tạm dừng, Tiếp tục, Dừng, Khởi động, Scale, Giới hạn CPU hoặc Đổi tải RPS) và chụp 1 Snapshot trước khi kết thúc",
               )
             : (data.snapshots?.length ?? 0) === 0
               ? t(
@@ -1988,6 +2002,7 @@ export function LiveStudioWorkbench({
           isBooting ||
           isCancelling ||
           data.executionStatus === "COMPLETED" ||
+          data.executionStatus === "CANCELLED" ||
           lastSessionFailed) && (
           <span
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11.5px] font-semibold ${
@@ -2294,7 +2309,7 @@ export function LiveStudioWorkbench({
               className="h-8 px-2.5 text-xs"
               onClick={onSwitchToSandbox}
             >
-              Switch to Sandbox
+              {t("Switch to Sandbox", "Chuyển sang Sandbox")}
             </Button>
           )}
 
@@ -2780,8 +2795,8 @@ export function LiveStudioWorkbench({
                     <Button asChild size="sm">
                       <Link href={startHref}>
                         {projectName
-                          ? `Prepare and start ${projectName}`
-                          : "Prepare and start Live project"}
+                          ? t(`Prepare and start ${projectName}`, `Chuẩn bị và chạy ${projectName}`)
+                          : t("Prepare and start Live project", "Chuẩn bị và chạy dự án Live")}
                       </Link>
                     </Button>
                   )}
@@ -3711,8 +3726,8 @@ export function LiveStudioWorkbench({
               }
             }
             const avgCpuPct = cpuSamples > 0 ? totalCpuPct / cpuSamples : 0;
-            const maxPoolVcpu = Math.max(totalVcpuAllocated, blocks.length * 2, 4);
-            const ramPoolMiB = Math.max(totalRamLimitMiB, blocks.length * 1024, 1024);
+            const maxPoolVcpu = Math.max(totalVcpuAllocated, blocks.length * cpusPerPod, cpusPerPod);
+            const ramPoolMiB = Math.max(totalRamLimitMiB, blocks.length * memPerPodMiB, memPerPodMiB);
             // Never show a fake 50-100% CPU usage bar in Preview before real container docker stats arrive.
             const cpuBarPct =
               cpuSamples > 0
@@ -4229,13 +4244,15 @@ export function LiveStudioWorkbench({
                             <td
                               title={(() => {
                                 const baseCpus = observedData.limits?.cpus ?? 0.5;
-                                const effCpus =
+                                const replicas = Math.max(1, row.running ?? row.agg.containers ?? 1);
+                                const perPodCpus =
                                   row.cpuQuotaPct !== null
                                     ? Math.max(0.05, Math.round(baseCpus * row.cpuQuotaPct) / 100)
                                     : baseCpus;
+                                const effCpus = Math.round(perPodCpus * replicas * 100) / 100;
                                 return t(
-                                  `% of 1 host CPU core · Pod cgroup limit: ${effCpus} vCPU (${Math.round(effCpus * 100)}% host core)`,
-                                  `% trên 1 nhân CPU máy chủ · Hạn mức pod hiện tại: ${effCpus} vCPU (${Math.round(effCpus * 100)}% 1 nhân)`,
+                                  `% of 1 host CPU core · Total cgroup limit: ${effCpus} vCPU (${replicas}×${perPodCpus} vCPU)`,
+                                  `% trên 1 nhân CPU máy chủ · Tổng hạn mức: ${effCpus} vCPU (${replicas}×${perPodCpus} vCPU)`,
                                 );
                               })()}
                               className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}
@@ -4244,12 +4261,17 @@ export function LiveStudioWorkbench({
                               {observedData.limits?.cpus !== undefined && (
                                 <span className="ml-1 text-[10px] text-muted-foreground">
                                   /
-                                  {row.cpuQuotaPct !== null
-                                    ? Math.max(
-                                        0.05,
-                                        Math.round(observedData.limits.cpus * row.cpuQuotaPct) / 100,
-                                      )
-                                    : observedData.limits.cpus}
+                                  {(() => {
+                                    const replicas = Math.max(1, row.running ?? row.agg.containers ?? 1);
+                                    const perPod =
+                                      row.cpuQuotaPct !== null
+                                        ? Math.max(
+                                            0.05,
+                                            Math.round(observedData.limits.cpus * row.cpuQuotaPct) / 100,
+                                          )
+                                        : observedData.limits.cpus;
+                                    return Math.round(perPod * replicas * 100) / 100;
+                                  })()}
                                   vCPU
                                 </span>
                               )}
@@ -5367,12 +5389,15 @@ export function LiveStudioWorkbench({
                                       throttleAct.cpuPercent < 100
                                         ? throttleAct.cpuPercent
                                         : null;
-                                    return quotaPct !== null
-                                      ? Math.max(
-                                          0.05,
-                                          Math.round(data.limits.cpus * quotaPct) / 100,
-                                        )
-                                      : data.limits.cpus;
+                                    const replicas = Math.max(1, selRunning ?? selStats.containers ?? 1);
+                                    const perPod =
+                                      quotaPct !== null
+                                        ? Math.max(
+                                            0.05,
+                                            Math.round(data.limits.cpus * quotaPct) / 100,
+                                          )
+                                        : data.limits.cpus;
+                                    return Math.round(perPod * replicas * 100) / 100;
                                   })()}
                                   v
                                 </span>
@@ -6544,7 +6569,13 @@ export function LiveStudioWorkbench({
                           : "border-slate-800 bg-slate-950/95"
                       }`}
                     >
-                      {authoring.saved && !missionDirty ? (
+                      {authoring.frozen ? (
+                        <span
+                          className={`text-[11px] font-medium ${isLight ? "text-emerald-700" : "text-emerald-300"}`}
+                        >
+                          {t("Active course — exercise frozen", "Khóa đang mở — đề bài đã khóa")}
+                        </span>
+                      ) : authoring.saved && !missionDirty ? (
                         <span
                           className={`text-[11.5px] font-semibold ${isLight ? "text-emerald-700" : "text-emerald-400"}`}
                         >
@@ -6562,7 +6593,15 @@ export function LiveStudioWorkbench({
                       <Button
                         type="button"
                         size="sm"
-                        disabled={authoring.saving}
+                        disabled={authoring.saving || authoring.frozen}
+                        title={
+                          authoring.frozen
+                            ? t(
+                                "Published active course exercises are frozen to keep grading consistent.",
+                                "Đề bài của khóa học đang hoạt động đã được khóa để đảm bảo công bằng khi chấm điểm.",
+                              )
+                            : undefined
+                        }
                         onClick={() =>
                           authoring.onSaveMission({
                             instructions: missionDraft,

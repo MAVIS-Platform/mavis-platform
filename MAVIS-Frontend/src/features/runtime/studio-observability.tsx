@@ -3612,8 +3612,8 @@ export function StudioObservability({
                           {roleSubtitle}
                         </text>
 
-                        {/* Integrated Status Pill inside top-right of card (original MAVIS Cloud Architecture badge) */}
-                        <g transform={`translate(${halfW - pillW - 10}, ${archetype === "DATABASE" ? -8 : -16})`}>
+                        {/* Integrated Status Pill inside top-right of card (offset clear of right-edge output port dot) */}
+                        <g transform={`translate(${halfW - pillW - 14}, ${archetype === "DATABASE" ? -10 : -20})`}>
                           <rect
                             x="0"
                             y="0"

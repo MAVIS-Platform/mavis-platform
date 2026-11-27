@@ -115,18 +115,29 @@ export function Workspaces() {
     (currentPage - 1) * WORKSPACES_PER_PAGE,
     currentPage * WORKSPACES_PER_PAGE,
   );
+  const archivedWorkspaceIds = useMemo(
+    () =>
+      new Set(
+        (query.data ?? [])
+          .filter((w) => (w.status ?? "").toUpperCase() === "ARCHIVED")
+          .map((w) => w.id),
+      ),
+    [query.data],
+  );
   const pendingReviews = (submissions.data ?? []).filter(
-    (submission) => !submission.reviewStatus || submission.reviewStatus === "PENDING",
+    (submission) =>
+      (!submission.workspaceId || !archivedWorkspaceIds.has(submission.workspaceId)) &&
+      (!submission.reviewStatus || submission.reviewStatus === "PENDING"),
   ).length;
   const pendingByWorkspace = useMemo(() => {
     const counts = new Map<string, number>();
     for (const submission of submissions.data ?? []) {
-      if (!submission.workspaceId) continue;
+      if (!submission.workspaceId || archivedWorkspaceIds.has(submission.workspaceId)) continue;
       if (submission.reviewStatus && submission.reviewStatus !== "PENDING") continue;
       counts.set(submission.workspaceId, (counts.get(submission.workspaceId) ?? 0) + 1);
     }
     return counts;
-  }, [submissions.data]);
+  }, [submissions.data, archivedWorkspaceIds]);
   if (workspaceId && selected) return <WorkspaceOverview />;
   if (session.data?.user && !canCreate) return <Courses />;
   return (

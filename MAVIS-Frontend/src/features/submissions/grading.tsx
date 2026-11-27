@@ -43,14 +43,29 @@ export function resolveSubmissionOutcome(
   return review.score > PASSING_SCORE ? "PASS" : "NEEDS REVISION";
 }
 
-function formatGradeRowTitle(rawTitle: string, locale: string): string {
+function isVideoSnapshotItem(
+  snapshotId: string | undefined,
+  studentSnapshots?: StudentSnapshotItem[],
+): boolean {
+  if (!snapshotId || !studentSnapshots?.length) return false;
+  const item = studentSnapshots.find((s) => s.snapshotId === snapshotId);
+  if (!item) return false;
+  return /\bvideo\s+\d+(\.\d+)?s\b|\bvideo\b/i.test(`${item.title ?? ""} ${item.writtenExplanation ?? ""}`);
+}
+
+function formatGradeRowTitle(rawTitle: string, locale: string, isVideo = false): string {
   const trimmed = rawTitle.trim();
+  const studioMatch = trimmed.match(/^studio snapshot\s+(\d+)$/i);
+  if (studioMatch) {
+    if (locale !== "vi") {
+      return isVideo ? `Studio video #${studioMatch[1]}` : `Studio snapshot #${studioMatch[1]}`;
+    }
+    return isVideo ? `Video Studio #${studioMatch[1]}` : `Ảnh chụp Studio #${studioMatch[1]}`;
+  }
   if (locale !== "vi") return /^theory explanation$/i.test(trimmed) ? "Written assignment" : trimmed;
   if (/^theory explanation$/i.test(trimmed) || /^written assignment$/i.test(trimmed)) {
     return "Bài làm tự luận";
   }
-  const studioMatch = trimmed.match(/^studio snapshot\s+(\d+)$/i);
-  if (studioMatch) return `Ảnh chụp Studio #${studioMatch[1]}`;
   return trimmed;
 }
 
@@ -128,7 +143,11 @@ export function GradingPanel({
                     >
                       <div className="min-w-0">
                         <p className="font-medium">
-                          {formatGradeRowTitle(g.title || g.snapshotId, locale)}
+                          {formatGradeRowTitle(
+                            g.title || g.snapshotId,
+                            locale,
+                            isVideoSnapshotItem(g.snapshotId, studentSnapshots),
+                          )}
                         </p>
                         {g.comment && <p className="text-muted-foreground">{g.comment}</p>}
                       </div>
@@ -532,7 +551,11 @@ export function GradeForm({
                     num >= 0 &&
                     num <= 10 &&
                     /^\d+(\.\d{1,2})?$/.test(row.score.trim());
-                  const displayTitle = formatGradeRowTitle(row.title, locale);
+                  const displayTitle = formatGradeRowTitle(
+                    row.title,
+                    locale,
+                    isVideoSnapshotItem(row.snapshotId, studentSnapshots),
+                  );
                   return (
                     <div
                       key={`${row.snapshotId}-${idx}`}

@@ -1008,6 +1008,7 @@ function StandaloneStudioContent() {
               ? ""
               : String(exercise.data.successCriteria.minReplicas[0].count),
           busy: autoStudio.isPending,
+          frozen: setup.data?.status === "ACTIVE" && Boolean(published),
           saving: saveVisualExercise.isPending,
           saved: visualSaved,
           error: visualError || undefined,
@@ -1667,9 +1668,25 @@ function StandaloneStudioContent() {
       )}
 
       {/* Error strips if any mutation fails (suppress duplicate strip when full-screen initialLoadError is already shown) */}
-      {(autoStudio.error || (startStudio.error && !activeSessionId && !initialLoadError)) && (
-        <div className="shrink-0 space-y-1 border-b border-destructive/30 bg-destructive/10 px-4 py-2">
+      {(autoStudio.error || visualError || (startStudio.error && !activeSessionId && !initialLoadError)) && (
+        <div
+          role="alert"
+          className="shrink-0 space-y-1 border-b border-destructive/30 bg-destructive/10 px-4 py-2"
+        >
           {autoStudio.error && <ErrorState error={autoStudio.error} />}
+          {visualError && (
+            <div className="flex items-center justify-between gap-3 text-xs font-medium text-destructive">
+              <span>{visualError}</span>
+              <button
+                type="button"
+                onClick={() => setVisualError("")}
+                className="rounded px-1.5 py-0.5 text-[11px] hover:bg-destructive/15"
+                aria-label={t("Dismiss error", "Đóng thông báo lỗi")}
+              >
+                ×
+              </button>
+            </div>
+          )}
           {startStudio.error && !activeSessionId && !initialLoadError && <ErrorState error={startStudio.error} />}
         </div>
       )}
@@ -1842,6 +1859,22 @@ function StandaloneStudioContent() {
                   void labSessions.refetch();
                 },
                 onError: (cause) => {
+                  const rawMessage = cause instanceof Error ? cause.message : String(cause);
+                  const isOtherLabLimit =
+                    (cause instanceof ApiError &&
+                      (cause.code === "USER_ACTIVE_SESSION_LIMIT" ||
+                        /another lab|USER_ACTIVE_SESSION_LIMIT/i.test(rawMessage))) ||
+                    /another lab|USER_ACTIVE_SESSION_LIMIT/i.test(rawMessage);
+                  if (isOtherLabLimit) {
+                    startStudio.reset();
+                    setVisualError(
+                      t(
+                        "You already have an active Studio Live session running in another Lab. Stop or finish it before starting a new one.",
+                        "Bạn đang có một phiên Studio Live khác đang chạy ở bài Lab khác. Vui lòng dừng hoặc kết thúc phiên đó trước khi khởi chạy phiên mới.",
+                      ),
+                    );
+                    return;
+                  }
                   const isConflict =
                     (cause instanceof ApiError && cause.status === 409) ||
                     (cause instanceof Error &&
@@ -1851,7 +1884,7 @@ function StandaloneStudioContent() {
                     void labSessions.refetch();
                     return;
                   }
-                  setVisualError(cause instanceof Error ? cause.message : String(cause));
+                  setVisualError(rawMessage);
                 },
               });
             }}

@@ -266,15 +266,34 @@ export function buildSmartSnapshotPlan(
     const failingEdges = (data.telemetry?.serviceGraph ?? [])
       .filter((sg) => sg.errorRatePercent > 0)
       .flatMap((sg) => [sg.client, sg.server]);
+    const failingSpanServices = (data.telemetry?.spans ?? [])
+      .filter(
+        (sp) =>
+          sp.spanStatus?.toUpperCase() === "ERROR" ||
+          sp.circuitOpen === true ||
+          (typeof sp.httpStatusCode === "number" && sp.httpStatusCode >= 500),
+      )
+      .map((sp) => sp.runtimeService);
+    const failingProbeServices = (data.telemetry?.probe?.routes ?? [])
+      .filter((r) => (r.errorRatePercent ?? 0) > 0)
+      .map((r) => r.service);
+    const ignoredActors = new Set(["unknown", "user", "client", "browser", "probe", "mavis-probe", "mavis-collector"]);
     const liveDerivedAffected = Array.from(
       new Set(
-        failingEdges.filter((svc) => Boolean(svc) && svc !== primaryService),
+        [...failingEdges, ...failingSpanServices, ...failingProbeServices].filter(
+          (svc): svc is string =>
+            Boolean(svc) &&
+            svc !== primaryService &&
+            !ignoredActors.has(svc.trim().toLowerCase()),
+        ),
       ),
     );
     const observedAffected =
       evaluation?.observedAffectedServices && evaluation.observedAffectedServices.length > 0
         ? evaluation.observedAffectedServices
         : liveDerivedAffected;
+    const liveProbeErr = data.telemetry?.probe?.errorRatePercent ?? 0;
+    const hasLiveErrorSignal = observedAffected.length > 0 || liveProbeErr > 0;
     const predicted = evaluation?.predictedServices ?? data.prediction?.predictedServices ?? [];
     const upstreamFallback = primaryService ? findDirectNeighbors(primaryService, data, "upstream") : [];
 
@@ -302,7 +321,9 @@ export function buildSmartSnapshotPlan(
     const affectedLabel =
       observedAffected.length > 0
         ? `${observedAffected.slice(0, 2).join(", ")}${observedAffected.length > 2 ? ` +${observedAffected.length - 2}` : ""} (${observedAffected.length})`
-        : t("0 affected (baseline)", "Chưa lan lỗi (baseline)");
+        : liveProbeErr > 0
+          ? t(`Propagating (${Math.round(liveProbeErr)}% err)`, `Đang lan lỗi (${Math.round(liveProbeErr)}%)`)
+          : t("0 affected (baseline)", "Chưa lan lỗi (baseline)");
 
     const predictionLabel =
       options?.includeAutoCheck && evaluation?.impact
@@ -320,7 +341,7 @@ export function buildSmartSnapshotPlan(
       {
         label: t("Observed Impact", "Ảnh hưởng thực tế"),
         value: affectedLabel,
-        tone: observedAffected.length > 0 ? "bad" : "good",
+        tone: hasLiveErrorSignal ? "bad" : "good",
       },
       {
         label: t("Prediction", "Dự đoán"),
