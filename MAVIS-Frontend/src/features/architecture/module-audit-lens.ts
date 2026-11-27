@@ -83,9 +83,17 @@ export function detectAuditTrack(input: {
     code.includes("DOTNET") ||
     projectName.includes("trái cây") ||
     projectName.includes("fruit") ||
+    projectName.includes("dotnet") ||
+    projectName.includes("c#") ||
+    projectName.includes("csharp") ||
+    projectName.includes("bookstore") ||
     labTitle.includes("(.net)") ||
+    labTitle.includes("dotnet") ||
+    labTitle.includes("c#") ||
     labTitle.includes("roslyn") ||
-    labTitle.includes("polly")
+    labTitle.includes("polly") ||
+    labTitle.includes("yarp") ||
+    labTitle.includes("masstransit")
   ) {
     return "CSHARP";
   }
@@ -96,7 +104,8 @@ export function detectAuditTrack(input: {
         el.name === "FruitOrdering.API" ||
         el.name === "FruitCatalog.API" ||
         el.name === "FruitBasket.API" ||
-        el.name === "ApiGateway",
+        el.name === "ApiGateway" ||
+        (el.elementType === "SERVICE_CONTAINER" && el.name.endsWith(".API")),
     )
   ) {
     return "CSHARP";
