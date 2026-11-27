@@ -3557,7 +3557,9 @@ export function LiveStudioWorkbench({
                 {data.executionStatus === "RUNNING" &&
                   data.telemetry?.probe && (
                   <span
-                    className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 font-mono lg:inline-flex ${
+                    className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 font-mono ${
+                      showLeft ? "xl:inline-flex" : "lg:inline-flex"
+                    } ${
                       isLight
                         ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                         : "border-emerald-500/30 bg-emerald-950/50 text-emerald-200"
@@ -3581,7 +3583,9 @@ export function LiveStudioWorkbench({
                 )}
                 {studio.sseConnected && (
                   <span
-                    className={`hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-0.5 font-mono text-[10px] xl:inline-flex ${
+                    className={`hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-0.5 font-mono text-[10px] ${
+                      showLeft ? "2xl:inline-flex" : "xl:inline-flex"
+                    } ${
                       isLight
                         ? "border-sky-200 bg-sky-50 text-sky-700"
                         : "border-sky-500/30 bg-sky-950/40 text-sky-300"
@@ -4616,17 +4620,27 @@ export function LiveStudioWorkbench({
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={isPreviewMode || data.executionStatus !== "RUNNING" || savingReplay}
+                      disabled={
+                        isPreviewMode ||
+                        data.executionStatus !== "RUNNING" ||
+                        savingReplay ||
+                        (data.snapshots?.length ?? 0) >= 8
+                      }
                       title={
-                        isPreviewMode || data.executionStatus !== "RUNNING"
+                        (data.snapshots?.length ?? 0) >= 8
                           ? t(
-                              "Start Live Docker first to record a 3D video clip (max 20s)",
-                              "Hãy chạy Docker thật trước để quay video 3D (tối đa 20 giây)",
+                              "Maximum 8 verified snapshots/videos reached for this session",
+                              "Đã đạt tối đa 8 ảnh/video xác thực trong phiên này",
                             )
-                          : t(
-                              "Record crisp 3D HD video attached to your Lab submission (max 20s)",
-                              "Quay video 3D HD đính kèm bài nộp cho Giảng viên (tối đa 20 giây)",
-                            )
+                          : isPreviewMode || data.executionStatus !== "RUNNING"
+                            ? t(
+                                "Start Live Docker first to record a 3D video clip (max 20s)",
+                                "Hãy chạy Docker thật trước để quay video 3D (tối đa 20 giây)",
+                              )
+                            : t(
+                                "Record crisp 3D HD video attached to your Lab submission (max 20s)",
+                                "Quay video 3D HD đính kèm bài nộp cho Giảng viên (tối đa 20 giây)",
+                              )
                       }
                       onClick={startLiveReplayRecording}
                       className={`h-9 px-3 text-xs font-medium disabled:opacity-40 ${

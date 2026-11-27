@@ -324,10 +324,14 @@ export function StudioSnapshotPreviewCard({
   useEffect(() => {
     if (!lightboxOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLightboxOpen(false);
+      if (event.key !== "Escape") return;
+      // Consume Escape in capture phase so closing the zoom lightbox never dismisses underlying Studio panels.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setLightboxOpen(false);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [lightboxOpen]);
 
   return (
