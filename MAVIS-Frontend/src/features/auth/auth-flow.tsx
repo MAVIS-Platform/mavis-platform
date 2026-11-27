@@ -13,7 +13,7 @@ import { ErrorState } from "@/components/shared/request-state";
 import { VerificationCodeInput } from "./verification-code-input";
 import { isCompleteVerificationCode } from "@/lib/auth/verification-code";
 import { normalizeError } from "@/lib/errors/api-error";
-import { useLocale } from "@/lib/i18n/locale-context";
+import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
 export function AuthFlow({
   flow,
 }: {
@@ -61,18 +61,27 @@ export function AuthFlow({
   const showsPassword =
     flow === "register" || (flow === "reset-password" && isCompleteVerificationCode(otp));
   const title = {
-    register: "Create your account",
-    verify: "Verify your email",
-    "forgot-password": "Forgot your password?",
-    "reset-password": "Set a new password",
+    register: t("Create your account", "Tạo tài khoản"),
+    verify: t("Verify your email", "Xác minh email"),
+    "forgot-password": t("Forgot your password?", "Quên mật khẩu?"),
+    "reset-password": t("Set a new password", "Đặt mật khẩu mới"),
   }[flow];
   const description = {
-    register: "Start exploring architecture with a verified MAVIS account.",
+    register: t(
+      "Start exploring architecture with a verified MAVIS account.",
+      "Tạo tài khoản MAVIS để bắt đầu thực hành kiến trúc.",
+    ),
     verify: needsCode
-      ? "Enter the code from your verification email."
-      : "Enter your email to receive a verification code.",
-    "forgot-password": "Enter your account email to request a reset code.",
-    "reset-password": "Use your reset code to choose a new password.",
+      ? t("Enter the code from your verification email.", "Nhập mã xác minh đã gửi tới email của bạn.")
+      : t("Enter your email to receive a verification code.", "Nhập email để nhận mã xác minh."),
+    "forgot-password": t(
+      "Enter your account email to request a reset code.",
+      "Nhập email tài khoản để nhận mã đặt lại mật khẩu.",
+    ),
+    "reset-password": t(
+      "Use your reset code to choose a new password.",
+      "Nhập mã xác nhận để đặt mật khẩu mới.",
+    ),
   }[flow];
   async function submit() {
     if (submitting.current || busy) return;
@@ -155,7 +164,10 @@ export function AuthFlow({
         <Link href="/login" className="flex items-center gap-3 font-bold tracking-widest">
           <MavisLogo />
         </Link>
-        <AppearanceSelector />
+        <div className="flex items-center gap-1.5">
+          <LocaleSwitchButton />
+          <AppearanceSelector />
+        </div>
       </header>
       <main className="mx-auto mt-12 w-full max-w-md rounded-2xl border border-slate-300 bg-card p-7 shadow-md dark:border-border sm:mt-20 sm:p-10">
         <Link
@@ -163,7 +175,7 @@ export function AuthFlow({
           className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
         >
           <ArrowLeft size={16} />
-          Back to sign in
+          {t("Back to sign in", "Quay lại đăng nhập")}
         </Link>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
         <p className="mb-7 mt-2.5 text-sm leading-6 text-foreground/75">{description}</p>
@@ -177,7 +189,7 @@ export function AuthFlow({
         >
           {flow === "register" && (
             <label className="block space-y-2 text-sm font-semibold text-foreground">
-              <span>Full name</span>
+              <span>{t("Full name", "Họ và tên")}</span>
               <Input
                 required
                 autoComplete="name"
@@ -233,7 +245,11 @@ export function AuthFlow({
           {showsPassword && (
             <>
               <label className="block space-y-2 text-sm font-semibold text-foreground">
-                <span>{flow === "register" ? "Password" : "New password"}</span>
+                <span>
+                  {flow === "register"
+                    ? t("Password", "Mật khẩu")
+                    : t("New password", "Mật khẩu mới")}
+                </span>
                 <Input
                   required
                   type="password"
@@ -245,9 +261,11 @@ export function AuthFlow({
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
-              <p className="text-xs font-medium text-foreground/65">{t("Use at least 6 characters.")}</p>
+              <p className="text-xs font-medium text-foreground/65">
+                {t("Use at least 6 characters.", "Sử dụng tối thiểu 6 ký tự.")}
+              </p>
               <label className="block space-y-2 text-sm font-semibold text-foreground">
-                <span>Confirm password</span>
+                <span>{t("Confirm password", "Xác nhận mật khẩu")}</span>
                 <Input
                   required
                   type="password"
@@ -261,7 +279,7 @@ export function AuthFlow({
               </label>
               {confirm && confirm !== password && (
                 <p role="alert" className="text-sm text-destructive">
-                  Passwords do not match.
+                  {t("Passwords do not match.", "Mật khẩu xác nhận không khớp.")}
                 </p>
               )}
             </>
@@ -274,7 +292,7 @@ export function AuthFlow({
           )}
           {(flow === "forgot-password" || (flow === "verify" && !needsCode)) && cooldown > 0 && (
             <p role="status" className="text-xs text-muted-foreground">
-              {t("Request another code in")} {cooldown}s
+              {t("Request another code in", "Gửi lại mã sau")} {cooldown}s
             </p>
           )}
           <Button
@@ -289,16 +307,16 @@ export function AuthFlow({
           >
             {busy ? <LoaderCircle className="animate-spin" /> : null}
             {busy
-              ? "Please wait…"
+              ? t("Please wait…", "Vui lòng đợi…")
               : flow === "register"
-                ? "Create account"
+                ? t("Create account", "Tạo tài khoản")
                 : flow === "verify"
                   ? needsCode
-                    ? "Verify email"
-                    : "Send verification code"
+                    ? t("Verify email", "Xác minh email")
+                    : t("Send verification code", "Gửi mã xác minh")
                   : flow === "forgot-password"
-                    ? "Send reset code"
-                    : "Reset password"}
+                    ? t("Send reset code", "Gửi mã đặt lại")
+                    : t("Reset password", "Đặt lại mật khẩu")}
           </Button>
         </form>
         {flow === "verify" && !needsCode && resend.isError && <ErrorState error={resend.error} />}
@@ -310,12 +328,12 @@ export function AuthFlow({
               onClick={() => void requestAnotherCode()}
             >
               {cooldown > 0
-                ? `${t("Request another code in")} ${cooldown}s`
+                ? `${t("Request another code in", "Gửi lại mã sau")} ${cooldown}s`
                 : busy
-                  ? t("Requesting…")
-                  : t(
-                      flow === "verify" ? "Resend verification code" : "Resend password reset code",
-                    )}
+                  ? t("Requesting…", "Đang gửi…")
+                  : flow === "verify"
+                    ? t("Resend verification code", "Gửi lại mã xác minh")
+                    : t("Resend password reset code", "Gửi lại mã đặt lại mật khẩu")}
             </Button>
             {resend.isError && <ErrorState error={resend.error} />}
             {flow === "reset-password" && forgot.isError && <ErrorState error={forgot.error} />}
@@ -327,10 +345,14 @@ export function AuthFlow({
             {t(message)}
           </p>
         )}
-        <p className="mt-6 text-xs leading-5 text-muted-foreground">
-          Codes are delivered to your email. If nothing arrives, your workspace administrator should
-          check SMTP configuration.
-        </p>
+        {flow !== "register" && (
+          <p className="mt-6 text-xs leading-5 text-muted-foreground">
+            {t(
+              "Codes are delivered to your email. Check your spam folder if you don’t see it.",
+              "Mã xác nhận được gửi tới email của bạn. Kiểm tra thêm hộp thư rác nếu chưa thấy.",
+            )}
+          </p>
+        )}
       </main>
     </div>
   );

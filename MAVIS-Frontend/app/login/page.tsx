@@ -3,7 +3,7 @@ import Link from "next/link";
 import { loginDestination } from "@/lib/auth/login-destination";
 import { SocialSignIn } from "@/features/auth/social-sign-in";
 import { LoginBackground } from "@/features/auth/login-background";
-import { publicErrorCode, publicErrors } from "@/lib/errors/api-error";
+import { normalizeError, publicErrorCode, publicErrors } from "@/lib/errors/api-error";
 import { useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -322,7 +322,25 @@ export default function LoginPage() {
                   {t("Forgot password?", "Quên mật khẩu?")}
                 </Link>
               </div>
-              {real.isError && <ErrorState error={real.error} />}
+              {real.isError && (
+                <div className="space-y-2">
+                  <ErrorState error={real.error} />
+                  {normalizeError(real.error).code === "LOGIN_VERIFICATION" && (
+                    <p className="text-center text-[13px] text-foreground/75">
+                      <Link
+                        href={
+                          email.trim()
+                            ? `/auth/verify?email=${encodeURIComponent(email.trim())}`
+                            : "/auth/verify"
+                        }
+                        className="font-semibold text-primary hover:underline"
+                      >
+                        {t("Verify your email now →", "Xác minh email ngay →")}
+                      </Link>
+                    </p>
+                  )}
+                </div>
+              )}
               <Button
                 className="h-11 w-full rounded-xl text-sm font-semibold transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98]"
                 disabled={real.isPending}
@@ -345,18 +363,12 @@ export default function LoginPage() {
           {api.mode === "backend" && (
             <>
               <SocialSignIn onSignedIn={finish} nextPath={params.get("next")} />
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px] text-foreground/75">
-                <span>
-                  {t("No account?", "Chưa có tài khoản?")}{" "}
-                  <Link href="/auth/register" className="font-semibold text-primary hover:underline">
-                    {t("Sign up", "Đăng ký")}
-                  </Link>
-                </span>
-                <span aria-hidden="true">·</span>
-                <Link href="/auth/verify" className="font-semibold text-primary hover:underline">
-                  {t("Verify email", "Xác minh email")}
+              <p className="mt-6 text-center text-[13px] text-foreground/75">
+                {t("No account?", "Chưa có tài khoản?")}{" "}
+                <Link href="/auth/register" className="font-semibold text-primary hover:underline">
+                  {t("Sign up", "Đăng ký")}
                 </Link>
-              </div>
+              </p>
             </>
           )}
         </section>

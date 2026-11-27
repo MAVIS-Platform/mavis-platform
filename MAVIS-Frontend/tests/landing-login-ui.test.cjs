@@ -44,4 +44,11 @@ test("Login page enforces full VI/EN localization, back-to-home navigation, and 
   assert.match(login, /\/homepage\/login-studio-light\.webp/);
   assert.match(login, /\/homepage\/login-studio-dark\.webp/);
   assert.doesNotMatch(login, /Illustrative dependency graph/);
+  assert.doesNotMatch(login, /t\("Verify email", "Xác minh email"\)/);
+  assert.match(login, /LOGIN_VERIFICATION/);
+
+  const authFlow = read("src/features/auth/auth-flow.tsx");
+  assert.match(authFlow, /LocaleSwitchButton/);
+  assert.match(authFlow, /Quay lại đăng nhập/);
+  assert.match(authFlow, /Tạo tài khoản/);
 });
