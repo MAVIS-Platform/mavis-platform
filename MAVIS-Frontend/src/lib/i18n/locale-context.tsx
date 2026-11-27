@@ -265,7 +265,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Nhập điểm từ 0.0 đến 10.0 cho từng Snapshot (trên 5.0 để đạt).",
   "Calculated outcome": "Kết quả dự kiến",
   "At least one snapshot scored <= 5.0 / 10 — publishing or returning this review will set Lab Outcome to NEEDS REVISION.":
-    "Ít nhất một Snapshot <= 5.0 / 10 — công bố điểm hoặc trả lại sẽ gán Kết quả Lab là CẦN SỬA (NEEDS REVISION).",
+    "Ít nhất một Snapshot <= 5.0 / 10 — công bố điểm hoặc trả lại sẽ gán Kết quả Lab là CẦN SỬA LẠI (NEEDS REVISION).",
   "Add an overall review before publishing or returning this snapshot.":
     "Thêm nhận xét tổng thể trước khi công bố điểm hoặc trả lại bản nộp.",
   "Publish this score and summary to the student?": "Công bố điểm và nhận xét này cho sinh viên?",

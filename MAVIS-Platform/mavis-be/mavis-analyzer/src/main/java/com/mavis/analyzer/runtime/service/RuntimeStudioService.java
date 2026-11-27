@@ -358,6 +358,13 @@ public class RuntimeStudioService {
             if (!allowed) throw error(ErrorCode.BAD_REQUEST, "Action is not enabled for this prepared block or connection.");
         }
         if (control.path("finishRequested").asBoolean()) throw error(ErrorCode.CONFLICT, "Studio is finishing.");
+        if (isStudentActor()
+                && session.getScenarioConfig() != null
+                && session.getScenarioConfig().path("exerciseCriteria").path("predictionRequired").asBoolean(false)
+                && !control.hasNonNull("prediction")) {
+            throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_PREDICTION_REQUIRED",
+                    "Lock your Change Impact prediction before running a Docker action.");
+        }
         if (control.withArray("actions").size() >= 32) throw error(ErrorCode.CONFLICT, "Studio action limit reached.");
         expireStaleActions(control);
         for (JsonNode action : control.withArray("actions"))

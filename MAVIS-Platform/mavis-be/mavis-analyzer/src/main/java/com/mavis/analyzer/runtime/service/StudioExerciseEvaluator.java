@@ -81,12 +81,21 @@ public final class StudioExerciseEvaluator {
 
         Double f1Score = null;
         if (predictionLocked && (hasChange || !observedMap.isEmpty())) {
+            String primaryTarget = primaryChange != null ? primaryChange.path("service").asText("").trim() : "";
             Set<String> observed = observedMap.keySet();
-            List<String> tp = predicted.stream().filter(observed::contains).sorted().toList();
-            List<String> fp = predicted.stream().filter(s -> !observed.contains(s)).sorted().toList();
-            List<String> fn = observed.stream().filter(s -> !predicted.contains(s)).sorted().toList();
-            double precision = predicted.isEmpty() ? (observed.isEmpty() ? 1.0 : 0.0) : (double) tp.size() / predicted.size();
-            double recall = observed.isEmpty() ? (predicted.isEmpty() ? 1.0 : 0.0) : (double) tp.size() / observed.size();
+            // Step 1 asks students to predict propagated callers; do not penalize omitting the fault target itself when callers exist.
+            Set<String> effectiveObserved = (!primaryTarget.isBlank()
+                    && predicted.stream().noneMatch(s -> s.equalsIgnoreCase(primaryTarget))
+                    && observed.stream().anyMatch(s -> !s.equalsIgnoreCase(primaryTarget)))
+                    ? observed.stream()
+                            .filter(s -> !s.equalsIgnoreCase(primaryTarget))
+                            .collect(java.util.stream.Collectors.toCollection(TreeSet::new))
+                    : observed;
+            List<String> tp = predicted.stream().filter(effectiveObserved::contains).sorted().toList();
+            List<String> fp = predicted.stream().filter(s -> !effectiveObserved.contains(s)).sorted().toList();
+            List<String> fn = effectiveObserved.stream().filter(s -> !predicted.contains(s)).sorted().toList();
+            double precision = predicted.isEmpty() ? (effectiveObserved.isEmpty() ? 1.0 : 0.0) : (double) tp.size() / predicted.size();
+            double recall = effectiveObserved.isEmpty() ? (predicted.isEmpty() ? 1.0 : 0.0) : (double) tp.size() / effectiveObserved.size();
             double f1 = (precision + recall) <= 0.0 ? 0.0 : (2.0 * precision * recall) / (precision + recall);
             f1Score = round4(f1);
 

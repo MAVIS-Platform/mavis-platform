@@ -149,10 +149,13 @@ function buildLabModuleSequence(
       ) || linkedAssignment.labMode !== "THEORY_ONLY"
     : true;
 
+  const hasModuleQuiz = allItems.some(
+    (item) => item.type === "QUIZ" && !item.assignmentId,
+  );
   const quizzes =
     matchedQuizzes.length > 0
       ? [...matchedQuizzes]
-      : !skipsQuiz
+      : !skipsQuiz && !hasModuleQuiz
         ? [
             {
               id: `lab-quiz:${assignmentId}`,

@@ -440,6 +440,7 @@ export function LiveStudioWorkbench({
   authoring?: LiveStudioAuthoringProps | undefined;
   missionCard?: {
     instructions?: string | null | undefined;
+    predictionRequired?: boolean | null | undefined;
     maxErrorRatePercent?: number | null | undefined;
     maxP95Ms?: number | null | undefined;
     minReplicas?: Array<{ service?: string; count?: number }> | null | undefined;
@@ -1885,7 +1886,9 @@ export function LiveStudioWorkbench({
   const healthyCount = Math.max(0, services.length - faultedServices.length);
   const isPredictionRequired = Boolean(
     (data.exerciseCriteria as { predictionRequired?: boolean } | null | undefined)
-      ?.predictionRequired || data.exerciseEvaluation?.predictionRequired,
+      ?.predictionRequired ||
+      data.exerciseEvaluation?.predictionRequired ||
+      missionCard?.predictionRequired,
   );
   const needsPrediction =
     !isPreviewMode &&
@@ -2700,7 +2703,11 @@ export function LiveStudioWorkbench({
                 onQuickAction={quickAction}
               />
             ) : isBooting ? (
-              <div className="grid h-full place-items-center p-6 text-center">
+              <div
+                className={`grid h-full place-items-center p-6 pb-20 text-center ${
+                  !authoring && !missionHidden ? "lg:pl-[380px]" : ""
+                } ${showRight ? "lg:pr-[360px]" : ""}`}
+              >
                 <div className={`max-w-sm space-y-2.5 p-5 ${styleCfg.floatingCardClass}`}>
                   <RefreshCw aria-hidden="true" className="mx-auto size-7 animate-spin text-primary" />
                   <p className="text-sm font-bold">
@@ -2712,8 +2719,12 @@ export function LiveStudioWorkbench({
                 </div>
               </div>
             ) : (
-              <div className="grid h-full place-items-center p-6 text-center">
-                <div className={`max-w-md space-y-3 p-6 ${styleCfg.floatingCardClass}`}>
+              <div
+                className={`grid h-full place-items-center p-6 pb-20 text-center ${
+                  !authoring && !missionHidden ? "lg:pl-[380px]" : ""
+                } ${showRight ? "lg:pr-[360px]" : ""}`}
+              >
+                <div className={`max-w-sm space-y-3 p-6 ${styleCfg.floatingCardClass}`}>
                   <Server aria-hidden="true" className="mx-auto size-8 text-primary" />
                   <p className="text-base font-bold">
                     {t("No live Docker session running yet", "Chưa có phiên Docker chạy trực tiếp")}
@@ -3929,6 +3940,15 @@ export function LiveStudioWorkbench({
               }
             };
 
+            const lastStateActionMs = [...observedData.actions]
+              .reverse()
+              .map((a) =>
+                a.status === "CONFIRMED" && a.action !== "SET_LOAD"
+                  ? Date.parse(a.completedAt ?? a.requestedAt ?? "")
+                  : NaN,
+              )
+              .find((ms) => Number.isFinite(ms));
+
             const rows = observedData.services.map((service) => {
               const telemetry = observedData.telemetry?.services.find(
                 (item) => item.service === service,
@@ -3947,9 +3967,20 @@ export function LiveStudioWorkbench({
                 typeof throttleAction?.cpuPercent === "number" && throttleAction.cpuPercent < 100
                   ? throttleAction.cpuPercent
                   : null;
-              const serviceSpans = (observedData.telemetry?.spans ?? []).filter(
+              const allServiceSpans = (observedData.telemetry?.spans ?? []).filter(
                 (span) => span.runtimeService === service,
               );
+              const postActionSpans =
+                lastStateActionMs !== undefined
+                  ? allServiceSpans.filter((span) => {
+                      const startMs = span.startTimeUnixNano
+                        ? Number(span.startTimeUnixNano) / 1e6
+                        : NaN;
+                      return Number.isFinite(startMs) && startMs >= lastStateActionMs;
+                    })
+                  : [];
+              const serviceSpans =
+                postActionSpans.length > 0 ? postActionSpans : allServiceSpans;
               const errorSpanCount = serviceSpans.filter(
                 (span) =>
                   span.spanStatus?.toUpperCase() === "ERROR" ||
@@ -5165,9 +5196,14 @@ export function LiveStudioWorkbench({
                       : null;
                   const isAllowed = (act: string) => !allowedSet || allowedSet.has(act);
                   const disabledHint = (act: string) =>
-                    !isAllowed(act)
-                      ? t("Disabled by exercise configuration", "Thao tác bị tắt trong cấu hình đề bài")
-                      : undefined;
+                    needsPrediction
+                      ? t(
+                          "Lock your impact prediction below before running a Docker action",
+                          "Hãy khóa dự đoán phạm vi ảnh hưởng ở khung bên dưới trước khi chạy thao tác Docker",
+                        )
+                      : !isAllowed(act)
+                        ? t("Disabled by exercise configuration", "Thao tác bị tắt trong cấu hình đề bài")
+                        : undefined;
                   return (
                     <section
                       aria-label={t("Live Service Controls", "Điều khiển Service")}
@@ -5266,11 +5302,15 @@ export function LiveStudioWorkbench({
                           <p className={`text-[11px] font-bold uppercase tracking-wider ${styleCfg.subtleTextClass}`}>
                             {t("Live Docker Actions", "Thao tác Docker thật")}
                           </p>
-                          {!canLiveAct && (
+                          {!canLiveAct ? (
                             <span className={`text-[11px] font-medium ${isLight ? "text-amber-700" : "text-amber-300"}`}>
                               {t("Click Run to activate", "Bấm Chạy Docker để bật")}
                             </span>
-                          )}
+                          ) : needsPrediction ? (
+                            <span className={`text-[11px] font-medium ${isLight ? "text-indigo-700" : "text-indigo-300"}`}>
+                              {t("Lock prediction first", "Khóa dự đoán trước")}
+                            </span>
+                          ) : null}
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <Button
@@ -5278,7 +5318,7 @@ export function LiveStudioWorkbench({
                             size="sm"
                             variant="outline"
                             title={disabledHint("STOP")}
-                            disabled={!canLiveAct || busy || selPhase !== "running" || !isAllowed("STOP")}
+                            disabled={!canLiveAct || busy || needsPrediction || selPhase !== "running" || !isAllowed("STOP")}
                             onClick={() => void dispatchCommand("STOP", selSvc)}
                             className={`h-9 whitespace-nowrap text-xs font-semibold disabled:opacity-40 ${
                               isLight
@@ -5294,7 +5334,7 @@ export function LiveStudioWorkbench({
                             size="sm"
                             variant="outline"
                             title={disabledHint("START")}
-                            disabled={!canLiveAct || busy || selPhase !== "stopped" || !isAllowed("START")}
+                            disabled={!canLiveAct || busy || needsPrediction || selPhase !== "stopped" || !isAllowed("START")}
                             onClick={() => void dispatchCommand("START", selSvc)}
                             className={`h-9 whitespace-nowrap text-xs font-semibold disabled:opacity-40 ${
                               isLight
@@ -5310,7 +5350,7 @@ export function LiveStudioWorkbench({
                             size="sm"
                             variant="outline"
                             title={disabledHint("PAUSE")}
-                            disabled={!canLiveAct || busy || selPhase !== "running" || !isAllowed("PAUSE")}
+                            disabled={!canLiveAct || busy || needsPrediction || selPhase !== "running" || !isAllowed("PAUSE")}
                             onClick={() => void studio.send("PAUSE", selSvc)}
                             className={`h-9 whitespace-nowrap text-xs font-semibold disabled:opacity-40 ${
                               isLight
@@ -5325,7 +5365,7 @@ export function LiveStudioWorkbench({
                             size="sm"
                             variant="outline"
                             title={disabledHint("RESUME")}
-                            disabled={!canLiveAct || busy || selPhase !== "paused" || !isAllowed("RESUME")}
+                            disabled={!canLiveAct || busy || needsPrediction || selPhase !== "paused" || !isAllowed("RESUME")}
                             onClick={() => void studio.send("RESUME", selSvc)}
                             className={`h-9 whitespace-nowrap text-xs font-semibold disabled:opacity-40 ${
                               isLight
@@ -5356,6 +5396,7 @@ export function LiveStudioWorkbench({
                                 disabled={
                                   !canLiveAct ||
                                   busy ||
+                                  needsPrediction ||
                                   !selCanScale ||
                                   selPhase !== "running" ||
                                   !isAllowed("SCALE") ||
@@ -5387,7 +5428,7 @@ export function LiveStudioWorkbench({
                                 size="sm"
                                 variant="outline"
                                 title={disabledHint("THROTTLE_CPU")}
-                                disabled={!canLiveAct || busy || selPhase !== "running" || !isAllowed("THROTTLE_CPU")}
+                                disabled={!canLiveAct || busy || needsPrediction || selPhase !== "running" || !isAllowed("THROTTLE_CPU")}
                                 onClick={() => void studio.send("THROTTLE_CPU", selSvc, undefined, pct)}
                                 className={`h-8 whitespace-nowrap border font-mono text-xs font-semibold disabled:opacity-45 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
                               >
@@ -5413,7 +5454,7 @@ export function LiveStudioWorkbench({
                                 size="sm"
                                 variant="outline"
                                 title={disabledHint("SET_LOAD")}
-                                disabled={!canLiveAct || busy || !isAllowed("SET_LOAD")}
+                                disabled={!canLiveAct || busy || needsPrediction || !isAllowed("SET_LOAD")}
                                 onClick={() =>
                                   void studio.send("SET_LOAD", selSvc, undefined, undefined, rps)
                                 }
@@ -6150,14 +6191,17 @@ export function LiveStudioWorkbench({
                           <div data-testid="advanced-cpu" className="space-y-2.5">
                             <div className="space-y-1.5">
                               <span className={`block text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
-                                {t("Reference p95 Latency Threshold (ms)", "Ngưỡng độ trễ p95 tham chiếu (ms)")}
+                                {t(
+                                  "Optional Final Max p95 (ms, leave blank if keeping CPU throttled)",
+                                  "Giới hạn p95 lúc kết thúc (ms, để trống nếu giữ bóp CPU)",
+                                )}
                               </span>
                               <div className="grid grid-cols-4 gap-1.5">
                                 {(
                                   [
-                                    ["", "—"],
-                                    ["500", "500ms"],
-                                    ["1000", "1000ms"],
+                                    ["", t("No limit", "Không ép")],
+                                    ["1500", "≤1500ms"],
+                                    ["3000", "≤3000ms"],
                                   ] as const
                                 ).map(([val, lbl]) => (
                                   <button
@@ -6233,7 +6277,12 @@ export function LiveStudioWorkbench({
                               {t("Allowed student actions", "Thao tác cho phép sinh viên")}
                             </p>
                             <div className="flex flex-wrap gap-1">
-                              {ALL_ACTIONS.map((act) => {
+                              {ALL_ACTIONS.filter(
+                                (act) =>
+                                  (act !== "CONNECT" && act !== "DISCONNECT") ||
+                                  (data.topology?.connections?.length ?? 0) > 0 ||
+                                  authoring.initialStoppedControllers.length > 0,
+                              ).map((act) => {
                                 const on = allowedActionsDraft.includes(act);
                                 const chipLabels: Record<string, [string, string]> = {
                                   START: ["Start", "Khởi động"],

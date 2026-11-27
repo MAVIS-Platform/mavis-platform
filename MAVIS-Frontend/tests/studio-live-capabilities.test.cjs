@@ -2971,7 +2971,25 @@ test("E2E #03 Studio HUD: shifts 3D camera controls clear of left tool rail and 
     path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
     "utf8",
   );
-  assert.match(obsSrc, /data-tour="studio-3d-controls-group"\s+className="pointer-events-none absolute bottom-4 left-\[76px\] z-20/);
+  assert.match(obsSrc, /data-tour="studio-3d-controls-group"\s+className="pointer-events-none absolute bottom-\[72px\] left-\[76px\] z-20/);
   assert.match(workbenchSrc, /const stageBlocks = \[/);
   assert.match(workbenchSrc, /\{t\("Service on 3D Stage", "Service trên sân khấu 3D"\)\} \(\{stageBlocks\.length\}\)/);
+});
+
+test("Accreditation Studio guards: gates pre-prediction Docker actions, omits phantom lab quiz when Module Quiz exists, and excludes prescribed target from prediction chips", () => {
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const panelSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-exercise-panel.tsx"),
+    "utf8",
+  );
+  const stepsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/module-steps.ts"),
+    "utf8",
+  );
+  assert.ok(workbenchSrc.includes('disabled={!canLiveAct || busy || needsPrediction || selPhase !== "running" || !isAllowed("PAUSE")}'));
+  assert.ok(panelSrc.includes(".filter((svc) => !prescribed?.service || svc !== prescribed.service)"));
+  assert.ok(stepsSrc.includes("const hasModuleQuiz = allItems.some("));
 });

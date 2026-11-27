@@ -1620,7 +1620,7 @@ function StandaloneStudioContent() {
                   returnTo: returnHref,
                 })}
               >
-                {t("Author", "Giảng viên")}
+                {t("Back to Author", "Quay lại soạn bài")}
               </Link>
             </Button>
           )}
@@ -1634,6 +1634,10 @@ function StandaloneStudioContent() {
     if (!studentExercise && !liveStudioVerified) return undefined;
     return {
       instructions: studentExercise?.instructions ?? null,
+      predictionRequired: Boolean(
+        (studentExercise?.successCriteria as { predictionRequired?: boolean } | null | undefined)
+          ?.predictionRequired,
+      ),
       maxErrorRatePercent: studentExercise?.successCriteria?.maxErrorRatePercent ?? null,
       maxP95Ms: studentExercise?.successCriteria?.maxP95Ms ?? null,
       minReplicas: studentExercise?.successCriteria?.minReplicas ?? null,

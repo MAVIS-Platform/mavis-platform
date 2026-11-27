@@ -151,6 +151,16 @@ function localizeRuleLabel(label: string, locale: string): string {
 function localizeRuleReason(reason: string, locale: string): string {
   if (locale !== "vi") return reason;
   return reason
+    .replace(
+      /^Lock your Change Impact prediction before running the change$/i,
+      "Chưa khóa dự đoán ảnh hưởng trước khi chạy thao tác",
+    )
+    .replace(
+      /^Apply the change action to measure real impact$/i,
+      "Chưa thực thi thao tác thay đổi để đo ảnh hưởng thực tế",
+    )
+    .replace(/^Waiting for impact telemetry$/i, "Đang chờ số liệu telemetry lan truyền")
+    .replace(/^No observed samples yet for\s+/i, "Chưa có mẫu quan sát cho ")
     .replace(/^Observed\s+/i, "Thực tế: ")
     .replace(/\(expected\s+([^)]+)\)/i, "(yêu cầu $1)")
     .replace(/<=/g, "≤")

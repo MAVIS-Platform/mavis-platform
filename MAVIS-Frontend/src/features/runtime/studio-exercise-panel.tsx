@@ -201,8 +201,10 @@ export function StudioExercisePanel({
             {!hasConfirmedAction && (
               <>
                 <div className="flex flex-wrap gap-1">
-                  {services.map((svc) => {
-                    const active = selectedPredicted.includes(svc);
+                  {services
+                    .filter((svc) => !prescribed?.service || svc !== prescribed.service)
+                    .map((svc) => {
+                      const active = selectedPredicted.includes(svc);
                     return (
                       <button
                         key={svc}

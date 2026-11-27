@@ -341,11 +341,15 @@ public sealed class PrometheusServiceGraphScraper
         RegexOptions.Compiled | RegexOptions.NonBacktracking);
 
     private Dictionary<(string Client, string Server), EdgeCounters> _previous = new();
+    private IReadOnlyList<ServiceGraphEdgeMetrics> _lastNonEmpty = Array.Empty<ServiceGraphEdgeMetrics>();
+    private double _accumulatedWindowSeconds;
+    private int _unchangedScrapes;
 
     public IReadOnlyList<ServiceGraphEdgeMetrics> Update(string expositionText, double windowSeconds)
     {
         var current = Parse(expositionText);
         var duration = Math.Max(0.2, windowSeconds);
+        var effectiveDuration = _accumulatedWindowSeconds + duration;
         var results = new List<ServiceGraphEdgeMetrics>();
 
         foreach (var (key, cur) in current.OrderBy(kv => kv.Key.Client, StringComparer.Ordinal).ThenBy(kv => kv.Key.Server, StringComparer.Ordinal))
@@ -358,15 +362,35 @@ public sealed class PrometheusServiceGraphScraper
             var buckets = cur.ServerBuckets.Count > 0 ? cur.ServerBuckets : cur.ClientBuckets;
             var prevBuckets = cur.ServerBuckets.Count > 0 ? prev?.ServerBuckets : prev?.ClientBuckets;
             var p95Seconds = HistogramQuantile(buckets, prevBuckets, 0.95);
-            var rps = Math.Round(deltaTotal / duration, 2);
-            var errPerSec = Math.Round(deltaFailed / duration, 2);
+            var rps = Math.Round(deltaTotal / effectiveDuration, 2);
+            var errPerSec = Math.Round(deltaFailed / effectiveDuration, 2);
             var errPct = deltaTotal > 0.0 ? Math.Round(100.0 * deltaFailed / deltaTotal, 2) : 0.0;
             results.Add(new ServiceGraphEdgeMetrics(
                 key.Client, key.Server, rps, errPerSec, errPct,
                 p95Seconds is double s ? Math.Round(s * 1000.0, 2) : null));
         }
 
+        if (results.Count > 0)
+        {
+            _previous = current;
+            _lastNonEmpty = results;
+            _accumulatedWindowSeconds = 0.0;
+            _unchangedScrapes = 0;
+            return results;
+        }
+
+        // OTel Collector flushes servicegraph every 2s while LiveProbe emits every 1s:
+        // retain the latest 2s edge frame across a single non-flush tick and accumulate elapsed time.
+        _unchangedScrapes++;
+        if (_unchangedScrapes <= 2 && _lastNonEmpty.Count > 0 && current.Count > 0)
+        {
+            _accumulatedWindowSeconds += duration;
+            return _lastNonEmpty;
+        }
+
         _previous = current;
+        _lastNonEmpty = Array.Empty<ServiceGraphEdgeMetrics>();
+        _accumulatedWindowSeconds = 0.0;
         return results;
     }
 
