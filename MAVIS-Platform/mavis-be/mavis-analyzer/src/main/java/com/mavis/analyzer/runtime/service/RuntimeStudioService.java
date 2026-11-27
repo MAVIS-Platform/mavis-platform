@@ -187,7 +187,11 @@ public class RuntimeStudioService {
             .put("modelVersionId", session.getModelVersion() == null ? "" : session.getModelVersion().getId().toString())
             .put("capturedAt", OffsetDateTime.now().toString()).put("explanation", request.explanation().trim());
         evidence.set("telemetry", effectiveTelemetry.deepCopy());
-        evidence.set("actions", control.withArray("actions").deepCopy());
+        var userActions = mapper.createArrayNode();
+        for (JsonNode act : control.withArray("actions")) {
+            if (!act.path("systemSetup").asBoolean(false)) userActions.add(act.deepCopy());
+        }
+        evidence.set("actions", userActions);
         JsonNode exerciseCriteria = extractExerciseCriteria(session);
         if (control.hasNonNull("prediction")) {
             evidence.set("prediction", control.get("prediction").deepCopy());
@@ -261,7 +265,7 @@ public class RuntimeStudioService {
             throw error(ErrorCode.CONFLICT, "Change Impact prediction is already locked for this session.");
         }
         for (JsonNode action : control.withArray("actions")) {
-            if ("CONFIRMED".equals(action.path("status").asText())) {
+            if ("CONFIRMED".equals(action.path("status").asText()) && !action.path("systemSetup").asBoolean(false)) {
                 throw error(ErrorCode.CONFLICT, "Lock your Change Impact prediction before applying a change.");
             }
         }

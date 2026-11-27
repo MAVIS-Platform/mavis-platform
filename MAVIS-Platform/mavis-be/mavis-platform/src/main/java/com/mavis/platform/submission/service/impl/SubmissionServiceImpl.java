@@ -963,7 +963,13 @@ public class SubmissionServiceImpl implements SubmissionService {
                 ? control.path("snapshots").deepCopy()
                 : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode());
         if (control.path("actions").isArray()) {
-            evidence.set("actions", control.path("actions").deepCopy());
+            var userActions = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode();
+            for (var act : control.path("actions")) {
+                if (!act.path("systemSetup").asBoolean(false)) {
+                    userActions.add(act.deepCopy());
+                }
+            }
+            evidence.set("actions", userActions);
         }
         if (control.hasNonNull("finalExerciseEvaluation") && control.get("finalExerciseEvaluation").isObject()) {
             evidence.set("finalExerciseEvaluation", control.get("finalExerciseEvaluation").deepCopy());
