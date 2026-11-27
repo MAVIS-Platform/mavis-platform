@@ -3100,18 +3100,6 @@ export function LiveStudioWorkbench({
                     <GripVertical className="size-3.5 shrink-0 opacity-45" aria-hidden="true" />
                     <Target className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
                     <span className="truncate">{t("Lab Mission", "Mục tiêu Lab")}</span>
-                    {!authoring && exerciseBlindMode && (
-                      <span
-                        data-testid="mission-blind-badge"
-                        className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase ${
-                          isLight
-                            ? "border-violet-300 bg-violet-50 text-violet-800"
-                            : "border-violet-500/40 bg-violet-500/15 text-violet-200"
-                        }`}
-                      >
-                        {t("Blind", "Đề mù")}
-                      </span>
-                    )}
                     {!authoring && exerciseMaxActions != null && (
                       <span
                         data-testid="mission-action-budget-badge"
@@ -6140,7 +6128,7 @@ export function LiveStudioWorkbench({
                 })();
 
                 return (
-                  <section aria-label="Mission setup" className="space-y-3 pb-14 text-xs">
+                  <section aria-label="Mission setup" className="space-y-3 text-xs">
                     {/* Baseline Endpoint(s) + Initial Probe Load RPS */}
                     <div className="space-y-2">
                       <span
@@ -6316,7 +6304,7 @@ export function LiveStudioWorkbench({
 
                       <label className="flex cursor-pointer items-center justify-between gap-2">
                         <span className={`text-[11.5px] font-medium ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                          {t("Blind Mode (hide culprit services)", "Chế độ Đề mù (ẩn service lỗi với SV)")}
+                          {t("Hide faulty service names from students", "Ẩn tên service lỗi với sinh viên")}
                         </span>
                         <input
                           type="checkbox"
@@ -6473,7 +6461,7 @@ export function LiveStudioWorkbench({
                           {t("Difficulty:", "Độ khó:")}{" "}
                           <span className="font-semibold text-foreground">
                             {[
-                              blindModeDraft ? t("Blind Mode", "Đề mù") : null,
+                              blindModeDraft ? t("Hidden culprits", "Ẩn tên service lỗi") : null,
                               maxActionsDraft != null ? t(`Max ${maxActionsDraft} actions`, `Tối đa ${maxActionsDraft} lượt`) : null,
                               (initialLoadRpsDraft ?? 1) > 1 ? `${initialLoadRpsDraft} RPS` : null,
                             ]
@@ -6539,7 +6527,7 @@ export function LiveStudioWorkbench({
                         <span
                           className={`border px-2 py-0.5 text-[10.5px] font-semibold ${themeRadius} ${goalPillClass}`}
                         >
-                          {blindModeDraft ? t("Exam / Blind", "Đề thi / Mù") : advancedGoalBadge}
+                          {activeGoalId === null ? t("Compound", "Tổng hợp") : advancedGoalBadge}
                         </span>
                       </summary>
 
@@ -6755,12 +6743,12 @@ export function LiveStudioWorkbench({
                         )}
 
                         {/* Unified Composable SLA Thresholds (available in EVERY mode — Easy, Medium, Hard Exam!) */}
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-2">
                           <div className="space-y-1">
                             <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
                               {t("Max Error (%)", "Lỗi tối đa (%)")}
                             </span>
-                            <div className="flex items-center gap-1">
+                            <div className="grid grid-cols-4 gap-1.5">
                               {(["", "0", "5"] as const).map((val) => (
                                 <button
                                   key={val || "any"}
@@ -6782,7 +6770,7 @@ export function LiveStudioWorkbench({
                                 value={maxErrDraft}
                                 onChange={(e) => setMaxErrDraft(e.target.value)}
                                 placeholder="—"
-                                className={`h-7 min-w-0 flex-1 px-1.5 font-mono ${styleCfg.inputClass}`}
+                                className={`h-7 min-w-0 px-2 font-mono ${styleCfg.inputClass}`}
                               />
                             </div>
                           </div>
@@ -6791,8 +6779,8 @@ export function LiveStudioWorkbench({
                             <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
                               {t("Max p95 (ms)", "p95 tối đa (ms)")}
                             </span>
-                            <div className="flex items-center gap-1">
-                              {(["", "1500"] as const).map((val) => (
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {(["", "500", "1500"] as const).map((val) => (
                                 <button
                                   key={val || "any"}
                                   type="button"
@@ -6819,7 +6807,7 @@ export function LiveStudioWorkbench({
                                   setP95ValidationError("");
                                 }}
                                 placeholder="—"
-                                className={`h-7 min-w-0 flex-1 px-1.5 font-mono ${styleCfg.inputClass}`}
+                                className={`h-7 min-w-0 px-2 font-mono ${styleCfg.inputClass}`}
                               />
                             </div>
                           </div>
@@ -6834,7 +6822,9 @@ export function LiveStudioWorkbench({
                         {/* Composable Extra Win Conditions (+ Add Rule) */}
                         <div
                           data-testid="studio-composable-rules"
-                          className={`space-y-1.5 border-t pt-2.5 ${styleCfg.dividerClass}`}
+                          className={`space-y-2 border-t pt-2.5 ${
+                            isLight ? "border-slate-200/90" : "border-slate-800"
+                          }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className={`text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
@@ -6845,7 +6835,7 @@ export function LiveStudioWorkbench({
                               disabled={authoring.frozen || rulesDraft.length >= 6}
                               data-testid="add-composable-rule-btn"
                               onClick={addComposableRule}
-                              className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[10.5px] font-semibold transition disabled:opacity-45 ${themeRadius} ${styleCfg.controlIdleClass}`}
+                              className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap border px-2 py-0.5 text-[10.5px] font-semibold transition disabled:opacity-45 ${themeRadius} ${styleCfg.controlIdleClass}`}
                             >
                               <Plus className="size-3" aria-hidden="true" />
                               {t("Add rule", "Thêm điều kiện")}
@@ -6855,7 +6845,11 @@ export function LiveStudioWorkbench({
                           {rulesDraft.map((rule, idx) => (
                             <div
                               key={`${rule.metric}-${idx}`}
-                              className={`grid grid-cols-[1fr_1fr_auto_auto] items-center gap-1 border p-1.5 ${themeRadius} ${styleCfg.controlIdleClass}`}
+                              className={`grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_52px_24px] items-center gap-1.5 border p-1.5 ${themeRadius} ${
+                                isLight
+                                  ? "border-slate-200 bg-slate-50/70"
+                                  : "border-slate-800 bg-slate-900/50"
+                              }`}
                             >
                               <select
                                 aria-label="Rule metric"
@@ -6889,14 +6883,14 @@ export function LiveStudioWorkbench({
                                               : 0,
                                   });
                                 }}
-                                className={`h-7 rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                                className={`h-7 min-w-0 rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
                               >
-                                <option value="P95_DELTA_PCT">{t("p95 Δ%", "p95 Δ%")}</option>
-                                <option value="REPLICAS">{t("Replicas >=", "Replica >=")}</option>
-                                <option value="P95_MS">{t("p95 <=", "p95 <=")}</option>
-                                <option value="ERROR_RATE">{t("Error % <=", "Lỗi % <=")}</option>
-                                <option value="EDGE_ERROR_RATE">{t("Edge Err %", "Lỗi cạnh %")}</option>
-                                <option value="TRACE_EDGE">{t("Trace edge", "Cạnh trace")}</option>
+                                <option value="P95_DELTA_PCT">p95 Δ%</option>
+                                <option value="REPLICAS">{t("Replicas", "Replica ≥")}</option>
+                                <option value="P95_MS">p95 ≤</option>
+                                <option value="ERROR_RATE">{t("Err % ≤", "Lỗi % ≤")}</option>
+                                <option value="EDGE_ERROR_RATE">{t("Edge Err", "Lỗi cạnh")}</option>
+                                <option value="TRACE_EDGE">Trace</option>
                               </select>
                               <input
                                 type="text"
@@ -6915,14 +6909,14 @@ export function LiveStudioWorkbench({
                                 onChange={(e) =>
                                   updateComposableRule(idx, { threshold: Number(e.target.value) || 0 })
                                 }
-                                className={`h-7 w-14 rounded border px-1.5 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                                className={`h-7 w-full rounded border px-1.5 font-mono text-[10.5px] ${styleCfg.inputClass}`}
                               />
                               <button
                                 type="button"
                                 disabled={authoring.frozen}
                                 aria-label="Remove rule"
                                 onClick={() => removeComposableRule(idx)}
-                                className="rounded p-1 opacity-65 hover:opacity-100 disabled:opacity-35"
+                                className="grid size-6 place-items-center rounded opacity-65 hover:bg-black/5 hover:opacity-100 disabled:opacity-35"
                               >
                                 <X className="size-3" aria-hidden="true" />
                               </button>
@@ -6931,7 +6925,11 @@ export function LiveStudioWorkbench({
                         </div>
 
                         {/* Shared Technical Controls (Required Trace Edge, Allowed Actions, Sync Docker) */}
-                        <div className={`space-y-2.5 border-t pt-2.5 ${styleCfg.dividerClass}`}>
+                        <div
+                          className={`space-y-2.5 border-t pt-2.5 ${
+                            isLight ? "border-slate-200/90" : "border-slate-800"
+                          }`}
+                        >
                           {(staticEdgesForBlast.length > 0 || authoring.requiredTraceEdge) &&
                             authoring.onUpdateGoalRule && (
                               <div className="space-y-1">
@@ -7051,14 +7049,18 @@ export function LiveStudioWorkbench({
                           </div>
 
                           {authoring.onSyncDocker && (
-                            <div className={`border-t pt-2 ${styleCfg.dividerClass}`}>
+                            <div
+                              className={`border-t pt-2.5 ${
+                                isLight ? "border-slate-200/90" : "border-slate-800"
+                              }`}
+                            >
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
                                 disabled={authoring.syncingDocker || authoring.frozen}
                                 onClick={authoring.onSyncDocker}
-                                className={`h-7 w-full text-[11px] ${themeRadius} ${styleCfg.controlIdleClass}`}
+                                className={`h-8 w-full text-[11px] ${themeRadius} ${styleCfg.controlIdleClass}`}
                               >
                                 {authoring.syncingDocker && (
                                   <RefreshCw aria-hidden="true" className="mr-1.5 size-3 animate-spin" />
@@ -7072,92 +7074,6 @@ export function LiveStudioWorkbench({
                         </div>
                       </div>
                     </details>
-
-                    <div
-                      className={`sticky bottom-0 z-10 -mx-3 -mb-3 flex items-center justify-between gap-2 border-t px-3 py-2.5 backdrop-blur-sm ${
-                        isLight
-                          ? "border-slate-200 bg-white/95"
-                          : "border-slate-800 bg-slate-950/95"
-                      }`}
-                    >
-                      {authoring.frozen ? (
-                        <span
-                          className={`text-[11px] font-medium ${isLight ? "text-emerald-700" : "text-emerald-300"}`}
-                        >
-                          {t("Active course — exercise frozen", "Khóa đang mở — đề bài đã khóa")}
-                        </span>
-                      ) : authoring.saved && !missionDirty ? (
-                        <span
-                          className={`text-[11.5px] font-semibold ${isLight ? "text-emerald-700" : "text-emerald-400"}`}
-                        >
-                          {t("Saved", "Đã lưu")}
-                        </span>
-                      ) : (
-                        <span
-                          className={`text-[11px] ${missionDirty ? (isLight ? "font-medium text-amber-700" : "text-amber-300") : "text-muted-foreground"}`}
-                        >
-                          {missionDirty
-                            ? t("Unsaved changes", "Có thay đổi chưa lưu")
-                            : t("Applies immediately", "Áp dụng ngay cho Lab")}
-                        </span>
-                      )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={authoring.saving || authoring.frozen}
-                        title={
-                          authoring.frozen
-                            ? t(
-                                "Published active course exercises are frozen to keep grading consistent.",
-                                "Đề bài của khóa học đang hoạt động đã được khóa để đảm bảo công bằng khi chấm điểm.",
-                              )
-                            : undefined
-                        }
-                        onClick={() => {
-                          if (maxP95Draft.trim()) {
-                            const parsedP95 = Number(maxP95Draft);
-                            if (!Number.isFinite(parsedP95) || parsedP95 < 1 || parsedP95 > 60000) {
-                              setP95ValidationError(
-                                t(
-                                  "Max p95 latency must be between 1 and 60000 ms.",
-                                  "Độ trễ p95 tối đa phải nằm trong khoảng 1 đến 60000 ms.",
-                                ),
-                              );
-                              return;
-                            }
-                          }
-                          setP95ValidationError("");
-                          authoring.onSaveMission({
-                            instructions: missionDraft,
-                            baselinePath: baselineDraft,
-                            baselinePaths: baselinePathsDraft,
-                            initialLoadRps: initialLoadRpsDraft,
-                            maxErrorRatePercent: maxErrDraft,
-                            maxP95Ms: maxP95Draft,
-                            minImpactF1: predictionRequiredDraft ? minImpactF1Draft : "",
-                            predictionRequired: predictionRequiredDraft,
-                            predictionMode: predictionModeDraft,
-                            blindMode: blindModeDraft,
-                            maxActions: maxActionsDraft,
-                            rules: rulesDraft,
-                            allowedActions: allowedActionsDraft,
-                            replicaService: replicaSvcDraft,
-                            replicaCount: replicaCountDraft,
-                          });
-                        }}
-                        className={`h-8 px-3 text-xs font-semibold ${themeRadius} ${
-                          missionDirty
-                            ? "bg-amber-600 text-white hover:bg-amber-500"
-                            : "bg-teal-600 text-white hover:bg-teal-500"
-                        }`}
-                      >
-                        {authoring.saving
-                          ? t("Saving…", "Đang lưu…")
-                          : missionDirty
-                            ? t("Save Exercise *", "Lưu đề bài *")
-                            : t("Save Exercise", "Lưu đề bài")}
-                      </Button>
-                    </div>
                   </section>
                 );
               })()
@@ -7448,8 +7364,8 @@ export function LiveStudioWorkbench({
                               }
                             >
                               {t(
-                                "Blind Mode · Hidden CPU trap + 0x outage · Root Cause F1 · 4 actions",
-                                "Đề mù · Bóp CPU ẩn + tắt 0x · Chẩn đoán gốc F1 · Giới hạn 4 lượt",
+                                "Hidden culprits · CPU throttle + 0x outage · Root Cause F1 · 4 actions",
+                                "Ẩn đáp án · Bóp CPU ẩn + tắt 0x · Chẩn đoán gốc F1 · Giới hạn 4 lượt",
                               )}
                             </span>
                           </div>
@@ -8123,6 +8039,93 @@ export function LiveStudioWorkbench({
               </div>
               )}
             </div>
+            {authoring && rightCardMode !== "diagnostics" && setupPanel === "mission" && (
+              <div
+                className={`flex shrink-0 items-center justify-between gap-2 border-t px-3.5 py-2.5 ${
+                  isLight
+                    ? "border-slate-200 bg-white"
+                    : "border-slate-800 bg-slate-950"
+                }`}
+              >
+                {authoring.frozen ? (
+                  <span
+                    className={`text-[11px] font-medium ${isLight ? "text-emerald-700" : "text-emerald-300"}`}
+                  >
+                    {t("Active course — exercise frozen", "Khóa đang mở — đề bài đã khóa")}
+                  </span>
+                ) : authoring.saved && !missionDirty ? (
+                  <span
+                    className={`text-[11.5px] font-semibold ${isLight ? "text-emerald-700" : "text-emerald-400"}`}
+                  >
+                    {t("Saved", "Đã lưu")}
+                  </span>
+                ) : (
+                  <span
+                    className={`text-[11px] ${missionDirty ? (isLight ? "font-medium text-amber-700" : "text-amber-300") : "text-muted-foreground"}`}
+                  >
+                    {missionDirty
+                      ? t("Unsaved changes", "Có thay đổi chưa lưu")
+                      : t("Applies immediately", "Áp dụng ngay cho Lab")}
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={authoring.saving || authoring.frozen}
+                  title={
+                    authoring.frozen
+                      ? t(
+                          "Published active course exercises are frozen to keep grading consistent.",
+                          "Đề bài của khóa học đang hoạt động đã được khóa để đảm bảo công bằng khi chấm điểm.",
+                        )
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (maxP95Draft.trim()) {
+                      const parsedP95 = Number(maxP95Draft);
+                      if (!Number.isFinite(parsedP95) || parsedP95 < 1 || parsedP95 > 60000) {
+                        setP95ValidationError(
+                          t(
+                            "Max p95 latency must be between 1 and 60000 ms.",
+                            "Độ trễ p95 tối đa phải nằm trong khoảng 1 đến 60000 ms.",
+                          ),
+                        );
+                        return;
+                      }
+                    }
+                    setP95ValidationError("");
+                    authoring.onSaveMission({
+                      instructions: missionDraft,
+                      baselinePath: baselineDraft,
+                      baselinePaths: baselinePathsDraft,
+                      initialLoadRps: initialLoadRpsDraft,
+                      maxErrorRatePercent: maxErrDraft,
+                      maxP95Ms: maxP95Draft,
+                      minImpactF1: predictionRequiredDraft ? minImpactF1Draft : "",
+                      predictionRequired: predictionRequiredDraft,
+                      predictionMode: predictionModeDraft,
+                      blindMode: blindModeDraft,
+                      maxActions: maxActionsDraft,
+                      rules: rulesDraft,
+                      allowedActions: allowedActionsDraft,
+                      replicaService: replicaSvcDraft,
+                      replicaCount: replicaCountDraft,
+                    });
+                  }}
+                  className={`h-8 shrink-0 px-3 text-xs font-semibold ${styleCfg.controlRadiusClass} ${
+                    missionDirty
+                      ? "bg-amber-600 text-white hover:bg-amber-500"
+                      : "bg-teal-600 text-white hover:bg-teal-500"
+                  }`}
+                >
+                  {authoring.saving
+                    ? t("Saving…", "Đang lưu…")
+                    : missionDirty
+                      ? t("Save Exercise *", "Lưu đề bài *")
+                      : t("Save Exercise", "Lưu đề bài")}
+                </Button>
+              </div>
+            )}
           </aside>
           );
         })()}

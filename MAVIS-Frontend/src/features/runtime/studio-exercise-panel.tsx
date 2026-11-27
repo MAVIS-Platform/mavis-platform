@@ -286,8 +286,8 @@ export function StudioExercisePanel({
         >
           {blindMode
             ? t(
-                "Blind incident mode: use 3D topology, Traces, and CPU/RAM stats to identify the failing or throttled service(s), then repair them with the Docker controls above.",
-                "Chế độ Đề mù: hãy dùng sơ đồ 3D, Log & Trace và chỉ số CPU/RAM để tìm các service đang dừng hoặc bị nghẽn, rồi xử lý bằng bảng điều khiển Docker ở trên.",
+                "Use the 3D topology, Logs & Traces, and CPU/RAM stats to identify the failing or throttled service(s), then repair them with the Docker controls above.",
+                "Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM để tìm các service đang dừng hoặc bị nghẽn, rồi xử lý bằng bảng điều khiển Docker ở trên.",
               )
             : t(
                 "Diagnose the crashed (0x) service on the 3D topology or Logs & Traces, select it, and click Start above to recover.",
