@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { PublicHomepage } from "@/features/homepage/public-homepage";
 import "@/features/homepage/homepage.css";
 
-const title = "MAVIS — Explore microservices architecture";
+const title = "MAVIS — Microservices Architecture & 3D Docker Studio";
 const description =
-  "Analyze Java and C# microservices, follow requests across services, and study the impact of changes in guided Labs.";
+  "Analyze Java and C# microservices, run live Docker stacks on an interactive 3D stage, stream OpenTelemetry traces, and verify real change impact in guided Labs.";
 
 export const metadata: Metadata = {
   title,

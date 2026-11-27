@@ -7,6 +7,8 @@ import {
   Box,
   CodeXml,
   GitFork,
+  Pause,
+  Play,
   RotateCcw,
   ShoppingBag,
   Wallet,
@@ -19,8 +21,8 @@ const serviceIcons = { Gateway: Workflow, Orders: ShoppingBag, Payments: Wallet,
 const serviceNames: ServiceName[] = ["Gateway", "Orders", "Inventory", "Payments"];
 const phases = [
   { id: "source", icon: CodeXml, en: "Source", vi: "Mã nguồn" },
-  { id: "trace", icon: Activity, en: "Trace", vi: "Luồng chạy (Trace)" },
-  { id: "impact", icon: GitFork, en: "Impact", vi: "Tác động" },
+  { id: "trace", icon: Activity, en: "OTel Trace", vi: "Trace (OTel)" },
+  { id: "impact", icon: GitFork, en: "Change Impact", vi: "Tác động" },
 ] as const;
 
 export function RequestDemo() {
@@ -37,22 +39,60 @@ export function RequestDemo() {
     setStopped(false);
   }
 
+  function toggleFault() {
+    setStopped((prev) => {
+      const next = !prev;
+      if (next) {
+        select("Payments");
+        setPhase("impact");
+      }
+      return next;
+    });
+  }
+
   return (
-    <section className="v2-console" id="demo" tabIndex={-1} aria-labelledby="v2-demo-title">
+    <section
+      className="v2-console"
+      id="demo"
+      tabIndex={-1}
+      aria-labelledby="v2-demo-title"
+      data-fault={stopped}
+    >
       <div className="v2-console-head">
-        <div>
-          <h2 id="v2-demo-title">{t("Request explorer", "Theo dõi luồng yêu cầu")}</h2>
-          <p>{t("Browser simulation", "Mô phỏng trong trình duyệt")}</p>
+        <div className="v2-console-title">
+          <span className="v2-live-dot" data-fault={stopped} aria-hidden="true" />
+          <div>
+            <h2 id="v2-demo-title">
+              {t("Interactive fault explorer", "Mô phỏng tương tác kiến trúc")}
+            </h2>
+            <p>
+              {t(
+                "Click a service or pause Payments to trace impact",
+                "Chọn một service hoặc tạm dừng Payments để xem lan truyền",
+              )}
+            </p>
+          </div>
         </div>
-        <button
-          type="button"
-          className="v2-reset"
-          onClick={reset}
-          aria-label={t("Reset scenario", "Đặt lại tình huống")}
-          title={t("Reset scenario", "Đặt lại tình huống")}
-        >
-          <RotateCcw aria-hidden="true" />
-        </button>
+        <div className="v2-console-tools">
+          <button
+            type="button"
+            className="v2-fault-toggle"
+            data-fault={stopped}
+            onClick={toggleFault}
+          >
+            {stopped ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}
+            {stopped ? t("Restore", "Khôi phục") : t("Pause Payments", "Dừng Payments")}
+          </button>
+          <button
+            type="button"
+            className="v2-reset"
+            onClick={reset}
+            aria-label={t("Reset scenario", "Đặt lại tình huống")}
+            title={t("Reset scenario", "Đặt lại tình huống")}
+          >
+            <RotateCcw aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       <div className="v2-request-row">
@@ -60,8 +100,8 @@ export function RequestDemo() {
         <span className="v2-request-status" data-fault={stopped} role="status">
           <span aria-hidden="true" />
           {stopped
-            ? t("503 · Unavailable", "503 · Gián đoạn")
-            : t("200 · Succeeded", "200 · Thành công")}
+            ? t("503 · 100% err · PAUSED", "503 · 100% lỗi · TẠM DỪNG")
+            : t("200 · 184ms · 0% err", "200 · 184ms · 0% lỗi")}
         </span>
       </div>
 
@@ -71,20 +111,36 @@ export function RequestDemo() {
         aria-label={t("Inspect a service", "Xem chi tiết dịch vụ")}
       >
         <svg viewBox="0 0 600 200" preserveAspectRatio="none" aria-hidden="true">
-          {edges.map(({ from, to, path }) => (
-            <path
-              key={to}
-              d={path}
-              className={from === selected || to === selected ? "mavis-packet-edge" : undefined}
-              vectorEffect="non-scaling-stroke"
-              data-related={from === selected || to === selected}
-              data-fault={stopped && to !== "Inventory"}
-            />
-          ))}
+          {edges.map(({ from, to, path }) => {
+            const isFaultEdge = stopped && to !== "Inventory";
+            const isRelated = from === selected || to === selected;
+            return (
+              <g key={to}>
+                <path
+                  d={path}
+                  className="v2-edge-base"
+                  vectorEffect="non-scaling-stroke"
+                  data-related={isRelated}
+                  data-fault={isFaultEdge}
+                />
+                <path
+                  d={path}
+                  className={
+                    isRelated || isFaultEdge || !stopped ? "mavis-packet-edge v2-edge-flow" : undefined
+                  }
+                  vectorEffect="non-scaling-stroke"
+                  data-related={isRelated}
+                  data-fault={isFaultEdge}
+                />
+              </g>
+            );
+          })}
         </svg>
         {serviceNames.map((name) => {
           const Icon = serviceIcons[name];
           const { x, y } = services[name];
+          const isStoppedNode = stopped && name === "Payments";
+          const isUpstreamImpacted = stopped && (name === "Orders" || name === "Gateway");
           return (
             <button
               key={name}
@@ -93,10 +149,14 @@ export function RequestDemo() {
               style={{ left: `${x}%`, top: `${y}%` }}
               aria-pressed={selected === name}
               onClick={() => select(name)}
-              data-stopped={stopped && name === "Payments"}
+              data-stopped={isStoppedNode}
+              data-impacted={isUpstreamImpacted}
             >
+              <span className="v2-service-dot" aria-hidden="true" />
               <Icon aria-hidden="true" />
               <span>{name}</span>
+              {isStoppedNode && <em className="v2-node-tag">PAUSED</em>}
+              {isUpstreamImpacted && <em className="v2-node-tag">503</em>}
             </button>
           );
         })}
@@ -121,9 +181,9 @@ export function RequestDemo() {
         ))}
       </div>
 
-      <div className="v2-evidence">
+      <div className="v2-evidence" key={`${phase}-${selected}-${stopped}`}>
         {phase === "source" && (
-          <>
+          <div className="v2-panel-fade">
             <div className="v2-panel-head">
               <h3>{selected}</h3>
               <code>{service.file}</code>
@@ -138,19 +198,19 @@ export function RequestDemo() {
                     "Orders gọi Inventory để giữ hàng và gọi Payments để xác thực thanh toán.",
                   )
                 : t(
-                    "Select Orders to see where these dependencies come from.",
-                    "Chọn Orders để xem đoạn mã tạo các liên kết này.",
+                    "Select Orders to inspect the exact source calls wiring these services.",
+                    "Chọn Orders để xem chính xác dòng mã nguồn tạo các kết nối này.",
                   )}
             </p>
-          </>
+          </div>
         )}
         {phase === "trace" && (
-          <>
+          <div className="v2-panel-fade">
             <div className="v2-panel-head">
               <h3>
                 {stopped
-                  ? t("Trace before the change", "Trace trước thay đổi")
-                  : t("Example trace", "Trace minh họa")}
+                  ? t("Baseline OTel trace (before fault)", "Trace OTel nền (trước sự cố)")
+                  : t("Distributed OpenTelemetry trace", "Trace phân tán OpenTelemetry")}
               </h3>
               <code>0–184 ms</code>
             </div>
@@ -158,8 +218,9 @@ export function RequestDemo() {
               className="v2-spans"
               aria-label={t("Spans in request order", "Các span theo thứ tự yêu cầu")}
             >
-              {serviceNames.map((name) => {
+              {serviceNames.map((name, idx) => {
                 const span = services[name];
+                const spanFault = stopped && (name === "Payments" || name === "Orders" || name === "Gateway");
                 return (
                   <li key={name}>
                     <button
@@ -170,9 +231,12 @@ export function RequestDemo() {
                       <span>{name}</span>
                       <span className="v2-span-track" aria-hidden="true">
                         <span
+                          className="v2-bar-grow"
+                          data-fault={spanFault}
                           style={{
                             insetInlineStart: `${span.start / 1.84}%`,
                             inlineSize: `${span.duration / 1.84}%`,
+                            animationDelay: `${idx * 55}ms`,
                           }}
                         />
                       </span>
@@ -183,15 +247,16 @@ export function RequestDemo() {
               })}
             </ul>
             <p aria-live="polite">{service.span}</p>
-          </>
+          </div>
         )}
         {phase === "impact" && (
-          <>
+          <div className="v2-panel-fade">
             <div className="v2-panel-head">
-              <h3>{t("What if Payments stops?", "Nếu Payments dừng thì sao?")}</h3>
+              <h3>{t("Reverse BFS blast radius", "Phạm vi lan truyền (Reverse BFS)")}</h3>
               <button
                 className="v2-simulate"
                 type="button"
+                data-fault={stopped}
                 onClick={() => setStopped((value) => !value)}
               >
                 {stopped
@@ -201,20 +266,20 @@ export function RequestDemo() {
             </div>
             <dl className="v2-comparison" aria-live="polite">
               <div>
-                <dt>{t("Before", "Trước thay đổi")}</dt>
+                <dt>{t("Before", "Trước thao tác")}</dt>
                 <dd>
-                  <code>200</code> {t("Succeeded", "Thành công")}
+                  <code>200</code> {t("184ms · 0% err", "184ms · 0% lỗi")}
                 </dd>
               </div>
               <div data-fault={stopped}>
-                <dt>{t("After", "Sau thay đổi")}</dt>
+                <dt>{t("After", "Sau thao tác")}</dt>
                 <dd>
                   {stopped ? (
                     <>
-                      <code>503</code> {t("Unavailable", "Gián đoạn")}
+                      <code>503</code> {t("Gateway & Orders fail", "Gateway & Orders lỗi")}
                     </>
                   ) : (
-                    t("Awaiting simulation", "Chờ chạy mô phỏng")
+                    t("Ready — pause Payments to compare", "Sẵn sàng — dừng Payments để đối chiếu")
                   )}
                 </dd>
               </div>
@@ -222,15 +287,15 @@ export function RequestDemo() {
             <p>
               {stopped
                 ? t(
-                    "Orders cannot authorize payment. Gateway returns 503. Inventory stays available.",
-                    "Orders không xác thực được thanh toán. Gateway trả 503. Inventory vẫn sẵn sàng.",
+                    "Orders fails payment authorization and propagates 503 to Gateway. Inventory remains healthy and isolated.",
+                    "Orders không xác thực được thanh toán và đẩy lỗi 503 lên Gateway. Inventory vẫn khỏe mạnh, hoàn toàn cô lập.",
                   )
                 : t(
-                    "The example isolates one change to a dependency: Payments.",
-                    "Ví dụ chỉ thay đổi một phụ thuộc là Payments.",
+                    "In MAVIS Studio Live, students lock their blast-radius prediction before running this on real Docker containers.",
+                    "Trong MAVIS Studio Live, sinh viên khóa dự đoán phạm vi ảnh hưởng trước khi chạy lệnh trên container Docker thật.",
                   )}
             </p>
-          </>
+          </div>
         )}
         {phase !== "impact" && (
           <button
@@ -243,8 +308,8 @@ export function RequestDemo() {
             }}
           >
             {phase === "source"
-              ? t("Follow the trace", "Theo dõi trace")
-              : t("Compare impact", "So sánh tác động")}
+              ? t("Inspect OTel trace", "Xem Trace OpenTelemetry")
+              : t("Run Change Impact", "Thử phân tích Tác động")}
             <ArrowRight aria-hidden="true" />
           </button>
         )}
