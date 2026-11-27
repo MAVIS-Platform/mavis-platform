@@ -58,6 +58,7 @@ import { ErrorState } from "@/components/shared/request-state";
 import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApiQuery } from "@/hooks/use-api";
+import { formatLocalizedTime } from "@/lib/format/date-time";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 import {
@@ -3603,7 +3604,7 @@ export function LiveStudioWorkbench({
                     }
                   >
                     <RefreshCw aria-hidden="true" className="size-3" />
-                    {new Date(data.telemetry.observedAt).toLocaleTimeString()}
+                    {formatLocalizedTime(data.telemetry.observedAt, locale)}
                     {telemetryStale && (
                       <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
                         Stale
@@ -3970,7 +3971,7 @@ export function LiveStudioWorkbench({
               : null;
             const observedLabel =
               observedDate && Number.isFinite(observedDate.getTime())
-                ? `${t("Observed", "Ghi nhận lúc")} ${observedDate.toLocaleTimeString()}${
+                ? `${t("Observed", "Ghi nhận lúc")} ${formatLocalizedTime(observedDate, locale)}${
                     lastSessionFailed
                       ? isTimedOut
                         ? ` · ${t("Timed out", "Hết thời gian")}`
@@ -4853,7 +4854,7 @@ export function LiveStudioWorkbench({
                                 {t("LOCAL ONLY · NOT SUBMITTED", "LƯU TẠM · CHƯA NỘP")}
                               </span>
                               <span className="text-[11px] text-muted-foreground">
-                                {new Date(replayItem.capturedAt).toLocaleTimeString()}
+                                {formatLocalizedTime(replayItem.capturedAt, locale)}
                                 {replayItem.durationMs
                                   ? ` · ${(replayItem.durationMs / 1000).toFixed(1)}s`
                                   : ""}
