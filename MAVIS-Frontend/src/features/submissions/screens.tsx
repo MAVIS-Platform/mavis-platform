@@ -500,8 +500,8 @@ function ClassGradebookMatrix({
                 ? formatTenScaleScore(cell.reviewScore, cell.reviewScoreTenScale)
                 : "—";
             const outcome = cell.labOutcome ?? (cell.submissionId ? "PENDING" : "NOT_SUBMITTED");
-            const quiz = cell.quizBestScore !== null ? `Quiz ${cell.quizBestScore}%` : "No quiz";
-            return `${score} (${outcome} · ${quiz})`;
+            const quiz = cell.quizBestScore !== null ? `Quiz ${cell.quizBestScore}%` : null;
+            return quiz ? `${score} (${outcome} · ${quiz})` : `${score} (${outcome})`;
           }),
         ]
           .map(escape)

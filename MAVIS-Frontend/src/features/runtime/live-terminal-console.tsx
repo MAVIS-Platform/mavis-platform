@@ -426,6 +426,7 @@ export function LiveTerminalConsole({
   const [copied, setCopied] = useState(false);
   const [runnerEvents, setRunnerEvents] = useState<TerminalLogEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const tracesScrollRef = useRef<HTMLDivElement>(null);
   const lastTrackedStateRef = useRef<string>("");
   const lastTrackedErrorRef = useRef<string>("");
   const eventSeqRef = useRef(0);
@@ -1121,6 +1122,7 @@ export function LiveTerminalConsole({
         </div>
       ) : (
         <div
+          ref={tracesScrollRef}
           style={{
             scrollbarWidth: "thin",
             scrollbarColor: isLight ? "#cbd5e1 #ffffff" : "#334155 #05080f",
@@ -1208,8 +1210,16 @@ export function LiveTerminalConsole({
                   return (
                     <tr
                       key={`${span.traceId}:${span.spanId}`}
-                      onClick={() => setActiveTraceId(rowSelected ? null : span.traceId)}
-                      title="Click to inspect full trace waterfall"
+                      onClick={() => {
+                        const nextId = rowSelected ? null : span.traceId;
+                        setActiveTraceId(nextId);
+                        if (nextId) {
+                          requestAnimationFrame(() => {
+                            tracesScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                          });
+                        }
+                      }}
+                      title={t("Click to inspect full trace waterfall", "Bấm để mở sơ đồ Trace Waterfall chi tiết")}
                       className={`cursor-pointer ${
                         rowSelected
                           ? isLight ? "bg-sky-50" : "bg-sky-950/40"

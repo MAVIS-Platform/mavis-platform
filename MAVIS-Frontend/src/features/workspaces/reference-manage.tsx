@@ -69,12 +69,19 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                 <div className="min-w-0 space-y-0.5">
                   <p className="truncate font-semibold">{project.name}</p>
                   <p className="truncate font-mono text-xs text-muted-foreground">
-                    {project.repository || t("Uploaded ZIP archive", "Tệp nén ZIP")}
+                    {project.repository ||
+                      (project.status !== "ready"
+                        ? t("Importing source…", "Đang nhập mã nguồn…")
+                        : t("Uploaded ZIP archive", "Tệp nén ZIP"))}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={project.status === "ready" ? "success" : "secondary"}>
-                    {project.status === "ready" ? t("Ready", "Sẵn sàng") : project.status}
+                    {project.status === "ready"
+                      ? t("Ready", "Sẵn sàng")
+                      : project.status === "processing"
+                        ? t("Analyzing…", "Đang phân tích…")
+                        : t("Pending", "Đang chuẩn bị")}
                   </Badge>
                   <Button
                     type="button"

@@ -1629,6 +1629,15 @@ export function StudioObservability({
       const cpuMatch = statsSummary.cpu.match(/[\d.]+/);
       const cpuNum = cpuMatch ? Number(cpuMatch[0]) : NaN;
       const cpuPct = !isStopped && Number.isFinite(cpuNum) ? Math.min(100, cpuNum) : null;
+      const basePodCpus = data.limits?.cpus ?? 0.5;
+      const effectivePodCpuHostPct =
+        cpuThrottlePct !== null
+          ? Math.max(5, Math.round(basePodCpus * cpuThrottlePct))
+          : Math.max(10, Math.round(basePodCpus * 100));
+      const cpuQuotaUtilPct =
+        !isStopped && cpuPct !== null && effectivePodCpuHostPct > 0
+          ? Math.min(100, Math.round((cpuPct / effectivePodCpuHostPct) * 100))
+          : null;
       const isImpactedByOutage = isAffected && selectedIsStopped && !isStopped;
       const status = nodeStatus?.[name];
       const isCritical = isStopped || status === "Overloaded";
@@ -1676,6 +1685,7 @@ export function StudioObservability({
         ramPct,
         cpuPct,
         cpuThrottlePct,
+        cpuQuotaUtilPct,
         ramLabel: ramPct !== null ? `${ramPct}%` : null,
         palette,
       });
@@ -2838,33 +2848,49 @@ export function StudioObservability({
                 ? ctrlY
                 : 0.25 * from.y + 0.5 * ctrlY + 0.25 * to.y
               : (from.y + to.y) / 2;
+            const isRequiredStaticEdge = Boolean(
+              authorHighlights?.requiredTraceEdge &&
+                authorHighlights.requiredTraceEdge.from === edge.from &&
+                authorHighlights.requiredTraceEdge.to === edge.to,
+            );
+            const isInteractiveStaticEdge = Boolean(onSelectEdge || (configuredEdges && onDisconnect));
             return (
               <g key={edge.id}
                 data-studio-edge-from={edge.from} data-studio-edge-to={edge.to}
-                role={configuredEdges && onDisconnect ? "button" : undefined}
-                tabIndex={configuredEdges && onDisconnect ? 0 : undefined}
-                aria-label={configuredEdges ? `${nodeNames?.[edge.from] ?? edge.from} → ${nodeNames?.[edge.to] ?? edge.to}` : undefined}
-                onPointerDown={(event) => { if (configuredEdges && event.button === 0) event.stopPropagation(); }}
-                onClick={() => { if (configuredEdges && onDisconnect) setSelectedWire({ from: edge.from, to: edge.to }); }}
+                role={isInteractiveStaticEdge ? "button" : undefined}
+                tabIndex={isInteractiveStaticEdge ? 0 : undefined}
+                aria-label={isInteractiveStaticEdge ? `${nodeNames?.[edge.from] ?? edge.from} → ${nodeNames?.[edge.to] ?? edge.to}` : undefined}
+                onPointerDown={(event) => { if (isInteractiveStaticEdge && event.button === 0) event.stopPropagation(); }}
+                onClick={() => {
+                  if (onSelectEdge) {
+                    onSelectEdge({ id: edge.id, from: edge.from, to: edge.to });
+                    return;
+                  }
+                  if (configuredEdges && onDisconnect) setSelectedWire({ from: edge.from, to: edge.to });
+                }}
                 onKeyDown={(event) => {
-                  if (!configuredEdges || !onDisconnect) return;
+                  if (!isInteractiveStaticEdge) return;
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    setSelectedWire({ from: edge.from, to: edge.to });
+                    if (onSelectEdge) {
+                      onSelectEdge({ id: edge.id, from: edge.from, to: edge.to });
+                    } else if (configuredEdges && onDisconnect) {
+                      setSelectedWire({ from: edge.from, to: edge.to });
+                    }
                   }
                 }}
                 className="cursor-pointer outline-none"
               >
                 <title>{configuredEdges ? "Configured route, awaiting observed traces" : "Static dependency"} · {edge.protocol}</title>
-                {configuredEdges && <path d={staticPathD} fill="none"
+                {isInteractiveStaticEdge && <path d={staticPathD} fill="none"
                   stroke="transparent" strokeWidth="16" vectorEffect="non-scaling-stroke" pointerEvents="stroke" />}
                 <path
                   d={staticPathD}
                   fill="none"
-                  stroke={targetStopped ? "var(--destructive)" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#0056D2" : isLight ? "#94a3b8" : "#64748b"}
-                  strokeDasharray={targetStopped ? "6 4" : "5 5"}
-                  strokeWidth={targetStopped ? "2.1" : "1.6"}
-                  opacity={targetStopped ? "0.9" : "0.75"}
+                  stroke={targetStopped ? "var(--destructive)" : isRequiredStaticEdge ? "#0284c7" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#0056D2" : isLight ? "#94a3b8" : "#64748b"}
+                  strokeDasharray={targetStopped ? "6 4" : isRequiredStaticEdge ? undefined : "5 5"}
+                  strokeWidth={targetStopped || isRequiredStaticEdge ? "2.3" : "1.6"}
+                  opacity={targetStopped || isRequiredStaticEdge ? "0.95" : "0.75"}
                 />
                 {renderWireArrow(isSkipColumn ? { x: ctrlX, y: ctrlY } : from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#94a3b8", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) * Math.max(0.86, Math.min(1.12, to.persp)) : 1)}
                 {targetStopped && !hasObservedOverlay && (

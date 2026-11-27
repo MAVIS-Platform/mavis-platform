@@ -531,15 +531,15 @@ test("Batch 2: LiveStudioWorkbench auto-opens prediction, locks Finish on 0 snap
   // Task 2.2: Finish requires >= 1 snapshot
   assert.ok(src.includes("Capture at least one evidence snapshot before finishing."));
   assert.match(src, /!hasConfirmedAction \|\|\s*\(data\.snapshots\?\.length \?\? 0\) === 0/);
-  // Task 2.3: shared servicePhase helper + Light/Dark parity for CPU [25, 50, 100], SET_LOAD [5, 15, 30, 50], Pause/Resume
+  // Task 2.3: shared servicePhase helper + Light/Dark parity for CPU [25, 50, 100], SET_LOAD [1, 5, 15, 30, 50], Pause/Resume
   assert.match(src, /function servicePhase\(/);
   assert.ok(src.includes('selPhase !== "paused"'));
   assert.ok(!src.includes("darkPhase"));
   assert.ok(!src.includes("CPU 20%"));
   const cpuMatches = src.match(/\[25, 50, 100\]\.map/g) || [];
   assert.ok(cpuMatches.length >= 1, "Unified Student Inspector must expose CPU [25, 50, 100] presets");
-  const loadMatches = src.match(/\[5, 15, 30, 50\]\.map/g) || [];
-  assert.ok(loadMatches.length >= 2, "Both Light and Dark themes must expose SET_LOAD [5, 15, 30, 50] presets");
+  const loadMatches = src.match(/\[1, 5, 15, 30, 50\]\.map/g) || [];
+  assert.ok(loadMatches.length >= 2, "Both Light and Dark themes must expose SET_LOAD [1, 5, 15, 30, 50] presets");
 });
 
 test("Batch 2: lab-submission-v2 removes sample dossiers and fake rubric score preview", () => {
@@ -1975,9 +1975,9 @@ test("HyperMesh Audit P0-1..P1-9: multi-lab auto-link, receipt sealing & cache s
   assert.ok(workbench.includes('? "FINISHING"'));
   assert.ok(workbench.includes("!isTerminalExecution && !data.finishRequested"));
 
-  // P1-4: Unified Student Inspector (Light & Dark) and Author mode live test expose SET_LOAD [5, 15, 30, 50] RPS controls
-  const loadMatches = workbench.match(/\[5, 15, 30, 50\]\.map/g) || [];
-  assert.ok(loadMatches.length >= 2, "Unified Student Inspector and Author mode must both expose SET_LOAD [5, 15, 30, 50]");
+  // P1-4: Unified Student Inspector (Light & Dark) and Author mode live test expose SET_LOAD [1, 5, 15, 30, 50] RPS controls
+  const loadMatches = workbench.match(/\[1, 5, 15, 30, 50\]\.map/g) || [];
+  assert.ok(loadMatches.length >= 2, "Unified Student Inspector and Author mode must both expose SET_LOAD [1, 5, 15, 30, 50]");
 
   // P1-5: Launchpad Step 2 ignores default seeded revision-1 placeholder instructions; Step 3 polls in-flight sessions
   assert.ok(!labStudio.includes("exercise.data?.instructions?.trim(),"));
@@ -2720,7 +2720,7 @@ test("Wave-2 audit fixes: timeout waterfall fallback, root-cause diagnostics tre
   assert.ok(parity.includes("Boolean(authoring) &&"));
   assert.ok(terminal.includes('entry.level !== "WARN"'));
   assert.ok(terminal.includes("Cảnh báo"));
-  assert.ok(panel.includes("Increase live load (15–30 RPS)"));
+  assert.ok(panel.includes("Increase live load (5–15 RPS)"));
   assert.ok(standalone.includes("labSessions.refetch"));
 
   // Admin, Submissions, and References Wave-2 invariants
@@ -2992,4 +2992,66 @@ test("Accreditation Studio guards: gates pre-prediction Docker actions, omits ph
   assert.ok(workbenchSrc.includes('disabled={!canLiveAct || busy || needsPrediction || selPhase !== "running" || !isAllowed("PAUSE")}'));
   assert.ok(panelSrc.includes(".filter((svc) => !prescribed?.service || svc !== prescribed.service)"));
   assert.ok(stepsSrc.includes("const hasModuleQuiz = allItems.some("));
+});
+
+test("Studio Improvement Wave IMP-01..IMP-13: preserves multi-item config, exposes 1 RPS return + static requiredTraceEdge, shows CPU bar on throttled 3D blocks, and keeps revision snapshot fill", () => {
+  const standaloneSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const threeStageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const terminalSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-terminal-console.tsx"),
+    "utf8",
+  );
+  const subV2Src = fs.readFileSync(
+    path.join(__dirname, "../src/features/courses/lab-submission-v2.tsx"),
+    "utf8",
+  );
+  const pickerSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/assignments/source-picker.tsx"),
+    "utf8",
+  );
+
+  // IMP-01: multi-item baselineRequests & minReplicas preserved
+  assert.ok(standaloneSrc.includes("const trailingBaseline = cur?.baselineRequests?.slice(1) ?? [];"));
+  assert.ok(standaloneSrc.includes("const extraMinReplicas = (exercise.data?.successCriteria?.minReplicas ?? [])"));
+
+  // IMP-02: HyperMesh tagged as Docker Studio Live + GitHub sourceType formatted cleanly
+  assert.ok(pickerSrc.includes('stack: "Java 21 · Docker Studio Live"'));
+  assert.ok(pickerSrc.includes('source.sourceType === "GITHUB_COMMIT"'));
+
+  // IMP-03: 1 RPS default + [1, 5, 15, 30, 50] return-to-baseline controls
+  assert.ok(workbenchSrc.includes("data.telemetry?.probe?.targetRps ?? 1"));
+
+  // IMP-04: static requiredTraceEdge selector in Author mode + 2D static edge click
+  assert.ok(workbenchSrc.includes('data-testid="studio-required-edge-select"'));
+  assert.ok(obsSrc.includes("const isInteractiveStaticEdge = Boolean(onSelectEdge || (configuredEdges && onDisconnect));"));
+
+  // IMP-05: snapshot notes fill stays available during v2 revision (even when prior answer text is prefilled)
+  assert.ok(subV2Src.includes("{studio && capturedSnapshots && capturedSnapshots.length > 0 && ("));
+  assert.ok(!subV2Src.includes("capturedSnapshots.length > 0 && !answer.trim()"));
+
+  // IMP-06: clicking trace row auto-scrolls Traces container to TraceWaterfallPanel at top
+  assert.ok(terminalSrc.includes("tracesScrollRef.current?.scrollTo({ top: 0, behavior: \"smooth\" })"));
+
+  // IMP-07 & IMP-08: 3D top-plate switches to CPU strip under cgroup throttle + header shows pod count when scaled
+  assert.ok(threeStageSrc.includes('ctx.fillText(isCpuThrottled ? "CPU" : "RAM", 22, 144);'));
+  assert.ok(workbenchSrc.includes("totalRunningReplicas > services.length"));
+
+  // IMP-11 & IMP-13: unified Run Docker label, visible Back label, non-truncated failing edges
+  assert.ok(workbenchSrc.includes('{t("Run Docker", "Chạy Docker")}'));
+  assert.ok(standaloneSrc.includes('<span className="hidden sm:inline">{t("Back", "Quay lại")}</span>'));
+  assert.ok(workbenchSrc.includes('<span className="min-w-0 break-all font-semibold">'));
 });

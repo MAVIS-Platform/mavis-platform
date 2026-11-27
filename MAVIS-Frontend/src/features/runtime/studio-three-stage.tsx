@@ -23,6 +23,7 @@ export type StudioThreeNode = {
   ramPct?: number | null | undefined;
   cpuPct?: number | null | undefined;
   cpuThrottlePct?: number | null | undefined;
+  cpuQuotaUtilPct?: number | null | undefined;
   ramLabel?: string | null | undefined;
   palette: StudioNodeVisualPalette;
 };
@@ -940,12 +941,17 @@ function createTopPlateTexture(
   }
   ctx.restore();
 
-  // Bottom live telemetry strip (RAM % bar + Replica count)
+  // Bottom live telemetry strip (switches truthfully to CPU quota utilization when cgroup-throttled)
+  const isCpuThrottled =
+    !node.isStopped && node.cpuThrottlePct != null && node.cpuThrottlePct < 100;
   const ramPct = node.ramPct ?? null;
+  const stripPct = isCpuThrottled
+    ? (node.cpuQuotaUtilPct ?? node.cpuThrottlePct ?? null)
+    : ramPct;
   ctx.font = "700 14px ui-monospace, SFMono-Regular, Menlo, monospace";
-  ctx.fillStyle = mutedCol;
+  ctx.fillStyle = isCpuThrottled ? "#f59e0b" : mutedCol;
   ctx.textAlign = "left";
-  ctx.fillText("RAM", 22, 144);
+  ctx.fillText(isCpuThrottled ? "CPU" : "RAM", 22, 144);
   const barX = 62;
   const barW = 112;
   const barY = 138;
@@ -953,15 +959,31 @@ function createTopPlateTexture(
   drawRoundedRect(ctx, barX, barY, barW, barH, 5.5);
   ctx.fillStyle = isDark ? "#1e293b" : "#e2e8f0";
   ctx.fill();
-  if (ramPct !== null && ramPct > 0) {
-    const fillW = Math.max(10, Math.round((barW * Math.min(100, ramPct)) / 100));
+  if (stripPct !== null && stripPct > 0) {
+    const fillW = Math.max(10, Math.round((barW * Math.min(100, stripPct)) / 100));
     drawRoundedRect(ctx, barX, barY, fillW, barH, 5.5);
-    ctx.fillStyle = ramPct >= 85 ? "#f43f5e" : ramPct >= 70 ? "#f59e0b" : "#10b981";
+    ctx.fillStyle = isCpuThrottled
+      ? stripPct >= 85
+        ? "#f43f5e"
+        : "#f59e0b"
+      : stripPct >= 85
+        ? "#f43f5e"
+        : stripPct >= 70
+          ? "#f59e0b"
+          : "#10b981";
     ctx.fill();
   }
-  ctx.fillStyle = textCol;
+  ctx.fillStyle = isCpuThrottled ? "#fbbf24" : textCol;
   ctx.textAlign = "right";
-  ctx.fillText(ramPct !== null ? `${ramPct}%` : `×${node.replicas}`, 234, 144);
+  ctx.fillText(
+    isCpuThrottled
+      ? `≤${node.cpuThrottlePct}%`
+      : ramPct !== null
+        ? `${ramPct}%`
+        : `×${node.replicas}`,
+    234,
+    144,
+  );
 
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
@@ -1191,15 +1213,27 @@ function attachFrontTelemetryBar(
   track.userData = { serviceId: node.id };
   parent.add(track);
 
-  const ramPct = node.ramPct ?? (node.isStopped ? 0 : null);
-  if (ramPct !== null && ramPct > 0) {
-    const fillW = Math.max(0.03, (trackW * Math.min(100, ramPct)) / 100);
-    const ramColor = ramPct >= 85 ? "#f43f5e" : ramPct >= 70 ? "#f59e0b" : "#10b981";
+  const isCpuThrottledFront =
+    !node.isStopped && node.cpuThrottlePct != null && node.cpuThrottlePct < 100;
+  const frontStripPct = isCpuThrottledFront
+    ? (node.cpuQuotaUtilPct ?? node.cpuThrottlePct ?? null)
+    : (node.ramPct ?? (node.isStopped ? 0 : null));
+  if (frontStripPct !== null && frontStripPct > 0) {
+    const fillW = Math.max(0.03, (trackW * Math.min(100, frontStripPct)) / 100);
+    const stripColor = isCpuThrottledFront
+      ? frontStripPct >= 85
+        ? "#f43f5e"
+        : "#f59e0b"
+      : frontStripPct >= 85
+        ? "#f43f5e"
+        : frontStripPct >= 70
+          ? "#f59e0b"
+          : "#10b981";
     const fill = new T.Mesh(
       new T.BoxGeometry(fillW, 0.03, 0.018),
       new T.MeshStandardMaterial({
-        color: new T.Color(ramColor),
-        emissive: new T.Color(ramColor),
+        color: new T.Color(stripColor),
+        emissive: new T.Color(stripColor),
         emissiveIntensity: isDark ? 0.95 : 0.6,
         roughness: 0.25,
       }),
@@ -3334,7 +3368,7 @@ export function StudioThreeStage({
       nodes
         .map(
           (n) =>
-            `${n.id}|${n.label}|${n.archetype}|${n.tier ?? ""}|${n.wx}|${n.wz}|${n.replicas}|${n.isStopped ? 1 : 0}${n.isPaused ? 1 : 0}${n.isCritical ? 1 : 0}${n.isWarning ? 1 : 0}${n.isSelected ? 1 : 0}${n.isDropTarget ? 1 : 0}|${n.cpuPct != null ? Math.round(n.cpuPct / 5) : ""}|${n.ramPct != null ? Math.round(n.ramPct / 5) : ""}|${n.cpuThrottlePct ?? ""}|${n.palette.accent}`,
+            `${n.id}|${n.label}|${n.archetype}|${n.tier ?? ""}|${n.wx}|${n.wz}|${n.replicas}|${n.isStopped ? 1 : 0}${n.isPaused ? 1 : 0}${n.isCritical ? 1 : 0}${n.isWarning ? 1 : 0}${n.isSelected ? 1 : 0}${n.isDropTarget ? 1 : 0}|${n.cpuPct != null ? Math.round(n.cpuPct / 5) : ""}|${n.ramPct != null ? Math.round(n.ramPct / 5) : ""}|${n.cpuThrottlePct ?? ""}|${n.cpuQuotaUtilPct != null ? Math.round(n.cpuQuotaUtilPct / 5) : ""}|${n.palette.accent}`,
         )
         .join(";"),
       edges
@@ -3856,7 +3890,7 @@ export function StudioThreeStage({
     if (rect.width <= 0 || rect.height <= 0) return null;
     const ndc = ndcRef.current ?? (ndcRef.current = new T.Vector2());
     const raycaster = raycasterRef.current ?? (raycasterRef.current = new T.Raycaster());
-    raycaster.params.Line.threshold = 0.25;
+    raycaster.params.Line.threshold = 0.42;
     ndc.set(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,

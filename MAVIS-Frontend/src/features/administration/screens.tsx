@@ -248,7 +248,7 @@ export function Accounts() {
         />
       </div>
       <RequestState query={query}>
-        <div className="min-w-0 space-y-4 [&_thead]:bg-muted/50 [&_th]:whitespace-nowrap [&_th]:px-2.5 [&_th]:py-2.5 [&_th]:font-semibold [&_td]:px-2.5 [&_td]:py-2.5">
+        <div className="min-w-0 space-y-4 [&_thead]:bg-muted/50 [&_th]:whitespace-nowrap [&_th]:px-2 [&_th]:py-2.5 [&_th]:font-semibold [&_td]:px-2 [&_td]:py-2.5">
           <DataTable
             emptyDescription={t(
               "Try clearing the filters or refresh to check for new records.",
@@ -262,7 +262,7 @@ export function Accounts() {
                 key: "name",
                 label: t("Account", "Tài khoản"),
                 render: (a) => (
-                  <div className="flex min-w-0 max-w-[180px] items-center gap-2">
+                  <div className="flex min-w-0 max-w-[172px] items-center gap-2">
                     <UserAvatar name={a.name} avatarUrl={a.avatarUrl} size="sm" />
                     <div className="min-w-0 space-y-0.5">
                       <p className="truncate font-semibold text-foreground">{a.name}</p>
@@ -280,7 +280,7 @@ export function Accounts() {
                   ) : (
                     <select
                       aria-label={t(`Role for ${a.name}`, `Vai trò của ${a.name}`)}
-                      className="h-8 w-32 rounded-md border bg-card px-2 text-xs disabled:opacity-50"
+                      className="h-8 w-28 rounded-md border bg-card px-2 text-xs disabled:opacity-50"
                       value={a.role}
                       disabled={busyId !== null}
                       onChange={(event) => {
@@ -663,60 +663,53 @@ export function AdminStudioSetup() {
 }
 export function RuntimeProfiles() {
   const { t } = useLocale();
-  const q = useApiQuery("profiles", {});
+  const params = useSearchParams();
+  const requestedTab = params?.get("tab");
+  const legacyTab =
+    requestedTab === "profiles" || requestedTab === "sessions" ? requestedTab : null;
+  const q = useApiQuery("profiles", {}, { enabled: legacyTab === "profiles" });
   const runtimeHealth = useApiQuery("adminRuntimeHealth", {}, { refreshMs: 30000 });
-  const [tab, setTab] = useState<"profiles" | "sessions" | "quotas">("profiles");
   return (
     <div className="space-y-5">
       <AdminCommandHeader
         active="profiles"
-        refreshing={q.isFetching}
-        onRefresh={() => void q.refetch()}
+        refreshing={q.isFetching || runtimeHealth.isFetching}
+        onRefresh={() => {
+          if (legacyTab === "profiles") void q.refetch();
+          void runtimeHealth.refetch();
+        }}
       />
-      <div
-        className="flex flex-wrap gap-2"
-        role="tablist"
-        aria-label={t("Runtime Governance Sections", "Các mục cấu hình Runtime")}
-      >
-        <Button
-          type="button"
-          role="tab"
-          aria-selected={tab === "profiles"}
-          size="sm"
-          variant={tab === "profiles" ? "default" : "outline"}
-          onClick={() => setTab("profiles")}
-        >
-          {t("Execution Profiles", "Hồ sơ thực thi Runtime")}
-        </Button>
-        <Button
-          type="button"
-          role="tab"
-          aria-selected={tab === "sessions"}
-          size="sm"
-          variant={tab === "sessions" ? "default" : "outline"}
-          onClick={() => setTab("sessions")}
-        >
-          {t("Live Sessions & Force-Stop", "Phiên chạy thực tế & Dừng khẩn cấp")}
-        </Button>
-        <Button
-          type="button"
-          role="tab"
-          aria-selected={tab === "quotas"}
-          size="sm"
-          variant={tab === "quotas" ? "default" : "outline"}
-          onClick={() => setTab("quotas")}
-        >
-          {t("AI Quotas & Integrations", "Hạn mức AI & Tích hợp")}
-        </Button>
-      </div>
-      {tab === "sessions" ? (
-        <AdminRuntimeSummary />
-      ) : tab === "quotas" ? (
-        <div className="space-y-8">
-          <PlatformUsage />
-          <Integrations />
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4 shadow-xs">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold text-foreground">
+            {t("AI Quotas & Integrations", "Hạn mức AI & Tích hợp")}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Studio Docker execution profiles and live container force-stop are consolidated in Studio Setup.",
+              "Hồ sơ thực thi Studio Docker và quản lý dừng khẩn cấp phiên chạy đã được gom gọn tại mục Cấu hình Studio.",
+            )}
+            {runtimeHealth.data && (
+              <>
+                {" · "}
+                <strong className="mavis-tabular text-foreground">
+                  {runtimeHealth.data.activeSessions}/{runtimeHealth.data.maxActiveSessions}{" "}
+                  {t("active slots", "slot đang chạy")}
+                </strong>
+              </>
+            )}
+          </p>
         </div>
-      ) : (
+        <Button asChild size="sm" variant="outline">
+          <Link href="/administration/studio-setup">
+            {t("Open Studio Setup", "Mở Cấu hình Studio")}
+            <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
+          </Link>
+        </Button>
+      </section>
+      {legacyTab === "sessions" ? (
+        <AdminRuntimeSummary />
+      ) : legacyTab === "profiles" ? (
         <div className="space-y-5">
           <AdminToolbar
             fetching={q.isFetching}
@@ -724,29 +717,6 @@ export function RuntimeProfiles() {
             showRefresh={false}
             refresh={() => void q.refetch()}
           />
-          <Notice>
-            {t(
-              "Profile changes affect new runtime sessions. Review limits before enabling a profile.",
-              "Thay đổi hồ sơ sẽ áp dụng cho các phiên Runtime mới. Hãy kiểm tra kỹ giới hạn tài nguyên trước khi bật.",
-            )}
-            {runtimeHealth.data && (
-              <span className="mt-1.5 block text-xs text-foreground">
-                {t("Runner capacity:", "Hạn mức Runner hiện tại:")}{" "}
-                <strong>
-                  {runtimeHealth.data.activeSessions}/{runtimeHealth.data.maxActiveSessions}{" "}
-                  {t("active slots", "slot đang chạy")}
-                </strong>{" "}
-                · {t("Queue", "Hàng chờ")}:{" "}
-                <strong>
-                  {runtimeHealth.data.queuedSessions}/{runtimeHealth.data.maxQueuedSessions}
-                </strong>{" "}
-                · OCI: <code className="font-mono">{runtimeHealth.data.effectiveOciRuntime}</code> ·{" "}
-                <Link href="/administration/health" className="text-primary underline">
-                  {t("Open Runtime Ops", "Mở giám sát Runtime")}
-                </Link>
-              </span>
-            )}
-          </Notice>
           <RequestState query={q} empty={!q.data?.length}>
             <div className="grid items-start gap-4 lg:grid-cols-2">
               {q.data?.map((p) => (
@@ -754,6 +724,11 @@ export function RuntimeProfiles() {
               ))}
             </div>
           </RequestState>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          <PlatformUsage />
+          <Integrations />
         </div>
       )}
     </div>

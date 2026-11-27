@@ -122,13 +122,19 @@ export const javaSnapshot = z.object({
 });
 export function snapshotView(raw: unknown) {
   const s = javaSnapshot.parse(raw);
+  const sourceLabel =
+    s.sourceType === "GITHUB_COMMIT"
+      ? "GitHub"
+      : s.sourceType === "ZIP_UPLOAD"
+        ? "ZIP"
+        : (s.sourceType ?? "Source");
   return snapshotSchema.parse({
     id: s.id,
     projectId: s.projectId,
     sourceType: s.sourceType,
     branchName: s.branchName,
     commitSha: s.commitSha,
-    name: [s.sourceType ?? "Source", s.branchName, s.commitSha?.slice(0, 8)]
+    name: [sourceLabel, s.branchName, s.commitSha?.slice(0, 8)]
       .filter(Boolean)
       .join(" · "),
     createdAt: s.createdAt ?? "",

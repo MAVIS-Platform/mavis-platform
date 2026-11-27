@@ -282,8 +282,8 @@ export function StudioExercisePanel({
                   }`}
                 >
                   {t(
-                    "Tip: Increase live load (15–30 RPS) above first to observe saturation, then scale replicas to verify recovery.",
-                    "Gợi ý: Hãy tăng tải (15–30 RPS) ở bảng trên trước để thấy hệ thống nghẽn, rồi mới nhân bản replica để kiểm chứng hồi phục.",
+                    "Tip: Increase live load (5–15 RPS) above first to observe target saturation, then scale replicas to verify recovery (30–50 RPS tests downstream 0.5 vCPU bottlenecks).",
+                    "Gợi ý: Tăng tải lên 5–15 RPS ở bảng trên trước để thấy điểm nghẽn mục tiêu, rồi nhân bản replica để kiểm chứng hồi phục (mức 30–50 RPS có thể gây bão hòa dây chuyền ở các service tầng dưới 0.5 vCPU).",
                   )}
                 </p>
               )}

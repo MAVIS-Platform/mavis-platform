@@ -521,7 +521,7 @@ export function LabSubmissionV2({
                     )
                   : t("Your response", "Nội dung bài làm của bạn")}
               </span>
-              {studio && capturedSnapshots && capturedSnapshots.length > 0 && !answer.trim() && (
+              {studio && capturedSnapshots && capturedSnapshots.length > 0 && (
                 <button
                   type="button"
                   onClick={() => {

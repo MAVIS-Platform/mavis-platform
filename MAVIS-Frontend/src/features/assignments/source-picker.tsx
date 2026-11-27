@@ -62,7 +62,7 @@ export const CURATED_SAMPLE_REPOS: readonly CuratedSampleRepo[] = [
   {
     id: "mavis-hypermesh-enterprise",
     name: "mavis-hypermesh-enterprise",
-    stack: "Java 21 · Spring Boot 3 · Enterprise",
+    stack: "Java 21 · Docker Studio Live",
     url: "https://github.com/MAVIS-Platform/mavis-hypermesh-enterprise",
     summaryEn: "Enterprise 10-service e-commerce mesh with Fraud, Pricing, Outbox, and Saga.",
     summaryVi: "Hệ thống microservices doanh nghiệp 10 dịch vụ với Fraud, Pricing, Outbox và Saga.",
@@ -236,6 +236,7 @@ export function AssignmentSourcePicker({
             });
       setSnapshotId(snapshot.id);
       setModelId("");
+      void cache.invalidateQueries({ queryKey: ["api", "workspaceProjects"] });
       const next = await api.execute("startAnalysis", {
         projectId: target,
         snapshotId: snapshot.id,
@@ -271,6 +272,7 @@ export function AssignmentSourcePicker({
     setModelId(job.data.modelId);
     if (completedAnalysisRef.current !== job.data.modelId) {
       completedAnalysisRef.current = job.data.modelId;
+      void cache.invalidateQueries({ queryKey: ["api", "workspaceProjects"] });
       onAnalysisCompleteRef.current?.({
         modelId: job.data.modelId,
         projectId,
@@ -705,14 +707,22 @@ export function AssignmentSourceDetails({
         <div>
           <dt className="text-muted-foreground">{t("Source", "Nguồn")}</dt>
           <dd>
-            {source.sourceType} {source.repositoryUrl}
+            {source.sourceType === "GITHUB_COMMIT"
+              ? "GitHub"
+              : source.sourceType === "ZIP_UPLOAD"
+                ? "ZIP"
+                : source.sourceType}{" "}
+            {source.repositoryUrl}
           </dd>
         </div>
         <div>
           <dt className="text-muted-foreground">{t("Branch / commit", "Nhánh / commit")}</dt>
           <dd>
-            {source.branch ?? t("ZIP archive", "Tệp nén ZIP")} ·{" "}
-            {source.commitSha ?? source.artifactHash}
+            {source.branch ??
+              (source.sourceType === "GITHUB_COMMIT" || source.repositoryUrl
+                ? "GitHub"
+                : t("ZIP archive", "Tệp nén ZIP"))}{" "}
+            · {source.commitSha ?? source.artifactHash}
           </dd>
         </div>
         <div>

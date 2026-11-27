@@ -538,7 +538,7 @@ export function QuizBuilder({
                       {index + 1}. {question.prompt || t("Untitled question", "Câu hỏi chưa có tiêu đề")}
                     </span>
                     <span className="block text-muted-foreground">
-                      {t(TYPE_LABELS[question.type].en, TYPE_LABELS[question.type].vi)} · {question.points ?? 1} pt
+                      {t(TYPE_LABELS[question.type].en, TYPE_LABELS[question.type].vi)} · {question.points ?? 1} {t("pt", "điểm")}
                     </span>
                   </button>
                 </li>
@@ -987,7 +987,11 @@ export function QuizBuilder({
         )}
         <Button type="button" size="sm" variant="outline" disabled={saveDraft.isPending} onClick={saveDraftNow}>
           <Save className="mr-1 size-4" aria-hidden="true" />
-          {saveDraft.isPending ? t("Saving…", "Đang lưu…") : t("Save draft", "Lưu nháp")}
+          {saveDraft.isPending
+            ? t("Saving…", "Đang lưu…")
+            : assetMode
+              ? t("Save quiz", "Lưu Quiz")
+              : t("Save draft", "Lưu nháp")}
         </Button>
         {!assetMode && (
           <Button type="button" size="sm" disabled={publish.isPending || saveDraft.isPending} onClick={() => void publishNow()}>

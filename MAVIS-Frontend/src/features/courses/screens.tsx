@@ -1742,6 +1742,14 @@ function StepContent({
   const selectedElement =
     activeModel?.elements.find((item) => item.id === selectedGraphId) ??
     activeModel?.elements.find((item) => item.id === normalizedSelectedId);
+  useEffect(() => {
+    if (!selectedElement?.name) return;
+    try {
+      sessionStorage.setItem("mavis.studio.step1-focus", selectedElement.name);
+    } catch {
+      // ignore storage restrictions
+    }
+  }, [selectedElement?.name]);
   const selectedConnection =
     activeModel?.edges.find((item) => item.id === selectedGraphId) ??
     activeModel?.edges.find((item) => item.id === normalizedSelectedId) ??

@@ -143,7 +143,7 @@ export function AdminCommandHeader({
     {
       id: "profiles",
       href: "/administration/profiles",
-      label: t("Runtime & Audit", "Runtime & Nhật ký"),
+      label: t("Quotas & Audit", "Hạn mức & Nhật ký"),
       icon: ShieldCheck,
     },
   ];
@@ -216,7 +216,7 @@ export function AdminCommandHeader({
                 key={tab.id}
                 href={tab.href}
                 aria-current={current ? "page" : undefined}
-                className={`inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors sm:text-sm ${
+                className={`inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors sm:px-3 sm:text-sm ${
                   current
                     ? "bg-white text-slate-900 shadow-sm"
                     : "text-white/85 hover:bg-white/15 hover:text-white"

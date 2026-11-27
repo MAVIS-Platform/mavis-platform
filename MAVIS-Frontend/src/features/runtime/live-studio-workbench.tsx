@@ -267,6 +267,7 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   onUpdateGoalRule?:
     | ((patch: {
         targetChangeAction?: TargetChangeAction | null;
+        requiredTraceEdge?: { from: string; to: string } | null;
         predictionRequired?: boolean;
         maxErrorRatePercent?: string;
         minReplicas?: Array<{ service: string; count: number }>;
@@ -580,6 +581,26 @@ export function LiveStudioWorkbench({
   const services = liveServices.length > 0 ? liveServices : data.services;
   const canvasSelected = services.includes(studio.service) ? studio.service : "";
   const selected = canvasSelected || target || services[0] || "";
+  const appliedStep1FocusRef = useRef(false);
+  useEffect(() => {
+    if (appliedStep1FocusRef.current || authoring || !services.length || studio.service) return;
+    try {
+      const remembered = sessionStorage.getItem("mavis.studio.step1-focus")?.trim().toLowerCase();
+      if (!remembered) return;
+      const match = services.find(
+        (svc) =>
+          svc.toLowerCase() === remembered ||
+          svc.toLowerCase().includes(remembered) ||
+          remembered.includes(svc.toLowerCase()),
+      );
+      if (match) {
+        appliedStep1FocusRef.current = true;
+        studio.setService(match);
+      }
+    } catch {
+      // ignore storage restrictions
+    }
+  }, [authoring, services, studio]);
   const graphRef = useRef<HTMLDivElement>(null);
   const snapshotNoteRef = useRef<HTMLInputElement>(null);
   const [tab, setTab] = useState<"stats" | "telemetry" | "logs" | "snapshots">("telemetry");
@@ -2047,6 +2068,9 @@ export function LiveStudioWorkbench({
                 setMissionCollapsed(false);
               } else if (stepId === "studio-dock") {
                 setBottomCollapsed(true);
+              } else if (stepId === null && authoring) {
+                setRightCardMode("service");
+                setShowRight(true);
               }
             }}
             triggerClassName={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition ${styleCfg.topControlClass}`}
@@ -2108,6 +2132,11 @@ export function LiveStudioWorkbench({
                   ? `${healthyCount}/${services.length || 0}`
                   : `0/${services.length || 0}`}
               </span>
+              {data.executionStatus === "RUNNING" && totalRunningReplicas > services.length && (
+                <span className="hidden font-mono text-[11.5px] font-semibold md:inline">
+                  · {totalRunningReplicas} pod
+                </span>
+              )}
               <span className={`hidden lg:inline ${isLight ? "text-slate-300" : "text-slate-600"}`}>·</span>
               <span className="hidden font-mono lg:inline">
                 {data.executionStatus === "RUNNING"
@@ -2734,7 +2763,7 @@ export function LiveStudioWorkbench({
                   </p>
                   {onStartSession ? (
                     <Button type="button" size="sm" disabled={isBooting} onClick={onStartSession}>
-                      {t("Start Studio Live session", "Chạy phiên Studio Live")}
+                      {t("Run Docker", "Chạy Docker")}
                     </Button>
                   ) : (
                     <Button asChild size="sm">
@@ -4186,8 +4215,33 @@ export function LiveStudioWorkbench({
                                 </span>
                               )}
                             </td>
-                            <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
+                            <td
+                              title={(() => {
+                                const baseCpus = observedData.limits?.cpus ?? 0.5;
+                                const effCpus =
+                                  row.cpuQuotaPct !== null
+                                    ? Math.max(0.05, Math.round(baseCpus * row.cpuQuotaPct) / 100)
+                                    : baseCpus;
+                                return t(
+                                  `% of 1 host CPU core · Pod cgroup limit: ${effCpus} vCPU (${Math.round(effCpus * 100)}% host core)`,
+                                  `% trên 1 nhân CPU máy chủ · Hạn mức pod hiện tại: ${effCpus} vCPU (${Math.round(effCpus * 100)}% 1 nhân)`,
+                                );
+                              })()}
+                              className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}
+                            >
                               <span>{row.agg.cpu}</span>
+                              {observedData.limits?.cpus !== undefined && (
+                                <span className="ml-1 text-[10px] text-muted-foreground">
+                                  /
+                                  {row.cpuQuotaPct !== null
+                                    ? Math.max(
+                                        0.05,
+                                        Math.round(observedData.limits.cpus * row.cpuQuotaPct) / 100,
+                                      )
+                                    : observedData.limits.cpus}
+                                  vCPU
+                                </span>
+                              )}
                               {row.cpuQuotaPct !== null && (
                                 <span
                                   className={`ml-1.5 rounded px-1 py-0.5 text-[10px] font-bold ${
@@ -5122,11 +5176,11 @@ export function LiveStudioWorkbench({
                             {degradedEdges.map((edge) => (
                               <li
                                 key={`${edge.client}->${edge.server}`}
-                                className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 font-mono text-[11px] ${
+                                className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 rounded-lg border px-2.5 py-1.5 font-mono text-[11px] ${
                                   isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-900/60"
                                 }`}
                               >
-                                <span className="truncate font-semibold">
+                                <span className="min-w-0 break-all font-semibold">
                                   {edge.client} → {edge.server}
                                 </span>
                                 <span className="shrink-0 space-x-1.5">
@@ -5250,10 +5304,63 @@ export function LiveStudioWorkbench({
                               {selRunning ?? "—"}
                             </dd>
                           </div>
-                          <div className={`flex items-center justify-between gap-1.5 border px-2.5 py-1.5 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}>
+                          <div
+                            title={(() => {
+                              const baseCpus = data.limits?.cpus ?? 0.5;
+                              const throttleAct = [...data.actions]
+                                .reverse()
+                                .find(
+                                  (a) =>
+                                    a.service === selSvc &&
+                                    a.status === "CONFIRMED" &&
+                                    a.action === "THROTTLE_CPU",
+                                );
+                              const quotaPct =
+                                typeof throttleAct?.cpuPercent === "number" &&
+                                throttleAct.cpuPercent < 100
+                                  ? throttleAct.cpuPercent
+                                  : null;
+                              const effCpus =
+                                quotaPct !== null
+                                  ? Math.max(0.05, Math.round(baseCpus * quotaPct) / 100)
+                                  : baseCpus;
+                              return t(
+                                `% of 1 host CPU core · Pod cgroup limit: ${effCpus} vCPU (${Math.round(effCpus * 100)}% host core)`,
+                                `% trên 1 nhân CPU máy chủ · Hạn mức pod: ${effCpus} vCPU (${Math.round(effCpus * 100)}% 1 nhân)`,
+                              );
+                            })()}
+                            className={`flex items-center justify-between gap-1.5 border px-2.5 py-1.5 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
+                          >
                             <dt className={`shrink-0 text-[11px] ${styleCfg.subtleTextClass}`}>CPU</dt>
                             <dd className="whitespace-nowrap font-mono text-xs font-bold">
                               {selStats.cpu}
+                              {data.limits?.cpus !== undefined && (
+                                <span className={`ml-1 text-[10px] font-medium ${styleCfg.subtleTextClass}`}>
+                                  /
+                                  {(() => {
+                                    const throttleAct = [...data.actions]
+                                      .reverse()
+                                      .find(
+                                        (a) =>
+                                          a.service === selSvc &&
+                                          a.status === "CONFIRMED" &&
+                                          a.action === "THROTTLE_CPU",
+                                      );
+                                    const quotaPct =
+                                      typeof throttleAct?.cpuPercent === "number" &&
+                                      throttleAct.cpuPercent < 100
+                                        ? throttleAct.cpuPercent
+                                        : null;
+                                    return quotaPct !== null
+                                      ? Math.max(
+                                          0.05,
+                                          Math.round(data.limits.cpus * quotaPct) / 100,
+                                        )
+                                      : data.limits.cpus;
+                                  })()}
+                                  v
+                                </span>
+                              )}
                             </dd>
                           </div>
                           <div
@@ -5443,30 +5550,33 @@ export function LiveStudioWorkbench({
                           <div className={`flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-wide ${styleCfg.subtleTextClass}`}>
                             <span>{t("Live Probe Load (RPS)", "Tải Probe trực tiếp (RPS)")}</span>
                             <span className="font-mono font-bold text-foreground">
-                              {data.telemetry?.probe?.targetRps ?? 5} RPS
+                              {data.telemetry?.probe?.targetRps ?? 1} RPS
                             </span>
                           </div>
-                          <div className="grid grid-cols-4 gap-1.5">
-                            {[5, 15, 30, 50].map((rps) => (
-                              <Button
-                                key={rps}
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                title={disabledHint("SET_LOAD")}
-                                disabled={!canLiveAct || busy || needsPrediction || !isAllowed("SET_LOAD")}
-                                onClick={() =>
-                                  void studio.send("SET_LOAD", selSvc, undefined, undefined, rps)
-                                }
-                                className={`h-8 whitespace-nowrap border font-mono text-xs font-semibold disabled:opacity-45 ${styleCfg.controlRadiusClass} ${
-                                  data.telemetry?.probe?.targetRps === rps
-                                    ? styleCfg.controlActiveClass
-                                    : styleCfg.controlIdleClass
-                                }`}
-                              >
-                                {rps}
-                              </Button>
-                            ))}
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {[1, 5, 15, 30, 50].map((rps) => {
+                              const activeTargetRps = data.telemetry?.probe?.targetRps ?? 1;
+                              return (
+                                <Button
+                                  key={rps}
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  title={disabledHint("SET_LOAD")}
+                                  disabled={!canLiveAct || busy || needsPrediction || !isAllowed("SET_LOAD")}
+                                  onClick={() =>
+                                    void studio.send("SET_LOAD", selSvc, undefined, undefined, rps)
+                                  }
+                                  className={`h-8 whitespace-nowrap border px-1.5 font-mono text-xs font-semibold disabled:opacity-45 ${styleCfg.controlRadiusClass} ${
+                                    canLiveAct && activeTargetRps === rps
+                                      ? styleCfg.controlActiveClass
+                                      : styleCfg.controlIdleClass
+                                  }`}
+                                >
+                                  {rps}
+                                </Button>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
@@ -5931,7 +6041,7 @@ export function LiveStudioWorkbench({
                     <details
                       data-testid="goal-specific-advanced"
                       data-advanced-goal={activeGoalId ?? "none"}
-                      className={`p-2.5 ${styleCfg.subSurfaceClass}`}
+                      className={`mb-2 p-2.5 ${styleCfg.subSurfaceClass}`}
                     >
                       <summary
                         className={`flex cursor-pointer select-none items-center justify-between gap-2 text-[11.5px] font-semibold ${
@@ -6270,8 +6380,83 @@ export function LiveStudioWorkbench({
                           </p>
                         )}
 
-                        {/* Shared Technical Controls (Allowed Actions, Sync Docker) */}
+                        {/* Shared Technical Controls (Required Trace Edge, Allowed Actions, Sync Docker) */}
                         <div className={`space-y-2.5 border-t pt-2.5 ${styleCfg.dividerClass}`}>
+                          {(staticEdgesForBlast.length > 0 || authoring.requiredTraceEdge) &&
+                            authoring.onUpdateGoalRule && (
+                              <div className="space-y-1">
+                                <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                                  {t("Required trace call edge (optional)", "Đường gọi cần kiểm chứng (tùy chọn)")}
+                                </span>
+                                <Select
+                                  value={
+                                    authoring.requiredTraceEdge
+                                      ? `${authoring.requiredTraceEdge.from}->${authoring.requiredTraceEdge.to}`
+                                      : "__none__"
+                                  }
+                                  onValueChange={(nextVal) => {
+                                    if (nextVal === "__none__") {
+                                      authoring.onUpdateGoalRule?.({ requiredTraceEdge: null });
+                                      return;
+                                    }
+                                    const [from, to] = nextVal.split("->");
+                                    if (from && to) {
+                                      authoring.onUpdateGoalRule?.({ requiredTraceEdge: { from, to } });
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger
+                                    aria-label={t("Required trace call edge", "Đường gọi cần kiểm chứng")}
+                                    data-testid="studio-required-edge-select"
+                                    style={{ fontSize: 12 }}
+                                    className={`h-8 w-full px-2 py-0 font-mono shadow-none ${styleCfg.inputClass}`}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent
+                                    align="start"
+                                    className={`max-h-56 p-1 ${themeRadius} ${selectPopoverClass}`}
+                                  >
+                                    <SelectItem
+                                      value="__none__"
+                                      style={{ fontSize: 12 }}
+                                      className={`min-h-7 py-1 ${themeRadius} ${selectItemFocusClass}`}
+                                    >
+                                      {t("Not required", "Không bắt buộc")}
+                                    </SelectItem>
+                                    {authoring.requiredTraceEdge &&
+                                      !staticEdgesForBlast.some(
+                                        (e) =>
+                                          e.from === authoring.requiredTraceEdge?.from &&
+                                          e.to === authoring.requiredTraceEdge?.to,
+                                      ) && (
+                                        <SelectItem
+                                          value={`${authoring.requiredTraceEdge.from}->${authoring.requiredTraceEdge.to}`}
+                                          style={{ fontSize: 12 }}
+                                          className={`min-h-7 py-1 font-mono ${themeRadius} ${selectItemFocusClass}`}
+                                        >
+                                          {authoring.requiredTraceEdge.from} -&gt;{" "}
+                                          {authoring.requiredTraceEdge.to}
+                                        </SelectItem>
+                                      )}
+                                    {staticEdgesForBlast.map((edge) => {
+                                      const val = `${edge.from}->${edge.to}`;
+                                      return (
+                                        <SelectItem
+                                          key={val}
+                                          value={val}
+                                          style={{ fontSize: 12 }}
+                                          className={`min-h-7 py-1 font-mono ${themeRadius} ${selectItemFocusClass}`}
+                                        >
+                                          {edge.from} -&gt; {edge.to}
+                                        </SelectItem>
+                                      );
+                                    })}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+
                           <div className="space-y-1">
                             <p className={`text-[11px] ${styleCfg.subtleTextClass}`}>
                               {t("Allowed student actions", "Thao tác cho phép sinh viên")}
@@ -7043,30 +7228,33 @@ export function LiveStudioWorkbench({
                             >
                               <span>{t("Live Probe Load (RPS)", "Tải Probe trực tiếp (RPS)")}</span>
                               <span className="font-mono font-bold">
-                                {data.telemetry?.probe?.targetRps ?? 5} RPS
+                                {data.telemetry?.probe?.targetRps ?? 1} RPS
                               </span>
                             </div>
-                            <div className="grid grid-cols-4 gap-1.5">
-                              {[5, 15, 30, 50].map((rps) => (
-                                <Button
-                                  key={rps}
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void studio.send("SET_LOAD", svc, undefined, undefined, rps)
-                                  }
-                                  style={{ fontSize: 11.5 }}
-                                  className={`h-7 whitespace-nowrap border font-mono font-semibold disabled:opacity-45 ${themeRadius} ${
-                                    data.telemetry?.probe?.targetRps === rps
-                                      ? themeActiveBtn
-                                      : themeIdleBtn
-                                  }`}
-                                >
-                                  {rps}
-                                </Button>
-                              ))}
+                            <div className="grid grid-cols-5 gap-1.5">
+                              {[1, 5, 15, 30, 50].map((rps) => {
+                                const activeTargetRps = data.telemetry?.probe?.targetRps ?? 1;
+                                return (
+                                  <Button
+                                    key={rps}
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void studio.send("SET_LOAD", svc, undefined, undefined, rps)
+                                    }
+                                    style={{ fontSize: 11.5 }}
+                                    className={`h-7 whitespace-nowrap border px-1 font-mono font-semibold disabled:opacity-45 ${themeRadius} ${
+                                      activeTargetRps === rps
+                                        ? themeActiveBtn
+                                        : themeIdleBtn
+                                    }`}
+                                  >
+                                    {rps}
+                                  </Button>
+                                );
+                              })}
                             </div>
                           </div>
                         </div>

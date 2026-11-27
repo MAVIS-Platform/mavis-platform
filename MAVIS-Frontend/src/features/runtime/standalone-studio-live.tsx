@@ -654,8 +654,9 @@ function StandaloneStudioContent() {
     },
   ): StudioExerciseView => {
     const chosenPath = input.baselinePath?.trim();
+    const trailingBaseline = cur?.baselineRequests?.slice(1) ?? [];
     const nextBaseline = chosenPath
-      ? [{ method: "GET" as const, path: chosenPath, expectedStatus: 200 }]
+      ? [{ method: "GET" as const, path: chosenPath, expectedStatus: 200 }, ...trailingBaseline]
       : cur?.baselineRequests?.length && cur.baselineRequests[0]?.path !== "/"
         ? cur.baselineRequests
         : [{ method: "GET" as const, path: defaultBaselinePath, expectedStatus: 200 }];
@@ -1447,9 +1448,15 @@ function StandaloneStudioContent() {
             });
           },
           onSaveMission: (patch) => {
+            const extraMinReplicas = (exercise.data?.successCriteria?.minReplicas ?? [])
+              .slice(1)
+              .filter((item) => item.service !== patch.replicaService);
             const minReplicas =
               patch.replicaService && Number(patch.replicaCount) >= 1
-                ? [{ service: patch.replicaService, count: Number(patch.replicaCount) }]
+                ? [
+                    { service: patch.replicaService, count: Number(patch.replicaCount) },
+                    ...extraMinReplicas,
+                  ]
                 : [];
             saveVisualExercise.mutate({
               instructions: patch.instructions,
@@ -1526,7 +1533,7 @@ function StandaloneStudioContent() {
         className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 text-[13px] font-medium text-foreground transition-colors hover:bg-accent"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
-        <span className="hidden xl:inline">{t("Back", "Quay lại")}</span>
+        <span className="hidden sm:inline">{t("Back", "Quay lại")}</span>
       </Link>
 
       <span className="shrink-0 whitespace-nowrap text-[13px] font-bold tracking-tight text-foreground">

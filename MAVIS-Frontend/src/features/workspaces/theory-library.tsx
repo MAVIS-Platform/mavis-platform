@@ -108,10 +108,10 @@ const EMPTY_DRAFT: Draft = {
   licenseNote: "",
 };
 
-function shortDate(value: string) {
+function shortDate(value: string, locale: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+  return new Intl.DateTimeFormat(locale === "vi" ? "vi-VN" : "en-US", { dateStyle: "medium" }).format(date);
 }
 
 export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
@@ -740,7 +740,7 @@ export function TheoryLibrary({ embedded = false }: { embedded?: boolean }) {
                   </p>
                 </div>
                 <span className="text-xs tabular-nums text-muted-foreground">
-                  v{asset.version} · {shortDate(asset.updatedAt)}
+                  v{asset.version} · {shortDate(asset.updatedAt, locale)}
                 </span>
                 <div className="flex flex-wrap items-center gap-1 md:justify-end">
                   {!embedded && (course.data?.modules.length ?? 0) > 0 && (
