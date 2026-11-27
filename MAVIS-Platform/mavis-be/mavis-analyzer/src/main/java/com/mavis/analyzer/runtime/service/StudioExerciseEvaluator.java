@@ -44,23 +44,26 @@ public final class StudioExerciseEvaluator {
                 && !prediction.path("predictedServices").isEmpty();
         out.put("predictionLocked", predictionLocked);
 
-        Set<String> predicted = new TreeSet<>();
-        if (predictionLocked) {
-            for (JsonNode s : prediction.path("predictedServices")) {
-                String svc = s.asText("").trim();
-                if (!svc.isBlank()) predicted.add(svc);
-            }
-        }
-        ArrayNode predictedArr = out.putArray("predictedServices");
-        predicted.forEach(predictedArr::add);
-
         List<JsonNode> confirmedActions = collectConfirmedActions(control);
         JsonNode primaryChange = selectPrimaryChangeAction(criteria, confirmedActions);
         boolean hasTelemetry = latestTelemetry != null && latestTelemetry.isObject();
         boolean hasChange = primaryChange != null;
 
         List<JsonNode> frames = historyFrames != null ? historyFrames : List.of();
-        Map<String, String> canonicalServices = buildCanonicalServiceIndex(confirmedActions, predicted, frames, latestTelemetry);
+        Map<String, String> canonicalServices = buildCanonicalServiceIndex(confirmedActions, frames, latestTelemetry);
+
+        Set<String> predicted = new TreeSet<>();
+        if (predictionLocked) {
+            for (JsonNode s : prediction.path("predictedServices")) {
+                String svc = s.asText("").trim();
+                if (!svc.isBlank()) {
+                    predicted.add(normalizeServiceName(svc, canonicalServices));
+                }
+            }
+        }
+        ArrayNode predictedArr = out.putArray("predictedServices");
+        predicted.forEach(predictedArr::add);
+
         WindowSplit split = splitBeforeAfter(frames, primaryChange, confirmedActions, latestTelemetry);
 
         Map<String, ServiceImpact> observedMap = detectObservedAffectedServices(
@@ -756,11 +759,9 @@ public final class StudioExerciseEvaluator {
 
     private static Map<String, String> buildCanonicalServiceIndex(
             List<JsonNode> confirmedActions,
-            Set<String> predicted,
             List<JsonNode> frames,
             JsonNode latestTelemetry) {
         Set<String> canonical = new LinkedHashSet<>();
-        if (predicted != null) canonical.addAll(predicted);
         for (JsonNode a : confirmedActions) {
             String svc = a.path("service").asText("").trim();
             if (!svc.isBlank()) canonical.add(svc);
@@ -773,7 +774,7 @@ public final class StudioExerciseEvaluator {
             String norm = alnumLower(svc);
             if (norm.isEmpty()) continue;
             String existing = index.putIfAbsent(norm, svc);
-            if (existing != null && !existing.equals(svc)) ambiguous.add(norm);
+            if (existing != null && !existing.equalsIgnoreCase(svc)) ambiguous.add(norm);
         }
         ambiguous.forEach(index::remove);
         return index;

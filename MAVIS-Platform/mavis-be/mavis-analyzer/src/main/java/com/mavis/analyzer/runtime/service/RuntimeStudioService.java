@@ -82,6 +82,9 @@ public class RuntimeStudioService {
         ObjectNode result=mapper.createObjectNode().put("sessionId",id.toString()).put("digest",session.getReceiptDigest());
         result.set("signature",control.path("receiptSignature"));
         result.set("receipt",session.getRunnerReceiptJson().deepCopy());
+        if (isStudentActor()) {
+            stripEvaluationFieldsRecursively(result);
+        }
         return result;
     }
     @Transactional(readOnly = true)
@@ -91,9 +94,9 @@ public class RuntimeStudioService {
         boolean student = isStudentActor();
         for(JsonNode snapshot:control(session).withArray("snapshots"))
             if(snapshotId.toString().equals(snapshot.path("id").asText())) {
-                if (student && snapshot.isObject()) {
-                    ObjectNode copy = ((ObjectNode) snapshot).deepCopy();
-                    copy.remove("exerciseEvaluation");
+                if (student && (snapshot.isObject() || snapshot.isArray())) {
+                    JsonNode copy = snapshot.deepCopy();
+                    stripEvaluationFieldsRecursively(copy);
                     return copy;
                 }
                 return snapshot;
@@ -218,7 +221,7 @@ public class RuntimeStudioService {
         notifyStateAfterCommit(session);
         if (isStudentActor()) {
             ObjectNode copy = evidence.deepCopy();
-            copy.remove("exerciseEvaluation");
+            stripEvaluationFieldsRecursively(copy);
             return copy;
         }
         return evidence;
@@ -561,10 +564,15 @@ public class RuntimeStudioService {
         JsonNode existingControl = session.getStudioControl();
         JsonNode existingActions = existingControl != null ? existingControl.path("actions") : null;
         boolean hasPending = false;
+        OffsetDateTime staleCutoff = OffsetDateTime.now().minus(ACTION_STALE_AFTER);
         if (existingActions != null && existingActions.isArray()) {
             for (JsonNode node : existingActions) {
                 String status = node.path("status").asText();
                 if ("RUNNING".equals(status)) {
+                    if (isActionStale(node, staleCutoff)) {
+                        hasPending = true;
+                        break;
+                    }
                     response.put("finishRequested", false).put("cancelRequested", false).set("command", node.deepCopy());
                     return response;
                 }
@@ -578,7 +586,7 @@ public class RuntimeStudioService {
             boolean finishRequested = existingControl != null && existingControl.path("finishRequested").asBoolean();
             return response.put("finishRequested", finishRequested).put("cancelRequested", false);
         }
-        // Only lock the session row and rewrite studio_control when actually claiming a PENDING action.
+        // Only lock the session row and rewrite studio_control when actually claiming or expiring an action.
         // Flush any outer test-tx changes, then detach the unlocked L1 entity before acquiring the row lock.
         if (entityManager != null) {
             entityManager.flush();
@@ -593,19 +601,31 @@ public class RuntimeStudioService {
             return response.put("finishRequested", true).put("cancelRequested", false);
         }
         ObjectNode control = control(lockedSession);
+        boolean expired = expireStaleActions(control);
         for (JsonNode node : control.withArray("actions")) {
             String status = node.path("status").asText();
             if ("PENDING".equals(status)) {
                 ObjectNode action = (ObjectNode) node;
                 action.put("status", "RUNNING");
                 save(lockedSession, control);
+                if (expired) {
+                    notifyStateAfterCommit(lockedSession);
+                }
                 response.put("finishRequested", false).put("cancelRequested", false).set("command", action.deepCopy());
                 return response;
             }
             if ("RUNNING".equals(status)) {
+                if (expired) {
+                    save(lockedSession, control);
+                    notifyStateAfterCommit(lockedSession);
+                }
                 response.put("finishRequested", false).put("cancelRequested", false).set("command", node.deepCopy());
                 return response;
             }
+        }
+        if (expired) {
+            save(lockedSession, control);
+            notifyStateAfterCommit(lockedSession);
         }
         return response.put("finishRequested", control.path("finishRequested").asBoolean()).put("cancelRequested", false);
     }
@@ -655,19 +675,28 @@ public class RuntimeStudioService {
     /** Longest legitimate action: compose wait (60s) + readiness (60s) + workload replay (150s), plus margin. */
     private static final java.time.Duration ACTION_STALE_AFTER = java.time.Duration.ofSeconds(300);
 
+    private static boolean isActionStale(JsonNode node, OffsetDateTime cutoff) {
+        String st = node.path("status").asText();
+        if (!"RUNNING".equals(st) && !"PENDING".equals(st)) return false;
+        try {
+            return OffsetDateTime.parse(node.path("requestedAt").asText()).isBefore(cutoff);
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // Unparseable legacy timestamp: leave the action as is.
+            return false;
+        }
+    }
+
     /** A runner that died mid-action or before polling never acks; expire both PENDING and RUNNING so UI never deadlocks. */
-    static void expireStaleActions(ObjectNode control) {
+    static boolean expireStaleActions(ObjectNode control) {
         OffsetDateTime cutoff = OffsetDateTime.now().minus(ACTION_STALE_AFTER);
+        boolean changed = false;
         for (JsonNode node : control.withArray("actions")) {
-            String st = node.path("status").asText();
-            if (!"RUNNING".equals(st) && !"PENDING".equals(st)) continue;
-            try {
-                if (OffsetDateTime.parse(node.path("requestedAt").asText()).isBefore(cutoff))
-                    ((ObjectNode) node).put("status", "INTERRUPTED");
-            } catch (java.time.format.DateTimeParseException ignored) {
-                // Unparseable legacy timestamp: leave the action as is.
+            if (isActionStale(node, cutoff)) {
+                ((ObjectNode) node).put("status", "INTERRUPTED");
+                changed = true;
             }
         }
+        return changed;
     }
     private ObjectNode control(RuntimeSession session) {
         if (session.getScenarioConfig() == null || !session.getScenarioConfig().path("interactiveStudio").asBoolean())
@@ -794,15 +823,17 @@ public class RuntimeStudioService {
         }
     }
 
-    private static void redactStudioViewForStudent(ObjectNode node) {
-        node.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
-        if (node.path("snapshots").isArray()) {
-            for (JsonNode snap : node.path("snapshots")) {
-                if (snap.isObject()) {
-                    ((ObjectNode) snap).remove("exerciseEvaluation");
-                }
-            }
+    private static void stripEvaluationFieldsRecursively(JsonNode node) {
+        if (node instanceof ObjectNode obj) {
+            obj.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
+            obj.elements().forEachRemaining(RuntimeStudioService::stripEvaluationFieldsRecursively);
+        } else if (node instanceof com.fasterxml.jackson.databind.node.ArrayNode arr) {
+            arr.elements().forEachRemaining(RuntimeStudioService::stripEvaluationFieldsRecursively);
         }
+    }
+
+    private static void redactStudioViewForStudent(ObjectNode node) {
+        stripEvaluationFieldsRecursively(node);
         boolean isOutageRecovery = false;
         if (node.path("exerciseCriteria").isObject()) {
             ObjectNode criteria = (ObjectNode) node.get("exerciseCriteria");

@@ -132,6 +132,7 @@ public class StudioTelemetryHub {
                 sub.emitter().send(SseEmitter.event().name("state").data(payload));
             } catch (Exception ex) {
                 stream.subscribers.remove(sub);
+                try { sub.emitter().complete(); } catch (Exception ignored) {}
             }
         }
     }
@@ -168,22 +169,30 @@ public class StudioTelemetryHub {
 
     public SseEmitter subscribe(UUID sessionId, JsonNode initialState, boolean redactForStudent) {
         SessionStream stream = streams.computeIfAbsent(sessionId, ignored -> new SessionStream());
-        stream.lastTouchedAtMs = System.currentTimeMillis();
-        while (stream.subscribers.size() >= MAX_SUBSCRIBERS_PER_SESSION) {
-            Subscriber oldest = stream.subscribers.remove(0);
-            try { oldest.emitter().complete(); } catch (Exception ignored) {}
-        }
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         Subscriber sub = new Subscriber(emitter, redactForStudent);
-        Runnable detach = () -> stream.subscribers.remove(sub);
+        Runnable detach = () -> {
+            synchronized (stream) {
+                stream.subscribers.remove(sub);
+            }
+        };
         emitter.onCompletion(detach);
         emitter.onTimeout(detach);
         emitter.onError(ex -> detach.run());
-        stream.subscribers.add(sub);
+        synchronized (stream) {
+            stream.lastTouchedAtMs = System.currentTimeMillis();
+            while (stream.subscribers.size() >= MAX_SUBSCRIBERS_PER_SESSION && !stream.subscribers.isEmpty()) {
+                Subscriber oldest = stream.subscribers.remove(0);
+                try { oldest.emitter().complete(); } catch (Exception ignored) {}
+            }
+            stream.subscribers.add(sub);
+        }
         try {
             emitter.send(SseEmitter.event().name("state").data(initialState));
         } catch (Exception ex) {
-            stream.subscribers.remove(sub);
+            synchronized (stream) {
+                stream.subscribers.remove(sub);
+            }
             emitter.completeWithError(ex);
         }
         return emitter;
@@ -194,10 +203,14 @@ public class StudioTelemetryHub {
         if (removed == null) {
             return;
         }
-        for (Subscriber sub : removed.subscribers) {
+        List<Subscriber> snapshot;
+        synchronized (removed) {
+            snapshot = new ArrayList<>(removed.subscribers);
+            removed.subscribers.clear();
+        }
+        for (Subscriber sub : snapshot) {
             try { sub.emitter().complete(); } catch (Exception ignored) {}
         }
-        removed.subscribers.clear();
     }
 
     @Scheduled(fixedDelay = 20_000L)
@@ -210,6 +223,7 @@ public class StudioTelemetryHub {
                     sub.emitter().send(SseEmitter.event().comment("keepalive"));
                 } catch (Exception ex) {
                     stream.subscribers.remove(sub);
+                    try { sub.emitter().complete(); } catch (Exception ignored) {}
                 }
             }
         }
@@ -232,6 +246,7 @@ public class StudioTelemetryHub {
                 sub.emitter().send(SseEmitter.event().name(eventName).data(payload));
             } catch (Exception ex) {
                 stream.subscribers.remove(sub);
+                try { sub.emitter().complete(); } catch (Exception ignored) {}
             }
         }
     }

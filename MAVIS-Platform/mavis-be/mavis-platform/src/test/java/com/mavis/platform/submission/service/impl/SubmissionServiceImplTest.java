@@ -907,6 +907,59 @@ class SubmissionServiceImplTest {
     }
 
     @Test
+    @DisplayName("Security: studentSnapshots array strips nested exerciseEvaluation/finalExerciseEvaluation for STUDENT but preserves for LECTURER")
+    void testStudentSnapshotsArrayRedactsNestedEvaluationForStudentButPreservesForLecturer() {
+        UUID subId = UUID.randomUUID();
+        ObjectMapper mapper = new ObjectMapper();
+        var snapsArr = mapper.createArrayNode();
+        var snap1 = snapsArr.addObject().put("snapshotId", "snap-1").put("writtenExplanation", "Observed delay");
+        snap1.putObject("exerciseEvaluation").put("autoScorePercent", 95).put("passed", true);
+        snap1.putObject("finalExerciseEvaluation").put("f1Score", 0.92);
+
+        SubmissionSnapshot subSnapshot = SubmissionSnapshot.builder()
+                .id(subId)
+                .assignment(assignment)
+                .project(project)
+                .submittedBy(student)
+                .sourceSnapshot(this.snapshot)
+                .modelVersion(modelVersion)
+                .studentSnapshots(snapsArr)
+                .submittedAt(OffsetDateTime.now())
+                .build();
+
+        when(submissionSnapshotRepository.findWithDetailsById(subId)).thenReturn(Optional.of(subSnapshot));
+        when(feedbackCommentRepository.findBySubmissionIdOrderByCreatedAtAsc(subId)).thenReturn(List.of());
+        when(submissionReviewRepository.findBySubmissionId(subId)).thenReturn(Optional.empty());
+
+        com.mavis.common.entity.Role studentRole = new com.mavis.common.entity.Role();
+        studentRole.setCode("STUDENT");
+        student.setRole(studentRole);
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+
+        var studentRead = submissionService.getSubmissionById(subId);
+        assertThat(studentRead.getStudentSnapshots().isArray()).isTrue();
+        assertThat(studentRead.getStudentSnapshots().get(0).path("writtenExplanation").asText()).isEqualTo("Observed delay");
+        assertThat(studentRead.getStudentSnapshots().toString()).doesNotContain("exerciseEvaluation");
+        assertThat(studentRead.getStudentSnapshots().toString()).doesNotContain("finalExerciseEvaluation");
+
+        var studentExport = submissionService.exportSubmissionBundle(subId);
+        assertThat(studentExport.getStudentSnapshots().toString()).doesNotContain("exerciseEvaluation");
+        assertThat(studentExport.getStudentSnapshots().toString()).doesNotContain("finalExerciseEvaluation");
+
+        com.mavis.common.entity.Role lecturerRole = new com.mavis.common.entity.Role();
+        lecturerRole.setCode("LECTURER");
+        User lecturerUser = User.builder().id(UUID.randomUUID()).email("lec@mavis.edu.vn").role(lecturerRole).build();
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(lecturerUser);
+
+        var lecturerRead = submissionService.getSubmissionById(subId);
+        assertThat(lecturerRead.getStudentSnapshots().get(0).path("exerciseEvaluation").path("autoScorePercent").asInt()).isEqualTo(95);
+        assertThat(lecturerRead.getStudentSnapshots().get(0).path("finalExerciseEvaluation").path("f1Score").asDouble()).isEqualTo(0.92);
+
+        var lecturerExport = submissionService.exportSubmissionBundle(subId);
+        assertThat(lecturerExport.getStudentSnapshots().get(0).path("exerciseEvaluation").path("passed").asBoolean()).isTrue();
+    }
+
+    @Test
     @DisplayName("Ticket V11/T15: exportSubmissionBundle ném NOT_FOUND khi submissionId không tồn tại")
     void testExportSubmissionBundle_NotFound() {
         UUID nonExistent = UUID.randomUUID();

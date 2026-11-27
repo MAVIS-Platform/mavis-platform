@@ -643,4 +643,38 @@ class RuntimeStudioServiceTest {
             org.springframework.test.util.ReflectionTestUtils.setField(service, "telemetryHub", null);
         }
     }
+
+    @Test
+    void studentReceiptStripsNestedEvaluationsAndPollExpiresStaleRunningAction() throws Exception {
+        var studentRole = com.mavis.common.entity.Role.builder().code("STUDENT").build();
+        var studentUser = com.mavis.common.entity.User.builder().id(UUID.randomUUID()).role(studentRole).build();
+        session.setTriggeredBy(studentUser);
+        session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
+
+        ObjectNode receiptJson = mapper.createObjectNode().put("digest", "sha256:test");
+        receiptJson.putObject("exerciseEvaluation").put("passed", true);
+        receiptJson.putArray("snapshots").addObject().put("id", "s1")
+                .putObject("finalExerciseEvaluation").put("autoScorePercent", 100);
+        session.setRunnerReceiptJson(receiptJson);
+        session.setReceiptDigest("sha256:test");
+        when(access.requireCurrentActiveUser()).thenReturn(studentUser);
+        var studentReceipt = service.receipt(id);
+        assertFalse(studentReceipt.toString().contains("exerciseEvaluation"));
+        assertFalse(studentReceipt.toString().contains("finalExerciseEvaluation"));
+
+        session.setRunnerReceiptJson(null);
+        session.setReceiptDigest(null);
+        ObjectNode control = mapper.createObjectNode().put("finishRequested", false);
+        control.putArray("actions").addObject()
+                .put("actionId", UUID.randomUUID().toString())
+                .put("action", "STOP")
+                .put("service", "orders")
+                .put("status", "RUNNING")
+                .put("requestedAt", java.time.OffsetDateTime.now().minusMinutes(10).toString());
+        session.setStudioControl(control);
+
+        var pollRes = service.poll(id, session.getResourceProject());
+        assertFalse(pollRes.has("command"), "Stale RUNNING action must be expired instead of re-dispatched");
+        assertEquals("INTERRUPTED", session.getStudioControl().withArray("actions").get(0).path("status").asText());
+    }
 }

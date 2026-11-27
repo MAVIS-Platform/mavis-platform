@@ -27,7 +27,7 @@ public class SubmissionResponseDTO {
     public static com.fasterxml.jackson.databind.JsonNode redactStudioEvidenceForRole(
             com.fasterxml.jackson.databind.JsonNode studioEvidence,
             boolean revealLecturerEvaluation) {
-        if (revealLecturerEvaluation || studioEvidence == null || !studioEvidence.isObject()) {
+        if (revealLecturerEvaluation || studioEvidence == null || (!studioEvidence.isObject() && !studioEvidence.isArray())) {
             return studioEvidence;
         }
         var copy = studioEvidence.deepCopy();
@@ -152,7 +152,7 @@ public class SubmissionResponseDTO {
                 .courseQuizEvidence(s.getCourseQuizEvidence())
                 .theoryEvidence(s.getTheoryEvidence())
                 .studioEvidence(redactStudioEvidenceForRole(studioSummary(s), revealDraft))
-                .studentSnapshots(s.getStudentSnapshots())
+                .studentSnapshots(redactStudioEvidenceForRole(s.getStudentSnapshots(), revealDraft))
                 .scenarioStatus(scenarioStatus)
                 .feedbackCount(feedbackCount != null ? feedbackCount : 0L)
                 .submissionNotes(s.getSubmissionNotes())

@@ -869,7 +869,8 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .runtimeSessionId(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(submission.getCourseQuizEvidence())
                 .theoryEvidence(submission.getTheoryEvidence())
-                .studentSnapshots(submission.getStudentSnapshots())
+                .studentSnapshots(SubmissionResponseDTO.redactStudioEvidenceForRole(
+                        submission.getStudentSnapshots(), revealLecturerEvaluation))
                 .snapshotGrades(releasedReview.map(SubmissionReview::getSnapshotGrades).orElse(null))
                 .labOutcome(releasedReview.map(SubmissionReview::getLabOutcome).orElse(null))
                 .scenarioStatus(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getScenarioStatus() : null)
@@ -1234,7 +1235,9 @@ public class SubmissionServiceImpl implements SubmissionService {
             JsonNode studioEvidence = SubmissionResponseDTO.redactStudioEvidenceForRole(
                     parseJsonOrNull(mapper, rs.getString("studio_evidence_summary_json")),
                     revealDraft);
-            JsonNode studentSnapshots = parseJsonOrNull(mapper, rs.getString("student_snapshots_json"));
+            JsonNode studentSnapshots = SubmissionResponseDTO.redactStudioEvidenceForRole(
+                    parseJsonOrNull(mapper, rs.getString("student_snapshots_json")),
+                    revealDraft);
 
             boolean guidedLab = labOrder != null
                     || (courseQuizEvidence != null
@@ -1511,7 +1514,9 @@ public class SubmissionServiceImpl implements SubmissionService {
                     .runtimeSessionId(runtimeSessionId)
                     .courseQuizEvidence(parseJsonOrNull(mapper, rs.getString("course_quiz_evidence_json")))
                     .theoryEvidence(parseJsonOrNull(mapper, rs.getString("theory_evidence_json")))
-                    .studentSnapshots(parseJsonOrNull(mapper, rs.getString("student_snapshots_json")))
+                    .studentSnapshots(SubmissionResponseDTO.redactStudioEvidenceForRole(
+                            parseJsonOrNull(mapper, rs.getString("student_snapshots_json")),
+                            revealLecturerEvaluation))
                     .snapshotGrades(snapshotGrades)
                     .labOutcome(labOutcome)
                     .scenarioStatus(scenarioStatus)

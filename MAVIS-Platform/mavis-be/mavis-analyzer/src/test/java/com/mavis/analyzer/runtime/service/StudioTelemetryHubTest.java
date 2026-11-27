@@ -65,4 +65,41 @@ class StudioTelemetryHubTest {
         assertEquals("f-" + (StudioTelemetryHub.MAX_HISTORY_FRAMES + 24),
                 latest.history().get(StudioTelemetryHub.MAX_HISTORY_FRAMES - 1).path("observedAt").asText());
     }
+
+    @Test
+    void concurrentSubscribeClearAndNotifyOverSubscriberCapNeverThrows() throws Exception {
+        UUID id = UUID.randomUUID();
+        ObjectNode initial = mapper.createObjectNode().put("executionStatus", "RUNNING");
+        int threads = 6;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        var errors = new java.util.concurrent.ConcurrentLinkedQueue<Throwable>();
+        try {
+            var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for (int t = 0; t < threads; t++) {
+                final int worker = t;
+                futures.add(pool.submit(() -> {
+                    try {
+                        for (int i = 0; i < 40; i++) {
+                            var em = hub.subscribe(id, initial, (worker + i) % 2 == 0);
+                            hub.notifyState(id, initial, initial);
+                            if (i % 7 == 0) {
+                                hub.clear(id);
+                            } else {
+                                em.complete();
+                            }
+                        }
+                    } catch (Throwable ex) {
+                        errors.add(ex);
+                    }
+                }));
+            }
+            for (var f : futures) {
+                f.get();
+            }
+            assertTrue(errors.isEmpty(), () -> "Unexpected concurrency errors: " + errors);
+        } finally {
+            hub.clear(id);
+            pool.shutdownNow();
+        }
+    }
 }
