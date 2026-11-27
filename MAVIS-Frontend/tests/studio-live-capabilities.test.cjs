@@ -3057,3 +3057,24 @@ test("Studio Improvement Wave IMP-01..IMP-13: preserves multi-item config, expos
   assert.ok(standaloneSrc.includes('<span className="hidden sm:inline">{t("Back", "Quay lại")}</span>'));
   assert.ok(workbenchSrc.includes('<span className="min-w-0 break-all font-semibold">'));
 });
+
+test("Branch 4 hardening: studio-recording stop() is idempotent with stream cleanup and SSE uses bounded exponential backoff", () => {
+  const recordingSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-recording.ts"),
+    "utf8",
+  );
+  const sessionHookSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/use-studio-session.ts"),
+    "utf8",
+  );
+
+  assert.match(recordingSrc, /let stopPromise:\s*Promise<StudioVideoRecordingResult>\s*\|\s*null\s*=\s*null;/);
+  assert.match(recordingSrc, /if \(stopPromise\) return stopPromise;/);
+  assert.match(recordingSrc, /recorder\.start\(500\)/);
+  assert.match(recordingSrc, /stream\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/);
+
+  assert.match(sessionHookSrc, /const MAX_SSE_RETRIES = 8;/);
+  assert.match(sessionHookSrc, /sseRetryAttemptRef\.current < MAX_SSE_RETRIES/);
+  assert.match(sessionHookSrc, /Math\.min\(30_000,\s*3_000 \* 2 \*\* sseRetryAttemptRef\.current\)/);
+  assert.match(sessionHookSrc, /document\.addEventListener\("visibilitychange",\s*onVisibilityResume\)/);
+});
