@@ -56,3 +56,75 @@ test("locale-context.tsx defines Vietnamese translations for Student sidebar, Lo
   assert.match(locale, /tag === "IFRAME"/);
   assert.match(locale, /isContentEditable/);
 });
+
+const ts = require("typescript");
+
+function loadTsModule(relativePath) {
+  const fullPath = path.join(root, relativePath);
+  const source = fs.readFileSync(fullPath, "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+  }).outputText;
+  const mod = { exports: {} };
+  const fn = new Function("exports", "require", "module", "__filename", "__dirname", compiled);
+  fn(mod.exports, require, mod, fullPath, path.dirname(fullPath));
+  return mod.exports;
+}
+
+test("date-time formatters enforce 24h Vietnamese formatting without AM/PM markers and handle invalid inputs safely", () => {
+  const dt = loadTsModule("src/lib/format/date-time.ts");
+  const isoAfternoon = "2026-11-27T14:05:09.000Z";
+
+  const viTime = dt.formatLocalizedTime(isoAfternoon, "vi");
+  const viDateTimeShort = dt.formatLocalizedDateTime(isoAfternoon, "vi", { seconds: false });
+  const viDate = dt.formatLocalizedDate(isoAfternoon, "vi");
+  const enDate = dt.formatLocalizedDate(isoAfternoon, "en");
+
+  assert.doesNotMatch(viTime, /AM|PM|SA|CH/i);
+  assert.doesNotMatch(viDateTimeShort, /AM|PM|SA|CH/i);
+  assert.match(viTime, /\d{2}:\d{2}:\d{2}/);
+  assert.ok(viDate.includes("2026"));
+  assert.ok(enDate.includes("2026"));
+  assert.equal(dt.formatLocalizedDateTime(null, "vi"), "—");
+  assert.equal(dt.formatLocalizedDateTime("not-a-date", "vi", { fallback: "N/A" }), "N/A");
+  assert.equal(dt.formatLocalizedTime(undefined, "en", { fallback: "--:--" }), "--:--");
+});
+
+test("all single-arg t() calls across src/ exist in EXACT_VI_DICTIONARY and Admin Accounts avoids hardcoded vi-VN", () => {
+  const localeSrc = fs.readFileSync(path.join(root, "src/lib/i18n/locale-context.tsx"), "utf8");
+  const start = localeSrc.indexOf("const EXACT_VI_DICTIONARY");
+  const end = localeSrc.indexOf("const PATTERN_REPLACEMENTS");
+  assert.ok(start !== -1 && end > start);
+  const dictSrc = localeSrc.slice(start, end);
+  const dictKeys = new Set();
+  for (const m of dictSrc.matchAll(/(?:"((?:[^"\\]|\\.)+)"|([A-Za-z_$][\w$]*))\s*:/g)) {
+    dictKeys.add(m[1] ?? m[2]);
+  }
+
+  const missing = [];
+  const srcRoot = path.join(root, "src");
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(entry.name)) {
+        const text = fs.readFileSync(full, "utf8");
+        for (const m of text.matchAll(/\bt\(\s*"([^"]+)"\s*\)/g)) {
+          if (!dictKeys.has(m[1])) {
+            missing.push(path.relative(root, full) + ": " + m[1]);
+          }
+        }
+      }
+    }
+  }
+  walk(srcRoot);
+  assert.deepEqual(missing, [], "Missing EXACT_VI_DICTIONARY entries: " + missing.join(", "));
+
+  const adminSrc = fs.readFileSync(path.join(root, "src/features/administration/screens.tsx"), "utf8");
+  assert.doesNotMatch(adminSrc, /toLocale(?:Date|Time)?String\("vi-VN"/);
+  assert.match(adminSrc, /formatLocalizedDateTime\(a\.at, locale\)/);
+});

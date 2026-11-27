@@ -17,10 +17,11 @@ import {
   AnalysisStatusIndicator,
   analysisStatusBadgeProps,
 } from "@/features/source-analysis/components";
+import { formatLocalizedDate, formatLocalizedDateTime, formatLocalizedTime } from "@/lib/format/date-time";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 export function Accounts() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const query = useApiQuery("accounts", {});
   const lock = useApiMutation("setAccountLock");
   const updateRole = useApiMutation("setAccountRole");
@@ -327,9 +328,9 @@ export function Accounts() {
                       dateTime={a.createdAt ?? undefined}
                       className="block whitespace-nowrap space-y-0.5 text-xs tabular-nums"
                     >
-                      <span className="block font-medium">{date.toLocaleDateString("vi-VN")}</span>{" "}
+                      <span className="block font-medium">{formatLocalizedDate(date, locale)}</span>{" "}
                       <span className="block text-muted-foreground">
-                        {date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                        {formatLocalizedTime(date, locale, { seconds: false })}
                       </span>
                     </time>
                   );
@@ -1524,7 +1525,7 @@ export function AuditRecords() {
                     label: t("Time", "Thời gian"),
                     render: (a) => (
                       <span className="whitespace-nowrap text-xs tabular-nums" title={a.at}>
-                        {new Date(a.at).toLocaleString(locale === "vi" ? "vi-VN" : "en-US")}
+                        {formatLocalizedDateTime(a.at, locale)}
                       </span>
                     ),
                   },

@@ -32,6 +32,7 @@ import { ApiError as ProxyError, api } from "@/lib/mainflow-api";
 import { ApiError, backendErrorCode, fromStatus, publicErrorCode } from "@/lib/errors/api-error";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { formatCourseLabTitle } from "@/lib/format/course-display";
+import { formatLocalizedDate } from "@/lib/format/date-time";
 import type { Response } from "@/lib/api/contracts";
 
 type Lab = {
@@ -1231,6 +1232,7 @@ function isUsablePasskey(item: PasskeyItem): boolean {
 }
 
 export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
+  const { locale } = useLocale();
   const t = useCourseText();
   const passkeys = useCoursePasskeys(workspaceId);
   const createKey = useCreateCoursePasskey(workspaceId);
@@ -1434,7 +1436,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                     <tr key={item.id}>
                       <td className="px-4 py-3 font-mono font-semibold">{item.code ?? "••••"}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                        {new Date(item.createdAt).toLocaleDateString()} – {new Date(item.expiresAt).toLocaleDateString()}
+                        {formatLocalizedDate(item.createdAt, locale)} – {formatLocalizedDate(item.expiresAt, locale)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                         {item.usedCount}/{item.maxUses ?? "∞"}

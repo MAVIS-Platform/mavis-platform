@@ -2145,6 +2145,30 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Profile changes affect new runtime sessions. Review limits before enabling a profile.":
     "Thay đổi hồ sơ sẽ áp dụng cho các phiên Runtime mới. Hãy kiểm tra kỹ giới hạn tài nguyên trước khi bật.",
   "Review resource limits before saving.": "Kiểm tra kỹ giới hạn tài nguyên trước khi lưu.",
+  "Requesting…": "Đang gửi yêu cầu…",
+  "This prepared service is not marked canScale in the assigned topology.":
+    "Service chuẩn bị sẵn này chưa được đánh dấu cho phép mở rộng (canScale) trong cấu trúc bài Lab.",
+  Before: "Trước",
+  After: "Sau",
+  "Drag to connect to another service": "Kéo để kết nối tới service khác",
+  "Waiting for telemetry": "Đang chờ dữ liệu telemetry",
+  "Disconnect selected wire": "Ngắt kết nối đường dây đang chọn",
+  "Observed at": "Ghi nhận lúc",
+  Network: "Mạng",
+  "Captured spans": "Span đã ghi nhận",
+  "Studio sound effects": "Hiệu ứng âm thanh Studio",
+  "Mute Studio sounds": "Tắt âm thanh Studio",
+  "Enable Studio sounds": "Bật âm thanh Studio",
+  "Studio volume settings": "Cài đặt âm lượng Studio",
+  "Effects volume": "Âm lượng hiệu ứng",
+  "Preview sound": "Nghe thử âm thanh",
+  "Expand telemetry panel": "Mở rộng bảng telemetry",
+  "Collapse telemetry panel": "Thu gọn bảng telemetry",
+  "Snapshot nodes": "Các node trong ảnh chụp",
+  "Snapshot connections": "Các kết nối trong ảnh chụp",
+  "Node name": "Tên node",
+  "Double-click to rename node": "Nhấp đúp để đổi tên node",
+  "Clone node · Ctrl+C then Ctrl+V": "Nhân bản node · Ctrl+C rồi Ctrl+V",
 };
 
 export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [

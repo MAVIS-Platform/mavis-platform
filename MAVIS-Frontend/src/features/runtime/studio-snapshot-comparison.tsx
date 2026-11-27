@@ -5,6 +5,7 @@ import { useApiQuery } from "@/hooks/use-api";
 import { contracts } from "@/lib/api/contracts";
 import { SelectField } from "@/components/shared/forms";
 import { ErrorState } from "@/components/shared/request-state";
+import { formatLocalizedTime } from "@/lib/format/date-time";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 const telemetrySchema = contracts.studioState.output.shape.telemetry.unwrap();
@@ -15,7 +16,7 @@ export function StudioSnapshotComparison({
   sessionId: string;
   snapshots: { id: string; capturedAt: string; explanation: string }[];
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [beforeId, setBeforeId] = useState("");
   const [afterId, setAfterId] = useState("");
   const beforeSelection = snapshots.some((item) => item.id === beforeId)
@@ -38,7 +39,7 @@ export function StudioSnapshotComparison({
   const current = telemetrySchema.safeParse(after.data?.["telemetry"]);
   const options = snapshots.map((item) => ({
     value: item.id,
-    label: new Date(item.capturedAt).toLocaleTimeString() + " · " + item.explanation.slice(0, 100),
+    label: formatLocalizedTime(item.capturedAt, locale) + " · " + item.explanation.slice(0, 100),
   }));
   return (
     <section className="space-y-3">

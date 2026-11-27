@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Download, Maximize2, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiQuery } from "@/hooks/use-api";
+import { formatLocalizedTime } from "@/lib/format/date-time";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 export type EvidenceFrame = {
@@ -304,7 +305,7 @@ export function StudioSnapshotPreviewCard({
   exerciseStats?: ReadonlyArray<{ label: string; value: string }> | undefined;
   onDownloadEvidence?: ((snapshotId: string) => void) | undefined;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const inlineImage = safeSnapshotImageSrc(snapshot.imageData);
   const inlineVideo = safeSnapshotVideoSrc(snapshot.videoData);
@@ -366,7 +367,7 @@ export function StudioSnapshotPreviewCard({
                 </span>
               )}
               <span className="text-[11px] text-muted-foreground">
-                {new Date(snapshot.capturedAt).toLocaleTimeString()}
+                {formatLocalizedTime(snapshot.capturedAt, locale)}
               </span>
             </div>
           </div>
