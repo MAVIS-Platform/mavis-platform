@@ -332,7 +332,15 @@ function servicePhase(data: Studio, service: string): "running" | "paused" | "st
   if (running > 0) return "running";
   const last = [...data.actions]
     .reverse()
-    .find((a) => a.service === service && a.status === "CONFIRMED");
+    .find(
+      (a) =>
+        a.service === service &&
+        a.status === "CONFIRMED" &&
+        (a.action === "PAUSE" ||
+          a.action === "RESUME" ||
+          a.action === "STOP" ||
+          a.action === "START"),
+    );
   return last?.action === "PAUSE" ? "paused" : "stopped";
 }
 
@@ -581,12 +589,15 @@ export function LiveStudioWorkbench({
   const services = liveServices.length > 0 ? liveServices : data.services;
   const canvasSelected = services.includes(studio.service) ? studio.service : "";
   const selected = canvasSelected || target || services[0] || "";
+  const [step1RememberedService, setStep1RememberedService] = useState("");
   const appliedStep1FocusRef = useRef(false);
   useEffect(() => {
-    if (appliedStep1FocusRef.current || authoring || !services.length || studio.service) return;
+    if (authoring) return;
     try {
-      const remembered = sessionStorage.getItem("mavis.studio.step1-focus")?.trim().toLowerCase();
-      if (!remembered) return;
+      const raw = sessionStorage.getItem("mavis.studio.step1-focus")?.trim() ?? "";
+      if (raw) setStep1RememberedService(raw);
+      if (appliedStep1FocusRef.current || !services.length || studio.service || !raw) return;
+      const remembered = raw.toLowerCase();
       const match = services.find(
         (svc) =>
           svc.toLowerCase() === remembered ||
@@ -5227,7 +5238,12 @@ export function LiveStudioWorkbench({
                 })()
               ) : !authoring ? (
                 (() => {
-                  const selSvc = canvasSelected || selected || services[0] || "";
+                  const selSvc =
+                    canvasSelected ||
+                    selected ||
+                    services[0] ||
+                    (!authoring ? step1RememberedService : "") ||
+                    "";
                   const selRunning = selSvc ? runningFor(data, selSvc) : undefined;
                   const selObs = selSvc ? data.telemetry?.services.find((s) => s.service === selSvc) : undefined;
                   const selStats = summarizeServiceStats(selObs?.stats);

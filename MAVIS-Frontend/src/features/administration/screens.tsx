@@ -262,7 +262,7 @@ export function Accounts() {
                 key: "name",
                 label: t("Account", "Tài khoản"),
                 render: (a) => (
-                  <div className="flex min-w-0 max-w-[172px] items-center gap-2">
+                  <div className="flex min-w-0 max-w-[158px] items-center gap-2">
                     <UserAvatar name={a.name} avatarUrl={a.avatarUrl} size="sm" />
                     <div className="min-w-0 space-y-0.5">
                       <p className="truncate font-semibold text-foreground">{a.name}</p>

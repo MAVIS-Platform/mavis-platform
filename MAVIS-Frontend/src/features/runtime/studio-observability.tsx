@@ -1608,15 +1608,31 @@ export function StudioObservability({
       const isAuthorImpactTarget = authorHighlights?.impactTarget === name;
       const isAuthorPredictedUpstream = Boolean(authorHighlights?.predictedUpstream?.has(name));
       const isStopped = (live !== undefined && live.runningReplicas === 0) || authorStartsDown;
-      const lastSvcAction = [...confirmedActions].reverse().find((a) => a.service === name);
-      const isPaused = !isStopped && lastSvcAction?.action === "PAUSE";
+      const lastLifecycleAction = [...confirmedActions]
+        .reverse()
+        .find(
+          (a) =>
+            a.service === name &&
+            (a.action === "PAUSE" ||
+              a.action === "RESUME" ||
+              a.action === "STOP" ||
+              a.action === "START"),
+        );
+      const isPaused = !isStopped && lastLifecycleAction?.action === "PAUSE";
+      const lastCpuAction = [...confirmedActions]
+        .reverse()
+        .find(
+          (a) =>
+            a.service === name &&
+            (a.action === "THROTTLE_CPU" || a.action === "STOP" || a.action === "START"),
+        );
       const cpuThrottlePct =
         !isStopped &&
         !isPaused &&
-        lastSvcAction?.action === "THROTTLE_CPU" &&
-        typeof lastSvcAction.cpuPercent === "number" &&
-        lastSvcAction.cpuPercent < 100
-          ? lastSvcAction.cpuPercent
+        lastCpuAction?.action === "THROTTLE_CPU" &&
+        typeof lastCpuAction.cpuPercent === "number" &&
+        lastCpuAction.cpuPercent < 100
+          ? lastCpuAction.cpuPercent
           : null;
       const statsSummary = summarizeServiceStats(live?.stats);
       const [ramUsedStr, ramLimitStr] = statsSummary.memory.split("/").map((p) => p.trim());

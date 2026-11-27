@@ -3046,9 +3046,11 @@ test("Studio Improvement Wave IMP-01..IMP-13: preserves multi-item config, expos
   // IMP-06: clicking trace row auto-scrolls Traces container to TraceWaterfallPanel at top
   assert.ok(terminalSrc.includes("tracesScrollRef.current?.scrollTo({ top: 0, behavior: \"smooth\" })"));
 
-  // IMP-07 & IMP-08: 3D top-plate switches to CPU strip under cgroup throttle + header shows pod count when scaled
+  // IMP-07 & IMP-08: 3D top-plate switches to CPU strip under cgroup throttle (surviving SET_LOAD) + header shows pod count when scaled
   assert.ok(threeStageSrc.includes('ctx.fillText(isCpuThrottled ? "CPU" : "RAM", 22, 144);'));
+  assert.ok(obsSrc.includes('a.action === "THROTTLE_CPU" || a.action === "STOP" || a.action === "START"'));
   assert.ok(workbenchSrc.includes("totalRunningReplicas > services.length"));
+  assert.ok(workbenchSrc.includes("step1RememberedService"));
 
   // IMP-11 & IMP-13: unified Run Docker label, visible Back label, non-truncated failing edges
   assert.ok(workbenchSrc.includes('{t("Run Docker", "Chạy Docker")}'));

@@ -1742,14 +1742,17 @@ function StepContent({
   const selectedElement =
     activeModel?.elements.find((item) => item.id === selectedGraphId) ??
     activeModel?.elements.find((item) => item.id === normalizedSelectedId);
+  const step1FocusedName =
+    selectedElement?.name ??
+    activeModel?.elements.find((item) => item.id === inlineC3Service)?.name;
   useEffect(() => {
-    if (!selectedElement?.name) return;
+    if (!step1FocusedName) return;
     try {
-      sessionStorage.setItem("mavis.studio.step1-focus", selectedElement.name);
+      sessionStorage.setItem("mavis.studio.step1-focus", step1FocusedName);
     } catch {
       // ignore storage restrictions
     }
-  }, [selectedElement?.name]);
+  }, [step1FocusedName]);
   const selectedConnection =
     activeModel?.edges.find((item) => item.id === selectedGraphId) ??
     activeModel?.edges.find((item) => item.id === normalizedSelectedId) ??
