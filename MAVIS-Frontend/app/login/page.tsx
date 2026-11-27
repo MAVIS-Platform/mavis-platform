@@ -122,10 +122,6 @@ export default function LoginPage() {
       </header>
       <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-6 px-4 py-3 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-12">
         <section className="hidden self-center lg:block">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-            {t("MAVIS Studio 3D · Live Docker & OpenTelemetry", "MAVIS Studio 3D · Docker thật & OpenTelemetry")}
-          </div>
           <h1 className="max-w-lg text-4xl font-bold leading-[1.15] tracking-tight text-foreground">
             {t("Visualize services in 3D.", "Trực quan hóa hệ thống 3D.")}
             <br />

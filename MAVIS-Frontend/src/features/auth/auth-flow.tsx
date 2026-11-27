@@ -261,9 +261,11 @@ export function AuthFlow({
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
-              <p className="text-xs font-medium text-foreground/65">
-                {t("Use at least 6 characters.", "Sử dụng tối thiểu 6 ký tự.")}
-              </p>
+              {password.length > 0 && password.length < 6 && (
+                <p role="alert" className="text-sm text-destructive">
+                  {t("Use at least 6 characters.", "Sử dụng tối thiểu 6 ký tự.")}
+                </p>
+              )}
               <label className="block space-y-2 text-sm font-semibold text-foreground">
                 <span>{t("Confirm password", "Xác nhận mật khẩu")}</span>
                 <Input
