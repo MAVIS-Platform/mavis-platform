@@ -4,8 +4,8 @@ export const CSHARP_AUDIT_LENSES: Record<AuditModuleNumber, ModuleAuditLens> = {
   1: {
     moduleIndex: 1,
     track: "CSHARP",
-    stepTitleEn: "Audit C1–C3 Decomposition, DDD & Solution Structure · Project Trai Cay",
-    stepTitleVi: "Kiểm toán Phân rã C1–C3, DDD & Solution Structure · Project Trái Cây",
+    stepTitleEn: "Audit C1–C3 Decomposition, DDD & Solution Structure",
+    stepTitleVi: "Kiểm toán Phân rã C1–C3, DDD & Solution Structure",
     stepDescriptionEn:
       "Inspect C1 System Context actors, C2 .NET 8 service boundaries, and clean C3 controller/service/DbContext layering.",
     stepDescriptionVi:
@@ -201,8 +201,8 @@ export const CSHARP_AUDIT_LENSES: Record<AuditModuleNumber, ModuleAuditLens> = {
   5: {
     moduleIndex: 5,
     track: "CSHARP",
-    stepTitleEn: "Overall Architecture & Production-Readiness Audit · Project Trai Cay",
-    stepTitleVi: "Kiểm toán Tổng thể Kiến trúc & Production-Readiness · Project Trái Cây",
+    stepTitleEn: "Overall Architecture & Production-Readiness Audit",
+    stepTitleVi: "Kiểm toán Tổng thể Kiến trúc & Production-Readiness",
     stepDescriptionEn:
       "Review all 4 .NET 8 services, isolated DB/Redis stores, RabbitMQ Outbox, Polly v8, and OpenTelemetry readiness.",
     stepDescriptionVi:
