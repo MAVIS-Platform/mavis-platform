@@ -111,7 +111,7 @@ export function StudioEvidenceReplay({
   onSound?: (sound: "play" | "pause" | "checkpoint") => void;
   surfaceTheme?: "light" | "dark";
 }) {
-  const { locale, t } = useLocale();
+  const { t } = useLocale();
   const isLight = surfaceTheme === "light";
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -305,7 +305,7 @@ export function StudioSnapshotPreviewCard({
   exerciseStats?: ReadonlyArray<{ label: string; value: string }> | undefined;
   onDownloadEvidence?: ((snapshotId: string) => void) | undefined;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const inlineImage = safeSnapshotImageSrc(snapshot.imageData);
   const inlineVideo = safeSnapshotVideoSrc(snapshot.videoData);
