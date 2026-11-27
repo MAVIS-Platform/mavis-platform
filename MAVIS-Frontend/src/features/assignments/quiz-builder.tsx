@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { formatLocalizedDateTime } from "@/lib/format/date-time";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useCurriculum } from "@/features/courses/curriculum";
@@ -963,7 +964,7 @@ export function QuizBuilder({
               <li key={version.version} className="flex flex-wrap items-center gap-2 p-3 text-sm">
                 <Badge variant="outline">v{version.version}</Badge>
                 <span className="min-w-0 flex-1 truncate">{version.lesson}</span>
-                <span className="text-xs text-muted-foreground">{version.passPercent}% · {new Date(version.publishedAt).toLocaleString()}</span>
+                <span className="text-xs text-muted-foreground">{version.passPercent}% · {formatLocalizedDateTime(version.publishedAt, locale)}</span>
               </li>
             ))}
           </ul>

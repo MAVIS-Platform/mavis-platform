@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { formatLocalizedDate, formatLocalizedDateTime, formatLocalizedTime } from "@/lib/format/date-time";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge, CreateProjectAction } from "@/features/projects/components";
@@ -151,7 +152,7 @@ function OverviewHelp({
 const RECENT_PAGE_SIZE = 5;
 
 function Projects() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const projects = useApiQuery("projectOverviews", {});
   const selection = useSelection();
   const [search, setSearch] = useState("");
@@ -312,13 +313,10 @@ function Projects() {
                             );
                           return (
                             <div className="whitespace-nowrap text-xs">
-                              <time dateTime={value!} title={date.toLocaleString()}>
-                                {date.toLocaleDateString()}
+                              <time dateTime={value!} title={formatLocalizedDateTime(date, locale)}>
+                                {formatLocalizedDate(date, locale)}
                                 <span className="mt-1 block text-muted-foreground">
-                                  {date.toLocaleTimeString([], {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
+                                  {formatLocalizedTime(date, locale, { seconds: false })}
                                 </span>
                               </time>
                               {!p.updatedAt && (
@@ -369,7 +367,7 @@ function Projects() {
   );
 }
 function ProjectActivity() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [page, setPage] = useState(0);
   const q = useApiQuery("projectActivity", { page, size: RECENT_PAGE_SIZE }, { refreshMs: 30000 });
   return (
@@ -408,12 +406,12 @@ function ProjectActivity() {
                   return date && !Number.isNaN(date.getTime()) ? (
                     <time
                       dateTime={row.occurredAt!}
-                      title={date.toLocaleString()}
+                      title={formatLocalizedDateTime(date, locale)}
                       className="whitespace-nowrap text-xs"
                     >
-                      {date.toLocaleDateString()}
+                      {formatLocalizedDate(date, locale)}
                       <span className="mt-1 block text-muted-foreground">
-                        {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {formatLocalizedTime(date, locale, { seconds: false })}
                       </span>
                     </time>
                   ) : (
