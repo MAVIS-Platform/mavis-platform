@@ -3078,3 +3078,63 @@ test("Branch 4 hardening: studio-recording stop() is idempotent with stream clea
   assert.match(sessionHookSrc, /Math\.min\(30_000,\s*3_000 \* 2 \*\* sseRetryAttemptRef\.current\)/);
   assert.match(sessionHookSrc, /document\.addEventListener\("visibilitychange",\s*onVisibilityResume\)/);
 });
+
+test("Unified Composable Level Editor (Easy -> Hard Exam): blind SRE prompt redacts culprits, exposes 3D fault painter, rules/difficulty, composable criteria, and student action budget", () => {
+  const { buildStudentExerciseInstructions } = require("../src/features/runtime/studio-authoring-helpers.ts");
+
+  const blindVi = buildStudentExerciseInstructions({
+    exerciseType: "CUSTOM",
+    blindMode: true,
+    predictionRequired: true,
+    predictionMode: "ROOT_CAUSE",
+    stoppedServices: ["fraud-service"],
+    initialCpuLimits: { "pricing-service": 25 },
+    initialLoadRps: 15,
+    maxActions: 4,
+    maxErrorRatePercent: 0,
+    maxP95Ms: 1500,
+    locale: "vi",
+  });
+  assert.ok(!blindVi.includes("fraud-service"), "Blind prompt must NEVER leak stopped culprit name");
+  assert.ok(!blindVi.includes("pricing-service"), "Blind prompt must NEVER leak throttled culprit name");
+  assert.ok(blindVi.includes("15 RPS") && blindVi.includes("4 lượt") && blindVi.includes("Khóa chẩn đoán"));
+
+  const blindEn = buildStudentExerciseInstructions({
+    exerciseType: "CUSTOM",
+    blindMode: true,
+    predictionRequired: true,
+    predictionMode: "ROOT_CAUSE",
+    stoppedServices: ["fraud-service"],
+    initialCpuLimits: { "pricing-service": 25 },
+    initialLoadRps: 20,
+    maxActions: 3,
+    maxErrorRatePercent: 0,
+    maxP95Ms: 1200,
+    locale: "en",
+  });
+  assert.ok(!blindEn.includes("fraud-service") && !blindEn.includes("pricing-service"));
+  assert.ok(blindEn.includes("20 RPS") && blindEn.includes("3 Docker actions") && blindEn.includes("Lock Diagnosis"));
+
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const panelSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-exercise-panel.tsx"),
+    "utf8",
+  );
+  const apiErrorSrc = fs.readFileSync(
+    path.join(__dirname, "../src/lib/errors/api-error.ts"),
+    "utf8",
+  );
+
+  assert.ok(workbenchSrc.includes('data-testid="author-exam-preset-btn"'));
+  assert.ok(workbenchSrc.includes('data-testid="studio-3d-fault-painter"'));
+  assert.ok(workbenchSrc.includes('data-testid="studio-initial-load-rps"'));
+  assert.ok(workbenchSrc.includes('data-testid="studio-difficulty-rules"'));
+  assert.ok(workbenchSrc.includes('data-testid="studio-composable-rules"'));
+  assert.ok(workbenchSrc.includes('data-testid="studio-action-budget-pill"'));
+  assert.ok(workbenchSrc.includes("const canLiveAct = sessionLiveActive && !actionBudgetExhausted;"));
+  assert.ok(panelSrc.includes('t("Root Cause Diagnosis", "Chẩn đoán nguyên nhân gốc")'));
+  assert.ok(apiErrorSrc.includes("STUDIO_ACTION_BUDGET_EXCEEDED"));
+});

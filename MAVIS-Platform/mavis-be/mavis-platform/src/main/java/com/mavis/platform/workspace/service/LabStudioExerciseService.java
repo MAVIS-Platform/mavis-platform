@@ -20,8 +20,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -46,9 +48,11 @@ public class LabStudioExerciseService {
     private static final Set<String> RULE_METRICS = Set.of(
             "ERROR_RATE", "EDGE_ERROR_RATE", "P95_MS", "P95_DELTA_PCT", "REPLICAS", "TRACE_EDGE", "IMPACT_F1");
     private static final Set<String> RULE_OPERATORS = Set.of("LT", "LTE", "GT", "GTE", "EQ");
+    private static final Set<String> PREDICTION_MODES = Set.of("BLAST_RADIUS", "ROOT_CAUSE");
     private static final Set<String> METHODS = Set.of("GET", "HEAD");
     private static final int MAX_BASELINE = 10;
     private static final int MAX_RULES = 12;
+    private static final int MAX_ACTIONS_CAP = 32;
     private static final int MAX_INSTRUCTIONS = 10_000;
 
     private final LabStudioExerciseRepository exercises;
@@ -61,7 +65,12 @@ public class LabStudioExerciseService {
 
     public record BaselineRequest(String method, String path, Integer expectedStatus) {}
 
-    public record InitialState(List<String> stoppedServices, List<String> stoppedControllers) {}
+    public record InitialState(List<String> stoppedServices, List<String> stoppedControllers,
+                               Map<String, Integer> cpuLimits, Integer initialLoadRps) {
+        public InitialState(List<String> stoppedServices, List<String> stoppedControllers) {
+            this(stoppedServices, stoppedControllers, Map.of(), null);
+        }
+    }
 
     public record TraceEdge(String from, String to) {}
 
@@ -74,10 +83,19 @@ public class LabStudioExerciseService {
     public record SuccessCriteria(Integer maxErrorRatePercent, Integer maxP95Ms,
                                   TraceEdge requiredTraceEdge, List<ReplicaTarget> minReplicas,
                                   String exerciseType, Boolean predictionRequired, Double minImpactF1,
-                                  ChangeAction targetChangeAction, List<DeclarativeRule> rules) {
+                                  ChangeAction targetChangeAction, List<DeclarativeRule> rules,
+                                  Boolean blindMode, String predictionMode, Integer maxActions) {
         public SuccessCriteria(Integer maxErrorRatePercent, Integer maxP95Ms,
                                TraceEdge requiredTraceEdge, List<ReplicaTarget> minReplicas) {
-            this(maxErrorRatePercent, maxP95Ms, requiredTraceEdge, minReplicas, null, null, null, null, List.of());
+            this(maxErrorRatePercent, maxP95Ms, requiredTraceEdge, minReplicas, null, null, null, null, List.of(), null, null, null);
+        }
+
+        public SuccessCriteria(Integer maxErrorRatePercent, Integer maxP95Ms,
+                               TraceEdge requiredTraceEdge, List<ReplicaTarget> minReplicas,
+                               String exerciseType, Boolean predictionRequired, Double minImpactF1,
+                               ChangeAction targetChangeAction, List<DeclarativeRule> rules) {
+            this(maxErrorRatePercent, maxP95Ms, requiredTraceEdge, minReplicas, exerciseType,
+                    predictionRequired, minImpactF1, targetChangeAction, rules, null, null, null);
         }
     }
 
@@ -223,8 +241,27 @@ public class LabStudioExerciseService {
     }
 
     private InitialState normalizeInitialState(InitialState state) {
-        if (state == null) return new InitialState(List.of(), List.of());
-        return new InitialState(cleanNames(state.stoppedServices()), cleanNames(state.stoppedControllers()));
+        if (state == null) return new InitialState(List.of(), List.of(), Map.of(), null);
+        Map<String, Integer> cpuLimits = new LinkedHashMap<>();
+        if (state.cpuLimits() != null) {
+            for (var entry : state.cpuLimits().entrySet()) {
+                if (entry.getKey() == null || entry.getValue() == null) continue;
+                String svc = entry.getKey().trim();
+                int pct = entry.getValue();
+                if (svc.isBlank() || svc.length() > 128) throw invalid("Invalid service name in initial cpuLimits");
+                if (pct < 10 || pct > 100) throw invalid("Initial CPU limit must be between 10 and 100 percent");
+                if (pct < 100) cpuLimits.put(svc, pct);
+            }
+        }
+        Integer initialLoadRps = state.initialLoadRps();
+        if (initialLoadRps != null && (initialLoadRps < 1 || initialLoadRps > 50)) {
+            throw invalid("Initial load RPS must be between 1 and 50");
+        }
+        return new InitialState(
+                cleanNames(state.stoppedServices()),
+                cleanNames(state.stoppedControllers()),
+                cpuLimits,
+                initialLoadRps);
     }
 
     private List<String> cleanNames(List<String> values) {
@@ -252,8 +289,8 @@ public class LabStudioExerciseService {
             throw invalid("Max error rate must be 0-100");
         }
         Integer p95 = criteria.maxP95Ms();
-        if (p95 != null && (p95 < 0 || p95 > 60_000)) {
-            throw invalid("P95 threshold must be 0-60000 ms");
+        if (p95 != null && (p95 < 1 || p95 > 60_000)) {
+            throw invalid("P95 threshold must be 1-60000 ms");
         }
         TraceEdge edge = criteria.requiredTraceEdge();
         if (edge != null && (edge.from() == null || edge.from().isBlank()
@@ -280,10 +317,23 @@ public class LabStudioExerciseService {
         if (minImpactF1 != null && (!Double.isFinite(minImpactF1) || minImpactF1 < 0.0 || minImpactF1 > 1.0)) {
             throw invalid("minImpactF1 must be between 0.0 and 1.0");
         }
+        Boolean blindMode = Boolean.TRUE.equals(criteria.blindMode()) ? Boolean.TRUE : null;
+        String predictionMode = null;
+        if (criteria.predictionMode() != null && !criteria.predictionMode().isBlank()) {
+            predictionMode = criteria.predictionMode().trim().toUpperCase(Locale.ROOT);
+            if (!PREDICTION_MODES.contains(predictionMode)) {
+                throw invalid("Unsupported predictionMode: " + predictionMode);
+            }
+        }
+        Integer maxActions = criteria.maxActions();
+        if (maxActions != null && (maxActions < 1 || maxActions > MAX_ACTIONS_CAP)) {
+            throw invalid("maxActions must be between 1 and " + MAX_ACTIONS_CAP);
+        }
         ChangeAction changeAction = normalizeChangeAction(criteria.targetChangeAction());
         List<DeclarativeRule> rules = normalizeRules(criteria.rules());
         return new SuccessCriteria(errorRate, p95, edge, replicas,
-                exerciseType, predictionRequired, minImpactF1, changeAction, rules);
+                exerciseType, predictionRequired, minImpactF1, changeAction, rules,
+                blindMode, predictionMode, maxActions);
     }
 
     private ChangeAction normalizeChangeAction(ChangeAction action) {

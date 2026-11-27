@@ -727,13 +727,22 @@ export type StudentLabContext = {
   latestReview: StudentLabLatestReview | null;
   studioExercise?: {
     baselineRequests?: Array<{ method?: string; path?: string; expectedStatus?: number | null }>;
-    initialState?: { stoppedServices?: string[]; stoppedControllers?: string[] };
+    initialState?: {
+      stoppedServices?: string[];
+      stoppedControllers?: string[];
+      cpuLimits?: Record<string, number>;
+      initialLoadRps?: number | null;
+    };
     allowedActions?: string[];
     successCriteria?: {
       maxErrorRatePercent?: number | null;
       maxP95Ms?: number | null;
       requiredTraceEdge?: { from?: string; to?: string } | null;
       minReplicas?: Array<{ service?: string; count?: number }>;
+      predictionRequired?: boolean | null;
+      blindMode?: boolean | null;
+      predictionMode?: string | null;
+      maxActions?: number | null;
     };
     instructions?: string;
     revision?: number;

@@ -928,6 +928,8 @@ export const contracts = {
       activeSlots: z.number().int().nonnegative().nullable().optional(),
       maxSlots: z.number().int().positive().nullable().optional(),
       cleanupStatus: z.string(),
+      actionsUsed: z.number().int().nonnegative().optional(),
+      maxActions: z.number().int().positive().nullable().optional(),
       prediction: z
         .object({
           predictedServices: z.array(z.string()),
@@ -939,6 +941,7 @@ export const contracts = {
       exerciseEvaluation: z
         .object({
           exerciseType: z.string(),
+          predictionMode: z.string().optional(),
           predictionRequired: z.boolean(),
           predictionLocked: z.boolean(),
           predictedServices: z.array(z.string()),

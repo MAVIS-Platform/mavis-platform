@@ -54,6 +54,8 @@ export function StudioExercisePanel({
     | {
         exerciseType?: string;
         predictionRequired?: boolean;
+        blindMode?: boolean;
+        predictionMode?: string;
         targetChangeAction?: PrescribedChange | null;
       }
     | null
@@ -62,9 +64,14 @@ export function StudioExercisePanel({
   const hasConfirmedAction = data.actions.some((a) => a.status === "CONFIRMED");
   const predictionLocked = Boolean(prediction?.predictedServices?.length);
   const predictionRequired = Boolean(evaluation?.predictionRequired || criteria?.predictionRequired);
-  const prescribed = criteria?.targetChangeAction ?? null;
+  const blindMode = Boolean(criteria?.blindMode);
+  const predictionMode = String(
+    criteria?.predictionMode ?? evaluation?.predictionMode ?? "BLAST_RADIUS",
+  ).toUpperCase();
+  const isRootCauseMode = predictionMode === "ROOT_CAUSE";
+  const prescribed = blindMode ? null : (criteria?.targetChangeAction ?? null);
   const exerciseType = (criteria?.exerciseType ?? evaluation?.exerciseType ?? "").toUpperCase();
-  const isOutageRecovery = exerciseType === "CIRCUIT_BREAKER";
+  const isOutageRecovery = exerciseType === "CIRCUIT_BREAKER" || blindMode;
   const prescribedCompleted = Boolean(
     prescribed?.action &&
       prescribed?.service &&
@@ -118,7 +125,9 @@ export function StudioExercisePanel({
         >
           <Target className={`size-3.5 ${isLight ? "text-indigo-600" : "text-indigo-400"}`} aria-hidden="true" />
           {predictionRequired || predictionLocked
-            ? t("Change Impact Prediction", "Dự đoán phạm vi ảnh hưởng")
+            ? isRootCauseMode
+              ? t("Root Cause Diagnosis", "Chẩn đoán nguyên nhân gốc")
+              : t("Change Impact Prediction", "Dự đoán phạm vi ảnh hưởng")
             : t("Lab Exercise Action", "Thao tác bài thực hành")}
         </span>
       </div>
@@ -140,7 +149,9 @@ export function StudioExercisePanel({
                 }`}
               >
                 <Lock className={`size-3 ${isLight ? "text-indigo-600" : "text-indigo-400"}`} aria-hidden="true" />
-                {t("Prediction locked", "Đã khóa dự đoán")}
+                {isRootCauseMode
+                  ? t("Diagnosis locked", "Đã khóa chẩn đoán")
+                  : t("Prediction locked", "Đã khóa dự đoán")}
               </span>
               <span className="font-mono text-[10.5px] text-muted-foreground">
                 {prediction?.predictedServices.length ?? 0} {t("services", "dịch vụ")}
@@ -193,17 +204,23 @@ export function StudioExercisePanel({
                     "A change was already applied before locking a prediction.",
                     "Bạn đã chạy thao tác trước khi khóa dự đoán.",
                   )
-                : t(
-                    "1. Predict which services will degrade before applying a fault/change:",
-                    "1. Chọn các service dự kiến bị ảnh hưởng trước khi thao tác:",
-                  )}
+                : isRootCauseMode
+                  ? t(
+                      "1. Inspect live Traces, CPU & RED metrics, then select the root-cause faulty service(s) before fixing:",
+                      "1. Quan sát Trace, CPU & biểu đồ lỗi, sau đó chọn các service là nguyên nhân gốc trước khi sửa:",
+                    )
+                  : t(
+                      "1. Predict which services will degrade before applying a fault/change:",
+                      "1. Chọn các service dự kiến bị ảnh hưởng trước khi thao tác:",
+                    )}
             </p>
             {!hasConfirmedAction && (
               <>
                 <div className="flex flex-wrap gap-1">
-                  {services
-                    .filter((svc) => !prescribed?.service || svc !== prescribed.service)
-                    .map((svc) => {
+                  {(isRootCauseMode
+                    ? services
+                    : services.filter((svc) => !prescribed?.service || svc !== prescribed.service)
+                  ).map((svc) => {
                       const active = selectedPredicted.includes(svc);
                     return (
                       <button
@@ -247,7 +264,11 @@ export function StudioExercisePanel({
                   <Lock className="mr-1 size-3" aria-hidden="true" />
                   {submittingPrediction
                     ? t("Locking…", "Đang khóa…")
-                    : `${t("Lock Prediction", "Khóa dự đoán")} (${selectedPredicted.length})`}
+                    : `${
+                        isRootCauseMode
+                          ? t("Lock Diagnosis", "Khóa chẩn đoán")
+                          : t("Lock Prediction", "Khóa dự đoán")
+                      } (${selectedPredicted.length})`}
                 </Button>
               </>
             )}
@@ -263,10 +284,15 @@ export function StudioExercisePanel({
               : "border-rose-500/35 bg-rose-950/35 text-rose-200"
           }`}
         >
-          {t(
-            "Diagnose the crashed (0x) service on the 3D topology or Logs & Traces, select it, and click Start above to recover.",
-            "Quan sát khối đỏ (0x) trên sơ đồ 3D hoặc Log & Trace để xác định service đang gặp sự cố, chọn khối đó rồi bấm Khởi động ở trên để phục hồi.",
-          )}
+          {blindMode
+            ? t(
+                "Blind incident mode: use 3D topology, Traces, and CPU/RAM stats to identify the failing or throttled service(s), then repair them with the Docker controls above.",
+                "Chế độ Đề mù: hãy dùng sơ đồ 3D, Log & Trace và chỉ số CPU/RAM để tìm các service đang dừng hoặc bị nghẽn, rồi xử lý bằng bảng điều khiển Docker ở trên.",
+              )
+            : t(
+                "Diagnose the crashed (0x) service on the 3D topology or Logs & Traces, select it, and click Start above to recover.",
+                "Quan sát khối đỏ (0x) trên sơ đồ 3D hoặc Log & Trace để xác định service đang gặp sự cố, chọn khối đó rồi bấm Khởi động ở trên để phục hồi.",
+              )}
         </div>
       ) : (
         prescribed?.action &&

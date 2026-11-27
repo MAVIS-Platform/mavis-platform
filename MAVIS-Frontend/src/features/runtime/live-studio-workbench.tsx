@@ -77,9 +77,11 @@ import {
   resolveModelServiceEdges,
   smartPickBaselineEndpoint,
   type AuthorBlockChipId,
+  type DeclarativeRuleInput,
   type DerivedExerciseFromDemo,
   type EndpointOption,
   type ExerciseTypeKey,
+  type PredictionMode,
   type StudioGoalId,
   type TargetChangeAction,
 } from "./studio-authoring-helpers";
@@ -244,6 +246,13 @@ type SessionOption = {
 export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   instructions: string;
   baselinePath: string;
+  baselinePaths?: readonly string[] | undefined;
+  initialCpuLimits?: Readonly<Record<string, number>> | undefined;
+  initialLoadRps?: number | null | undefined;
+  blindMode?: boolean | undefined;
+  predictionMode?: PredictionMode | undefined;
+  maxActions?: number | null | undefined;
+  declarativeRules?: readonly DeclarativeRuleInput[] | undefined;
   maxErrorRatePercent: string;
   maxP95Ms?: string | undefined;
   minImpactF1?: string | undefined;
@@ -265,12 +274,17 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   hasVerifiedSession?: boolean | undefined;
   publishHref?: string | undefined;
   onSelectGoal?: ((goalId: StudioGoalId, preferredService?: string) => void) | undefined;
+  onApplyExamPreset?: (() => void) | undefined;
+  onSetInitialCpuLimit?: ((service: string, cpuPercent: number | null) => void) | undefined;
   onApplyBlockChip?: ((chipId: AuthorBlockChipId, service: string) => void) | undefined;
   onUpdateGoalRule?:
     | ((patch: {
         targetChangeAction?: TargetChangeAction | null;
         requiredTraceEdge?: { from: string; to: string } | null;
         predictionRequired?: boolean;
+        predictionMode?: PredictionMode;
+        blindMode?: boolean;
+        maxActions?: number | null;
         maxErrorRatePercent?: string;
         minReplicas?: Array<{ service: string; count: number }>;
         instructions?: string;
@@ -281,10 +295,16 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   onSaveMission: (patch: {
     instructions: string;
     baselinePath: string;
+    baselinePaths?: string[];
+    initialLoadRps?: number | null;
     maxErrorRatePercent: string;
     maxP95Ms?: string;
     minImpactF1?: string;
     predictionRequired?: boolean;
+    predictionMode?: PredictionMode;
+    blindMode?: boolean;
+    maxActions?: number | null;
+    rules?: DeclarativeRuleInput[];
     allowedActions?: string[];
     replicaService: string;
     replicaCount: string;
@@ -452,6 +472,10 @@ export function LiveStudioWorkbench({
   missionCard?: {
     instructions?: string | null | undefined;
     predictionRequired?: boolean | null | undefined;
+    predictionMode?: PredictionMode | null | undefined;
+    blindMode?: boolean | null | undefined;
+    maxActions?: number | null | undefined;
+    initialLoadRps?: number | null | undefined;
     maxErrorRatePercent?: number | null | undefined;
     maxP95Ms?: number | null | undefined;
     minReplicas?: Array<{ service?: string; count?: number }> | null | undefined;
@@ -1004,6 +1028,25 @@ export function LiveStudioWorkbench({
   );
   const [missionDraft, setMissionDraft] = useState(authoring?.instructions ?? "");
   const [baselineDraft, setBaselineDraft] = useState(authoring?.baselinePath ?? "/health");
+  const [baselinePathsDraft, setBaselinePathsDraft] = useState<string[]>(() =>
+    authoring?.baselinePaths?.length
+      ? [...authoring.baselinePaths]
+      : [authoring?.baselinePath ?? "/health"],
+  );
+  const [initialLoadRpsDraft, setInitialLoadRpsDraft] = useState<number | null>(
+    authoring?.initialLoadRps ?? null,
+  );
+  const [blindModeDraft, setBlindModeDraft] = useState(authoring?.blindMode === true);
+  const [predictionModeDraft, setPredictionModeDraft] = useState<PredictionMode>(
+    authoring?.predictionMode ?? "BLAST_RADIUS",
+  );
+  const [maxActionsDraft, setMaxActionsDraft] = useState<number | null>(
+    authoring?.maxActions ?? null,
+  );
+  const [rulesDraft, setRulesDraft] = useState<DeclarativeRuleInput[]>(() =>
+    authoring?.declarativeRules?.length ? [...authoring.declarativeRules] : [],
+  );
+  const [p95ValidationError, setP95ValidationError] = useState("");
   const [maxErrDraft, setMaxErrDraft] = useState(authoring?.maxErrorRatePercent ?? "0");
   const [maxP95Draft, setMaxP95Draft] = useState(authoring?.maxP95Ms ?? "");
   const [minImpactF1Draft, setMinImpactF1Draft] = useState(authoring?.minImpactF1 ?? "0.7");
@@ -1100,6 +1143,17 @@ export function LiveStudioWorkbench({
     if (!authoring) return;
     setMissionDraft(authoring.instructions);
     setBaselineDraft(authoring.baselinePath);
+    setBaselinePathsDraft(
+      authoring.baselinePaths?.length
+        ? [...authoring.baselinePaths]
+        : [authoring.baselinePath || "/health"],
+    );
+    setInitialLoadRpsDraft(authoring.initialLoadRps ?? null);
+    setBlindModeDraft(authoring.blindMode === true);
+    setPredictionModeDraft(authoring.predictionMode ?? "BLAST_RADIUS");
+    setMaxActionsDraft(authoring.maxActions ?? null);
+    setRulesDraft(authoring.declarativeRules?.length ? [...authoring.declarativeRules] : []);
+    setP95ValidationError("");
     setMaxErrDraft(authoring.maxErrorRatePercent);
     setMaxP95Draft(authoring.maxP95Ms ?? "");
     setMinImpactF1Draft(authoring.minImpactF1 ?? "0.7");
@@ -1112,6 +1166,12 @@ export function LiveStudioWorkbench({
   }, [
     authoring?.instructions,
     authoring?.baselinePath,
+    authoring?.baselinePaths,
+    authoring?.initialLoadRps,
+    authoring?.blindMode,
+    authoring?.predictionMode,
+    authoring?.maxActions,
+    authoring?.declarativeRules,
     authoring?.maxErrorRatePercent,
     authoring?.maxP95Ms,
     authoring?.minImpactF1,
@@ -1708,6 +1768,7 @@ export function LiveStudioWorkbench({
 
   const activeGoalId = useMemo<StudioGoalId | null>(() => {
     if (!authoring) return null;
+    if (authoring.exerciseType === "CUSTOM") return null;
     if (
       authoring.exerciseType === "CHANGE_IMPACT" ||
       (authoring.predictionRequired &&
@@ -1784,6 +1845,16 @@ export function LiveStudioWorkbench({
     authoring &&
       (missionDraft !== authoring.instructions ||
         baselineDraft !== authoring.baselinePath ||
+        baselinePathsDraft.join(",") !==
+          (authoring.baselinePaths?.length
+            ? authoring.baselinePaths
+            : [authoring.baselinePath || "/health"]
+          ).join(",") ||
+        initialLoadRpsDraft !== (authoring.initialLoadRps ?? null) ||
+        blindModeDraft !== (authoring.blindMode === true) ||
+        predictionModeDraft !== (authoring.predictionMode ?? "BLAST_RADIUS") ||
+        maxActionsDraft !== (authoring.maxActions ?? null) ||
+        JSON.stringify(rulesDraft) !== JSON.stringify(authoring.declarativeRules ?? []) ||
         maxErrDraft !== authoring.maxErrorRatePercent ||
         maxP95Draft !== (authoring.maxP95Ms ?? "") ||
         minImpactF1Draft !== (authoring.minImpactF1 ?? "0.7") ||
@@ -1955,6 +2026,30 @@ export function LiveStudioWorkbench({
       ?.predictionRequired ||
       data.exerciseEvaluation?.predictionRequired ||
       missionCard?.predictionRequired,
+  );
+  const exerciseBlindMode = Boolean(
+    (data.exerciseCriteria as { blindMode?: boolean } | null | undefined)?.blindMode ||
+      missionCard?.blindMode,
+  );
+  const exercisePredictionMode = String(
+    (data.exerciseCriteria as { predictionMode?: string } | null | undefined)?.predictionMode ??
+      data.exerciseEvaluation?.predictionMode ??
+      missionCard?.predictionMode ??
+      "BLAST_RADIUS",
+  ).toUpperCase();
+  const isRootCauseDiagnosis = exercisePredictionMode === "ROOT_CAUSE";
+  const exerciseMaxActions =
+    data.maxActions ??
+    (data.exerciseCriteria as { maxActions?: number | null } | null | undefined)?.maxActions ??
+    missionCard?.maxActions ??
+    null;
+  const exerciseActionsUsed =
+    data.actionsUsed ?? data.actions.filter((a) => a.status !== "FAILED").length;
+  const actionBudgetExhausted = Boolean(
+    !authoring &&
+      !isPreviewMode &&
+      exerciseMaxActions != null &&
+      exerciseActionsUsed >= exerciseMaxActions,
   );
   const needsPrediction =
     !isPreviewMode &&
@@ -3001,10 +3096,42 @@ export function LiveStudioWorkbench({
                   onDoubleClick={() => setMissionOffset({ x: 0, y: 0 })}
                   className="flex shrink-0 cursor-grab items-center justify-between gap-2 px-3 py-2.5 select-none active:cursor-grabbing"
                 >
-                  <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-tight">
+                  <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-bold tracking-tight">
                     <GripVertical className="size-3.5 shrink-0 opacity-45" aria-hidden="true" />
                     <Target className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-                    {t("Lab Mission", "Mục tiêu Lab")}
+                    <span className="truncate">{t("Lab Mission", "Mục tiêu Lab")}</span>
+                    {!authoring && exerciseBlindMode && (
+                      <span
+                        data-testid="mission-blind-badge"
+                        className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                          isLight
+                            ? "border-violet-300 bg-violet-50 text-violet-800"
+                            : "border-violet-500/40 bg-violet-500/15 text-violet-200"
+                        }`}
+                      >
+                        {t("Blind", "Đề mù")}
+                      </span>
+                    )}
+                    {!authoring && exerciseMaxActions != null && (
+                      <span
+                        data-testid="mission-action-budget-badge"
+                        className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                          actionBudgetExhausted
+                            ? isLight
+                              ? "border-rose-300 bg-rose-50 text-rose-700"
+                              : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                            : exerciseMaxActions - exerciseActionsUsed <= 1
+                              ? isLight
+                                ? "border-amber-300 bg-amber-50 text-amber-800"
+                                : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                              : isLight
+                                ? "border-sky-300 bg-sky-50 text-sky-800"
+                                : "border-sky-500/40 bg-sky-500/15 text-sky-200"
+                        }`}
+                      >
+                        {exerciseActionsUsed}/{exerciseMaxActions}
+                      </span>
+                    )}
                   </span>
                   <div className="flex items-center gap-0.5">
                     <button
@@ -3117,10 +3244,15 @@ export function LiveStudioWorkbench({
                       >
                         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                         <span>
-                          {t(
-                            "Lock your impact prediction before your first action.",
-                            "Hãy khóa dự đoán tác động trước thao tác đầu tiên.",
-                          )}
+                          {isRootCauseDiagnosis
+                            ? t(
+                                "Lock your root-cause diagnosis before your first repair action.",
+                                "Hãy khóa chẩn đoán nguyên nhân gốc trước thao tác sửa đầu tiên.",
+                              )
+                            : t(
+                                "Lock your impact prediction before your first action.",
+                                "Hãy khóa dự đoán tác động trước thao tác đầu tiên.",
+                              )}
                         </span>
                       </p>
                     )}
@@ -3129,7 +3261,9 @@ export function LiveStudioWorkbench({
                         {isPredictionRequired && (
                           <li className="flex items-center justify-between gap-2">
                             <span className="text-muted-foreground">
-                              {t("Lock impact prediction", "Khóa dự đoán tác động")}
+                              {isRootCauseDiagnosis
+                                ? t("Lock root-cause diagnosis", "Khóa chẩn đoán nguyên nhân gốc")
+                                : t("Lock impact prediction", "Khóa dự đoán tác động")}
                             </span>
                             <span
                               className={`font-bold ${
@@ -5315,21 +5449,32 @@ export function LiveStudioWorkbench({
                   const selPhase = selSvc ? servicePhase(data, selSvc) : "stopped";
                   const selPaused = selPhase === "paused";
                   const selStopped = selRunning === 0 && !selPaused;
-                  const canLiveAct = !isPreviewMode && data.executionStatus === "RUNNING" && Boolean(selSvc);
+                  const sessionLiveActive = !isPreviewMode && data.executionStatus === "RUNNING" && Boolean(selSvc);
+                  const canLiveAct = sessionLiveActive && !actionBudgetExhausted;
                   const allowedSet =
                     missionCard?.allowedActions && missionCard.allowedActions.length > 0
                       ? new Set(missionCard.allowedActions.map((a) => a.toUpperCase()))
                       : null;
                   const isAllowed = (act: string) => !allowedSet || allowedSet.has(act);
                   const disabledHint = (act: string) =>
-                    needsPrediction
+                    actionBudgetExhausted
                       ? t(
-                          "Lock your impact prediction below before running a Docker action",
-                          "Hãy khóa dự đoán phạm vi ảnh hưởng ở khung bên dưới trước khi chạy thao tác Docker",
+                          `Action budget exhausted (${exerciseActionsUsed}/${exerciseMaxActions}). Capture a Snapshot and finish Studio to submit.`,
+                          `Đã hết giới hạn lượt thao tác (${exerciseActionsUsed}/${exerciseMaxActions}). Hãy chụp Snapshot và bấm Kết thúc Studio để nộp bài.`,
                         )
-                      : !isAllowed(act)
-                        ? t("Disabled by exercise configuration", "Thao tác bị tắt trong cấu hình đề bài")
-                        : undefined;
+                      : needsPrediction
+                        ? isRootCauseDiagnosis
+                          ? t(
+                              "Lock your root-cause diagnosis below before running a Docker action",
+                              "Hãy khóa chẩn đoán nguyên nhân gốc ở khung bên dưới trước khi chạy thao tác Docker",
+                            )
+                          : t(
+                              "Lock your impact prediction below before running a Docker action",
+                              "Hãy khóa dự đoán phạm vi ảnh hưởng ở khung bên dưới trước khi chạy thao tác Docker",
+                            )
+                        : !isAllowed(act)
+                          ? t("Disabled by exercise configuration", "Thao tác bị tắt trong cấu hình đề bài")
+                          : undefined;
                   return (
                     <section
                       aria-label={t("Live Service Controls", "Điều khiển Service")}
@@ -5478,21 +5623,49 @@ export function LiveStudioWorkbench({
                         </dl>
                       </div>
 
-                      {/* Real Docker Lifecycle & Fault Injection Actions (Unified Light + Dark, enforces allowedActions) */}
+                      {/* Real Docker Lifecycle & Fault Injection Actions (Unified Light + Dark, enforces allowedActions & maxActions) */}
                       <div className="space-y-2.5">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <p className={`text-[11px] font-bold uppercase tracking-wider ${styleCfg.subtleTextClass}`}>
                             {t("Live Docker Actions", "Thao tác Docker thật")}
                           </p>
-                          {!canLiveAct ? (
-                            <span className={`text-[11px] font-medium ${isLight ? "text-amber-700" : "text-amber-300"}`}>
-                              {t("Click Run to activate", "Bấm Chạy Docker để bật")}
-                            </span>
-                          ) : needsPrediction ? (
-                            <span className={`text-[11px] font-medium ${isLight ? "text-indigo-700" : "text-indigo-300"}`}>
-                              {t("Lock prediction first", "Khóa dự đoán trước")}
-                            </span>
-                          ) : null}
+                          <div className="flex items-center gap-1.5">
+                            {exerciseMaxActions != null && (
+                              <span
+                                data-testid="studio-action-budget-pill"
+                                className={`rounded border px-1.5 py-0.5 font-mono text-[10.5px] font-bold ${
+                                  actionBudgetExhausted
+                                    ? isLight
+                                      ? "border-rose-300 bg-rose-50 text-rose-700"
+                                      : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                                    : exerciseMaxActions - exerciseActionsUsed <= 1
+                                      ? isLight
+                                        ? "border-amber-300 bg-amber-50 text-amber-800"
+                                        : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                                      : isLight
+                                        ? "border-sky-300 bg-sky-50 text-sky-800"
+                                        : "border-sky-500/40 bg-sky-500/15 text-sky-200"
+                                }`}
+                              >
+                                {t("Actions", "Lượt")}: {exerciseActionsUsed}/{exerciseMaxActions}
+                              </span>
+                            )}
+                            {!sessionLiveActive ? (
+                              <span className={`text-[11px] font-medium ${isLight ? "text-amber-700" : "text-amber-300"}`}>
+                                {t("Click Run to activate", "Bấm Chạy Docker để bật")}
+                              </span>
+                            ) : actionBudgetExhausted ? (
+                              <span className={`text-[11px] font-semibold ${isLight ? "text-rose-700" : "text-rose-300"}`}>
+                                {t("Budget reached", "Hết lượt")}
+                              </span>
+                            ) : needsPrediction ? (
+                              <span className={`text-[11px] font-medium ${isLight ? "text-indigo-700" : "text-indigo-300"}`}>
+                                {isRootCauseDiagnosis
+                                  ? t("Lock diagnosis first", "Khóa chẩn đoán trước")
+                                  : t("Lock prediction first", "Khóa dự đoán trước")}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           <Button
@@ -5850,14 +6023,20 @@ export function LiveStudioWorkbench({
                               : authoring.exerciseType,
                     targetAction: authoring.targetChangeAction,
                     stoppedServices: authoring.initialStoppedServices,
+                    initialCpuLimits: authoring.initialCpuLimits,
+                    initialLoadRps: initialLoadRpsDraft,
                     minReplicas:
                       replicaSvcDraft && Number(replicaCountDraft) >= 2
                         ? [{ service: replicaSvcDraft, count: Number(replicaCountDraft) }]
                         : [],
                     predictionRequired: predictionRequiredDraft,
+                    predictionMode: predictionModeDraft,
+                    blindMode: blindModeDraft,
+                    maxActions: maxActionsDraft,
                     minImpactF1: Number.isFinite(parsedF1) ? parsedF1 : 0.7,
                     maxErrorRatePercent: parsedErr != null && Number.isFinite(parsedErr) ? parsedErr : null,
                     maxP95Ms: parsedP95 != null && Number.isFinite(parsedP95) ? parsedP95 : null,
+                    rules: rulesDraft,
                     locale,
                   });
                   setMissionDraft(nextText);
@@ -5874,6 +6053,7 @@ export function LiveStudioWorkbench({
                   "DISCONNECT",
                 ] as const;
                 const toggleAllowedAction = (act: string) => {
+                  if (authoring.frozen) return;
                   setAllowedActionsDraft((prev) =>
                     prev.includes(act)
                       ? prev.length > 1
@@ -5882,8 +6062,46 @@ export function LiveStudioWorkbench({
                       : [...prev, act],
                   );
                 };
+                const toggleBaselinePath = (epPath: string) => {
+                  if (authoring.frozen) return;
+                  setBaselinePathsDraft((prev) => {
+                    if (prev.includes(epPath)) {
+                      if (prev.length <= 1) return prev;
+                      const next = prev.filter((p) => p !== epPath);
+                      setBaselineDraft(next[0]!);
+                      return next;
+                    }
+                    if (prev.length >= 4) return prev;
+                    return [...prev, epPath];
+                  });
+                };
+                const addComposableRule = () => {
+                  if (authoring.frozen || rulesDraft.length >= 6) return;
+                  setRulesDraft((prev) => [
+                    ...prev,
+                    {
+                      metric: "P95_DELTA_PCT",
+                      target: "gateway",
+                      operator: "LTE",
+                      threshold: -20,
+                    },
+                  ]);
+                };
+                const updateComposableRule = (idx: number, patch: Partial<DeclarativeRuleInput>) => {
+                  if (authoring.frozen) return;
+                  setRulesDraft((prev) =>
+                    prev.map((rule, i) => (i === idx ? { ...rule, ...patch } : rule)),
+                  );
+                };
+                const removeComposableRule = (idx: number) => {
+                  if (authoring.frozen) return;
+                  setRulesDraft((prev) => prev.filter((_, i) => i !== idx));
+                };
+                const initialCpuEntries = Object.entries(authoring.initialCpuLimits ?? {}).filter(
+                  ([, pct]) => pct > 0 && pct < 100,
+                );
                 const presetBtn = (active: boolean) =>
-                  `h-7 whitespace-nowrap border px-1.5 font-mono text-[11px] font-semibold transition ${themeRadius} ${
+                  `h-7 whitespace-nowrap border px-1.5 font-mono text-[11px] font-semibold transition disabled:opacity-45 ${themeRadius} ${
                     active ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
                   }`;
                 const goalPillClass =
@@ -5895,54 +6113,51 @@ export function LiveStudioWorkbench({
                         ? "border-sky-200 bg-sky-50 text-sky-900"
                         : "border-sky-500/40 bg-sky-500/15 text-sky-200";
                 const gradingSummary = (() => {
-                  if (activeGoalId === "change-impact") {
+                  const parts: string[] = [];
+                  if (predictionRequiredDraft) {
                     const pct = Math.round((Number(minImpactF1Draft) || 0.7) * 100);
-                    return predictionRequiredDraft
-                      ? t(`Auto-check prediction F1 >= ${pct}%`, `Tự kiểm tra dự đoán F1 >= ${pct}%`)
-                      : t("Evidence-based impact report", "Đánh giá qua bằng chứng Snapshot");
+                    parts.push(
+                      predictionModeDraft === "ROOT_CAUSE"
+                        ? t(`Root Cause F1 >= ${pct}%`, `Chẩn đoán gốc F1 >= ${pct}%`)
+                        : t(`Impact F1 >= ${pct}%`, `Dự đoán F1 >= ${pct}%`),
+                    );
                   }
-                  if (activeGoalId === "scale") {
-                    const rep = Number(replicaCountDraft) || 2;
-                    const parts = [
-                      replicaSvcDraft ? `${replicaSvcDraft} >= ${rep}x` : `>= ${rep}x`,
-                      maxErrDraft.trim() ? `${t("Error", "Lỗi")} <= ${maxErrDraft}%` : null,
-                      maxP95Draft.trim() ? `p95 <= ${maxP95Draft}ms` : null,
-                    ].filter(Boolean);
-                    return parts.join(" · ");
+                  if (replicaSvcDraft && Number(replicaCountDraft) >= 2) {
+                    parts.push(`${replicaSvcDraft} >= ${replicaCountDraft}x`);
                   }
-                  if (activeGoalId === "recovery") {
-                    const err = maxErrDraft.trim() || "0";
-                    return [
-                      t(`Recover to <= ${err}% errors`, `Khôi phục về <= ${err}% lỗi`),
-                      maxP95Draft.trim() ? `p95 <= ${maxP95Draft}ms` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ");
+                  if (maxErrDraft.trim()) {
+                    parts.push(`${t("Error", "Lỗi")} <= ${maxErrDraft}%`);
                   }
-                  if (activeGoalId === "cpu") {
-                    const parts = [
-                      maxP95Draft.trim() ? `p95 <= ${maxP95Draft}ms` : t("Observe p95 latency jump", "Quan sát độ trễ p95 tăng"),
-                      maxErrDraft.trim() ? `${t("Error", "Lỗi")} <= ${maxErrDraft}%` : null,
-                    ].filter(Boolean);
-                    return parts.join(" · ");
+                  if (maxP95Draft.trim()) {
+                    parts.push(`p95 <= ${maxP95Draft}ms`);
                   }
-                  return null;
+                  if (rulesDraft.length > 0) {
+                    parts.push(
+                      t(`+${rulesDraft.length} custom rule(s)`, `+${rulesDraft.length} điều kiện thêm`),
+                    );
+                  }
+                  return parts.length > 0 ? parts.join(" · ") : null;
                 })();
 
                 return (
-                  <section aria-label="Mission setup" className="space-y-3 text-xs">
-                    {/* Baseline Endpoint (Themed Radix Select + Smart Auto-Pick Indicator) */}
-                    <div className="space-y-1.5">
+                  <section aria-label="Mission setup" className="space-y-3 pb-14 text-xs">
+                    {/* Baseline Endpoint(s) + Initial Probe Load RPS */}
+                    <div className="space-y-2">
                       <span
                         className={`block text-[11.5px] font-medium ${isLight ? "text-slate-700" : "text-slate-300"}`}
                       >
                         {t("Baseline Endpoint (auto-detected)", "Endpoint kiểm thử (tự quét từ repo)")}
                       </span>
                       <Select
+                        disabled={Boolean(authoring.frozen)}
                         value={hasSelectedEndpoint ? baselineDraft : "__custom__"}
                         onValueChange={(nextVal) => {
                           if (nextVal !== "__custom__") {
                             setBaselineDraft(nextVal);
+                            setBaselinePathsDraft((prev) => {
+                              const rest = prev.filter((p) => p !== nextVal && p !== baselineDraft);
+                              return [nextVal, ...rest].slice(0, 4);
+                            });
                           }
                         }}
                       >
@@ -5950,7 +6165,7 @@ export function LiveStudioWorkbench({
                           aria-label={t("Baseline Endpoint", "Endpoint kiểm thử")}
                           data-testid="studio-baseline-endpoint-select"
                           style={{ fontSize: 12.5, lineHeight: "1.25" }}
-                          className={`h-9 w-full px-2.5 py-0 font-mono font-medium shadow-none focus:ring-1 focus:ring-offset-0 ${styleCfg.inputClass}`}
+                          className={`h-9 w-full px-2.5 py-0 font-mono font-medium shadow-none focus:ring-1 focus:ring-offset-0 disabled:opacity-50 ${styleCfg.inputClass}`}
                         >
                           <SelectValue />
                         </SelectTrigger>
@@ -5980,6 +6195,37 @@ export function LiveStudioWorkbench({
                         </SelectContent>
                       </Select>
 
+                      {endpointList.length > 1 && (
+                        <div className="space-y-1">
+                          <span className={`block text-[10.5px] ${styleCfg.subtleTextClass}`}>
+                            {t(
+                              `Multi-endpoint mix (${baselinePathsDraft.length}/4 active, round-robin)`,
+                              `Chạy nhiều endpoint cùng lúc (${baselinePathsDraft.length}/4 đang bật, luân phiên)`,
+                            )}
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {endpointList.slice(0, 6).map((ep) => {
+                              const on = baselinePathsDraft.includes(ep.path);
+                              return (
+                                <button
+                                  key={ep.path}
+                                  type="button"
+                                  disabled={authoring.frozen}
+                                  onClick={() => toggleBaselinePath(ep.path)}
+                                  className={`max-w-full truncate border px-1.5 py-0.5 font-mono text-[10px] font-semibold transition disabled:opacity-45 ${themeRadius} ${
+                                    on ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
+                                  }`}
+                                  title={ep.label}
+                                >
+                                  {on ? "✓ " : "+ "}
+                                  {ep.path}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {hasVerifiedRoutes && (
                         <div data-testid="smart-endpoint-hint">
                           {smartPick.isCurrentStale && smartPick.recommendedPath !== baselineDraft ? (
@@ -6001,9 +6247,13 @@ export function LiveStudioWorkbench({
                               </span>
                               <button
                                 type="button"
+                                disabled={authoring.frozen}
                                 data-testid="apply-smart-endpoint-btn"
-                                onClick={() => setBaselineDraft(smartPick.recommendedPath)}
-                                className={`shrink-0 border px-2 py-0.5 text-[11px] font-semibold transition ${themeRadius} ${styleCfg.controlActiveClass}`}
+                                onClick={() => {
+                                  setBaselineDraft(smartPick.recommendedPath);
+                                  setBaselinePathsDraft([smartPick.recommendedPath]);
+                                }}
+                                className={`shrink-0 border px-2 py-0.5 text-[11px] font-semibold transition disabled:opacity-45 ${themeRadius} ${styleCfg.controlActiveClass}`}
                               >
                                 {t("Use smart pick", "Áp dụng ngay")}
                               </button>
@@ -6017,6 +6267,142 @@ export function LiveStudioWorkbench({
                           ) : null}
                         </div>
                       )}
+
+                      {/* Initial Load RPS on session start */}
+                      <div data-testid="studio-initial-load-rps" className="space-y-1 pt-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                            {t("Initial traffic load on open", "Tải nền khi sinh viên mở bài")}
+                          </span>
+                          <span className="font-mono text-[11px] font-semibold text-foreground">
+                            {initialLoadRpsDraft ?? 1} RPS
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-5 gap-1">
+                          {([1, 5, 15, 30, 50] as const).map((rps) => {
+                            const active = (initialLoadRpsDraft ?? 1) === rps;
+                            return (
+                              <button
+                                key={rps}
+                                type="button"
+                                disabled={authoring.frozen}
+                                onClick={() => setInitialLoadRpsDraft(rps === 1 ? null : rps)}
+                                className={presetBtn(active)}
+                              >
+                                {rps}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {(initialLoadRpsDraft ?? 1) >= 30 && (
+                          <p className={`text-[10.5px] leading-snug ${isLight ? "text-amber-700" : "text-amber-300"}`}>
+                            {t(
+                              "High boot load (30–50 RPS) stresses runner CPU — Playtest once before locking.",
+                              "Tải cao lúc mở bài (30–50 RPS) nặng CPU runner — nên Chạy thử trước khi khóa đề.",
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 4 Composable Game Rules & Difficulty Controls */}
+                    <div
+                      data-testid="studio-difficulty-rules"
+                      className={`space-y-2.5 p-2.5 ${styleCfg.subSurfaceClass}`}
+                    >
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {t("Rules & Difficulty", "Luật chơi & Độ khó")}
+                      </p>
+
+                      <label className="flex cursor-pointer items-center justify-between gap-2">
+                        <span className={`text-[11.5px] font-medium ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                          {t("Blind Mode (hide culprit services)", "Chế độ Đề mù (ẩn service lỗi với SV)")}
+                        </span>
+                        <input
+                          type="checkbox"
+                          data-testid="toggle-blind-mode"
+                          disabled={authoring.frozen}
+                          checked={blindModeDraft}
+                          onChange={(e) => setBlindModeDraft(e.target.checked)}
+                          className={`size-4 rounded border-slate-400 disabled:opacity-45 ${styleCfg.checkboxAccentClass}`}
+                        />
+                      </label>
+
+                      <div className="space-y-1.5">
+                        <label className="flex cursor-pointer items-center justify-between gap-2">
+                          <span className={`text-[11.5px] font-medium ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                            {t("Require prediction / diagnosis first", "Bắt dự đoán / chẩn đoán trước khi sửa")}
+                          </span>
+                          <input
+                            type="checkbox"
+                            data-testid="toggle-prediction-required"
+                            disabled={authoring.frozen}
+                            checked={predictionRequiredDraft}
+                            onChange={(e) => setPredictionRequiredDraft(e.target.checked)}
+                            className={`size-4 rounded border-slate-400 disabled:opacity-45 ${styleCfg.checkboxAccentClass}`}
+                          />
+                        </label>
+
+                        {predictionRequiredDraft && (
+                          <div className="space-y-1.5 pl-1">
+                            <div className="grid grid-cols-2 gap-1">
+                              {(
+                                [
+                                  ["BLAST_RADIUS", t("Blast Radius", "Vùng ảnh hưởng")],
+                                  ["ROOT_CAUSE", t("Root Cause", "Nguyên nhân gốc")],
+                                ] as const
+                              ).map(([mode, lbl]) => (
+                                <button
+                                  key={mode}
+                                  type="button"
+                                  disabled={authoring.frozen}
+                                  onClick={() => setPredictionModeDraft(mode)}
+                                  className={presetBtn(predictionModeDraft === mode)}
+                                >
+                                  {lbl}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-4 gap-1">
+                              {(["0.6", "0.7", "0.85", "1"] as const).map((f1) => (
+                                <button
+                                  key={f1}
+                                  type="button"
+                                  disabled={authoring.frozen}
+                                  onClick={() => setMinImpactF1Draft(f1)}
+                                  className={presetBtn(Number(minImpactF1Draft || "0.7") === Number(f1))}
+                                >
+                                  F1 {Math.round(Number(f1) * 100)}%
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div data-testid="studio-max-actions" className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                            {t("Action budget (max Docker actions)", "Giới hạn lượt thao tác Docker")}
+                          </span>
+                          <span className="font-mono text-[11px] font-semibold text-foreground">
+                            {maxActionsDraft ? `${maxActionsDraft}` : "∞"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-5 gap-1">
+                          {([null, 2, 3, 4, 6] as const).map((cap) => (
+                            <button
+                              key={cap ?? "inf"}
+                              type="button"
+                              disabled={authoring.frozen}
+                              onClick={() => setMaxActionsDraft(cap)}
+                              className={presetBtn(maxActionsDraft === cap)}
+                            >
+                              {cap ?? "∞"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
                     {/* Structured Student Instructions + 1-Click Regenerate */}
@@ -6029,14 +6415,16 @@ export function LiveStudioWorkbench({
                         </span>
                         <button
                           type="button"
+                          disabled={authoring.frozen}
                           data-testid="regenerate-instructions-btn"
                           onClick={regenerateInstructions}
-                          className={`text-[11px] font-medium underline underline-offset-2 transition hover:opacity-100 ${styleCfg.subtleTextClass}`}
+                          className={`text-[11px] font-medium underline underline-offset-2 transition hover:opacity-100 disabled:opacity-45 ${styleCfg.subtleTextClass}`}
                         >
                           {t("Regenerate from setup", "Viết lại mẫu chuẩn")}
                         </button>
                       </div>
                       <Textarea
+                        disabled={authoring.frozen}
                         value={missionDraft}
                         onChange={(e) => setMissionDraft(e.target.value)}
                         style={{ fontSize: 12.5, lineHeight: "1.45" }}
@@ -6044,7 +6432,7 @@ export function LiveStudioWorkbench({
                           "Pick a goal or click a 3D block to auto-draft step-by-step instructions.",
                           "Chọn dạng bài hoặc bấm vào khối 3D để tự sinh hướng dẫn từng bước cho sinh viên.",
                         )}
-                        className={`min-h-28 ${styleCfg.inputClass}`}
+                        className={`min-h-28 disabled:opacity-55 ${styleCfg.inputClass}`}
                       />
                     </div>
 
@@ -6057,7 +6445,7 @@ export function LiveStudioWorkbench({
                         {t("Initial State:", "Trạng thái ban đầu:")}{" "}
                         <code
                           className={`font-mono font-semibold ${
-                            authoring.initialStoppedServices.length > 0
+                            authoring.initialStoppedServices.length > 0 || initialCpuEntries.length > 0
                               ? isLight
                                 ? "text-rose-700"
                                 : "text-rose-300"
@@ -6066,11 +6454,34 @@ export function LiveStudioWorkbench({
                                 : "text-emerald-300"
                           }`}
                         >
-                          {authoring.initialStoppedServices.length > 0
-                            ? `${t("Starts down (0x)", "Tắt sẵn (0x)")}: ${authoring.initialStoppedServices.join(", ")}`
-                            : t("All services running", "Tất cả chạy bình thường")}
+                          {authoring.initialStoppedServices.length === 0 && initialCpuEntries.length === 0
+                            ? t("All services running", "Tất cả chạy bình thường")
+                            : [
+                                authoring.initialStoppedServices.length > 0
+                                  ? `${t("Down 0x", "Tắt 0x")}: ${authoring.initialStoppedServices.join(", ")}`
+                                  : null,
+                                initialCpuEntries.length > 0
+                                  ? `CPU: ${initialCpuEntries.map(([s, pct]) => `${s}=${pct}%`).join(", ")}`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                         </code>
                       </p>
+                      {(blindModeDraft || maxActionsDraft != null || (initialLoadRpsDraft ?? 1) > 1) && (
+                        <p className={isLight ? "text-slate-700" : "text-slate-300"}>
+                          {t("Difficulty:", "Độ khó:")}{" "}
+                          <span className="font-semibold text-foreground">
+                            {[
+                              blindModeDraft ? t("Blind Mode", "Đề mù") : null,
+                              maxActionsDraft != null ? t(`Max ${maxActionsDraft} actions`, `Tối đa ${maxActionsDraft} lượt`) : null,
+                              (initialLoadRpsDraft ?? 1) > 1 ? `${initialLoadRpsDraft} RPS` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </p>
+                      )}
                       {authoring.targetChangeAction?.service && (
                         <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                           {t("Target Action:", "Thao tác mục tiêu:")}{" "}
@@ -6107,15 +6518,16 @@ export function LiveStudioWorkbench({
                         <code
                           className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}
                         >
-                          GET {baselineDraft || "/health"}
+                          GET {baselinePathsDraft.join(", ")}
                         </code>
                       </p>
                     </div>
 
-                    {/* Goal-Specific Collapsible Advanced Settings */}
+                    {/* Composable Win Conditions & Goal-Specific Advanced Settings */}
                     <details
+                      open={activeGoalId === null || rulesDraft.length > 0 || blindModeDraft}
                       data-testid="goal-specific-advanced"
-                      data-advanced-goal={activeGoalId ?? "none"}
+                      data-advanced-goal={activeGoalId ?? "custom"}
                       className={`mb-2 p-2.5 ${styleCfg.subSurfaceClass}`}
                     >
                       <summary
@@ -6123,11 +6535,11 @@ export function LiveStudioWorkbench({
                           isLight ? "text-slate-800 hover:text-slate-950" : "text-slate-200 hover:text-white"
                         }`}
                       >
-                        <span>{t("Advanced settings", "Tùy chỉnh nâng cao")}</span>
+                        <span>{t("Advanced settings & Win Conditions", "Tiêu chí đạt & Tùy chỉnh nâng cao")}</span>
                         <span
                           className={`border px-2 py-0.5 text-[10.5px] font-semibold ${themeRadius} ${goalPillClass}`}
                         >
-                          {advancedGoalBadge}
+                          {blindModeDraft ? t("Exam / Blind", "Đề thi / Mù") : advancedGoalBadge}
                         </span>
                       </summary>
 
@@ -6155,6 +6567,7 @@ export function LiveStudioWorkbench({
                                   <button
                                     key={val}
                                     type="button"
+                                    disabled={authoring.frozen}
                                     title={tip}
                                     onClick={() => setMinImpactF1Draft(val)}
                                     className={presetBtn(Number(minImpactF1Draft) === Number(val))}
@@ -6164,6 +6577,7 @@ export function LiveStudioWorkbench({
                                 ))}
                                 <Input
                                   type="number"
+                                  disabled={authoring.frozen}
                                   aria-label="Min F1 (0-1)"
                                   style={{ fontSize: 12 }}
                                   step="0.05"
@@ -6175,12 +6589,6 @@ export function LiveStudioWorkbench({
                                   className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
                                 />
                               </div>
-                              <p className={`text-[10.5px] leading-snug ${styleCfg.subtleTextClass}`}>
-                                {t(
-                                  "Compares student predictions against real impacted services from OpenTelemetry traces as a grading hint.",
-                                  "Tự đối chiếu F1 giữa danh sách sinh viên dự đoán và các nhánh lỗi thực tế từ trace (gợi ý chấm, không thay thế điểm giảng viên).",
-                                )}
-                              </p>
                             </div>
                           </div>
                         )}
@@ -6194,6 +6602,7 @@ export function LiveStudioWorkbench({
                                   {t("Scale target", "Service cần Scale")}
                                 </span>
                                 <Select
+                                  disabled={Boolean(authoring.frozen)}
                                   value={replicaSvcDraft || "__none__"}
                                   onValueChange={(nextVal) =>
                                     setReplicaSvcDraft(nextVal === "__none__" ? "" : nextVal)
@@ -6240,8 +6649,9 @@ export function LiveStudioWorkbench({
                                     <button
                                       key={cnt}
                                       type="button"
+                                      disabled={authoring.frozen}
                                       onClick={() => setReplicaCountDraft(cnt)}
-                                      className={`h-8 border font-mono text-xs font-semibold transition ${themeRadius} ${
+                                      className={`h-8 border font-mono text-xs font-semibold transition disabled:opacity-45 ${themeRadius} ${
                                         (replicaCountDraft || "2") === cnt
                                           ? styleCfg.controlActiveClass
                                           : styleCfg.controlIdleClass
@@ -6253,118 +6663,42 @@ export function LiveStudioWorkbench({
                                 </div>
                               </div>
                             </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
-                                  {t("Max Error % under load", "Lỗi tối đa khi chịu tải (%)")}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  {(["0", "5"] as const).map((val) => (
-                                    <button
-                                      key={val}
-                                      type="button"
-                                      onClick={() => setMaxErrDraft(val)}
-                                      className={presetBtn(maxErrDraft === val)}
-                                    >
-                                      {val}%
-                                    </button>
-                                  ))}
-                                  <Input
-                                    type="number"
-                                    aria-label="Max Error %"
-                                    style={{ fontSize: 12 }}
-                                    min={0}
-                                    max={100}
-                                    value={maxErrDraft}
-                                    onChange={(e) => setMaxErrDraft(e.target.value)}
-                                    placeholder="5"
-                                    className={`h-7 flex-1 px-2 font-mono ${styleCfg.inputClass}`}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="space-y-1">
-                                <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
-                                  {t("Max p95 latency (ms)", "Độ trễ p95 tối đa (ms)")}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  {(["", "500"] as const).map((val) => (
-                                    <button
-                                      key={val || "none"}
-                                      type="button"
-                                      onClick={() => setMaxP95Draft(val)}
-                                      className={presetBtn(maxP95Draft === val)}
-                                    >
-                                      {val ? `${val}` : "—"}
-                                    </button>
-                                  ))}
-                                  <Input
-                                    type="number"
-                                    aria-label="Max p95 (ms)"
-                                    style={{ fontSize: 12 }}
-                                    min={1}
-                                    value={maxP95Draft}
-                                    onChange={(e) => setMaxP95Draft(e.target.value)}
-                                    placeholder="—"
-                                    className={`h-7 flex-1 px-2 font-mono ${styleCfg.inputClass}`}
-                                  />
-                                </div>
-                              </div>
-                            </div>
                           </div>
                         )}
 
                         {/* 3. Outage Recovery Specialized Advanced Controls */}
                         {activeGoalId === "recovery" && (
-                          <div data-testid="advanced-recovery" className="space-y-2.5">
-                            <div className="space-y-1.5">
-                              <span className={`block text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
-                                {t("Recovery Error Threshold (Max Error %)", "Ngưỡng lỗi xác nhận hồi phục (%)")}
-                              </span>
-                              <div className="grid grid-cols-3 gap-1.5">
-                                <button
-                                  type="button"
-                                  title={t("Strict 0% errors", "Tuyệt đối 0% lỗi")}
-                                  onClick={() => setMaxErrDraft("0")}
-                                  className={presetBtn(maxErrDraft === "0")}
-                                >
-                                  0%
-                                </button>
-                                <button
-                                  type="button"
-                                  title={t("Allow <= 5% errors", "Chấp nhận tối đa 5% lỗi")}
-                                  onClick={() => setMaxErrDraft("5")}
-                                  className={presetBtn(maxErrDraft === "5")}
-                                >
-                                  &lt;= 5%
-                                </button>
-                                <Input
-                                  type="number"
-                                  aria-label="Max Error %"
-                                  style={{ fontSize: 12 }}
-                                  min={0}
-                                  max={100}
-                                  value={maxErrDraft}
-                                  onChange={(e) => setMaxErrDraft(e.target.value)}
-                                  placeholder="0"
-                                  className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="space-y-1">
-                              <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
-                                {t("Optional Max p95 after recovery (ms)", "Ngưỡng độ trễ p95 sau khôi phục (tùy chọn)")}
-                              </span>
+                          <div data-testid="advanced-recovery" className="space-y-1.5">
+                            <span className={`block text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
+                              {t("Recovery Error Threshold (Max Error %)", "Ngưỡng lỗi xác nhận hồi phục (%)")}
+                            </span>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              <button
+                                type="button"
+                                disabled={authoring.frozen}
+                                onClick={() => setMaxErrDraft("0")}
+                                className={presetBtn(maxErrDraft === "0")}
+                              >
+                                0%
+                              </button>
+                              <button
+                                type="button"
+                                disabled={authoring.frozen}
+                                onClick={() => setMaxErrDraft("5")}
+                                className={presetBtn(maxErrDraft === "5")}
+                              >
+                                &lt;= 5%
+                              </button>
                               <Input
                                 type="number"
-                                aria-label="Max p95 (ms)"
+                                disabled={authoring.frozen}
+                                aria-label="Max Error %"
                                 style={{ fontSize: 12 }}
-                                min={1}
-                                value={maxP95Draft}
-                                onChange={(e) => setMaxP95Draft(e.target.value)}
-                                placeholder={t("Leave empty to skip latency gate", "Để trống nếu không ràng buộc độ trễ")}
+                                min={0}
+                                max={100}
+                                value={maxErrDraft}
+                                onChange={(e) => setMaxErrDraft(e.target.value)}
+                                placeholder="0"
                                 className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
                               />
                             </div>
@@ -6373,87 +6707,228 @@ export function LiveStudioWorkbench({
 
                         {/* 4. CPU Degradation Specialized Advanced Controls */}
                         {activeGoalId === "cpu" && (
-                          <div data-testid="advanced-cpu" className="space-y-2.5">
-                            <div className="space-y-1.5">
-                              <span className={`block text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
-                                {t(
-                                  "Optional Final Max p95 (ms, leave blank if keeping CPU throttled)",
-                                  "Giới hạn p95 lúc kết thúc (ms, để trống nếu giữ bóp CPU)",
-                                )}
-                              </span>
-                              <div className="grid grid-cols-4 gap-1.5">
-                                {(
-                                  [
-                                    ["", t("No limit", "Không ép")],
-                                    ["1500", "≤1500ms"],
-                                    ["3000", "≤3000ms"],
-                                  ] as const
-                                ).map(([val, lbl]) => (
-                                  <button
-                                    key={val || "none"}
-                                    type="button"
-                                    onClick={() => setMaxP95Draft(val)}
-                                    className={presetBtn(maxP95Draft === val)}
-                                  >
-                                    {lbl}
-                                  </button>
-                                ))}
-                                <Input
-                                  type="number"
-                                  aria-label="Max p95 (ms)"
-                                  style={{ fontSize: 12 }}
-                                  min={1}
-                                  value={maxP95Draft}
-                                  onChange={(e) => setMaxP95Draft(e.target.value)}
-                                  placeholder="—"
-                                  className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="space-y-1">
-                              <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
-                                {t("Optional Max Error %", "Giới hạn lỗi tối đa (tùy chọn)")}
-                              </span>
-                              <div className="grid grid-cols-3 gap-1.5">
+                          <div data-testid="advanced-cpu" className="space-y-1.5">
+                            <span className={`block text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
+                              {t(
+                                "Final Max p95 (ms, leave blank if keeping CPU throttled)",
+                                "Giới hạn p95 lúc kết thúc (ms, để trống nếu giữ bóp CPU)",
+                              )}
+                            </span>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {(
+                                [
+                                  ["", t("No limit", "Không ép")],
+                                  ["1500", "≤1500ms"],
+                                  ["3000", "≤3000ms"],
+                                ] as const
+                              ).map(([val, lbl]) => (
                                 <button
+                                  key={val || "none"}
                                   type="button"
-                                  onClick={() => setMaxErrDraft("")}
-                                  className={presetBtn(maxErrDraft === "")}
+                                  disabled={authoring.frozen}
+                                  onClick={() => {
+                                    setMaxP95Draft(val);
+                                    setP95ValidationError("");
+                                  }}
+                                  className={presetBtn(maxP95Draft === val)}
                                 >
-                                  {t("No limit", "Không ép")}
+                                  {lbl}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setMaxErrDraft("5")}
-                                  className={presetBtn(maxErrDraft === "5")}
-                                >
-                                  &lt;= 5%
-                                </button>
-                                <Input
-                                  type="number"
-                                  aria-label="Max Error %"
-                                  style={{ fontSize: 12 }}
-                                  min={0}
-                                  max={100}
-                                  value={maxErrDraft}
-                                  onChange={(e) => setMaxErrDraft(e.target.value)}
-                                  placeholder="—"
-                                  className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
-                                />
-                              </div>
+                              ))}
+                              <Input
+                                type="number"
+                                disabled={authoring.frozen}
+                                aria-label="Max p95 (ms)"
+                                style={{ fontSize: 12 }}
+                                min={1}
+                                max={60000}
+                                value={maxP95Draft}
+                                onChange={(e) => {
+                                  setMaxP95Draft(e.target.value);
+                                  setP95ValidationError("");
+                                }}
+                                placeholder="—"
+                                className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
+                              />
                             </div>
                           </div>
                         )}
 
-                        {!activeGoalId && (
-                          <p className={`text-[11px] leading-snug ${styleCfg.subtleTextClass}`}>
-                            {t(
-                              "Pick one of the 4 Exercise Goals in Visual Builder to unlock specialized grading settings.",
-                              "Chọn 1 trong 4 dạng bài ở tab Thiết kế 3D để mở bộ tùy chỉnh chấm điểm chuyên biệt.",
-                            )}
+                        {/* Unified Composable SLA Thresholds (available in EVERY mode — Easy, Medium, Hard Exam!) */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                              {t("Max Error (%)", "Lỗi tối đa (%)")}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {(["", "0", "5"] as const).map((val) => (
+                                <button
+                                  key={val || "any"}
+                                  type="button"
+                                  disabled={authoring.frozen}
+                                  onClick={() => setMaxErrDraft(val)}
+                                  className={presetBtn(maxErrDraft === val)}
+                                >
+                                  {val ? `${val}%` : "—"}
+                                </button>
+                              ))}
+                              <Input
+                                type="number"
+                                disabled={authoring.frozen}
+                                aria-label="Max Error %"
+                                style={{ fontSize: 12 }}
+                                min={0}
+                                max={100}
+                                value={maxErrDraft}
+                                onChange={(e) => setMaxErrDraft(e.target.value)}
+                                placeholder="—"
+                                className={`h-7 min-w-0 flex-1 px-1.5 font-mono ${styleCfg.inputClass}`}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                              {t("Max p95 (ms)", "p95 tối đa (ms)")}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {(["", "1500"] as const).map((val) => (
+                                <button
+                                  key={val || "any"}
+                                  type="button"
+                                  disabled={authoring.frozen}
+                                  onClick={() => {
+                                    setMaxP95Draft(val);
+                                    setP95ValidationError("");
+                                  }}
+                                  className={presetBtn(maxP95Draft === val)}
+                                >
+                                  {val || "—"}
+                                </button>
+                              ))}
+                              <Input
+                                type="number"
+                                disabled={authoring.frozen}
+                                aria-label="Max p95 (ms)"
+                                style={{ fontSize: 12 }}
+                                min={1}
+                                max={60000}
+                                value={maxP95Draft}
+                                onChange={(e) => {
+                                  setMaxP95Draft(e.target.value);
+                                  setP95ValidationError("");
+                                }}
+                                placeholder="—"
+                                className={`h-7 min-w-0 flex-1 px-1.5 font-mono ${styleCfg.inputClass}`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {p95ValidationError && (
+                          <p role="alert" className="text-[11px] font-medium text-rose-500">
+                            {p95ValidationError}
                           </p>
                         )}
+
+                        {/* Composable Extra Win Conditions (+ Add Rule) */}
+                        <div
+                          data-testid="studio-composable-rules"
+                          className={`space-y-1.5 border-t pt-2.5 ${styleCfg.dividerClass}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
+                              {t("Extra composable criteria", "Điều kiện ghép thêm")} ({rulesDraft.length}/6)
+                            </span>
+                            <button
+                              type="button"
+                              disabled={authoring.frozen || rulesDraft.length >= 6}
+                              data-testid="add-composable-rule-btn"
+                              onClick={addComposableRule}
+                              className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[10.5px] font-semibold transition disabled:opacity-45 ${themeRadius} ${styleCfg.controlIdleClass}`}
+                            >
+                              <Plus className="size-3" aria-hidden="true" />
+                              {t("Add rule", "Thêm điều kiện")}
+                            </button>
+                          </div>
+
+                          {rulesDraft.map((rule, idx) => (
+                            <div
+                              key={`${rule.metric}-${idx}`}
+                              className={`grid grid-cols-[1fr_1fr_auto_auto] items-center gap-1 border p-1.5 ${themeRadius} ${styleCfg.controlIdleClass}`}
+                            >
+                              <select
+                                aria-label="Rule metric"
+                                disabled={authoring.frozen}
+                                value={rule.metric}
+                                onChange={(e) => {
+                                  const nextMetric = e.target.value as DeclarativeRuleInput["metric"];
+                                  updateComposableRule(idx, {
+                                    metric: nextMetric,
+                                    operator:
+                                      nextMetric === "REPLICAS" || nextMetric === "TRACE_EDGE"
+                                        ? "GTE"
+                                        : "LTE",
+                                    target:
+                                      nextMetric === "REPLICAS"
+                                        ? (blocks[0]?.service ?? "order-service")
+                                        : nextMetric === "TRACE_EDGE" || nextMetric === "EDGE_ERROR_RATE"
+                                          ? staticEdgesForBlast[0]
+                                            ? `${staticEdgesForBlast[0].from}->${staticEdgesForBlast[0].to}`
+                                            : "api-gateway->order-service"
+                                          : "gateway",
+                                    threshold:
+                                      nextMetric === "REPLICAS"
+                                        ? 2
+                                        : nextMetric === "TRACE_EDGE"
+                                          ? 1
+                                          : nextMetric === "P95_DELTA_PCT"
+                                            ? -20
+                                            : nextMetric === "P95_MS"
+                                              ? 1000
+                                              : 0,
+                                  });
+                                }}
+                                className={`h-7 rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                              >
+                                <option value="P95_DELTA_PCT">{t("p95 Δ%", "Giảm p95 %")}</option>
+                                <option value="REPLICAS">{t("Replicas >=", "Replica >=")}</option>
+                                <option value="P95_MS">{t("p95 <=", "p95 <=")}</option>
+                                <option value="ERROR_RATE">{t("Error % <=", "Lỗi % <=")}</option>
+                                <option value="EDGE_ERROR_RATE">{t("Edge Err %", "Lỗi cạnh %")}</option>
+                                <option value="TRACE_EDGE">{t("Trace edge", "Cạnh trace")}</option>
+                              </select>
+                              <input
+                                type="text"
+                                aria-label="Rule target"
+                                disabled={authoring.frozen}
+                                value={rule.target}
+                                onChange={(e) => updateComposableRule(idx, { target: e.target.value })}
+                                placeholder="service / A->B"
+                                className={`h-7 min-w-0 rounded border px-1.5 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                              />
+                              <input
+                                type="number"
+                                aria-label="Rule threshold"
+                                disabled={authoring.frozen}
+                                value={rule.threshold}
+                                onChange={(e) =>
+                                  updateComposableRule(idx, { threshold: Number(e.target.value) || 0 })
+                                }
+                                className={`h-7 w-14 rounded border px-1.5 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                              />
+                              <button
+                                type="button"
+                                disabled={authoring.frozen}
+                                aria-label="Remove rule"
+                                onClick={() => removeComposableRule(idx)}
+                                className="rounded p-1 opacity-65 hover:opacity-100 disabled:opacity-35"
+                              >
+                                <X className="size-3" aria-hidden="true" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
 
                         {/* Shared Technical Controls (Required Trace Edge, Allowed Actions, Sync Docker) */}
                         <div className={`space-y-2.5 border-t pt-2.5 ${styleCfg.dividerClass}`}>
@@ -6464,6 +6939,7 @@ export function LiveStudioWorkbench({
                                   {t("Required trace call edge (optional)", "Đường gọi cần kiểm chứng (tùy chọn)")}
                                 </span>
                                 <Select
+                                  disabled={Boolean(authoring.frozen)}
                                   value={
                                     authoring.requiredTraceEdge
                                       ? `${authoring.requiredTraceEdge.from}->${authoring.requiredTraceEdge.to}`
@@ -6560,9 +7036,10 @@ export function LiveStudioWorkbench({
                                   <button
                                     key={act}
                                     type="button"
+                                    disabled={authoring.frozen}
                                     title={act}
                                     onClick={() => toggleAllowedAction(act)}
-                                    className={`border px-1.5 py-0.5 text-[10.5px] font-semibold transition ${themeRadius} ${
+                                    className={`border px-1.5 py-0.5 text-[10.5px] font-semibold transition disabled:opacity-45 ${themeRadius} ${
                                       on ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
                                     }`}
                                   >
@@ -6579,7 +7056,7 @@ export function LiveStudioWorkbench({
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                disabled={authoring.syncingDocker}
+                                disabled={authoring.syncingDocker || authoring.frozen}
                                 onClick={authoring.onSyncDocker}
                                 className={`h-7 w-full text-[11px] ${themeRadius} ${styleCfg.controlIdleClass}`}
                               >
@@ -6636,22 +7113,38 @@ export function LiveStudioWorkbench({
                               )
                             : undefined
                         }
-                        onClick={() =>
+                        onClick={() => {
+                          if (maxP95Draft.trim()) {
+                            const parsedP95 = Number(maxP95Draft);
+                            if (!Number.isFinite(parsedP95) || parsedP95 < 1 || parsedP95 > 60000) {
+                              setP95ValidationError(
+                                t(
+                                  "Max p95 latency must be between 1 and 60000 ms.",
+                                  "Độ trễ p95 tối đa phải nằm trong khoảng 1 đến 60000 ms.",
+                                ),
+                              );
+                              return;
+                            }
+                          }
+                          setP95ValidationError("");
                           authoring.onSaveMission({
                             instructions: missionDraft,
                             baselinePath: baselineDraft,
-                            maxErrorRatePercent:
-                              activeGoalId === "change-impact" ? "" : maxErrDraft,
-                            maxP95Ms: activeGoalId === "change-impact" ? "" : maxP95Draft,
-                            minImpactF1:
-                              activeGoalId === "change-impact" ? minImpactF1Draft : "",
-                            predictionRequired:
-                              activeGoalId === "change-impact" ? predictionRequiredDraft : false,
+                            baselinePaths: baselinePathsDraft,
+                            initialLoadRps: initialLoadRpsDraft,
+                            maxErrorRatePercent: maxErrDraft,
+                            maxP95Ms: maxP95Draft,
+                            minImpactF1: predictionRequiredDraft ? minImpactF1Draft : "",
+                            predictionRequired: predictionRequiredDraft,
+                            predictionMode: predictionModeDraft,
+                            blindMode: blindModeDraft,
+                            maxActions: maxActionsDraft,
+                            rules: rulesDraft,
                             allowedActions: allowedActionsDraft,
-                            replicaService: activeGoalId === "scale" ? replicaSvcDraft : "",
-                            replicaCount: activeGoalId === "scale" ? replicaCountDraft : "",
-                          })
-                        }
+                            replicaService: replicaSvcDraft,
+                            replicaCount: replicaCountDraft,
+                          });
+                        }}
                         className={`h-8 px-3 text-xs font-semibold ${themeRadius} ${
                           missionDirty
                             ? "bg-amber-600 text-white hover:bg-amber-500"
@@ -6821,6 +7314,10 @@ export function LiveStudioWorkbench({
                             if (authoring.initialStoppedServices.includes(block.service)) {
                               tags.push(t("Down", "Tắt sẵn"));
                             }
+                            const initialCpuPct = authoring.initialCpuLimits?.[block.service];
+                            if (initialCpuPct != null && initialCpuPct > 0 && initialCpuPct < 100) {
+                              tags.push(`${t("Init CPU", "Bóp CPU")} ${initialCpuPct}%`);
+                            }
                             if (
                               authoring.targetChangeAction?.service === block.service &&
                               (authoring.targetChangeAction.action === "PAUSE" ||
@@ -6869,7 +7366,7 @@ export function LiveStudioWorkbench({
                       </Select>
                     </div>
 
-                    {/* 1. 4-Card Exercise Goal Picker (Theme-Synchronized) */}
+                    {/* 1. Quick Starters (4 Easy/Medium Goals + 1 Hard Blind Exam Preset) */}
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <p
@@ -6891,7 +7388,7 @@ export function LiveStudioWorkbench({
                             <button
                               key={goal.id}
                               type="button"
-                              disabled={authoring.busy}
+                              disabled={authoring.busy || authoring.frozen}
                               onClick={() => {
                                 setMaxErrDraft(
                                   goal.id === "scale" ? "5" : goal.id === "recovery" ? "0" : "",
@@ -6925,7 +7422,172 @@ export function LiveStudioWorkbench({
                           );
                         })}
                       </div>
+
+                      {authoring.onApplyExamPreset && (
+                        <button
+                          type="button"
+                          data-testid="author-exam-preset-btn"
+                          disabled={authoring.busy || authoring.frozen}
+                          onClick={() => authoring.onApplyExamPreset?.()}
+                          className={`flex w-full items-center justify-between gap-2 border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
+                            authoring.blindMode && activeGoalId === null
+                              ? themeActiveBtn
+                              : themeIdleBtn
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span style={{ fontSize: 12 }} className="block font-semibold">
+                              {t("Compound Incident Exam (Hard)", "Đề thi Tổng hợp (Hard)")}
+                            </span>
+                            <span
+                              style={{ fontSize: 11 }}
+                              className={
+                                authoring.blindMode && activeGoalId === null
+                                  ? themeActiveMuted
+                                  : themeSubtleText
+                              }
+                            >
+                              {t(
+                                "Blind Mode · Hidden CPU trap + 0x outage · Root Cause F1 · 4 actions",
+                                "Đề mù · Bóp CPU ẩn + tắt 0x · Chẩn đoán gốc F1 · Giới hạn 4 lượt",
+                              )}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 10 }} className="shrink-0 font-mono font-bold uppercase opacity-85">
+                            {authoring.blindMode && activeGoalId === null ? "ON" : "HARD"}
+                          </span>
+                        </button>
+                      )}
                     </div>
+
+                    {/* Direct 3D Initial Fault Painter (works independently on ANY service — Easy or Hard Exam) */}
+                    {(() => {
+                      const selCpuLimit = svc ? authoring.initialCpuLimits?.[svc] ?? null : null;
+                      const activeCpuTraps = Object.entries(authoring.initialCpuLimits ?? {}).filter(
+                        ([, pct]) => pct > 0 && pct < 100,
+                      );
+                      const hasAnyPaintedFault =
+                        authoring.initialStoppedServices.length > 0 || activeCpuTraps.length > 0;
+                      const painterBtn = (active: boolean) =>
+                        `h-7 border px-1.5 font-mono text-[10.5px] font-semibold transition disabled:opacity-45 ${themeRadius} ${
+                          active ? themeActiveBtn : themeIdleBtn
+                        }`;
+                      return (
+                        <div
+                          data-testid="studio-3d-fault-painter"
+                          className={`space-y-2 p-2.5 ${themeBox}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              style={{ fontSize: 11 }}
+                              className={`font-semibold uppercase tracking-wide ${themeSubtleText}`}
+                            >
+                              {t("Initial Fault Painter (3D)", "Cài sẵn sự cố trên khối 3D")}
+                            </span>
+                            {svc && (
+                              <span className="truncate font-mono text-[11px] font-semibold text-foreground">
+                                {svc}
+                              </span>
+                            )}
+                          </div>
+                          {svc ? (
+                            <div className="grid grid-cols-4 gap-1">
+                              <button
+                                type="button"
+                                disabled={authoring.busy || authoring.frozen}
+                                onClick={() => {
+                                  if (startsDown) authoring.onToggleInitialStopped(svc, false);
+                                  if (selCpuLimit != null) authoring.onSetInitialCpuLimit?.(svc, null);
+                                }}
+                                className={painterBtn(!startsDown && selCpuLimit == null)}
+                              >
+                                {t("Normal", "Khỏe")}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={authoring.busy || authoring.frozen}
+                                onClick={() => {
+                                  if (!startsDown) authoring.onToggleInitialStopped(svc, false);
+                                }}
+                                className={painterBtn(startsDown)}
+                              >
+                                {t("Down 0x", "Tắt 0x")}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={authoring.busy || authoring.frozen}
+                                onClick={() => authoring.onSetInitialCpuLimit?.(svc, 25)}
+                                className={painterBtn(!startsDown && selCpuLimit === 25)}
+                              >
+                                CPU 25%
+                              </button>
+                              <button
+                                type="button"
+                                disabled={authoring.busy || authoring.frozen}
+                                onClick={() => authoring.onSetInitialCpuLimit?.(svc, 50)}
+                                className={painterBtn(!startsDown && selCpuLimit === 50)}
+                              >
+                                CPU 50%
+                              </button>
+                            </div>
+                          ) : (
+                            <p style={{ fontSize: 11 }} className={themeSubtleText}>
+                              {t(
+                                "Click any service on the 3D stage to paint a stopped (0x) or hidden CPU-throttled fault.",
+                                "Bấm vào bất kỳ khối service nào trên sân khấu 3D để cài sẵn lỗi dừng 0x hoặc bóp CPU ẩn.",
+                              )}
+                            </p>
+                          )}
+
+                          {hasAnyPaintedFault && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {authoring.initialStoppedServices.map((downName) => (
+                                <span
+                                  key={`down-${downName}`}
+                                  className={`inline-flex items-center gap-1 border px-1.5 py-0.5 font-mono text-[10.5px] font-medium ${themeRadius} ${
+                                    isLight
+                                      ? "border-rose-300 bg-rose-50 text-rose-800"
+                                      : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                                  }`}
+                                >
+                                  {downName} · 0x
+                                  <button
+                                    type="button"
+                                    disabled={authoring.busy || authoring.frozen}
+                                    aria-label={`Clear ${downName} down fault`}
+                                    onClick={() => authoring.onToggleInitialStopped(downName, false)}
+                                    className="opacity-70 hover:opacity-100 disabled:opacity-35"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                              {activeCpuTraps.map(([cpuName, pct]) => (
+                                <span
+                                  key={`cpu-${cpuName}`}
+                                  className={`inline-flex items-center gap-1 border px-1.5 py-0.5 font-mono text-[10.5px] font-medium ${themeRadius} ${
+                                    isLight
+                                      ? "border-violet-300 bg-violet-50 text-violet-800"
+                                      : "border-violet-500/40 bg-violet-500/15 text-violet-200"
+                                  }`}
+                                >
+                                  {cpuName} · CPU {pct}%
+                                  <button
+                                    type="button"
+                                    disabled={authoring.busy || authoring.frozen}
+                                    aria-label={`Clear ${cpuName} CPU trap`}
+                                    onClick={() => authoring.onSetInitialCpuLimit?.(cpuName, null)}
+                                    className="opacity-70 hover:opacity-100 disabled:opacity-35"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* 2. Pure Goal-Specific Details (strictly scoped to the Exercise Goal chosen in #1) */}
                     <div
@@ -6947,8 +7609,8 @@ export function LiveStudioWorkbench({
                           <div className="space-y-2.5">
                             <button
                               type="button"
-                              draggable={!authoring.busy}
-                              disabled={authoring.busy || !impactSvc}
+                              draggable={!authoring.busy && !authoring.frozen}
+                              disabled={authoring.busy || authoring.frozen || !impactSvc}
                               title={t(chip.hintEn, chip.hintVi)}
                               onDragStart={(e) => startChipDrag(e, "author-impact-target")}
                               onClick={() =>
@@ -6988,13 +7650,14 @@ export function LiveStudioWorkbench({
                                         <button
                                           key={act}
                                           type="button"
+                                          disabled={authoring.busy || authoring.frozen}
                                           onClick={() =>
                                             authoring.onUpdateGoalRule?.({
                                               targetChangeAction: { action: act, service: impactSvc },
                                             })
                                           }
                                           style={{ fontSize: 11 }}
-                                          className={`px-2.5 py-0.5 font-mono font-semibold transition ${
+                                          className={`px-2.5 py-0.5 font-mono font-semibold transition disabled:opacity-45 ${
                                             on ? styleCfg.tabActiveClass : styleCfg.tabIdleClass
                                           }`}
                                         >
@@ -7014,13 +7677,14 @@ export function LiveStudioWorkbench({
                                   </span>
                                   <input
                                     type="checkbox"
+                                    disabled={authoring.busy || authoring.frozen}
                                     checked={authoring.predictionRequired === true}
                                     onChange={(e) =>
                                       authoring.onUpdateGoalRule?.({
                                         predictionRequired: e.target.checked,
                                       })
                                     }
-                                    className={`size-4 rounded border-slate-400 ${styleCfg.checkboxAccentClass}`}
+                                    className={`size-4 rounded border-slate-400 disabled:opacity-45 ${styleCfg.checkboxAccentClass}`}
                                   />
                                 </label>
                               </div>
@@ -7037,8 +7701,8 @@ export function LiveStudioWorkbench({
                           <div className="space-y-2.5">
                             <button
                               type="button"
-                              draggable={!authoring.busy}
-                              disabled={authoring.busy || !scaleSvc}
+                              draggable={!authoring.busy && !authoring.frozen}
+                              disabled={authoring.busy || authoring.frozen || !scaleSvc}
                               title={t(chip.hintEn, chip.hintVi)}
                               onDragStart={(e) => startChipDrag(e, "author-scale-2x")}
                               onClick={() =>
@@ -7077,9 +7741,10 @@ export function LiveStudioWorkbench({
                                       <button
                                         key={cnt}
                                         type="button"
+                                        disabled={authoring.busy || authoring.frozen}
                                         onClick={() => authoring.onSetReplicaTarget?.(scaleSvc, cnt)}
                                         style={{ fontSize: 11 }}
-                                        className={`px-2.5 py-0.5 font-mono font-semibold transition ${
+                                        className={`px-2.5 py-0.5 font-mono font-semibold transition disabled:opacity-45 ${
                                           on ? styleCfg.tabActiveClass : styleCfg.tabIdleClass
                                         }`}
                                       >
@@ -7101,8 +7766,8 @@ export function LiveStudioWorkbench({
                           <div className="space-y-2.5">
                             <button
                               type="button"
-                              draggable={!authoring.busy}
-                              disabled={authoring.busy || !downSvc}
+                              draggable={!authoring.busy && !authoring.frozen}
+                              disabled={authoring.busy || authoring.frozen || !downSvc}
                               title={t(chip.hintEn, chip.hintVi)}
                               onDragStart={(e) => startChipDrag(e, "author-starts-down")}
                               onClick={() =>
@@ -7143,11 +7808,12 @@ export function LiveStudioWorkbench({
                                     {stoppedName}
                                     <button
                                       type="button"
+                                      disabled={authoring.busy || authoring.frozen}
                                       aria-label={`Remove ${stoppedName} from Starts Down`}
                                       onClick={() =>
                                         authoring.onApplyBlockChip?.("author-starts-down", stoppedName)
                                       }
-                                      className="ml-0.5 opacity-60 hover:opacity-100"
+                                      className="ml-0.5 opacity-60 hover:opacity-100 disabled:opacity-35"
                                     >
                                       ×
                                     </button>
@@ -7170,8 +7836,8 @@ export function LiveStudioWorkbench({
                           <div className="space-y-2.5">
                             <button
                               type="button"
-                              draggable={!authoring.busy}
-                              disabled={authoring.busy || !cpuSvc}
+                              draggable={!authoring.busy && !authoring.frozen}
+                              disabled={authoring.busy || authoring.frozen || !cpuSvc}
                               title={t(chip.hintEn, chip.hintVi)}
                               onDragStart={(e) => startChipDrag(e, "author-cpu-target")}
                               onClick={() =>
@@ -7210,6 +7876,7 @@ export function LiveStudioWorkbench({
                                       <button
                                         key={pct}
                                         type="button"
+                                        disabled={authoring.busy || authoring.frozen}
                                         onClick={() =>
                                           authoring.onUpdateGoalRule?.({
                                             targetChangeAction: {
@@ -7220,7 +7887,7 @@ export function LiveStudioWorkbench({
                                           })
                                         }
                                         style={{ fontSize: 11 }}
-                                        className={`px-2.5 py-0.5 font-mono font-semibold transition ${
+                                        className={`px-2.5 py-0.5 font-mono font-semibold transition disabled:opacity-45 ${
                                           on ? styleCfg.tabActiveClass : styleCfg.tabIdleClass
                                         }`}
                                       >
@@ -7237,10 +7904,15 @@ export function LiveStudioWorkbench({
 
                       {!activeGoalId && (
                         <p style={{ fontSize: 12, lineHeight: "1.45" }} className={themeSubtleText}>
-                          {t(
-                            "Pick an Exercise Goal above to show its settings.",
-                            "Chọn 1 dạng bài phía trên để hiện phần cấu hình riêng.",
-                          )}
+                          {authoring.blindMode
+                            ? t(
+                                "Compound Exam armed — switch to Mission & Advanced to tune load, rules, or extra criteria.",
+                                "Đề thi Tổng hợp đã sẵn sàng — mở tab Đề bài & Nâng cao để chỉnh tải nền, luật chơi hoặc điều kiện thắng.",
+                              )
+                            : t(
+                                "Pick an Exercise Goal above or paint faults directly on 3D blocks.",
+                                "Chọn 1 dạng bài phía trên hoặc cài sẵn lỗi trực tiếp trên các khối 3D.",
+                              )}
                         </p>
                       )}
 

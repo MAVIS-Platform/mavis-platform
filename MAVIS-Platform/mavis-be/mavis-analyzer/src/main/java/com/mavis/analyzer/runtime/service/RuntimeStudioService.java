@@ -195,7 +195,7 @@ public class RuntimeStudioService {
         if (exerciseCriteria != null || control.hasNonNull("prediction")) {
             java.util.List<JsonNode> history = liveSnapshot != null ? liveSnapshot.history() : java.util.List.of();
             evidence.set("exerciseEvaluation",
-                    StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history));
+                    StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history, extractInitialState(session)));
         }
         if(request.imageData()!=null) {
             try {
@@ -365,11 +365,28 @@ public class RuntimeStudioService {
                 && session.getScenarioConfig() != null
                 && session.getScenarioConfig().path("exerciseCriteria").path("predictionRequired").asBoolean(false)
                 && !control.hasNonNull("prediction")) {
+            String predMode = session.getScenarioConfig().path("exerciseCriteria").path("predictionMode").asText("BLAST_RADIUS");
             throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_PREDICTION_REQUIRED",
-                    "Lock your Change Impact prediction before running a Docker action.");
+                    "ROOT_CAUSE".equalsIgnoreCase(predMode)
+                            ? "Lock your Root Cause diagnosis before running a Docker action."
+                            : "Lock your Change Impact prediction before running a Docker action.");
+        }
+        expireStaleActions(control);
+        int configuredBudget = session.getScenarioConfig() != null
+                ? session.getScenarioConfig().path("exerciseCriteria").path("maxActions").asInt(0)
+                : 0;
+        int effectiveBudget = (isStudentActor() && configuredBudget >= 1 && configuredBudget <= 32)
+                ? configuredBudget
+                : 32;
+        int usedBudget = countBudgetActions(control);
+        if (usedBudget >= effectiveBudget) {
+            if (isStudentActor() && configuredBudget >= 1 && configuredBudget < 32) {
+                throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_ACTION_BUDGET_EXCEEDED",
+                        "Action budget exhausted (" + usedBudget + "/" + effectiveBudget + ").");
+            }
+            throw error(ErrorCode.CONFLICT, "Studio action limit reached.");
         }
         if (control.withArray("actions").size() >= 32) throw error(ErrorCode.CONFLICT, "Studio action limit reached.");
-        expireStaleActions(control);
         for (JsonNode action : control.withArray("actions"))
             if ("PENDING".equals(action.path("status").asText()) || "RUNNING".equals(action.path("status").asText()))
                 throw error(ErrorCode.CONFLICT, "Wait for the current action to complete.");
@@ -530,7 +547,7 @@ public class RuntimeStudioService {
                         : (control.hasNonNull("telemetry") ? control.get("telemetry") : null);
                 java.util.List<JsonNode> history = liveSnapshot != null ? liveSnapshot.history() : java.util.List.of();
                 control.set("finalExerciseEvaluation",
-                        StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history));
+                        StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history, extractInitialState(session)));
             }
             control.put("finishRequested", true);
             if (control.path("simulatedSandbox").asBoolean(false)) {
@@ -748,13 +765,18 @@ public class RuntimeStudioService {
         if (exerciseCriteria != null) {
             result.set("exerciseCriteria", exerciseCriteria.deepCopy());
         }
+        result.put("actionsUsed", countBudgetActions(result));
+        int maxActions = exerciseCriteria != null ? exerciseCriteria.path("maxActions").asInt(0) : 0;
+        if (maxActions >= 1 && maxActions <= 32) {
+            result.put("maxActions", maxActions);
+        }
         if (interactive && (exerciseCriteria != null || result.hasNonNull("prediction"))) {
             if (terminal && result.hasNonNull("finalExerciseEvaluation") && result.get("finalExerciseEvaluation").isObject()) {
                 result.set("exerciseEvaluation", result.get("finalExerciseEvaluation").deepCopy());
             } else {
                 JsonNode effectiveTelemetry = result.hasNonNull("telemetry") ? result.get("telemetry") : null;
                 result.set("exerciseEvaluation",
-                        StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, result, effectiveTelemetry, historyList));
+                        StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, result, effectiveTelemetry, historyList, extractInitialState(session)));
             }
         }
         var services = result.putArray("services");
@@ -832,18 +854,38 @@ public class RuntimeStudioService {
         }
     }
 
+    private static int countBudgetActions(JsonNode control) {
+        if (control == null || !control.path("actions").isArray()) return 0;
+        int used = 0;
+        for (JsonNode action : control.path("actions")) {
+            String st = action.path("status").asText("");
+            if ("PENDING".equals(st) || "RUNNING".equals(st) || "CONFIRMED".equals(st)) {
+                used++;
+            }
+        }
+        return used;
+    }
+
+    private static JsonNode extractInitialState(RuntimeSession session) {
+        if (session == null || session.getScenarioConfig() == null) return null;
+        JsonNode init = session.getScenarioConfig().get("initialState");
+        return init != null && init.isObject() ? init : null;
+    }
+
     private static void redactStudioViewForStudent(ObjectNode node) {
         stripEvaluationFieldsRecursively(node);
         boolean isOutageRecovery = false;
+        boolean isBlind = false;
         if (node.path("exerciseCriteria").isObject()) {
             ObjectNode criteria = (ObjectNode) node.get("exerciseCriteria");
             isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(criteria.path("exerciseType").asText(""));
+            isBlind = isOutageRecovery || criteria.path("blindMode").asBoolean(false);
             criteria.remove(java.util.List.of("rules", "minImpactF1", "expectedAffectedServices"));
-            if (isOutageRecovery) {
-                criteria.remove("targetChangeAction");
+            if (isBlind) {
+                criteria.remove(java.util.List.of("targetChangeAction", "requiredTraceEdge", "minReplicas"));
             }
         }
-        if (isOutageRecovery && node.path("topology").isObject()) {
+        if (isBlind && node.path("topology").isObject()) {
             ObjectNode topo = (ObjectNode) node.get("topology");
             for (String key : java.util.List.of("blocks", "connections")) {
                 if (topo.path(key).isArray()) {
@@ -890,7 +932,7 @@ public class RuntimeStudioService {
                 : (control.hasNonNull("telemetry") ? control.get("telemetry") : null);
         java.util.List<JsonNode> history = liveSnapshot != null ? liveSnapshot.history() : java.util.List.of();
         control.set("finalExerciseEvaluation",
-                StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history));
+                StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history, extractInitialState(session)));
         session.setStudioControl(control);
     }
 

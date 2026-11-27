@@ -61,9 +61,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     private static final List<String> RUNNER_PROFILE_FIELDS = List.of("collectorImage", "instrumentationVolume", "applications",
             "memoryMiB", "cpus", "timeoutSeconds", "approvedForLocalPoc", "scenarioRunnerImage",
             "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings",
-            // Required by the Runner to apply initially stopped blocks/connections and to
+            // Required by the Runner to apply initially stopped blocks/connections, boot CPU limits, and to
             // validate interactive Studio actions against the prepared topology.
-            "studioTopology", "probeRps", "seedHook", "allowedEnvKeys", "alternateImages");
+            "studioTopology", "probeRps", "initialCpuLimits", "seedHook", "allowedEnvKeys", "alternateImages");
     private static final List<String> RUNNER_STEP_FIELDS = List.of("id", "service", "method", "path", "expectedStatus", "jsonBody",
             "headers", "secretHeaders", "extract", "environmentVariables", "bodyReference", "envHeaders", "allowClientError");
     private static final Pattern EXCERPT_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?");

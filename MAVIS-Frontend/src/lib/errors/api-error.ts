@@ -118,6 +118,10 @@ export const publicErrors = {
     "You already have an active Studio Live session running in another Lab. Stop or finish it first.",
   RUN_COOLDOWN_ACTIVE: "Please wait a few seconds before starting another Studio Live session.",
   STUDIO_ACTION_NOT_ALLOWED: "This Docker action is not enabled for this Lab exercise.",
+  STUDIO_ACTION_BUDGET_EXCEEDED:
+    "Action budget reached for this Lab exercise. Capture a Snapshot and finish Studio to submit.",
+  STUDIO_PREDICTION_REQUIRED:
+    "Lock your diagnosis/impact prediction before running live Docker actions.",
   REPLICA_BOUNDS_EXCEEDED: "Replica count must be between 1 and 3.",
   COURSE_MODULE_EMPTY: "Every module must contain at least one learning item before publishing.",
   COURSE_LAB_SCOPE: "A learning item links to a Lab outside this class.",
@@ -267,6 +271,19 @@ export function backendErrorCode(
     return "RUN_COOLDOWN_ACTIVE";
   if (status === 403 && message === "STUDIO_ACTION_NOT_ALLOWED")
     return "STUDIO_ACTION_NOT_ALLOWED";
+  if (
+    status === 409 &&
+    (message === "STUDIO_ACTION_BUDGET_EXCEEDED" ||
+      message.startsWith("Action budget exhausted") ||
+      message.includes("STUDIO_ACTION_BUDGET_EXCEEDED"))
+  )
+    return "STUDIO_ACTION_BUDGET_EXCEEDED";
+  if (
+    status === 409 &&
+    (message === "STUDIO_PREDICTION_REQUIRED" ||
+      message.includes("STUDIO_PREDICTION_REQUIRED"))
+  )
+    return "STUDIO_PREDICTION_REQUIRED";
   if (status === 400 && message.startsWith("REPLICA_BOUNDS_EXCEEDED"))
     return "REPLICA_BOUNDS_EXCEEDED";
   if (status === 422 && message === "Every module must contain at least one learning item")

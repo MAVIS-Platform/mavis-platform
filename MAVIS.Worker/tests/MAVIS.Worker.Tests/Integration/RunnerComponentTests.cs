@@ -342,4 +342,46 @@ public sealed class RunnerComponentTests
         Assert.Equal("Passed", exploratory.Status);
         Assert.Equal("/orders/1", secondPath);
     }
+
+    [Fact]
+    public void RunnerExecutionProfileAcceptsInitialCpuLimitsAndProbeRps()
+    {
+        var sessionId = "11111111-1111-1111-1111-111111111111";
+        var json = $$"""
+        {
+          "sessionId": "{{sessionId}}",
+          "modelVersionId": "22222222-2222-2222-2222-222222222222",
+          "sourceSnapshotId": "33333333-3333-3333-3333-333333333333",
+          "profileVersionId": "44444444-4444-4444-4444-444444444444",
+          "runConfigurationVersionId": "55555555-5555-5555-5555-555555555555",
+          "scenarioVersionId": "66666666-6666-6666-6666-666666666666",
+          "resourceProject": "mavisrun-11111111111111111111111111111111",
+          "composeYaml": "services:\n  pricing-service:\n    image: app@sha256:{{Digest}}\n",
+          "confirmedServiceMappings": {
+            "pricing-service": "77777777-7777-7777-7777-777777777777"
+          },
+          "scenario": {
+            "sessionId": "{{sessionId}}",
+            "steps": [
+              { "id": "s1", "service": "pricing-service", "method": "GET", "path": "/health", "expectedStatus": 200 }
+            ]
+          },
+          "profile": {
+            "collectorImage": "otel/collector@sha256:{{Digest}}",
+            "instrumentationVolume": "mavis-agents-v1",
+            "applications": {
+              "pricing-service": { "runtime": "java", "containerPort": 8080, "readinessPath": "/health" }
+            },
+            "probeRps": 15,
+            "initialCpuLimits": {
+              "pricing-service": 25
+            }
+          }
+        }
+        """;
+        var definition = RuntimeDefinitionReader.Read(json, sessionId);
+        Assert.Equal(15, definition.Profile.ProbeRps);
+        Assert.NotNull(definition.Profile.InitialCpuLimits);
+        Assert.Equal(25, definition.Profile.InitialCpuLimits!["pricing-service"]);
+    }
 }

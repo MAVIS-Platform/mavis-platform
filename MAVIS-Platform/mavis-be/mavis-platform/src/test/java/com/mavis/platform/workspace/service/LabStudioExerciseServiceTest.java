@@ -237,4 +237,57 @@ class LabStudioExerciseServiceTest {
                         null, null, null, List.of(), null, List.of("START"), null, "Edited while active")));
         assertTrue(ex.getMessage().contains("frozen"));
     }
+
+    @Test
+    void savesComposableHardExamFieldsAndRejectsNonPositiveMaxP95() {
+        var actor = User.builder().id(UUID.randomUUID()).fullName("Lecturer").build();
+        when(assignments.findById(labId)).thenReturn(Optional.of(lab));
+        when(access.requireCurrentActiveUser()).thenReturn(actor);
+        when(exercises.findByAssignmentId(labId)).thenReturn(Optional.empty());
+        when(exercises.save(any(LabStudioExercise.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var initialState = new LabStudioExerciseService.InitialState(
+                List.of("fraud-service"),
+                List.of(),
+                java.util.Map.of("pricing-service", 25, "order-service", 100),
+                15);
+        var criteria = new LabStudioExerciseService.SuccessCriteria(
+                0, 1500, null, List.of(),
+                "CUSTOM", true, 0.7, null, List.of(),
+                true, "ROOT_CAUSE", 4);
+        var request = new LabStudioExerciseService.ExerciseRequest(
+                null, null, null,
+                List.of(
+                        new LabStudioExerciseService.BaselineRequest("GET", "/api/gateway/live-flow", 200),
+                        new LabStudioExerciseService.BaselineRequest("GET", "/api/gateway/storefront", 200)),
+                initialState,
+                List.of("START", "STOP", "SCALE", "THROTTLE_CPU", "SET_LOAD"),
+                criteria,
+                "Compound blind incident");
+
+        var view = service.save(workspaceId, labId, request);
+
+        assertEquals(java.util.Map.of("pricing-service", 25), view.initialState().cpuLimits());
+        assertEquals(15, view.initialState().initialLoadRps());
+        assertEquals(Boolean.TRUE, view.successCriteria().blindMode());
+        assertEquals("ROOT_CAUSE", view.successCriteria().predictionMode());
+        assertEquals(4, view.successCriteria().maxActions());
+        assertEquals(2, view.baselineRequests().size());
+
+        // F-11: maxP95Ms <= 0 must be rejected with 400
+        var negativeP95 = new LabStudioExerciseService.SuccessCriteria(0, -10, null, List.of());
+        assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
+                new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, negativeP95, "bad")));
+        var zeroP95 = new LabStudioExerciseService.SuccessCriteria(0, 0, null, List.of());
+        assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
+                new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, zeroP95, "bad")));
+        var badPredictionMode = new LabStudioExerciseService.SuccessCriteria(
+                0, 500, null, List.of(), "CUSTOM", true, 0.7, null, List.of(), true, "INVALID_MODE", 4);
+        assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
+                new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, badPredictionMode, "bad")));
+        var badMaxActions = new LabStudioExerciseService.SuccessCriteria(
+                0, 500, null, List.of(), "CUSTOM", false, null, null, List.of(), false, null, 0);
+        assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
+                new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, badMaxActions, "bad")));
+    }
 }

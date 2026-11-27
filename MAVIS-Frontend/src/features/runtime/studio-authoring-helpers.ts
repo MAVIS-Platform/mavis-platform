@@ -15,6 +15,27 @@ export type ExerciseTypeKey =
   | "CONFIG_REGRESSION"
   | "CUSTOM";
 
+export type PredictionMode = "BLAST_RADIUS" | "ROOT_CAUSE";
+
+export type DeclarativeRuleMetric =
+  | "ERROR_RATE"
+  | "EDGE_ERROR_RATE"
+  | "P95_MS"
+  | "P95_DELTA_PCT"
+  | "REPLICAS"
+  | "TRACE_EDGE"
+  | "IMPACT_F1";
+
+export type DeclarativeRuleOperator = "LT" | "LTE" | "GT" | "GTE" | "EQ";
+
+export type DeclarativeRuleInput = {
+  metric: DeclarativeRuleMetric;
+  target: string;
+  operator: DeclarativeRuleOperator;
+  threshold: number;
+  label?: string | null;
+};
+
 export type TargetChangeAction = {
   action: "STOP" | "START" | "SCALE" | "PAUSE" | "RESUME" | "THROTTLE_CPU" | "SET_LOAD";
   service: string;
@@ -445,12 +466,18 @@ export interface StudentInstructionsParams {
   exerciseType?: ExerciseTypeKey | null | undefined;
   targetAction?: TargetChangeAction | null | undefined;
   stoppedServices?: readonly string[] | undefined;
+  initialCpuLimits?: Readonly<Record<string, number>> | null | undefined;
+  initialLoadRps?: number | null | undefined;
   minReplicas?: ReadonlyArray<{ service: string; count: number }> | undefined;
   predictionRequired?: boolean | null | undefined;
+  predictionMode?: PredictionMode | null | undefined;
+  blindMode?: boolean | null | undefined;
+  maxActions?: number | null | undefined;
   minImpactF1?: number | null | undefined;
   maxErrorRatePercent?: number | null | undefined;
   maxP95Ms?: number | null | undefined;
   targetRps?: number | null | undefined;
+  rules?: readonly DeclarativeRuleInput[] | null | undefined;
   locale?: "en" | "vi" | undefined;
 }
 
@@ -503,8 +530,13 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
     exerciseType,
     targetAction,
     stoppedServices = [],
+    initialCpuLimits,
+    initialLoadRps,
     minReplicas = [],
     predictionRequired = false,
+    predictionMode,
+    blindMode = false,
+    maxActions,
     minImpactF1 = 0.7,
     maxErrorRatePercent,
     maxP95Ms,
@@ -513,6 +545,62 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
   } = params;
 
   const isVi = locale === "vi";
+
+  if (blindMode) {
+    const errText = maxErrorRatePercent != null ? `<= ${maxErrorRatePercent}%` : "<= 0%";
+    const p95Vi = maxP95Ms ? ` và p95 <= ${maxP95Ms} ms` : "";
+    const p95En = maxP95Ms ? ` and p95 <= ${maxP95Ms} ms` : "";
+    const loadVi =
+      initialLoadRps && initialLoadRps > 1 ? ` dưới tải thực tế ${initialLoadRps} RPS` : "";
+    const loadEn =
+      initialLoadRps && initialLoadRps > 1 ? ` under live ${initialLoadRps} RPS traffic` : "";
+    const budgetVi =
+      maxActions && maxActions > 0
+        ? ` trong tối đa ${maxActions} lượt thao tác Docker`
+        : "";
+    const budgetEn =
+      maxActions && maxActions > 0
+        ? ` within at most ${maxActions} Docker actions`
+        : "";
+    const hasCpuTrap =
+      initialCpuLimits && Object.values(initialCpuLimits).some((pct) => pct > 0 && pct < 100);
+    const hasDownTrap = stoppedServices.length > 0;
+    const isRootCause = predictionMode === "ROOT_CAUSE" || (predictionRequired && (hasDownTrap || hasCpuTrap));
+
+    if (isVi) {
+      const symptomVi =
+        hasDownTrap && hasCpuTrap
+          ? "Hệ thống đang gặp đa sự cố (có service ngừng hoạt động và/hoặc nghẽn CPU ẩn khiến độ trễ tăng vọt)"
+          : hasCpuTrap
+            ? "Hệ thống đang có dịch vụ bị nghẽn tài nguyên CPU ẩn (vẫn hiển thị 1x xanh) khiến độ trễ tăng cao"
+            : "Hệ thống đang gặp sự cố sản xuất gây lỗi và suy giảm hiệu năng trên cổng vào";
+      const step1 = predictionRequired
+        ? isRootCause
+          ? "1. Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM từng container để phân biệt service nguyên nhân gốc (không lộ sẵn đáp án), sau đó chọn đúng nguyên nhân và bấm Khóa chẩn đoán trước khi sửa."
+          : "1. Quan sát sơ đồ 3D và Log & Trace để xác định các service bị ảnh hưởng, sau đó bấm Khóa dự đoán trước khi thao tác."
+        : "1. Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM từng container để truy vết đúng service nguyên nhân gốc đang gây lỗi hoặc nghẽn cổ chai.";
+      const step2 = `2. Khắc phục chính xác nguyên nhân gốc (Khởi động service dừng, gỡ bóp CPU 100% hoặc Scale replica)${budgetVi} để đưa hệ thống về SLA (tỉ lệ lỗi ${errText}${p95Vi}).`;
+      const step3 =
+        "3. Xác nhận biểu đồ lỗi & độ trễ p95 đã phục hồi ổn định, chụp Snapshot Trước/Sau làm minh chứng rồi bấm Kết thúc Studio để nộp bài.";
+      return [`Mục tiêu: ${symptomVi}${loadVi}.`, step1, step2, step3].join("\n");
+    }
+
+    const symptomEn =
+      hasDownTrap && hasCpuTrap
+        ? "Production is experiencing compound faults (stopped service and/or hidden CPU bottleneck causing severe latency)"
+        : hasCpuTrap
+          ? "A hidden CPU bottleneck (still showing green 1x) is degrading end-to-end latency"
+          : "Production is experiencing an active incident causing gateway errors and latency degradation";
+    const step1 = predictionRequired
+      ? isRootCause
+        ? "1. Inspect the 3D topology, Logs & Traces, and per-container CPU/RAM stats to pinpoint the root-cause service(s), then click Lock Diagnosis before making any changes."
+        : "1. Inspect the 3D topology and Logs & Traces to identify impacted services, then lock your prediction before acting."
+      : "1. Inspect the 3D topology, Logs & Traces, and per-container CPU/RAM stats to isolate the root-cause service(s).";
+    const step2 = `2. Remediate the root cause(s) (Start stopped services, restore 100% CPU, or Scale replicas)${budgetEn} to restore SLA (error rate ${errText}${p95En}).`;
+    const step3 =
+      "3. Confirm live error rate and p95 latency recover cleanly, capture Before/After Snapshots as evidence, and click Finish Studio to submit.";
+    return [`Goal: ${symptomEn}${loadEn}.`, step1, step2, step3].join("\n");
+  }
   const resolvedType: ExerciseTypeKey | null =
     exerciseType ??
     (targetAction?.action === "PAUSE" || targetAction?.action === "STOP"

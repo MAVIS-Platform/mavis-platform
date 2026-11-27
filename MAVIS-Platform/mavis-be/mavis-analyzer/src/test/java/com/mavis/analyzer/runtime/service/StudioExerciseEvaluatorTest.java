@@ -363,6 +363,49 @@ class StudioExerciseEvaluatorTest {
         assertTrue(eval.path("passed").asBoolean());
     }
 
+    @Test
+    void rootCauseDiagnosisScoresPreSeededStoppedAndCpuThrottledCulpritsAndDropsColdStartOutlier() {
+        ObjectNode criteria = mapper.createObjectNode()
+                .put("exerciseType", "CUSTOM")
+                .put("blindMode", true)
+                .put("predictionRequired", true)
+                .put("predictionMode", "ROOT_CAUSE")
+                .put("minImpactF1", 0.70)
+                .put("maxErrorRatePercent", 0)
+                .put("maxP95Ms", 500);
+        ObjectNode initialState = mapper.createObjectNode();
+        initialState.putArray("stoppedServices").add("fraud-service");
+        initialState.putObject("cpuLimits").put("pricing-service", 25);
+
+        ObjectNode control = mapper.createObjectNode();
+        control.putObject("prediction").putArray("predictedServices")
+                .add("fraud-service")
+                .add("pricing-service");
+        control.putArray("actions").addObject()
+                .put("action", "START").put("service", "fraud-service").put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-28T01:00:10Z").put("completedAt", "2026-11-28T01:00:12Z");
+
+        // Frame 0 has a boot-time cold-start p95 spike (4460ms) followed by warm steady-state frames (~80ms)
+        ObjectNode coldSpike = frame("2026-11-28T01:00:02Z", 1, 1, 0.0, 4460.0, 0.0, 20.0);
+        ObjectNode warm1 = frame("2026-11-28T01:00:15Z", 1, 1, 0.0, 82.0, 0.0, 15.0);
+        ObjectNode warm2 = frame("2026-11-28T01:00:18Z", 1, 1, 0.0, 78.0, 0.0, 14.0);
+        ObjectNode warm3 = frame("2026-11-28T01:00:21Z", 1, 1, 0.0, 80.0, 0.0, 16.0);
+
+        ObjectNode eval = StudioExerciseEvaluator.evaluate(
+                mapper, criteria, control, warm3, List.of(coldSpike, warm1, warm2, warm3), initialState);
+
+        assertEquals("ROOT_CAUSE", eval.path("predictionMode").asText());
+        assertEquals(1.0, eval.path("impact").path("f1Score").asDouble(), 0.001);
+        JsonNode impactRule = findRule(eval, "IMPACT_F1");
+        assertNotNull(impactRule);
+        assertTrue(impactRule.path("label").asText().contains("Root Cause"));
+        JsonNode p95Rule = findRule(eval, "P95_MS");
+        assertNotNull(p95Rule);
+        assertTrue(p95Rule.path("passed").asBoolean());
+        assertTrue(p95Rule.path("observedValue").asDouble() < 150.0, "Cold-start frame0 spike must not pollute steady-state p95");
+        assertTrue(eval.path("passed").asBoolean());
+    }
+
     private ObjectNode frame(String observedAt, int ordersRep, int paymentRep,
                              double probeErr, double probeP95, double edgeErr, double edgeP95) {
         ObjectNode f = mapper.createObjectNode().put("observedAt", observedAt);

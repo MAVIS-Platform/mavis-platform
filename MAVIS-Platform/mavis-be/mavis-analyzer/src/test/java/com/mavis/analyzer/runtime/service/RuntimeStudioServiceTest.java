@@ -677,4 +677,48 @@ class RuntimeStudioServiceTest {
         assertFalse(pollRes.has("command"), "Stale RUNNING action must be expired instead of re-dispatched");
         assertEquals("INTERRUPTED", session.getStudioControl().withArray("actions").get(0).path("status").asText());
     }
+
+    @Test
+    void enforcesStudentActionBudgetAndBlindModeRedaction() {
+        var studentRole = com.mavis.common.entity.Role.builder().code("STUDENT").build();
+        var studentUser = com.mavis.common.entity.User.builder().id(UUID.randomUUID()).role(studentRole).build();
+        session.setTriggeredBy(studentUser);
+        when(access.requireCurrentActiveUser()).thenReturn(studentUser);
+
+        ObjectNode scenario = (ObjectNode) session.getScenarioConfig();
+        ObjectNode criteria = scenario.putObject("exerciseCriteria");
+        criteria.put("exerciseType", "CUSTOM");
+        criteria.put("blindMode", true);
+        criteria.put("predictionRequired", false);
+        criteria.put("maxActions", 2);
+        criteria.putObject("targetChangeAction").put("action", "START").put("service", "orders");
+        criteria.putArray("rules").addObject().put("metric", "ERROR_RATE").put("threshold", 0);
+        ObjectNode initialState = scenario.putObject("initialState");
+        initialState.putArray("stoppedServices").add("orders");
+        initialState.putObject("cpuLimits").put("pricing", 25);
+
+        // First 2 actions succeed within budget
+        var first = service.submit(id, new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null));
+        assertEquals(1, first.path("actionsUsed").asInt());
+        assertEquals(2, first.path("maxActions").asInt());
+        assertFalse(first.path("exerciseCriteria").has("targetChangeAction"), "Blind mode must hide culprit targetChangeAction");
+        assertFalse(first.path("exerciseCriteria").has("rules"), "Blind mode must hide detailed grading rules");
+        assertTrue(first.path("exerciseCriteria").path("blindMode").asBoolean());
+
+        // Mark action 1 as FAILED -> failed actions must NOT consume the student's action budget
+        ((ObjectNode) session.getStudioControl().withArray("actions").get(0)).put("status", "FAILED");
+        var second = service.submit(id, new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "START", "orders", null));
+        assertEquals(1, second.path("actionsUsed").asInt());
+        ((ObjectNode) session.getStudioControl().withArray("actions").get(1)).put("status", "CONFIRMED");
+
+        var third = service.submit(id, new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "SCALE", "orders", 2));
+        assertEquals(2, third.path("actionsUsed").asInt());
+        ((ObjectNode) session.getStudioControl().withArray("actions").get(2)).put("status", "CONFIRMED");
+
+        // 3rd non-failed action exceeds maxActions=2 -> 409 CONFLICT
+        BusinessException budgetEx = assertThrows(BusinessException.class, () ->
+                service.submit(id, new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null)));
+        assertEquals(com.mavis.common.exception.ErrorCode.CONFLICT, budgetEx.getErrorCode());
+        assertTrue(budgetEx.getMessage().contains("Action budget exhausted (2/2)"));
+    }
 }

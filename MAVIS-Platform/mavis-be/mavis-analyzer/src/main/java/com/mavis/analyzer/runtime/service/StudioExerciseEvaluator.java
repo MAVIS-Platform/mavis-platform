@@ -29,13 +29,28 @@ public final class StudioExerciseEvaluator {
             JsonNode control,
             JsonNode latestTelemetry,
             List<JsonNode> historyFrames) {
+        return evaluate(mapper, criteria, control, latestTelemetry, historyFrames, null);
+    }
+
+    public static ObjectNode evaluate(
+            ObjectMapper mapper,
+            JsonNode criteria,
+            JsonNode control,
+            JsonNode latestTelemetry,
+            List<JsonNode> historyFrames,
+            JsonNode initialState) {
         ObjectNode out = mapper.createObjectNode();
         String exerciseType = criteria != null && criteria.path("exerciseType").isTextual()
                 ? criteria.path("exerciseType").asText("CUSTOM").trim().toUpperCase(Locale.ROOT)
                 : "CUSTOM";
         boolean predictionRequired = criteria != null && criteria.path("predictionRequired").asBoolean(false);
+        String predictionMode = criteria != null && criteria.path("predictionMode").isTextual()
+                ? criteria.path("predictionMode").asText("BLAST_RADIUS").trim().toUpperCase(Locale.ROOT)
+                : "BLAST_RADIUS";
+        boolean isRootCauseMode = "ROOT_CAUSE".equals(predictionMode);
         out.put("exerciseType", exerciseType);
         out.put("predictionRequired", predictionRequired);
+        out.put("predictionMode", isRootCauseMode ? "ROOT_CAUSE" : "BLAST_RADIUS");
 
         JsonNode prediction = control != null && control.path("prediction").isObject()
                 ? control.path("prediction")
@@ -82,18 +97,27 @@ public final class StudioExerciseEvaluator {
             if (impact.replicasAfter != null) d.put("replicasAfter", impact.replicasAfter);
         }
 
+        Set<String> rootCauseExpected = isRootCauseMode
+                ? resolveRootCauseTargets(initialState, criteria, canonicalServices)
+                : Set.of();
+
         Double f1Score = null;
-        if (predictionLocked && (hasChange || !observedMap.isEmpty())) {
-            String primaryTarget = primaryChange != null ? primaryChange.path("service").asText("").trim() : "";
-            Set<String> observed = observedMap.keySet();
-            // Step 1 asks students to predict propagated callers; do not penalize omitting the fault target itself when callers exist.
-            Set<String> effectiveObserved = (!primaryTarget.isBlank()
-                    && predicted.stream().noneMatch(s -> s.equalsIgnoreCase(primaryTarget))
-                    && observed.stream().anyMatch(s -> !s.equalsIgnoreCase(primaryTarget)))
-                    ? observed.stream()
-                            .filter(s -> !s.equalsIgnoreCase(primaryTarget))
-                            .collect(java.util.stream.Collectors.toCollection(TreeSet::new))
-                    : observed;
+        if (predictionLocked && (isRootCauseMode ? (!rootCauseExpected.isEmpty() || hasChange || !observedMap.isEmpty()) : (hasChange || !observedMap.isEmpty()))) {
+            Set<String> effectiveObserved;
+            if (isRootCauseMode && !rootCauseExpected.isEmpty()) {
+                effectiveObserved = rootCauseExpected;
+            } else {
+                String primaryTarget = primaryChange != null ? primaryChange.path("service").asText("").trim() : "";
+                Set<String> observed = observedMap.keySet();
+                // Step 1 asks students to predict propagated callers; do not penalize omitting the fault target itself when callers exist.
+                effectiveObserved = (!primaryTarget.isBlank()
+                        && predicted.stream().noneMatch(s -> s.equalsIgnoreCase(primaryTarget))
+                        && observed.stream().anyMatch(s -> !s.equalsIgnoreCase(primaryTarget)))
+                        ? observed.stream()
+                                .filter(s -> !s.equalsIgnoreCase(primaryTarget))
+                                .collect(java.util.stream.Collectors.toCollection(TreeSet::new))
+                        : observed;
+            }
             List<String> tp = predicted.stream().filter(effectiveObserved::contains).sorted().toList();
             List<String> fp = predicted.stream().filter(s -> !effectiveObserved.contains(s)).sorted().toList();
             List<String> fn = effectiveObserved.stream().filter(s -> !predicted.contains(s)).sorted().toList();
@@ -115,7 +139,7 @@ public final class StudioExerciseEvaluator {
         }
 
         // Build unified rule list (legacy fields + C3 declarative rules)
-        List<RuleSpec> specs = extractRuleSpecs(criteria, predictionRequired);
+        List<RuleSpec> specs = extractRuleSpecs(criteria, predictionRequired, isRootCauseMode);
         ArrayNode rulesArr = out.putArray("rules");
         int passedCount = 0;
         for (int i = 0; i < specs.size(); i++) {
@@ -139,7 +163,8 @@ public final class StudioExerciseEvaluator {
         }
 
         int totalRules = specs.size();
-        boolean evaluated = hasTelemetry && (!predictionRequired || (predictionLocked && hasChange));
+        boolean predictionReady = !predictionRequired || (predictionLocked && (hasChange || (isRootCauseMode && !rootCauseExpected.isEmpty())));
+        boolean evaluated = hasTelemetry && predictionReady;
         int autoScorePercent;
         boolean passed;
         if (totalRules == 0) {
@@ -406,7 +431,35 @@ public final class StudioExerciseEvaluator {
         return map;
     }
 
-    private static List<RuleSpec> extractRuleSpecs(JsonNode criteria, boolean predictionRequired) {
+    private static Set<String> resolveRootCauseTargets(
+            JsonNode initialState,
+            JsonNode criteria,
+            Map<String, String> canonicalServices) {
+        Set<String> targets = new TreeSet<>();
+        if (initialState != null && initialState.isObject()) {
+            if (initialState.path("stoppedServices").isArray()) {
+                for (JsonNode s : initialState.path("stoppedServices")) {
+                    String svc = s.asText("").trim();
+                    if (!svc.isBlank()) targets.add(normalizeServiceName(svc, canonicalServices));
+                }
+            }
+            if (initialState.path("cpuLimits").isObject()) {
+                initialState.path("cpuLimits").fields().forEachRemaining(entry -> {
+                    String svc = entry.getKey() == null ? "" : entry.getKey().trim();
+                    if (!svc.isBlank() && entry.getValue().asInt(100) < 100) {
+                        targets.add(normalizeServiceName(svc, canonicalServices));
+                    }
+                });
+            }
+        }
+        if (targets.isEmpty() && criteria != null && criteria.path("targetChangeAction").isObject()) {
+            String svc = criteria.path("targetChangeAction").path("service").asText("").trim();
+            if (!svc.isBlank()) targets.add(normalizeServiceName(svc, canonicalServices));
+        }
+        return targets;
+    }
+
+    private static List<RuleSpec> extractRuleSpecs(JsonNode criteria, boolean predictionRequired, boolean isRootCauseMode) {
         List<RuleSpec> specs = new ArrayList<>();
         if (criteria == null || !criteria.isObject()) return specs;
 
@@ -455,7 +508,10 @@ public final class StudioExerciseEvaluator {
             double minF1 = criteria.hasNonNull("minImpactF1")
                     ? criteria.path("minImpactF1").asDouble(DEFAULT_MIN_IMPACT_F1)
                     : DEFAULT_MIN_IMPACT_F1;
-            specs.add(new RuleSpec("Change Impact F1 >= " + formatNum(minF1), "IMPACT_F1", "PREDICTION", "GTE", minF1));
+            String f1Label = isRootCauseMode
+                    ? "Root Cause Diagnosis F1 >= " + formatNum(minF1)
+                    : "Change Impact F1 >= " + formatNum(minF1);
+            specs.add(new RuleSpec(f1Label, "IMPACT_F1", "PREDICTION", "GTE", minF1));
         }
         return specs;
     }
@@ -654,24 +710,33 @@ public final class StudioExerciseEvaluator {
 
     private static Double avgWindowP95(String target, List<JsonNode> frames) {
         if (frames.isEmpty()) return null;
-        double sum = 0;
-        int count = 0;
+        List<Double> values = new ArrayList<>();
         for (JsonNode f : frames) {
             if ("ALL".equalsIgnoreCase(target)) {
                 if (f.path("probe").path("p95Ms").isNumber()) {
-                    sum += f.path("probe").path("p95Ms").asDouble();
-                    count++;
+                    values.add(f.path("probe").path("p95Ms").asDouble());
                 }
             } else if (f.path("probe").path("routes").isArray()) {
                 for (JsonNode r : f.path("probe").path("routes")) {
                     if (target.equals(r.path("service").asText()) && r.path("p95Ms").isNumber()) {
-                        sum += r.path("p95Ms").asDouble();
-                        count++;
+                        values.add(r.path("p95Ms").asDouble());
                     }
                 }
             }
         }
-        return count > 0 ? sum / count : null;
+        if (values.isEmpty()) return null;
+        // Drop a JVM/Spring cold-start outlier in the very first frame if steady-state samples follow.
+        if (values.size() >= 3) {
+            List<Double> rest = new ArrayList<>(values.subList(1, values.size()));
+            Collections.sort(rest);
+            double medianRest = rest.get(rest.size() / 2);
+            if (medianRest > 0 && values.get(0) > medianRest * 2.5) {
+                values = values.subList(1, values.size());
+            }
+        }
+        double sum = 0;
+        for (double v : values) sum += v;
+        return sum / values.size();
     }
 
     private static Double spanErrorRate(String service, JsonNode telemetry, Map<String, String> canonicalServices) {

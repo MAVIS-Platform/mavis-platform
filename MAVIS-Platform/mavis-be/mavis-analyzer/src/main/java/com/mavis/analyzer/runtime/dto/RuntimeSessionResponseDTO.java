@@ -486,16 +486,24 @@ public class RuntimeSessionResponseDTO {
         com.fasterxml.jackson.databind.node.ObjectNode cfg =
                 ((com.fasterxml.jackson.databind.node.ObjectNode) dto.getScenarioConfig()).deepCopy();
         boolean isOutageRecovery = false;
+        boolean isBlind = false;
         if (cfg.path("exerciseCriteria").isObject()) {
             com.fasterxml.jackson.databind.node.ObjectNode criteria =
                     (com.fasterxml.jackson.databind.node.ObjectNode) cfg.get("exerciseCriteria");
             isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(criteria.path("exerciseType").asText(""));
+            isBlind = isOutageRecovery || criteria.path("blindMode").asBoolean(false);
             criteria.remove(java.util.List.of("rules", "minImpactF1", "expectedAffectedServices"));
-            if (isOutageRecovery) {
-                criteria.remove("targetChangeAction");
+            if (isBlind) {
+                criteria.remove(java.util.List.of("targetChangeAction", "requiredTraceEdge", "minReplicas"));
             }
         }
-        if (isOutageRecovery && cfg.path("profile").path("studioTopology").isObject()) {
+        if (isBlind) {
+            cfg.remove("initialState");
+            if (cfg.path("profile").isObject()) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) cfg.get("profile")).remove("initialCpuLimits");
+            }
+        }
+        if (isBlind && cfg.path("profile").path("studioTopology").isObject()) {
             com.fasterxml.jackson.databind.node.ObjectNode topo =
                     (com.fasterxml.jackson.databind.node.ObjectNode) cfg.path("profile").path("studioTopology");
             for (String key : java.util.List.of("blocks", "connections")) {

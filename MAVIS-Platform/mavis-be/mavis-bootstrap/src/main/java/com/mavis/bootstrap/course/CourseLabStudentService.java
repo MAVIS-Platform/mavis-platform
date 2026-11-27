@@ -315,45 +315,54 @@ public class CourseLabStudentService {
             exerciseType = copy.path("successCriteria").path("exerciseType").asText("");
         }
         boolean isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(exerciseType);
-        Set<String> hiddenStoppedServices = new LinkedHashSet<>();
-        if (isOutageRecovery) {
+        boolean isBlind = isOutageRecovery || copy.path("successCriteria").path("blindMode").asBoolean(false);
+        Set<String> hiddenFaultServices = new LinkedHashSet<>();
+        if (isBlind) {
             JsonNode tca = copy.path("successCriteria").path("targetChangeAction");
             if (tca.isObject()) {
                 String svc = tca.path("service").asText("").trim();
-                if (!svc.isEmpty()) hiddenStoppedServices.add(svc);
+                if (!svc.isEmpty()) hiddenFaultServices.add(svc);
             } else if (tca.isTextual()) {
                 String targetAction = tca.asText("");
                 int colon = targetAction.indexOf(':');
                 if (colon >= 0 && colon + 1 < targetAction.length()) {
-                    hiddenStoppedServices.add(targetAction.substring(colon + 1).trim());
+                    hiddenFaultServices.add(targetAction.substring(colon + 1).trim());
                 }
             }
             if (copy.path("initialState").path("stoppedServices").isArray()) {
                 for (JsonNode svcNode : copy.path("initialState").path("stoppedServices")) {
                     String svc = svcNode.asText("").trim();
-                    if (!svc.isEmpty()) hiddenStoppedServices.add(svc);
+                    if (!svc.isEmpty()) hiddenFaultServices.add(svc);
                 }
+            }
+            if (copy.path("initialState").path("cpuLimits").isObject()) {
+                copy.path("initialState").path("cpuLimits").fieldNames().forEachRemaining(name -> {
+                    String svc = name == null ? "" : name.trim();
+                    if (!svc.isEmpty()) hiddenFaultServices.add(svc);
+                });
             }
         }
         if (copy.path("successCriteria").isObject()) {
             ObjectNode sc = (ObjectNode) copy.get("successCriteria");
             sc.remove(List.of("rules", "minImpactF1", "expectedAffectedServices"));
-            if (isOutageRecovery) {
-                sc.remove("targetChangeAction");
+            if (isBlind) {
+                sc.remove(List.of("targetChangeAction", "requiredTraceEdge", "minReplicas"));
             }
         }
-        if (isOutageRecovery && copy.path("initialState").isObject()) {
+        if (isBlind && copy.path("initialState").isObject()) {
             ObjectNode init = (ObjectNode) copy.get("initialState");
             init.putArray("stoppedServices");
             init.putArray("stoppedControllers");
+            init.remove("cpuLimits");
         }
-        if (isOutageRecovery && copy.hasNonNull("instructions")) {
+        if (isBlind && copy.hasNonNull("instructions")) {
             String sanitized = copy.path("instructions").asText("");
-            for (String svc : hiddenStoppedServices) {
+            String placeholder = isOutageRecovery ? "service đang dừng" : "service gặp sự cố";
+            for (String svc : hiddenFaultServices) {
                 if (svc.isEmpty()) continue;
                 String quoted = java.util.regex.Pattern.quote(svc);
                 sanitized = sanitized.replaceAll("(?i)\\s*\\(\\s*" + quoted + "\\s*\\)", "");
-                sanitized = sanitized.replaceAll("(?i)\\b" + quoted + "\\b", "service đang dừng");
+                sanitized = sanitized.replaceAll("(?i)\\b" + quoted + "\\b", placeholder);
             }
             copy.put("instructions", sanitized);
         }
@@ -503,6 +512,30 @@ public class CourseLabStudentService {
         }
         if (resolvedTopology != null && resolvedTopology.isObject()) {
             profileNode.set("studioTopology", resolvedTopology.deepCopy());
+        }
+        JsonNode initialStateNode = activeExercise != null
+                ? activeExercise.get("initialState")
+                : (exercise == null ? null : exercise.getInitialState());
+        if (initialStateNode != null && initialStateNode.isObject()) {
+            scenarioConfig.set("initialState", initialStateNode.deepCopy());
+            int bootRps = initialStateNode.path("initialLoadRps").asInt(0);
+            if (bootRps >= 1 && bootRps <= 50) {
+                profileNode.put("probeRps", bootRps);
+            }
+            JsonNode cpuLimits = initialStateNode.path("cpuLimits");
+            if (cpuLimits.isObject() && !cpuLimits.isEmpty()) {
+                ObjectNode cleanLimits = json.createObjectNode();
+                cpuLimits.fields().forEachRemaining(entry -> {
+                    String svc = entry.getKey() == null ? "" : entry.getKey().trim();
+                    int pct = entry.getValue().asInt(100);
+                    if (!svc.isBlank() && pct >= 10 && pct < 100 && appsNode.has(svc)) {
+                        cleanLimits.put(svc, pct);
+                    }
+                });
+                if (!cleanLimits.isEmpty()) {
+                    profileNode.set("initialCpuLimits", cleanLimits);
+                }
+            }
         }
         ObjectNode scenarioNode = scenarioConfig.putObject("scenario");
         ArrayNode stepsNode = scenarioNode.putArray("steps");
@@ -725,13 +758,13 @@ public class CourseLabStudentService {
         Set<String> stoppedControllers = textValues(initial.get("stoppedControllers"));
         ObjectNode copy = topology.deepCopy();
         for (JsonNode block : copy.withArray("blocks")) {
-            if (block.isObject() && stoppedServices.contains(block.path("service").asText())) {
-                ((ObjectNode) block).put("initiallyStopped", true);
+            if (block.isObject()) {
+                ((ObjectNode) block).put("initiallyStopped", stoppedServices.contains(block.path("service").asText()));
             }
         }
         for (JsonNode connection : copy.withArray("connections")) {
-            if (connection.isObject() && stoppedControllers.contains(connection.path("controllerService").asText())) {
-                ((ObjectNode) connection).put("initiallyStopped", true);
+            if (connection.isObject()) {
+                ((ObjectNode) connection).put("initiallyStopped", stoppedControllers.contains(connection.path("controllerService").asText()));
             }
         }
         return copy;

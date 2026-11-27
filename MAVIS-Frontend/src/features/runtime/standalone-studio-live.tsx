@@ -33,8 +33,10 @@ import {
   resolveModelServiceEdges,
   smartPickBaselineEndpoint,
   type AuthorBlockChipId,
+  type DeclarativeRuleInput,
   type DerivedExerciseFromDemo,
   type ExerciseTypeKey,
+  type PredictionMode,
   type StudioGoalId,
   type TargetChangeAction,
 } from "./studio-authoring-helpers";
@@ -46,7 +48,12 @@ export type StudioExerciseView = {
   runtimeModelId: string | null;
   runtimeSnapshotId: string | null;
   baselineRequests: Array<{ method: "GET" | "HEAD"; path: string; expectedStatus: number | null }>;
-  initialState: { stoppedServices: string[]; stoppedControllers: string[] };
+  initialState: {
+    stoppedServices: string[];
+    stoppedControllers: string[];
+    cpuLimits?: Record<string, number> | null;
+    initialLoadRps?: number | null;
+  };
   allowedActions: string[];
   successCriteria: {
     maxErrorRatePercent: number | null;
@@ -62,6 +69,9 @@ export type StudioExerciseView = {
       | "CUSTOM"
       | null;
     predictionRequired?: boolean | null;
+    predictionMode?: PredictionMode | null;
+    blindMode?: boolean | null;
+    maxActions?: number | null;
     minImpactF1?: number | null;
     targetChangeAction?: {
       action: "STOP" | "START" | "SCALE" | "PAUSE" | "RESUME" | "THROTTLE_CPU" | "SET_LOAD";
@@ -630,14 +640,21 @@ function StandaloneStudioContent() {
   type VisualExerciseInput = {
     stoppedServices?: string[];
     stoppedControllers?: string[];
+    cpuLimits?: Record<string, number>;
+    initialLoadRps?: number | null;
     instructions?: string;
     baselinePath?: string;
+    baselinePaths?: string[];
     maxErrorRatePercent?: string;
     maxP95Ms?: string;
     minImpactF1?: string;
     minReplicas?: Array<{ service: string; count: number }>;
     exerciseType?: ExerciseTypeKey | null;
     predictionRequired?: boolean;
+    predictionMode?: PredictionMode | null;
+    blindMode?: boolean;
+    maxActions?: number | null;
+    rules?: DeclarativeRuleInput[] | null;
     targetChangeAction?: TargetChangeAction | null;
     requiredTraceEdge?: { from: string; to: string } | null;
     allowedActions?: string[];
@@ -653,13 +670,41 @@ function StandaloneStudioContent() {
       runtimeSnapshotId: string | null;
     },
   ): StudioExerciseView => {
+    const cleanMultiPaths = input.baselinePaths
+      ? Array.from(
+          new Set(
+            input.baselinePaths
+              .map((p) => p.trim())
+              .filter((p) => p.startsWith("/") && p.length <= 200),
+          ),
+        ).slice(0, 4)
+      : null;
     const chosenPath = input.baselinePath?.trim();
     const trailingBaseline = cur?.baselineRequests?.slice(1) ?? [];
-    const nextBaseline = chosenPath
-      ? [{ method: "GET" as const, path: chosenPath, expectedStatus: 200 }, ...trailingBaseline]
-      : cur?.baselineRequests?.length && cur.baselineRequests[0]?.path !== "/"
-        ? cur.baselineRequests
-        : [{ method: "GET" as const, path: defaultBaselinePath, expectedStatus: 200 }];
+    const nextBaseline =
+      cleanMultiPaths && cleanMultiPaths.length > 0
+        ? cleanMultiPaths.map((path) => ({ method: "GET" as const, path, expectedStatus: 200 }))
+        : chosenPath
+          ? [{ method: "GET" as const, path: chosenPath, expectedStatus: 200 }, ...trailingBaseline]
+          : cur?.baselineRequests?.length && cur.baselineRequests[0]?.path !== "/"
+            ? cur.baselineRequests
+            : [{ method: "GET" as const, path: defaultBaselinePath, expectedStatus: 200 }];
+    const nextCpuLimits = (() => {
+      const raw = "cpuLimits" in input ? (input.cpuLimits ?? {}) : (cur?.initialState?.cpuLimits ?? {});
+      const clean: Record<string, number> = {};
+      for (const [svc, pct] of Object.entries(raw)) {
+        if (svc && Number.isFinite(pct) && pct >= 10 && pct < 100) {
+          clean[svc] = Math.round(pct);
+        }
+      }
+      return clean;
+    })();
+    const nextInitialLoadRps =
+      "initialLoadRps" in input
+        ? input.initialLoadRps != null && Number.isFinite(input.initialLoadRps) && input.initialLoadRps >= 1
+          ? Math.max(1, Math.min(50, Math.round(input.initialLoadRps)))
+          : null
+        : (cur?.initialState?.initialLoadRps ?? null);
     const nextExerciseType =
       "exerciseType" in input
         ? input.exerciseType
@@ -690,6 +735,20 @@ function StandaloneStudioContent() {
       "predictionRequired" in input
         ? input.predictionRequired
         : (cur?.successCriteria?.predictionRequired ?? false);
+    const nextPredictionMode =
+      "predictionMode" in input
+        ? input.predictionMode ?? "BLAST_RADIUS"
+        : (cur?.successCriteria?.predictionMode ?? "BLAST_RADIUS");
+    const nextBlindMode =
+      "blindMode" in input ? Boolean(input.blindMode) : Boolean(cur?.successCriteria?.blindMode);
+    const nextMaxActions =
+      "maxActions" in input
+        ? input.maxActions != null && Number.isFinite(input.maxActions) && input.maxActions >= 1
+          ? Math.max(1, Math.min(32, Math.round(input.maxActions)))
+          : null
+        : (cur?.successCriteria?.maxActions ?? null);
+    const nextRules =
+      "rules" in input ? (input.rules ?? []) : (cur?.successCriteria?.rules ?? []);
     const nextTargetAction =
       "targetChangeAction" in input
         ? input.targetChangeAction
@@ -725,6 +784,8 @@ function StandaloneStudioContent() {
         stoppedServices: input.stoppedServices ?? cur?.initialState?.stoppedServices ?? [],
         stoppedControllers:
           input.stoppedControllers ?? cur?.initialState?.stoppedControllers ?? [],
+        cpuLimits: nextCpuLimits,
+        initialLoadRps: nextInitialLoadRps,
       },
       allowedActions: nextAllowedActions,
       successCriteria: {
@@ -735,8 +796,12 @@ function StandaloneStudioContent() {
         minReplicas: input.minReplicas ?? cur?.successCriteria?.minReplicas ?? [],
         exerciseType: nextExerciseType,
         predictionRequired: nextPredictionRequired,
+        predictionMode: nextPredictionMode,
+        blindMode: nextBlindMode,
+        maxActions: nextMaxActions,
         minImpactF1: nextMinImpactF1,
         targetChangeAction: nextTargetAction,
+        rules: nextRules,
       },
       instructions: (input.instructions ?? cur?.instructions ?? "").trim(),
       revision: cur?.revision ?? 0,
@@ -945,6 +1010,25 @@ function StandaloneStudioContent() {
       .map((c) => c.controllerService);
   }, [exercise.data?.initialState?.stoppedControllers, previewTopology]);
 
+  const initialCpuLimits = useMemo<Record<string, number>>(
+    () => exercise.data?.initialState?.cpuLimits ?? {},
+    [exercise.data?.initialState?.cpuLimits],
+  );
+
+  const initialLoadRps = exercise.data?.initialState?.initialLoadRps ?? null;
+
+  const baselinePaths = useMemo<string[]>(() => {
+    const paths = (exercise.data?.baselineRequests ?? [])
+      .map((req) => req.path?.trim() ?? "")
+      .filter((path) => path.startsWith("/") && path !== "/");
+    return paths.length > 0 ? Array.from(new Set(paths)).slice(0, 4) : [defaultBaselinePath];
+  }, [exercise.data?.baselineRequests, defaultBaselinePath]);
+
+  const declarativeRules = useMemo<DeclarativeRuleInput[]>(
+    () => exercise.data?.successCriteria?.rules ?? [],
+    [exercise.data?.successCriteria?.rules],
+  );
+
   const scalableServices = useMemo(
     () => (previewTopology?.blocks ?? []).filter((b) => b.canScale).map((b) => b.service),
     [previewTopology],
@@ -977,6 +1061,13 @@ function StandaloneStudioContent() {
       ? {
           initialStoppedServices,
           initialStoppedControllers,
+          initialCpuLimits,
+          initialLoadRps,
+          baselinePaths,
+          blindMode: exercise.data?.successCriteria?.blindMode === true,
+          predictionMode: exercise.data?.successCriteria?.predictionMode ?? "BLAST_RADIUS",
+          maxActions: exercise.data?.successCriteria?.maxActions ?? null,
+          declarativeRules,
           scalableServices,
           availableServices: composePoolServices,
           impactTargetService: currentTargetAction?.service ?? null,
@@ -1015,6 +1106,105 @@ function StandaloneStudioContent() {
           onClearError: () => setVisualError(""),
           hasVerifiedSession: Boolean(verifiedSession),
           publishHref,
+          onSetInitialCpuLimit: (service, cpuPercent) => {
+            const nextCpuLimits = { ...initialCpuLimits };
+            if (cpuPercent == null || cpuPercent >= 100) {
+              delete nextCpuLimits[service];
+            } else {
+              nextCpuLimits[service] = Math.max(10, Math.min(99, Math.round(cpuPercent)));
+            }
+            // Painting a live CPU throttle clears "Starts Down" on that same service so the 4-state painter stays crisp.
+            const nextStopped =
+              cpuPercent != null && cpuPercent < 100
+                ? initialStoppedServices.filter((s) => s !== service)
+                : initialStoppedServices;
+            const nextTopology = previewTopology
+              ? {
+                  ...previewTopology,
+                  blocks: previewTopology.blocks.map((b) => ({
+                    ...b,
+                    initiallyStopped: nextStopped.includes(b.service),
+                  })),
+                }
+              : undefined;
+            saveVisualExercise.mutate({
+              cpuLimits: nextCpuLimits,
+              stoppedServices: nextStopped,
+              ...(nextTopology ? { nextTopology } : {}),
+            });
+          },
+          onApplyExamPreset: () => {
+            const currentBlocks = previewTopology?.blocks ?? [];
+            const serviceNames =
+              currentBlocks.length > 0 ? currentBlocks.map((b) => b.service) : availableApplications;
+            if (serviceNames.length === 0) return;
+            const stateless = serviceNames.filter(
+              (svc) => !isStatefulService(svc) && !/gateway|edge|proxy/i.test(svc),
+            );
+            const nonGateway = serviceNames.filter((svc) => !/gateway|edge|proxy/i.test(svc));
+            const pool = stateless.length > 0 ? stateless : nonGateway.length > 0 ? nonGateway : serviceNames;
+            const cpuCulprit =
+              pool.find((s) => /pricing|catalog|inventory|cart/i.test(s)) ?? pool[0]!;
+            const downCulprit =
+              pool.find((s) => s !== cpuCulprit && /fraud|payment|billing|notification|order/i.test(s)) ??
+              pool.find((s) => s !== cpuCulprit) ??
+              null;
+            const nextStopped = downCulprit ? [downCulprit] : [];
+            const nextCpuLimits: Record<string, number> = { [cpuCulprit]: 25 };
+            const verifiedPaths = endpointOptions
+              .filter((ep) => ep.verified)
+              .map((ep) => ep.path)
+              .slice(0, 3);
+            const examPaths =
+              verifiedPaths.length > 0 ? verifiedPaths : [pickSmartPath(downCulprit ?? cpuCulprit)];
+            const nextTopology = previewTopology
+              ? {
+                  ...previewTopology,
+                  blocks: previewTopology.blocks.map((b) => ({
+                    ...b,
+                    initiallyStopped: nextStopped.includes(b.service),
+                    canScale: b.service === cpuCulprit ? true : b.canScale,
+                  })),
+                  connections: (previewTopology.connections ?? []).map((c) => ({
+                    ...c,
+                    initiallyStopped: false,
+                  })),
+                }
+              : undefined;
+            saveVisualExercise.mutate({
+              exerciseType: "CUSTOM",
+              blindMode: true,
+              predictionRequired: true,
+              predictionMode: "ROOT_CAUSE",
+              minImpactF1: "0.7",
+              maxActions: 4,
+              stoppedServices: nextStopped,
+              stoppedControllers: [],
+              cpuLimits: nextCpuLimits,
+              initialLoadRps: 15,
+              targetChangeAction: null,
+              minReplicas: [],
+              maxErrorRatePercent: "0",
+              maxP95Ms: "1500",
+              baselinePath: examPaths[0] ?? defaultBaselinePath,
+              baselinePaths: examPaths,
+              allowedActions: ["START", "STOP", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD"],
+              instructions: buildStudentExerciseInstructions({
+                exerciseType: "CUSTOM",
+                blindMode: true,
+                predictionRequired: true,
+                predictionMode: "ROOT_CAUSE",
+                stoppedServices: nextStopped,
+                initialCpuLimits: nextCpuLimits,
+                initialLoadRps: 15,
+                maxActions: 4,
+                maxErrorRatePercent: 0,
+                maxP95Ms: 1500,
+                locale,
+              }),
+              ...(nextTopology ? { nextTopology } : {}),
+            });
+          },
           onToggleInitialStopped: (service, isController) => {
             const nextStoppedServices = isController
               ? initialStoppedServices
@@ -1039,13 +1229,21 @@ function StandaloneStudioContent() {
                   })),
                 }
               : undefined;
+            const nextCpuLimits =
+              !isController && nextStoppedServices.includes(service) && service in initialCpuLimits
+                ? Object.fromEntries(
+                    Object.entries(initialCpuLimits).filter(([k]) => k !== service),
+                  )
+                : initialCpuLimits;
             const isRecoveryMode =
-              exercise.data?.successCriteria?.exerciseType === "CIRCUIT_BREAKER" ||
-              (!isController && nextStoppedServices.length > 0 && currentTargetAction?.action === "START");
+              exercise.data?.successCriteria?.blindMode !== true &&
+              (exercise.data?.successCriteria?.exerciseType === "CIRCUIT_BREAKER" ||
+                (!isController && nextStoppedServices.length > 0 && currentTargetAction?.action === "START"));
             const nextRecoveryTarget = nextStoppedServices[0];
             saveVisualExercise.mutate({
               stoppedServices: nextStoppedServices,
               stoppedControllers: nextStoppedControllers,
+              cpuLimits: nextCpuLimits,
               ...(isRecoveryMode && nextRecoveryTarget
                 ? {
                     exerciseType: "CIRCUIT_BREAKER" as const,
@@ -1170,17 +1368,25 @@ function StandaloneStudioContent() {
 
             if (goalId === "change-impact") {
               const nextTopology = baseTopology((_svc, b) => ({ ...b, initiallyStopped: false }));
+              const smartPath = pickSmartPath(faultTarget);
               saveVisualExercise.mutate({
                 exerciseType: "CHANGE_IMPACT",
+                blindMode: false,
                 predictionRequired: true,
+                predictionMode: "BLAST_RADIUS",
                 minImpactF1: "0.7",
+                maxActions: null,
+                rules: [],
                 targetChangeAction: { action: "PAUSE", service: faultTarget },
                 stoppedServices: [],
                 stoppedControllers: [],
+                cpuLimits: {},
+                initialLoadRps: null,
                 minReplicas: [],
                 maxErrorRatePercent: "",
                 maxP95Ms: "",
-                baselinePath: pickSmartPath(faultTarget),
+                baselinePath: smartPath,
+                baselinePaths: [smartPath],
                 allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
                 instructions: buildStudentExerciseInstructions({
                   exerciseType: "CHANGE_IMPACT",
@@ -1200,16 +1406,24 @@ function StandaloneStudioContent() {
                 initiallyStopped: false,
                 canScale: svc === primaryScale ? true : b.canScale,
               }));
+              const smartPath = pickSmartPath(primaryScale);
               saveVisualExercise.mutate({
                 exerciseType: "SCALE_UNDER_LOAD",
+                blindMode: false,
                 predictionRequired: false,
+                predictionMode: "BLAST_RADIUS",
                 minImpactF1: "",
+                maxActions: null,
+                rules: [],
                 targetChangeAction: { action: "SCALE", service: primaryScale, replicas: 2 },
                 stoppedServices: [],
                 stoppedControllers: [],
+                cpuLimits: {},
+                initialLoadRps: null,
                 minReplicas: [{ service: primaryScale, count: 2 }],
                 maxErrorRatePercent: "5",
-                baselinePath: pickSmartPath(primaryScale),
+                baselinePath: smartPath,
+                baselinePaths: [smartPath],
                 allowedActions: ["SCALE", "SET_LOAD", "START", "STOP"],
                 instructions: buildStudentExerciseInstructions({
                   exerciseType: "SCALE_UNDER_LOAD",
@@ -1228,16 +1442,24 @@ function StandaloneStudioContent() {
                 ...b,
                 initiallyStopped: svc === faultTarget,
               }));
+              const smartPath = pickSmartPath(faultTarget);
               saveVisualExercise.mutate({
                 exerciseType: "CIRCUIT_BREAKER",
+                blindMode: false,
                 predictionRequired: false,
+                predictionMode: "BLAST_RADIUS",
                 minImpactF1: "",
+                maxActions: null,
+                rules: [],
                 targetChangeAction: { action: "START", service: faultTarget },
                 stoppedServices: [faultTarget],
                 stoppedControllers: [],
+                cpuLimits: {},
+                initialLoadRps: null,
                 minReplicas: [],
                 maxErrorRatePercent: "0",
-                baselinePath: pickSmartPath(faultTarget),
+                baselinePath: smartPath,
+                baselinePaths: [smartPath],
                 allowedActions: ["START", "STOP", "PAUSE", "RESUME", "CONNECT", "DISCONNECT"],
                 instructions: buildStudentExerciseInstructions({
                   exerciseType: "CIRCUIT_BREAKER",
@@ -1257,16 +1479,24 @@ function StandaloneStudioContent() {
               initiallyStopped: false,
               canScale: svc === faultTarget ? true : b.canScale,
             }));
+            const smartCpuPath = pickSmartPath(faultTarget);
             saveVisualExercise.mutate({
               exerciseType: "CONFIG_REGRESSION",
+              blindMode: false,
               predictionRequired: false,
+              predictionMode: "BLAST_RADIUS",
               minImpactF1: "",
+              maxActions: null,
+              rules: [],
               targetChangeAction: { action: "THROTTLE_CPU", service: faultTarget, cpuPercent: 25 },
               stoppedServices: [],
               stoppedControllers: [],
+              cpuLimits: {},
+              initialLoadRps: null,
               minReplicas: [],
               maxErrorRatePercent: "",
-              baselinePath: pickSmartPath(faultTarget),
+              baselinePath: smartCpuPath,
+              baselinePaths: [smartCpuPath],
               allowedActions: ["THROTTLE_CPU", "SET_LOAD", "SCALE", "START", "STOP"],
               instructions: buildStudentExerciseInstructions({
                 exerciseType: "CONFIG_REGRESSION",
@@ -1462,12 +1692,22 @@ function StandaloneStudioContent() {
             saveVisualExercise.mutate({
               instructions: patch.instructions,
               baselinePath: patch.baselinePath,
+              ...(patch.baselinePaths !== undefined ? { baselinePaths: patch.baselinePaths } : {}),
+              ...(patch.initialLoadRps !== undefined
+                ? { initialLoadRps: patch.initialLoadRps }
+                : {}),
               maxErrorRatePercent: patch.maxErrorRatePercent,
               ...(patch.maxP95Ms !== undefined ? { maxP95Ms: patch.maxP95Ms } : {}),
               ...(patch.minImpactF1 !== undefined ? { minImpactF1: patch.minImpactF1 } : {}),
               ...(patch.predictionRequired !== undefined
                 ? { predictionRequired: patch.predictionRequired }
                 : {}),
+              ...(patch.predictionMode !== undefined
+                ? { predictionMode: patch.predictionMode }
+                : {}),
+              ...(patch.blindMode !== undefined ? { blindMode: patch.blindMode } : {}),
+              ...(patch.maxActions !== undefined ? { maxActions: patch.maxActions } : {}),
+              ...(patch.rules !== undefined ? { rules: patch.rules } : {}),
               ...(patch.allowedActions !== undefined
                 ? { allowedActions: patch.allowedActions }
                 : {}),
@@ -1642,10 +1882,13 @@ function StandaloneStudioContent() {
     if (!studentExercise && !liveStudioVerified) return undefined;
     return {
       instructions: studentExercise?.instructions ?? null,
-      predictionRequired: Boolean(
-        (studentExercise?.successCriteria as { predictionRequired?: boolean } | null | undefined)
-          ?.predictionRequired,
-      ),
+      predictionRequired: Boolean(studentExercise?.successCriteria?.predictionRequired),
+      predictionMode:
+        (studentExercise?.successCriteria?.predictionMode as PredictionMode | null | undefined) ??
+        null,
+      blindMode: Boolean(studentExercise?.successCriteria?.blindMode),
+      maxActions: studentExercise?.successCriteria?.maxActions ?? null,
+      initialLoadRps: studentExercise?.initialState?.initialLoadRps ?? null,
       maxErrorRatePercent: studentExercise?.successCriteria?.maxErrorRatePercent ?? null,
       maxP95Ms: studentExercise?.successCriteria?.maxP95Ms ?? null,
       minReplicas: studentExercise?.successCriteria?.minReplicas ?? null,

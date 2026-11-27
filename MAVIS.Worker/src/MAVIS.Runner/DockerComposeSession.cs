@@ -242,6 +242,20 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                         if (stopped.Length > 0)
                             await Require(new[] { "stop", "--timeout", "5" }.Concat(stopped).ToArray(), effectiveCt);
                     }
+                    if (definition.InteractiveStudio && definition.Profile.InitialCpuLimits is { Count: > 0 } cpuLimits)
+                    {
+                        // Apply initial CPU limits after JVM/app readiness & HostConfig provenance check so startup never stalls.
+                        foreach (var (svc, pct) in cpuLimits)
+                        {
+                            if (pct is < 10 or >= 100 || !definition.Profile.Applications.ContainsKey(svc)) continue;
+                            var state = await ReadServiceState(svc, effectiveCt);
+                            if (state.runningIds.Length == 0) continue;
+                            var applied = Math.Min(definition.Profile.Cpus, Math.Max(0.05, Math.Round(definition.Profile.Cpus * pct / 100.0, 2)));
+                            var cpuArg = applied.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                            var updated = await docker.RunAsync(new[] { "update", "--cpus", cpuArg }.Concat(state.runningIds).ToArray(), _directory!, 15, effectiveCt);
+                            if (updated.ExitCode == 0) _activeCpuLimits[svc] = pct;
+                        }
+                    }
                     await CheckpointAsync("RUNNING", 2, effectiveCt);
                     return;
                 }
@@ -440,6 +454,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
             Stage = "INFRASTRUCTURE_" + action;
             var before = await ReadServiceState(service, ct);
+            JsonNode? warmProbeBefore;
+            lock (_probeLock) warmProbeBefore = _latestProbeNode?.DeepClone();
             // Spring Boot + OTel javaagent + Kafka/RabbitMQ replicas can take ~65s under load to pass healthchecks cleanly.
             var actionWaitTimeout = ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime) ? "150" : "120";
             double? appliedCpus = null;
@@ -460,6 +476,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 var cpuArg = appliedCpus.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
                 var updated = await docker.RunAsync(new[] { "update", "--cpus", cpuArg }.Concat(before.runningIds).ToArray(), _directory!, 15, ct);
                 if (updated.ExitCode != 0) throw new RuntimeStageException("DOCKER_UPDATE_FAILED");
+                if (item.CpuPercent!.Value < 100) _activeCpuLimits[service] = item.CpuPercent.Value;
+                else _activeCpuLimits.Remove(service);
             }
             else if (action == "SET_LOAD")
             {
@@ -545,15 +563,22 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             };
             if (expected && action is "START" or "SCALE" or "RESUME" or "SET_ENV" or "SWAP_VERSION")
                 expected = await WaitForServiceReadyAsync(service, ct);
+            if (expected && action == "SCALE" && after.runningIds.Length > 0
+                && _activeCpuLimits.TryGetValue(service, out var persistedPct) && persistedPct < 100)
+            {
+                var reapplied = Math.Min(definition.Profile.Cpus, Math.Max(0.05, Math.Round(definition.Profile.Cpus * persistedPct / 100.0, 2)));
+                var cpuArg = reapplied.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                await docker.RunAsync(new[] { "update", "--cpus", cpuArg }.Concat(after.runningIds).ToArray(), _directory!, 15, ct);
+            }
             var performedAt = DateTimeOffset.UtcNow;
             results.Add(new(action, service, before.running, after.running,
-                Metrics(before, beforeWorkload, null, null, rpsBefore, null, null, imageBefore),
-                Metrics(after, null, item.CpuPercent, appliedCpus, rpsAfter, appliedEnvKey, appliedEnvVal is null ? null : RedactSecrets(appliedEnvVal), imageAfter),
+                Metrics(before, beforeWorkload, null, null, rpsBefore, null, null, imageBefore, warmProbeBefore),
+                Metrics(after, null, item.CpuPercent, appliedCpus, rpsAfter, appliedEnvKey, appliedEnvVal is null ? null : RedactSecrets(appliedEnvVal), imageAfter, null),
                 performedAt, expected));
             var afterWorkload = expected && beforeWorkload is not null ? await ExecuteWorkloadAsync(ct) : null;
             if (afterWorkload is not null)
                 RememberTraceSteps(afterWorkload);
-            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload, item.CpuPercent, appliedCpus, rpsAfter, appliedEnvKey, appliedEnvVal is null ? null : RedactSecrets(appliedEnvVal), imageAfter) };
+            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload, item.CpuPercent, appliedCpus, rpsAfter, appliedEnvKey, appliedEnvVal is null ? null : RedactSecrets(appliedEnvVal), imageAfter, null) };
             beforeWorkload = afterWorkload;
             _scenario = afterWorkload ?? _scenario;
             if (!expected) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
@@ -561,7 +586,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         return results;
 
         static JsonObject Metrics((int total, int running, int paused, string[] runningIds) value, HttpScenarioOutcome? workload,
-            int? cpuPercent, double? appliedCpus, int? targetRps, string? envKey, string? envValue, string? image)
+            int? cpuPercent, double? appliedCpus, int? targetRps, string? envKey, string? envValue, string? image, JsonNode? liveProbe)
         {
             var metrics = new JsonObject
             {
@@ -587,6 +612,15 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     metrics["p95LatencyMs"] = samples[(int)Math.Ceiling(samples.Length * 0.95) - 1];
                     metrics["errorRatePercent"] = 100d * workload.Steps.Count(step => step.Status != "Passed") / samples.Length;
                 }
+            }
+            // Prefer steady-state live probe over boot-time cold-start _scenario so Before->After never reports inverted p95.
+            if (liveProbe is JsonObject probeObj
+                && probeObj["requests"]?.GetValue<int>() is > 0
+                && probeObj["p95Ms"]?.GetValue<double>() is double warmP95 && double.IsFinite(warmP95)
+                && probeObj["errorRatePercent"]?.GetValue<double>() is double warmErr && double.IsFinite(warmErr))
+            {
+                metrics["p95LatencyMs"] = Math.Round(warmP95, 2);
+                metrics["errorRatePercent"] = Math.Round(warmErr, 2);
             }
             return metrics;
         }
@@ -690,6 +724,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private static readonly TimeSpan TelemetryInterval = TimeSpan.FromSeconds(2);
     private readonly SemaphoreSlim _telemetryGate = new(1, 1);
     private readonly object _probeLock = new();
+    private readonly Dictionary<string, int> _activeCpuLimits = new(StringComparer.Ordinal);
     private ILineStreamHandle? _probeStream;
     private int _currentProbeRps = 1;
     private JsonNode? _latestProbeNode;
