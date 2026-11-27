@@ -41,6 +41,7 @@ test("Login page enforces full VI/EN localization, back-to-home navigation, and 
   assert.match(login, /t\("Explain", "Giải thích"\)/);
   assert.match(login, /t\("Experience", "Trải nghiệm"\)/);
   assert.match(login, /StudioStagePreview/);
-  assert.match(login, /payment · PAUSED/);
+  assert.match(login, /\/homepage\/login-studio-light\.webp/);
+  assert.match(login, /\/homepage\/login-studio-dark\.webp/);
   assert.doesNotMatch(login, /Illustrative dependency graph/);
 });
