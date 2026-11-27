@@ -5633,7 +5633,7 @@ export function LiveStudioWorkbench({
                             {exerciseMaxActions != null && (
                               <span
                                 data-testid="studio-action-budget-pill"
-                                className={`rounded border px-1.5 py-0.5 font-mono text-[10.5px] font-bold ${
+                                className={`shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono text-[10.5px] font-bold ${
                                   actionBudgetExhausted
                                     ? isLight
                                       ? "border-rose-300 bg-rose-50 text-rose-700"
@@ -6891,7 +6891,7 @@ export function LiveStudioWorkbench({
                                 }}
                                 className={`h-7 rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
                               >
-                                <option value="P95_DELTA_PCT">{t("p95 Δ%", "Giảm p95 %")}</option>
+                                <option value="P95_DELTA_PCT">{t("p95 Δ%", "p95 Δ%")}</option>
                                 <option value="REPLICAS">{t("Replicas >=", "Replica >=")}</option>
                                 <option value="P95_MS">{t("p95 <=", "p95 <=")}</option>
                                 <option value="ERROR_RATE">{t("Error % <=", "Lỗi % <=")}</option>

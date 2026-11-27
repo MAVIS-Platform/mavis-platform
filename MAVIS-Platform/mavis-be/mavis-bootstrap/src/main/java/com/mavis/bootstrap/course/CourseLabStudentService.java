@@ -522,20 +522,8 @@ public class CourseLabStudentService {
             if (bootRps >= 1 && bootRps <= 50) {
                 profileNode.put("probeRps", bootRps);
             }
-            JsonNode cpuLimits = initialStateNode.path("cpuLimits");
-            if (cpuLimits.isObject() && !cpuLimits.isEmpty()) {
-                ObjectNode cleanLimits = json.createObjectNode();
-                cpuLimits.fields().forEachRemaining(entry -> {
-                    String svc = entry.getKey() == null ? "" : entry.getKey().trim();
-                    int pct = entry.getValue().asInt(100);
-                    if (!svc.isBlank() && pct >= 10 && pct < 100 && appsNode.has(svc)) {
-                        cleanLimits.put(svc, pct);
-                    }
-                });
-                if (!cleanLimits.isEmpty()) {
-                    profileNode.set("initialCpuLimits", cleanLimits);
-                }
-            }
+            // Note: initialState.cpuLimits are applied via RuntimeStudioService.poll() using standard THROTTLE_CPU
+            // actions so remote Worker VPSs never fail strict UnmappedMemberHandling deserialization.
         }
         ObjectNode scenarioNode = scenarioConfig.putObject("scenario");
         ArrayNode stepsNode = scenarioNode.putArray("steps");

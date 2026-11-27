@@ -721,4 +721,44 @@ class RuntimeStudioServiceTest {
         assertEquals(com.mavis.common.exception.ErrorCode.CONFLICT, budgetEx.getErrorCode());
         assertTrue(budgetEx.getMessage().contains("Action budget exhausted (2/2)"));
     }
+
+    @Test
+    void pollAutoDispatchesInitialCpuLimitsViaStandardThrottleAndHidesSystemSetupFromViewAndBudget() {
+        var studentRole = com.mavis.common.entity.Role.builder().code("STUDENT").build();
+        var studentUser = com.mavis.common.entity.User.builder().id(UUID.randomUUID()).role(studentRole).build();
+        session.setTriggeredBy(studentUser);
+        when(access.requireCurrentActiveUser()).thenReturn(studentUser);
+
+        ObjectNode scenario = (ObjectNode) session.getScenarioConfig();
+        scenario.putObject("exerciseCriteria").put("blindMode", true).put("maxActions", 4);
+        ObjectNode initialState = scenario.putObject("initialState");
+        initialState.putArray("stoppedServices");
+        initialState.putObject("cpuLimits").put("orders", 25);
+
+        // First poll dispatches THROTTLE_CPU without leaking systemSetup flag to Runner
+        var poll1 = service.poll(id, session.getResourceProject());
+        assertEquals("THROTTLE_CPU", poll1.path("command").path("action").asText());
+        assertEquals("orders", poll1.path("command").path("service").asText());
+        assertEquals(25, poll1.path("command").path("cpuPercent").asInt());
+        assertFalse(poll1.path("command").has("systemSetup"));
+
+        // Acknowledge system setup throttle as CONFIRMED
+        UUID setupActionId = UUID.fromString(poll1.path("command").path("actionId").asText());
+        ObjectNode ackResult = mapper.createObjectNode()
+                .put("confirmed", true).put("action", "THROTTLE_CPU").put("service", "orders")
+                .put("replicasBefore", 1).put("replicasAfter", 1);
+        ackResult.putObject("metricsAfter").put("cpuPercent", 25);
+        service.acknowledge(id, new RuntimeStudioService.AckRequest(setupActionId, id, session.getResourceProject(), "CONFIRMED", ackResult));
+
+        // Subsequent poll sees no more pending CPU traps
+        var poll2 = service.poll(id, session.getResourceProject());
+        assertFalse(poll2.has("command"));
+
+        // Student view hides systemSetup action, keeps actionsUsed=0, and finish() still demands a real student action
+        var state = service.state(id);
+        assertEquals(0, state.path("actions").size());
+        assertEquals(0, state.path("actionsUsed").asInt());
+        assertFalse(state.has("appliedInitialCpuLimits"));
+        assertThrows(BusinessException.class, () -> service.finish(id));
+    }
 }

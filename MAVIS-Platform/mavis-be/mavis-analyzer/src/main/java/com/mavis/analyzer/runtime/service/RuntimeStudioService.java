@@ -535,7 +535,9 @@ public class RuntimeStudioService {
             for (JsonNode action : control.withArray("actions")) {
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
                     throw error(ErrorCode.CONFLICT, "Wait for the current action before finishing.");
-                confirmed |= "CONFIRMED".equals(action.path("status").asText());
+                if (!action.path("systemSetup").asBoolean(false)) {
+                    confirmed |= "CONFIRMED".equals(action.path("status").asText());
+                }
             }
             if (!confirmed) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "INCOMPLETE_SCENARIO",
                     "Perform a confirmed action before saving Studio evidence. Cancel the session to discard it.");
@@ -590,7 +592,7 @@ public class RuntimeStudioService {
                         hasPending = true;
                         break;
                     }
-                    response.put("finishRequested", false).put("cancelRequested", false).set("command", node.deepCopy());
+                    response.put("finishRequested", false).put("cancelRequested", false).set("command", sanitizeRunnerCommand(node));
                     return response;
                 }
                 if ("PENDING".equals(status)) {
@@ -599,11 +601,12 @@ public class RuntimeStudioService {
                 }
             }
         }
-        if (!hasPending) {
-            boolean finishRequested = existingControl != null && existingControl.path("finishRequested").asBoolean();
-            return response.put("finishRequested", finishRequested).put("cancelRequested", false);
+        boolean finishRequestedNow = existingControl != null && existingControl.path("finishRequested").asBoolean();
+        boolean hasInitialCpuSetup = !finishRequestedNow && nextPendingInitialCpuLimit(session, existingControl) != null;
+        if (!hasPending && !hasInitialCpuSetup) {
+            return response.put("finishRequested", finishRequestedNow).put("cancelRequested", false);
         }
-        // Only lock the session row and rewrite studio_control when actually claiming or expiring an action.
+        // Only lock the session row and rewrite studio_control when actually claiming, expiring, or auto-seeding an action.
         // Flush any outer test-tx changes, then detach the unlocked L1 entity before acquiring the row lock.
         if (entityManager != null) {
             entityManager.flush();
@@ -628,7 +631,7 @@ public class RuntimeStudioService {
                 if (expired) {
                     notifyStateAfterCommit(lockedSession);
                 }
-                response.put("finishRequested", false).put("cancelRequested", false).set("command", action.deepCopy());
+                response.put("finishRequested", false).put("cancelRequested", false).set("command", sanitizeRunnerCommand(action));
                 return response;
             }
             if ("RUNNING".equals(status)) {
@@ -636,7 +639,25 @@ public class RuntimeStudioService {
                     save(lockedSession, control);
                     notifyStateAfterCommit(lockedSession);
                 }
-                response.put("finishRequested", false).put("cancelRequested", false).set("command", node.deepCopy());
+                response.put("finishRequested", false).put("cancelRequested", false).set("command", sanitizeRunnerCommand(node));
+                return response;
+            }
+        }
+        if (!control.path("finishRequested").asBoolean()) {
+            java.util.Map.Entry<String, Integer> pendingCpu = nextPendingInitialCpuLimit(lockedSession, control);
+            if (pendingCpu != null) {
+                control.withArray("appliedInitialCpuLimits").add(pendingCpu.getKey());
+                ObjectNode setupAction = mapper.createObjectNode()
+                        .put("actionId", UUID.randomUUID().toString())
+                        .put("action", "THROTTLE_CPU")
+                        .put("service", pendingCpu.getKey())
+                        .put("cpuPercent", pendingCpu.getValue())
+                        .put("systemSetup", true)
+                        .put("status", "RUNNING")
+                        .put("requestedAt", OffsetDateTime.now().toString());
+                control.withArray("actions").add(setupAction);
+                save(lockedSession, control);
+                response.put("finishRequested", false).put("cancelRequested", false).set("command", sanitizeRunnerCommand(setupAction));
                 return response;
             }
         }
@@ -805,6 +826,7 @@ public class RuntimeStudioService {
             .put("sourceSnapshotId", session.getSourceSnapshot() == null ? "" : session.getSourceSnapshot().getId().toString())
             .put("receiptDigest", session.getReceiptDigest())
             .put("executionStatus", execution).put("cleanupStatus", session.getCleanupStatus() == null ? "UNKNOWN" : session.getCleanupStatus());
+        stripSystemSetupActions(out);
         if (redactForStudent) {
             redactStudioViewForStudent(out);
         }
@@ -858,12 +880,62 @@ public class RuntimeStudioService {
         if (control == null || !control.path("actions").isArray()) return 0;
         int used = 0;
         for (JsonNode action : control.path("actions")) {
+            if (action.path("systemSetup").asBoolean(false)) continue;
             String st = action.path("status").asText("");
             if ("PENDING".equals(st) || "RUNNING".equals(st) || "CONFIRMED".equals(st)) {
                 used++;
             }
         }
         return used;
+    }
+
+    private static ObjectNode sanitizeRunnerCommand(JsonNode action) {
+        ObjectNode copy = action.deepCopy();
+        copy.remove("systemSetup");
+        return copy;
+    }
+
+    private static void stripSystemSetupActions(ObjectNode out) {
+        out.remove("appliedInitialCpuLimits");
+        if (!out.path("actions").isArray()) return;
+        var filtered = out.arrayNode();
+        for (JsonNode action : out.path("actions")) {
+            if (!action.path("systemSetup").asBoolean(false)) {
+                filtered.add(action);
+            }
+        }
+        out.set("actions", filtered);
+    }
+
+    private static java.util.Map.Entry<String, Integer> nextPendingInitialCpuLimit(RuntimeSession session, JsonNode control) {
+        JsonNode initial = extractInitialState(session);
+        if (initial == null || !initial.path("cpuLimits").isObject() || initial.path("cpuLimits").isEmpty()) {
+            return null;
+        }
+        java.util.Set<String> applied = new java.util.HashSet<>();
+        if (control != null && control.path("appliedInitialCpuLimits").isArray()) {
+            for (JsonNode item : control.path("appliedInitialCpuLimits")) {
+                if (item.isTextual()) applied.add(item.asText());
+            }
+        }
+        java.util.Set<String> stopped = new java.util.HashSet<>();
+        if (initial.path("stoppedServices").isArray()) {
+            for (JsonNode item : initial.path("stoppedServices")) {
+                if (item.isTextual()) stopped.add(item.asText());
+            }
+        }
+        var mappings = session.getConfirmedServiceMappings();
+        var fields = initial.path("cpuLimits").fields();
+        while (fields.hasNext()) {
+            var entry = fields.next();
+            String svc = entry.getKey() == null ? "" : entry.getKey().trim();
+            int pct = entry.getValue().asInt(100);
+            if (svc.isBlank() || "mavis-collector".equals(svc) || pct < 10 || pct >= 100) continue;
+            if (applied.contains(svc) || stopped.contains(svc)) continue;
+            if (mappings != null && !mappings.containsKey(svc)) continue;
+            return java.util.Map.entry(svc, pct);
+        }
+        return null;
     }
 
     private static JsonNode extractInitialState(RuntimeSession session) {

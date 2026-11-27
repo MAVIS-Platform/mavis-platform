@@ -211,7 +211,7 @@ public final class StudioExerciseEvaluator {
         if (control == null || !control.path("actions").isArray()) return List.of();
         List<JsonNode> confirmed = new ArrayList<>();
         for (JsonNode a : control.path("actions")) {
-            if ("CONFIRMED".equals(a.path("status").asText())) {
+            if ("CONFIRMED".equals(a.path("status").asText()) && !a.path("systemSetup").asBoolean(false)) {
                 confirmed.add(a);
             }
         }
