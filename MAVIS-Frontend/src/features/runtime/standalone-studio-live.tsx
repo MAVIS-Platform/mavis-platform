@@ -1173,7 +1173,6 @@ function StandaloneStudioContent() {
               : undefined;
             saveVisualExercise.mutate({
               exerciseType: "CUSTOM",
-              blindMode: true,
               predictionRequired: true,
               predictionMode: "ROOT_CAUSE",
               minImpactF1: "0.7",
@@ -1191,7 +1190,6 @@ function StandaloneStudioContent() {
               allowedActions: ["START", "STOP", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD"],
               instructions: buildStudentExerciseInstructions({
                 exerciseType: "CUSTOM",
-                blindMode: true,
                 predictionRequired: true,
                 predictionMode: "ROOT_CAUSE",
                 stoppedServices: nextStopped,
@@ -1236,6 +1234,8 @@ function StandaloneStudioContent() {
                   )
                 : initialCpuLimits;
             const isRecoveryMode =
+              exercise.data?.successCriteria?.exerciseType !== "CUSTOM" &&
+              exercise.data?.successCriteria?.predictionMode !== "ROOT_CAUSE" &&
               exercise.data?.successCriteria?.blindMode !== true &&
               (exercise.data?.successCriteria?.exerciseType === "CIRCUIT_BREAKER" ||
                 (!isController && nextStoppedServices.length > 0 && currentTargetAction?.action === "START"));

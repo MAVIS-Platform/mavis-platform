@@ -957,6 +957,21 @@ class SubmissionServiceImplTest {
 
         var lecturerExport = submissionService.exportSubmissionBundle(subId);
         assertThat(lecturerExport.getStudentSnapshots().get(0).path("exerciseEvaluation").path("passed").asBoolean()).isTrue();
+
+        // Once the Lecturer grades (GRADED), Student sees the attached Studio evaluation alongside their grade
+        var gradedReview = new com.mavis.common.entity.SubmissionReview();
+        gradedReview.setSubmission(subSnapshot);
+        gradedReview.setLecturer(lecturerUser);
+        gradedReview.setStatus("GRADED");
+        gradedReview.setScore(java.math.BigDecimal.valueOf(90));
+        gradedReview.setSummary("Well diagnosed.");
+        when(submissionReviewRepository.findBySubmissionId(subId)).thenReturn(Optional.of(gradedReview));
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+
+        var gradedStudentRead = submissionService.getSubmissionById(subId);
+        assertThat(gradedStudentRead.getStudentSnapshots().get(0).path("finalExerciseEvaluation").path("f1Score").asDouble()).isEqualTo(0.92);
+        var gradedStudentExport = submissionService.exportSubmissionBundle(subId);
+        assertThat(gradedStudentExport.getStudentSnapshots().get(0).path("exerciseEvaluation").path("passed").asBoolean()).isTrue();
     }
 
     @Test

@@ -546,7 +546,16 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
 
   const isVi = locale === "vi";
 
-  if (blindMode) {
+  const hasCpuTrap =
+    initialCpuLimits && Object.values(initialCpuLimits).some((pct) => pct > 0 && pct < 100);
+  const hasDownTrap = stoppedServices.length > 0;
+  const isCompoundIncident =
+    exerciseType === "CUSTOM" ||
+    predictionMode === "ROOT_CAUSE" ||
+    Boolean(hasCpuTrap) ||
+    Boolean(blindMode);
+
+  if (isCompoundIncident) {
     const errText = maxErrorRatePercent != null ? `<= ${maxErrorRatePercent}%` : "<= 0%";
     const p95Vi = maxP95Ms ? ` và p95 <= ${maxP95Ms} ms` : "";
     const p95En = maxP95Ms ? ` and p95 <= ${maxP95Ms} ms` : "";
@@ -562,34 +571,31 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
       maxActions && maxActions > 0
         ? ` within at most ${maxActions} Docker actions`
         : "";
-    const hasCpuTrap =
-      initialCpuLimits && Object.values(initialCpuLimits).some((pct) => pct > 0 && pct < 100);
-    const hasDownTrap = stoppedServices.length > 0;
     const isRootCause = predictionMode === "ROOT_CAUSE" || (predictionRequired && (hasDownTrap || hasCpuTrap));
 
     if (isVi) {
       const symptomVi =
         hasDownTrap && hasCpuTrap
-          ? "Hệ thống đang gặp đa sự cố (có service ngừng hoạt động và/hoặc nghẽn CPU ẩn khiến độ trễ tăng vọt)"
+          ? "Hệ thống đang gặp đa sự cố (có service ngừng hoạt động và/hoặc nghẽn CPU khiến độ trễ tăng vọt)"
           : hasCpuTrap
-            ? "Hệ thống đang có dịch vụ bị nghẽn tài nguyên CPU ẩn (vẫn hiển thị 1x xanh) khiến độ trễ tăng cao"
+            ? "Hệ thống đang có dịch vụ bị nghẽn tài nguyên CPU khiến độ trễ tăng cao"
             : "Hệ thống đang gặp sự cố sản xuất gây lỗi và suy giảm hiệu năng trên cổng vào";
       const step1 = predictionRequired
         ? isRootCause
-          ? "1. Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM từng container để phân biệt service nguyên nhân gốc (không lộ sẵn đáp án), sau đó chọn đúng nguyên nhân và bấm Khóa chẩn đoán trước khi sửa."
+          ? "1. Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM từng container để xác định service nguyên nhân gốc, sau đó chọn nguyên nhân và bấm Khóa chẩn đoán trước khi sửa."
           : "1. Quan sát sơ đồ 3D và Log & Trace để xác định các service bị ảnh hưởng, sau đó bấm Khóa dự đoán trước khi thao tác."
         : "1. Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM từng container để truy vết đúng service nguyên nhân gốc đang gây lỗi hoặc nghẽn cổ chai.";
-      const step2 = `2. Khắc phục chính xác nguyên nhân gốc (Khởi động service dừng, gỡ bóp CPU 100% hoặc Scale replica)${budgetVi} để đưa hệ thống về SLA (tỉ lệ lỗi ${errText}${p95Vi}).`;
+      const step2 = `2. Khắc phục chính xác nguyên nhân gốc (Khởi động service dừng, gỡ giới hạn CPU 100% hoặc Scale replica)${budgetVi} để đưa hệ thống về SLA (tỉ lệ lỗi ${errText}${p95Vi}).`;
       const step3 =
-        "3. Xác nhận biểu đồ lỗi & độ trễ p95 đã phục hồi ổn định, chụp Snapshot Trước/Sau làm minh chứng rồi bấm Kết thúc Studio để nộp bài.";
+        "3. Quan sát biểu đồ lỗi & độ trễ p95 sau khi xử lý, chụp Snapshot Trước/Sau làm minh chứng rồi bấm Kết thúc Studio để nộp bài chờ Giảng viên chấm.";
       return [`Mục tiêu: ${symptomVi}${loadVi}.`, step1, step2, step3].join("\n");
     }
 
     const symptomEn =
       hasDownTrap && hasCpuTrap
-        ? "Production is experiencing compound faults (stopped service and/or hidden CPU bottleneck causing severe latency)"
+        ? "Production is experiencing compound faults (stopped service and/or CPU bottleneck causing severe latency)"
         : hasCpuTrap
-          ? "A hidden CPU bottleneck (still showing green 1x) is degrading end-to-end latency"
+          ? "A CPU bottleneck is degrading end-to-end latency"
           : "Production is experiencing an active incident causing gateway errors and latency degradation";
     const step1 = predictionRequired
       ? isRootCause
@@ -598,7 +604,7 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
       : "1. Inspect the 3D topology, Logs & Traces, and per-container CPU/RAM stats to isolate the root-cause service(s).";
     const step2 = `2. Remediate the root cause(s) (Start stopped services, restore 100% CPU, or Scale replicas)${budgetEn} to restore SLA (error rate ${errText}${p95En}).`;
     const step3 =
-      "3. Confirm live error rate and p95 latency recover cleanly, capture Before/After Snapshots as evidence, and click Finish Studio to submit.";
+      "3. Observe error rate and p95 latency after remediation, capture Before/After Snapshots as evidence, and click Finish Studio to submit for Lecturer grading.";
     return [`Goal: ${symptomEn}${loadEn}.`, step1, step2, step3].join("\n");
   }
   const resolvedType: ExerciseTypeKey | null =

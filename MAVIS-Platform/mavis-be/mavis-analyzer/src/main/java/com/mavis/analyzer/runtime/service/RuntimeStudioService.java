@@ -950,18 +950,22 @@ public class RuntimeStudioService {
 
     private static void redactStudioViewForStudent(ObjectNode node) {
         stripEvaluationFieldsRecursively(node);
-        boolean isOutageRecovery = false;
-        boolean isBlind = false;
+        boolean hideFaultSetup = false;
         if (node.path("exerciseCriteria").isObject()) {
             ObjectNode criteria = (ObjectNode) node.get("exerciseCriteria");
-            isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(criteria.path("exerciseType").asText(""));
-            isBlind = isOutageRecovery || criteria.path("blindMode").asBoolean(false);
+            String exType = criteria.path("exerciseType").asText("");
+            String predMode = criteria.path("predictionMode").asText("");
+            hideFaultSetup = "CIRCUIT_BREAKER".equalsIgnoreCase(exType)
+                    || "CUSTOM".equalsIgnoreCase(exType)
+                    || "ROOT_CAUSE".equalsIgnoreCase(predMode)
+                    || criteria.path("blindMode").asBoolean(false);
             criteria.remove(java.util.List.of("rules", "minImpactF1", "expectedAffectedServices"));
-            if (isBlind) {
+            if (hideFaultSetup) {
                 criteria.remove(java.util.List.of("targetChangeAction", "requiredTraceEdge", "minReplicas"));
             }
         }
-        if (isBlind && node.path("topology").isObject()) {
+        // Always clear pre-configured initiallyStopped flags from student topology (students observe live runtime state).
+        if (node.path("topology").isObject()) {
             ObjectNode topo = (ObjectNode) node.get("topology");
             for (String key : java.util.List.of("blocks", "connections")) {
                 if (topo.path(key).isArray()) {

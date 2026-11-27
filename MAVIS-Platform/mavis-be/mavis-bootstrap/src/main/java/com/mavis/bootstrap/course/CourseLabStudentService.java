@@ -315,9 +315,18 @@ public class CourseLabStudentService {
             exerciseType = copy.path("successCriteria").path("exerciseType").asText("");
         }
         boolean isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(exerciseType);
-        boolean isBlind = isOutageRecovery || copy.path("successCriteria").path("blindMode").asBoolean(false);
+        String predMode = copy.path("successCriteria").path("predictionMode").asText("");
+        boolean hasInitialFault = (copy.path("initialState").path("stoppedServices").isArray()
+                && !copy.path("initialState").path("stoppedServices").isEmpty())
+                || (copy.path("initialState").path("cpuLimits").isObject()
+                && !copy.path("initialState").path("cpuLimits").isEmpty());
+        boolean hideFaultSetup = isOutageRecovery
+                || "CUSTOM".equalsIgnoreCase(exerciseType)
+                || "ROOT_CAUSE".equalsIgnoreCase(predMode)
+                || hasInitialFault
+                || copy.path("successCriteria").path("blindMode").asBoolean(false);
         Set<String> hiddenFaultServices = new LinkedHashSet<>();
-        if (isBlind) {
+        if (hideFaultSetup) {
             JsonNode tca = copy.path("successCriteria").path("targetChangeAction");
             if (tca.isObject()) {
                 String svc = tca.path("service").asText("").trim();
@@ -345,17 +354,17 @@ public class CourseLabStudentService {
         if (copy.path("successCriteria").isObject()) {
             ObjectNode sc = (ObjectNode) copy.get("successCriteria");
             sc.remove(List.of("rules", "minImpactF1", "expectedAffectedServices"));
-            if (isBlind) {
+            if (hideFaultSetup) {
                 sc.remove(List.of("targetChangeAction", "requiredTraceEdge", "minReplicas"));
             }
         }
-        if (isBlind && copy.path("initialState").isObject()) {
+        if (copy.path("initialState").isObject()) {
             ObjectNode init = (ObjectNode) copy.get("initialState");
             init.putArray("stoppedServices");
             init.putArray("stoppedControllers");
             init.remove("cpuLimits");
         }
-        if (isBlind && copy.hasNonNull("instructions")) {
+        if (hideFaultSetup && copy.hasNonNull("instructions")) {
             String sanitized = copy.path("instructions").asText("");
             String placeholder = isOutageRecovery ? "service đang dừng" : "service gặp sự cố";
             for (String svc : hiddenFaultServices) {

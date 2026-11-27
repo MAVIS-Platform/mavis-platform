@@ -1208,12 +1208,19 @@ function SubmissionReviewContent({
             guidedLab={submission.guidedLab === true}
             studentSnapshots={submission.studentSnapshots ?? undefined}
             studioAssistant={
-              canReview && submission.studioEvidence ? (
+              (canReview ||
+                submission.reviewStatus === "GRADED" ||
+                submission.reviewStatus === "RETURNED") &&
+              submission.studioEvidence ? (
                 <StudioSubmissionEvidence
                   key={`${submission.id}-assistant`}
                   submissionId={submission.id}
                   available
                   mode="assistant"
+                  showGradedBreakdown={
+                    !canReview &&
+                    (submission.reviewStatus === "GRADED" || submission.reviewStatus === "RETURNED")
+                  }
                 />
               ) : undefined
             }

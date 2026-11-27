@@ -833,8 +833,12 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
 
         User actor = accessPolicyService.requireCurrentActiveUser();
-        boolean revealLecturerEvaluation = actor != null && actor.getRole() != null
+        boolean isReviewer = actor != null && actor.getRole() != null
                 && !"STUDENT".equalsIgnoreCase(actor.getRole().getCode());
+        boolean releasedGrade = releasedReview
+                .filter(r -> "GRADED".equalsIgnoreCase(r.getStatus()) || "RETURNED".equalsIgnoreCase(r.getStatus()))
+                .isPresent();
+        boolean revealLecturerEvaluation = isReviewer || releasedGrade;
         var assignment = submission.getAssignment();
         var workspace = assignment != null ? assignment.getWorkspace() : null;
 
@@ -1238,19 +1242,22 @@ public class SubmissionServiceImpl implements SubmissionService {
             String labModeRaw = rs.getString("lab_mode");
             JsonNode courseQuizEvidence = parseJsonOrNull(mapper, rs.getString("course_quiz_evidence_json"));
             JsonNode theoryEvidence = parseJsonOrNull(mapper, rs.getString("theory_evidence_json"));
+            String rawReviewStatus = rs.getString("review_status");
+            boolean releasedGrade = "GRADED".equalsIgnoreCase(rawReviewStatus)
+                    || "RETURNED".equalsIgnoreCase(rawReviewStatus);
+            boolean revealEvaluation = revealDraft || releasedGrade;
             JsonNode studioEvidence = SubmissionResponseDTO.redactStudioEvidenceForRole(
                     parseJsonOrNull(mapper, rs.getString("studio_evidence_summary_json")),
-                    revealDraft);
+                    revealEvaluation);
             JsonNode studentSnapshots = SubmissionResponseDTO.redactStudioEvidenceForRole(
                     parseJsonOrNull(mapper, rs.getString("student_snapshots_json")),
-                    revealDraft);
+                    revealEvaluation);
 
             boolean guidedLab = labOrder != null
                     || (courseQuizEvidence != null
                         && ("PASSED".equals(courseQuizEvidence.path("status").asText())
                             || "NOT_REQUIRED".equals(courseQuizEvidence.path("status").asText())));
 
-            String rawReviewStatus = rs.getString("review_status");
             boolean visibleReview = rawReviewStatus != null
                     && (revealDraft || !"DRAFT".equalsIgnoreCase(rawReviewStatus));
             String reviewStatus = visibleReview ? rawReviewStatus : "PENDING";
@@ -1486,8 +1493,11 @@ public class SubmissionServiceImpl implements SubmissionService {
                         .append(" (equivalent ").append(reviewScore).append("/100)\n\n").append(reviewSummary).append("\n");
             }
 
-            boolean revealLecturerEvaluation = actor != null && actor.getRole() != null
+            boolean isReviewer = actor != null && actor.getRole() != null
                     && !"STUDENT".equalsIgnoreCase(actor.getRole().getCode());
+            boolean releasedGrade = "GRADED".equalsIgnoreCase(reviewStatusRaw)
+                    || "RETURNED".equalsIgnoreCase(reviewStatusRaw);
+            boolean revealLecturerEvaluation = isReviewer || releasedGrade;
             return com.mavis.platform.submission.dto.SubmissionExportBundleDTO.builder()
                     .studioEvidence(SubmissionResponseDTO.redactStudioEvidenceForRole(
                             parseJsonOrNull(mapper, rs.getString("studio_evidence_json")),

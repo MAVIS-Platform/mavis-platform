@@ -1036,7 +1036,6 @@ export function LiveStudioWorkbench({
   const [initialLoadRpsDraft, setInitialLoadRpsDraft] = useState<number | null>(
     authoring?.initialLoadRps ?? null,
   );
-  const [blindModeDraft, setBlindModeDraft] = useState(authoring?.blindMode === true);
   const [predictionModeDraft, setPredictionModeDraft] = useState<PredictionMode>(
     authoring?.predictionMode ?? "BLAST_RADIUS",
   );
@@ -1149,7 +1148,6 @@ export function LiveStudioWorkbench({
         : [authoring.baselinePath || "/health"],
     );
     setInitialLoadRpsDraft(authoring.initialLoadRps ?? null);
-    setBlindModeDraft(authoring.blindMode === true);
     setPredictionModeDraft(authoring.predictionMode ?? "BLAST_RADIUS");
     setMaxActionsDraft(authoring.maxActions ?? null);
     setRulesDraft(authoring.declarativeRules?.length ? [...authoring.declarativeRules] : []);
@@ -1168,7 +1166,6 @@ export function LiveStudioWorkbench({
     authoring?.baselinePath,
     authoring?.baselinePaths,
     authoring?.initialLoadRps,
-    authoring?.blindMode,
     authoring?.predictionMode,
     authoring?.maxActions,
     authoring?.declarativeRules,
@@ -1851,7 +1848,6 @@ export function LiveStudioWorkbench({
             : [authoring.baselinePath || "/health"]
           ).join(",") ||
         initialLoadRpsDraft !== (authoring.initialLoadRps ?? null) ||
-        blindModeDraft !== (authoring.blindMode === true) ||
         predictionModeDraft !== (authoring.predictionMode ?? "BLAST_RADIUS") ||
         maxActionsDraft !== (authoring.maxActions ?? null) ||
         JSON.stringify(rulesDraft) !== JSON.stringify(authoring.declarativeRules ?? []) ||
@@ -2026,10 +2022,6 @@ export function LiveStudioWorkbench({
       ?.predictionRequired ||
       data.exerciseEvaluation?.predictionRequired ||
       missionCard?.predictionRequired,
-  );
-  const exerciseBlindMode = Boolean(
-    (data.exerciseCriteria as { blindMode?: boolean } | null | undefined)?.blindMode ||
-      missionCard?.blindMode,
   );
   const exercisePredictionMode = String(
     (data.exerciseCriteria as { predictionMode?: string } | null | undefined)?.predictionMode ??
@@ -2979,31 +2971,33 @@ export function LiveStudioWorkbench({
                 <Layers className="size-4" aria-hidden="true" />
               </button>
 
-              <button
-                type="button"
-                data-tour="studio-tool-diagnostics"
-                title={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
-                aria-label={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
-                aria-pressed={showRight && rightCardMode === "diagnostics"}
-                onClick={() => {
-                  setRightCardMode("diagnostics");
-                  setShowRight((open) => (rightCardMode === "diagnostics" ? !open : true));
-                }}
-                className={`relative grid size-9 place-items-center transition ${
-                  showRight && rightCardMode === "diagnostics"
-                    ? styleCfg.railActiveClass
-                    : styleCfg.railIdleClass
-                }`}
-              >
-                <Lightbulb className="size-4" aria-hidden="true" />
-                {faultedServices.length > 0 && (
-                  <span
-                    className={`absolute top-1 right-1 size-2 rounded-full bg-amber-500 ring-2 ${
-                      isLight ? "ring-white" : "ring-slate-900"
-                    }`}
-                  />
-                )}
-              </button>
+              {authoring && (
+                <button
+                  type="button"
+                  data-tour="studio-tool-diagnostics"
+                  title={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
+                  aria-label={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
+                  aria-pressed={showRight && rightCardMode === "diagnostics"}
+                  onClick={() => {
+                    setRightCardMode("diagnostics");
+                    setShowRight((open) => (rightCardMode === "diagnostics" ? !open : true));
+                  }}
+                  className={`relative grid size-9 place-items-center transition ${
+                    showRight && rightCardMode === "diagnostics"
+                      ? styleCfg.railActiveClass
+                      : styleCfg.railIdleClass
+                  }`}
+                >
+                  <Lightbulb className="size-4" aria-hidden="true" />
+                  {faultedServices.length > 0 && (
+                    <span
+                      className={`absolute top-1 right-1 size-2 rounded-full bg-amber-500 ring-2 ${
+                        isLight ? "ring-white" : "ring-slate-900"
+                      }`}
+                    />
+                  )}
+                </button>
+              )}
 
               <span className={`my-0.5 h-px w-6 ${styleCfg.dividerClass}`} aria-hidden="true" />
 
@@ -3473,18 +3467,20 @@ export function LiveStudioWorkbench({
                   </>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRightCardMode("diagnostics");
-                    setShowRight(true);
-                  }}
-                  className={`h-8 whitespace-nowrap border px-3 text-[12.5px] font-semibold transition ${
-                    studioStyle === "blueprint" ? "rounded-sm" : "rounded-full"
-                  } ${styleCfg.controlIdleClass}`}
-                >
-                  {t("Impact", "Tác động")}
-                </button>
+                {authoring && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRightCardMode("diagnostics");
+                      setShowRight(true);
+                    }}
+                    className={`h-8 whitespace-nowrap border px-3 text-[12.5px] font-semibold transition ${
+                      studioStyle === "blueprint" ? "rounded-sm" : "rounded-full"
+                    } ${styleCfg.controlIdleClass}`}
+                  >
+                    {t("Impact", "Tác động")}
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -5174,7 +5170,7 @@ export function LiveStudioWorkbench({
               <div className="flex min-w-0 items-center gap-1.5">
                 <GripVertical className="size-3.5 shrink-0 opacity-45" aria-hidden="true" />
                 <p className="truncate text-sm font-bold">
-                  {rightCardMode === "diagnostics"
+                  {authoring && rightCardMode === "diagnostics"
                     ? t("Impact & Diagnostics", "Chẩn đoán Change Impact")
                     : authoring && setupPanel === "mission"
                       ? t("Mission & Advanced", "Đề bài & Nâng cao")
@@ -5194,7 +5190,7 @@ export function LiveStudioWorkbench({
             </div>
 
             <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pb-5">
-              {rightCardMode === "diagnostics" ? (
+              {authoring && rightCardMode === "diagnostics" ? (
                 (() => {
                   const cpuLimitBySvc = new Map<string, number>();
                   for (const act of data.actions) {
@@ -5887,16 +5883,6 @@ export function LiveStudioWorkbench({
                           size="sm"
                           variant="outline"
                           className="flex-1 text-xs"
-                          onClick={() => setRightCardMode("diagnostics")}
-                        >
-                          <Lightbulb className="mr-1.5 size-3.5" aria-hidden="true" />
-                          {t("Why / Impact", "Xem tác động")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="flex-1 text-xs"
                           onClick={() => {
                             setTab("logs");
                             setBottomCollapsed(false);
@@ -6019,7 +6005,6 @@ export function LiveStudioWorkbench({
                         : [],
                     predictionRequired: predictionRequiredDraft,
                     predictionMode: predictionModeDraft,
-                    blindMode: blindModeDraft,
                     maxActions: maxActionsDraft,
                     minImpactF1: Number.isFinite(parsedF1) ? parsedF1 : 0.7,
                     maxErrorRatePercent: parsedErr != null && Number.isFinite(parsedErr) ? parsedErr : null,
@@ -6302,20 +6287,6 @@ export function LiveStudioWorkbench({
                         {t("Rules & Difficulty", "Luật chơi & Độ khó")}
                       </p>
 
-                      <label className="flex cursor-pointer items-center justify-between gap-2">
-                        <span className={`text-[11.5px] font-medium ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                          {t("Hide faulty service names from students", "Ẩn tên service lỗi với sinh viên")}
-                        </span>
-                        <input
-                          type="checkbox"
-                          data-testid="toggle-blind-mode"
-                          disabled={authoring.frozen}
-                          checked={blindModeDraft}
-                          onChange={(e) => setBlindModeDraft(e.target.checked)}
-                          className={`size-4 rounded border-slate-400 disabled:opacity-45 ${styleCfg.checkboxAccentClass}`}
-                        />
-                      </label>
-
                       <div className="space-y-1.5">
                         <label className="flex cursor-pointer items-center justify-between gap-2">
                           <span className={`text-[11.5px] font-medium ${isLight ? "text-slate-800" : "text-slate-200"}`}>
@@ -6456,12 +6427,11 @@ export function LiveStudioWorkbench({
                                 .join(" · ")}
                         </code>
                       </p>
-                      {(blindModeDraft || maxActionsDraft != null || (initialLoadRpsDraft ?? 1) > 1) && (
+                      {(maxActionsDraft != null || (initialLoadRpsDraft ?? 1) > 1) && (
                         <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                           {t("Difficulty:", "Độ khó:")}{" "}
                           <span className="font-semibold text-foreground">
                             {[
-                              blindModeDraft ? t("Hidden culprits", "Ẩn tên service lỗi") : null,
                               maxActionsDraft != null ? t(`Max ${maxActionsDraft} actions`, `Tối đa ${maxActionsDraft} lượt`) : null,
                               (initialLoadRpsDraft ?? 1) > 1 ? `${initialLoadRpsDraft} RPS` : null,
                             ]
@@ -6513,7 +6483,7 @@ export function LiveStudioWorkbench({
 
                     {/* Composable Win Conditions & Goal-Specific Advanced Settings */}
                     <details
-                      open={activeGoalId === null || rulesDraft.length > 0 || blindModeDraft}
+                      open={activeGoalId === null || rulesDraft.length > 0}
                       data-testid="goal-specific-advanced"
                       data-advanced-goal={activeGoalId ?? "custom"}
                       className={`mb-2 p-2.5 ${styleCfg.subSurfaceClass}`}
@@ -7339,14 +7309,20 @@ export function LiveStudioWorkbench({
                         })}
                       </div>
 
-                      {authoring.onApplyExamPreset && (
+                      {authoring.onApplyExamPreset && (() => {
+                        const isCompoundActive =
+                          activeGoalId === null &&
+                          (authoring.predictionMode === "ROOT_CAUSE" ||
+                            Object.keys(authoring.initialCpuLimits ?? {}).length > 0 ||
+                            authoring.maxActions != null);
+                        return (
                         <button
                           type="button"
                           data-testid="author-exam-preset-btn"
                           disabled={authoring.busy || authoring.frozen}
                           onClick={() => authoring.onApplyExamPreset?.()}
                           className={`flex w-full items-center justify-between gap-2 border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
-                            authoring.blindMode && activeGoalId === null
+                            isCompoundActive
                               ? themeActiveBtn
                               : themeIdleBtn
                           }`}
@@ -7358,22 +7334,23 @@ export function LiveStudioWorkbench({
                             <span
                               style={{ fontSize: 11 }}
                               className={
-                                authoring.blindMode && activeGoalId === null
+                                isCompoundActive
                                   ? themeActiveMuted
                                   : themeSubtleText
                               }
                             >
                               {t(
-                                "Hidden culprits · CPU throttle + 0x outage · Root Cause F1 · 4 actions",
-                                "Ẩn đáp án · Bóp CPU ẩn + tắt 0x · Chẩn đoán gốc F1 · Giới hạn 4 lượt",
+                                "CPU throttle + 0x outage · Root Cause F1 · 4 actions",
+                                "Bóp CPU + tắt 0x · Chẩn đoán gốc F1 · Giới hạn 4 lượt",
                               )}
                             </span>
                           </div>
                           <span style={{ fontSize: 10 }} className="shrink-0 font-mono font-bold uppercase opacity-85">
-                            {authoring.blindMode && activeGoalId === null ? "ON" : "HARD"}
+                            {isCompoundActive ? "ON" : "HARD"}
                           </span>
                         </button>
-                      )}
+                        );
+                      })()}
                     </div>
 
                     {/* Direct 3D Initial Fault Painter (works independently on ANY service — Easy or Hard Exam) */}
@@ -7820,10 +7797,12 @@ export function LiveStudioWorkbench({
 
                       {!activeGoalId && (
                         <p style={{ fontSize: 12, lineHeight: "1.45" }} className={themeSubtleText}>
-                          {authoring.blindMode
+                          {authoring.predictionMode === "ROOT_CAUSE" ||
+                          Object.keys(authoring.initialCpuLimits ?? {}).length > 0 ||
+                          authoring.initialStoppedServices.length > 0
                             ? t(
                                 "Compound Exam armed — switch to Mission & Advanced to tune load, rules, or extra criteria.",
-                                "Đề thi Tổng hợp đã sẵn sàng — mở tab Đề bài & Nâng cao để chỉnh tải nền, luật chơi hoặc điều kiện thắng.",
+                                "Đề thi Tổng hợp đã sẵn sàng — mở tab Đề bài & Nâng cao để chỉnh tải nền, luật chơi hoặc tiêu chí kiểm tra.",
                               )
                             : t(
                                 "Pick an Exercise Goal above or paint faults directly on 3D blocks.",
@@ -8104,7 +8083,6 @@ export function LiveStudioWorkbench({
                       minImpactF1: predictionRequiredDraft ? minImpactF1Draft : "",
                       predictionRequired: predictionRequiredDraft,
                       predictionMode: predictionModeDraft,
-                      blindMode: blindModeDraft,
                       maxActions: maxActionsDraft,
                       rules: rulesDraft,
                       allowedActions: allowedActionsDraft,
@@ -8142,7 +8120,7 @@ export function LiveStudioWorkbench({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={t("Live Session Verified", "Phiên Studio Live đã xác minh")}
+          aria-label={t("Studio Session Completed", "Hoàn tất phiên thực hành Studio")}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
           onClick={() => setVerifiedModalOpen(false)}
         >
@@ -8154,7 +8132,7 @@ export function LiveStudioWorkbench({
               <span
                 className={`inline-flex items-center gap-1 rounded-full border px-3 py-0.5 text-xs font-bold ${
                   isReceiptSealed
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    ? "border-sky-300 bg-sky-50 text-sky-700"
                     : isSealingFailed
                       ? "border-rose-300 bg-rose-50 text-rose-700"
                       : "border-amber-300 bg-amber-50 text-amber-800"
@@ -8166,10 +8144,10 @@ export function LiveStudioWorkbench({
                   <CheckCircle2 className="size-3.5" aria-hidden="true" />
                 )}
                 {isReceiptSealed
-                  ? t("Verified", "Đã xác minh")
+                  ? t("Session Recorded", "Đã lưu phiên thực hành")
                   : isSealingFailed
                     ? t("Session ended", "Phiên đã kết thúc")
-                    : t("Sealing receipt…", "Đang niêm phong…")}
+                    : t("Saving session…", "Đang lưu phiên…")}
               </span>
               <button
                 type="button"
@@ -8184,7 +8162,7 @@ export function LiveStudioWorkbench({
               <div
                 className={`mx-auto grid size-14 place-items-center rounded-2xl ${
                   isReceiptSealed
-                    ? "bg-emerald-100 text-emerald-700"
+                    ? "bg-sky-100 text-sky-700"
                     : isSealingFailed
                       ? "bg-rose-100 text-rose-700"
                       : "bg-amber-100 text-amber-700"
@@ -8198,25 +8176,25 @@ export function LiveStudioWorkbench({
               </div>
               <h3 className="text-xl font-bold tracking-tight">
                 {isReceiptSealed
-                  ? t("Runtime Evidence Sealed!", "Minh chứng Runtime đã niêm phong!")
+                  ? t("Studio Session Completed", "Hoàn tất phiên thực hành Studio")
                   : isSealingFailed
                     ? t("Session Closed", "Phiên Studio đã đóng")
-                    : t("Sealing Runtime Evidence…", "Đang niêm phong minh chứng Runtime…")}
+                    : t("Saving Studio Session…", "Đang lưu minh chứng thực hành…")}
               </h3>
               <p className="text-sm text-slate-600">
                 {isReceiptSealed
                   ? t(
-                      "Your live Docker session and OpenTelemetry receipt are ready to attach to your Lab submission.",
-                      "Phiên chạy Docker thật và biên nhận OpenTelemetry của bạn đã sẵn sàng để nộp bài Lab.",
+                      "Your session actions and evidence have been saved. Submit your Lab now — results and grading breakdown will appear after your Lecturer grades it.",
+                      "Thao tác và minh chứng thực hành của bạn đã được lưu lại. Hãy nộp bài Lab — kết quả và đáp án đối chiếu sẽ hiển thị sau khi Giảng viên chấm điểm.",
                     )
                   : isSealingFailed
                     ? t(
-                        "The Runner closed this session without a verified receipt. Check Logs & Traces or run a new session.",
-                        "Runner đã đóng phiên mà chưa tạo được biên nhận xác minh. Hãy kiểm tra Log & Trace hoặc chạy phiên mới.",
+                        "The Runner closed this session without a saved receipt. Check Logs & Traces or run a new session.",
+                        "Runner đã đóng phiên mà chưa lưu được biên nhận. Hãy kiểm tra Log & Trace hoặc chạy phiên mới.",
                       )
                     : t(
-                        "Collecting final OpenTelemetry spans, signing the receipt, and cleaning up Docker containers (a few seconds)…",
-                        "Đang thu thập trace OpenTelemetry cuối, ký niêm phong biên nhận và dọn sạch container Docker (chỉ vài giây)…",
+                        "Collecting final OpenTelemetry spans, saving session evidence, and cleaning up Docker containers (a few seconds)…",
+                        "Đang thu thập trace OpenTelemetry cuối, lưu minh chứng phiên làm bài và dọn sạch container Docker (chỉ vài giây)…",
                       )}
               </p>
             </div>

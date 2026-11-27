@@ -108,6 +108,9 @@ public class SubmissionResponseDTO {
         var workspace = assignment != null ? assignment.getWorkspace() : null;
 
         boolean visibleReview = review != null && (revealDraft || !"DRAFT".equalsIgnoreCase(review.getStatus()));
+        boolean releasedGrade = review != null
+                && ("GRADED".equalsIgnoreCase(review.getStatus()) || "RETURNED".equalsIgnoreCase(review.getStatus()));
+        boolean revealEvaluation = revealDraft || releasedGrade;
         String reviewStatus = visibleReview && review.getStatus() != null ? review.getStatus() : "PENDING";
         Double reviewScore = visibleReview && review.getScore() != null ? review.getScore().doubleValue() : null;
         Double reviewScoreTenScale = reviewScore != null
@@ -151,8 +154,8 @@ public class SubmissionResponseDTO {
                 .runtimeSessionId(s.getRuntimeSession() != null ? s.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(s.getCourseQuizEvidence())
                 .theoryEvidence(s.getTheoryEvidence())
-                .studioEvidence(redactStudioEvidenceForRole(studioSummary(s), revealDraft))
-                .studentSnapshots(redactStudioEvidenceForRole(s.getStudentSnapshots(), revealDraft))
+                .studioEvidence(redactStudioEvidenceForRole(studioSummary(s), revealEvaluation))
+                .studentSnapshots(redactStudioEvidenceForRole(s.getStudentSnapshots(), revealEvaluation))
                 .scenarioStatus(scenarioStatus)
                 .feedbackCount(feedbackCount != null ? feedbackCount : 0L)
                 .submissionNotes(s.getSubmissionNotes())

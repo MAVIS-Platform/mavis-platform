@@ -64,14 +64,15 @@ export function StudioExercisePanel({
   const hasConfirmedAction = data.actions.some((a) => a.status === "CONFIRMED");
   const predictionLocked = Boolean(prediction?.predictedServices?.length);
   const predictionRequired = Boolean(evaluation?.predictionRequired || criteria?.predictionRequired);
-  const blindMode = Boolean(criteria?.blindMode);
   const predictionMode = String(
     criteria?.predictionMode ?? evaluation?.predictionMode ?? "BLAST_RADIUS",
   ).toUpperCase();
   const isRootCauseMode = predictionMode === "ROOT_CAUSE";
-  const prescribed = blindMode ? null : (criteria?.targetChangeAction ?? null);
   const exerciseType = (criteria?.exerciseType ?? evaluation?.exerciseType ?? "").toUpperCase();
-  const isOutageRecovery = exerciseType === "CIRCUIT_BREAKER" || blindMode;
+  const isCompoundIncident =
+    exerciseType === "CUSTOM" || isRootCauseMode || Boolean(criteria?.blindMode);
+  const isOutageRecovery = exerciseType === "CIRCUIT_BREAKER" || isCompoundIncident;
+  const prescribed = isOutageRecovery ? null : (criteria?.targetChangeAction ?? null);
   const prescribedCompleted = Boolean(
     prescribed?.action &&
       prescribed?.service &&
@@ -284,7 +285,7 @@ export function StudioExercisePanel({
               : "border-rose-500/35 bg-rose-950/35 text-rose-200"
           }`}
         >
-          {blindMode
+          {isCompoundIncident
             ? t(
                 "Use the 3D topology, Logs & Traces, and CPU/RAM stats to identify the failing or throttled service(s), then repair them with the Docker controls above.",
                 "Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM để tìm các service đang dừng hoặc bị nghẽn, rồi xử lý bằng bảng điều khiển Docker ở trên.",

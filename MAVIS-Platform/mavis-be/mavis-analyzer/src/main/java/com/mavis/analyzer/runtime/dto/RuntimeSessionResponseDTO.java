@@ -478,32 +478,38 @@ public class RuntimeSessionResponseDTO {
         return node.get(field).asDouble();
     }
 
-    /** Strips Lecturer-only rubric/outage spoilers from scenarioConfig before returning to a Student. */
+    /** Strips Lecturer-only rubric and pre-configured fault spoilers from scenarioConfig before returning to a Student. */
     public static RuntimeSessionResponseDTO redactForStudent(RuntimeSessionResponseDTO dto) {
         if (dto == null || dto.getScenarioConfig() == null || !dto.getScenarioConfig().isObject()) {
             return dto;
         }
         com.fasterxml.jackson.databind.node.ObjectNode cfg =
                 ((com.fasterxml.jackson.databind.node.ObjectNode) dto.getScenarioConfig()).deepCopy();
-        boolean isOutageRecovery = false;
-        boolean isBlind = false;
+        boolean hasInitialFault = (cfg.path("initialState").path("stoppedServices").isArray()
+                && !cfg.path("initialState").path("stoppedServices").isEmpty())
+                || (cfg.path("initialState").path("cpuLimits").isObject()
+                && !cfg.path("initialState").path("cpuLimits").isEmpty());
+        boolean hideFaultSetup = hasInitialFault;
         if (cfg.path("exerciseCriteria").isObject()) {
             com.fasterxml.jackson.databind.node.ObjectNode criteria =
                     (com.fasterxml.jackson.databind.node.ObjectNode) cfg.get("exerciseCriteria");
-            isOutageRecovery = "CIRCUIT_BREAKER".equalsIgnoreCase(criteria.path("exerciseType").asText(""));
-            isBlind = isOutageRecovery || criteria.path("blindMode").asBoolean(false);
+            String exType = criteria.path("exerciseType").asText("");
+            String predMode = criteria.path("predictionMode").asText("");
+            hideFaultSetup = hideFaultSetup
+                    || "CIRCUIT_BREAKER".equalsIgnoreCase(exType)
+                    || "CUSTOM".equalsIgnoreCase(exType)
+                    || "ROOT_CAUSE".equalsIgnoreCase(predMode)
+                    || criteria.path("blindMode").asBoolean(false);
             criteria.remove(java.util.List.of("rules", "minImpactF1", "expectedAffectedServices"));
-            if (isBlind) {
+            if (hideFaultSetup) {
                 criteria.remove(java.util.List.of("targetChangeAction", "requiredTraceEdge", "minReplicas"));
             }
         }
-        if (isBlind) {
-            cfg.remove("initialState");
-            if (cfg.path("profile").isObject()) {
-                ((com.fasterxml.jackson.databind.node.ObjectNode) cfg.get("profile")).remove("initialCpuLimits");
-            }
+        cfg.remove("initialState");
+        if (cfg.path("profile").isObject()) {
+            ((com.fasterxml.jackson.databind.node.ObjectNode) cfg.get("profile")).remove("initialCpuLimits");
         }
-        if (isBlind && cfg.path("profile").path("studioTopology").isObject()) {
+        if (cfg.path("profile").path("studioTopology").isObject()) {
             com.fasterxml.jackson.databind.node.ObjectNode topo =
                     (com.fasterxml.jackson.databind.node.ObjectNode) cfg.path("profile").path("studioTopology");
             for (String key : java.util.List.of("blocks", "connections")) {

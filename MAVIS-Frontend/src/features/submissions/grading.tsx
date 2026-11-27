@@ -171,6 +171,9 @@ export function GradingPanel({
                 {stripLegacySubmissionNoise(query.data.summary)}
               </p>
             )}
+            {!canReview &&
+              (query.data.status === "GRADED" || query.data.status === "RETURNED") &&
+              studioAssistant}
             {(query.data.status === "RETURNED" || query.data.labOutcome === "NEEDS_REVISION") && !canReview && (
               <div className="space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3">
                 <p className="text-xs text-amber-900 dark:text-amber-200">

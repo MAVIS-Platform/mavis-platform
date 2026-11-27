@@ -211,13 +211,16 @@ export function StudioSubmissionEvidence({
   submissionId,
   available,
   mode = "full",
+  showGradedBreakdown = false,
 }: {
   submissionId: string;
   available: boolean;
   mode?: "full" | "media" | "assistant" | undefined;
+  showGradedBreakdown?: boolean | undefined;
 }) {
   const { locale, t } = useLocale();
   const canReview = usePermission("submission:review");
+  const canSeeEvaluation = canReview || Boolean(showGradedBreakdown);
   const [lightbox, setLightbox] = useState<{
     src: string;
     title: string;
@@ -234,11 +237,11 @@ export function StudioSubmissionEvidence({
   const exported = useApiQuery(
     "submissionExport",
     { submissionId },
-    { enabled: available && (mode !== "assistant" || canReview) },
+    { enabled: available && (mode !== "assistant" || canSeeEvaluation) },
   );
   const evidence = frozenStudio.safeParse(exported.data);
   if (!available) return null;
-  if (mode === "assistant" && !canReview) return null;
+  if (mode === "assistant" && !canSeeEvaluation) return null;
 
   const snapshots = evidence.success ? evidence.data.studioEvidence.snapshots : [];
   const rawActions = evidence.success
@@ -283,7 +286,7 @@ export function StudioSubmissionEvidence({
   const imageCount = snapshots.length - videoCount;
   const exerciseTypeLabel = detectSupportedExerciseLabel(latestEval, actions, t);
 
-  const assistantInner = canReview && evidence.success && (
+  const assistantInner = canSeeEvaluation && evidence.success && (
     <div className="space-y-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="rounded-full border border-indigo-300/80 bg-white px-2.5 py-0.5 text-[11px] font-medium text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">
@@ -349,8 +352,8 @@ export function StudioSubmissionEvidence({
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span>
               {t(
-                "Change Impact prediction vs. observed runtime impact",
-                "Dự đoán ảnh hưởng so với thực tế chạy Docker",
+                "Prediction / diagnosis vs. observed runtime",
+                "Dự đoán / chẩn đoán so với thực tế chạy Docker",
               )}
             </span>
             <span className="font-mono font-semibold text-foreground">
@@ -448,13 +451,20 @@ export function StudioSubmissionEvidence({
   );
 
   if (mode === "assistant") {
-    if (!canReview) return null;
+    if (!canSeeEvaluation) return null;
+    if (!canReview && !exported.isPending && !exported.isError && !latestEval) return null;
     return (
-      <details className="rounded-xl border border-indigo-200 bg-indigo-50/45 p-3 text-xs dark:border-indigo-900 dark:bg-indigo-950/25">
+      <details
+        open={!canReview}
+        data-testid={canReview ? "studio-lecturer-assistant" : "studio-student-graded-breakdown"}
+        className="rounded-xl border border-indigo-200 bg-indigo-50/45 p-3 text-xs dark:border-indigo-900 dark:bg-indigo-950/25"
+      >
         <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 font-semibold text-indigo-950 dark:text-indigo-200">
           <span className="inline-flex items-center gap-1.5">
             <Sparkles className="size-3.5 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
-            {t("Studio automated check", "Hỗ trợ kiểm tra Studio")}
+            {canReview
+              ? t("Studio automated check", "Hỗ trợ kiểm tra Studio")
+              : t("Studio grading breakdown", "Kết quả đối chiếu đáp án Studio")}
           </span>
           {latestEval && typeof latestEval.totalRules === "number" && latestEval.totalRules > 0 && (
             <span
