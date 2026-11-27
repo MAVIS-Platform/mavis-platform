@@ -8,7 +8,10 @@ import { useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { useSearchParams } from "next/navigation";
 import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
 import { WorkspaceSelector } from "@/features/workspaces/components";
-import { useWorkspaceGradebook } from "@/features/workspaces/course-access";
+import {
+  usePublishedCourse,
+  useWorkspaceGradebook,
+} from "@/features/workspaces/course-access";
 import {
   formatCourseLabTitle,
   formatLabModeLabel,
@@ -16,12 +19,14 @@ import {
   toTenScaleScore,
 } from "@/lib/format/course-display";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
-import { DataTable, StatusLabel } from "@/components/shared/data";
+import { DataTable, DetailPanel, StatusBadge, StatusLabel } from "@/components/shared/data";
+import { MarkdownPreview } from "@/components/shared/markdown-preview";
+import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { SubmissionVersionHeader } from "./components";
+import { stripLegacySubmissionNoise } from "./submission-text";
 import { GradingPanel, resolveSubmissionOutcome } from "./grading";
 import type { Submission } from "@/types/domain";
 import { lecturerCourseAccess } from "@/features/lecturer/application/course-access-policy";
@@ -859,8 +864,364 @@ function SubmissionResultQuery({ submissionId }: { submissionId: string }) {
   );
 }
 
+function formatReviewTimestamp(iso: string | null | undefined, locale: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString(locale === "vi" ? "vi-VN" : "en-US", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(locale === "vi" ? { hour12: false } : {}),
+  });
+}
+
+function formatWrittenBlockTitle(rawTitle: string | null | undefined, locale: string): string {
+  const trimmed = (rawTitle || "").trim();
+  if (!trimmed || /^theory explanation$/i.test(trimmed) || /^written assignment$/i.test(trimmed)) {
+    return locale === "vi" ? "Bài làm tự luận" : "Written assignment";
+  }
+  const studioMatch = /^studio snapshot\s+(\d+)$/i.exec(trimmed);
+  if (studioMatch) {
+    return locale === "vi" ? `Ảnh chụp Studio #${studioMatch[1]}` : `Studio snapshot #${studioMatch[1]}`;
+  }
+  return trimmed;
+}
+
+function SubmissionReviewContent({
+  submission,
+  canReview,
+  backHref,
+  nextPending,
+  otherPendingCount,
+  pendingQueueSuccess,
+}: {
+  submission: Submission;
+  canReview: boolean;
+  backHref: string;
+  nextPending: Submission | null;
+  otherPendingCount: number;
+  pendingQueueSuccess: boolean;
+}) {
+  const { locale, t } = useLocale();
+  const workspaceId = submission.workspaceId || "";
+  const assignmentsQuery = useApiQuery(
+    "assignments",
+    { workspaceId },
+    { enabled: Boolean(workspaceId) },
+  );
+  const publishedCourse = usePublishedCourse(workspaceId, Boolean(workspaceId));
+  const gradebook = useWorkspaceGradebook(workspaceId, canReview && Boolean(workspaceId));
+
+  const essayPrompt = useMemo(() => {
+    const modules = publishedCourse.data?.snapshot?.modules ?? [];
+    for (const mod of modules) {
+      const items = mod.items ?? [];
+      if (items.some((item) => item.assignmentId === submission.assignmentId)) {
+        const essayItem = items.find(
+          (item) =>
+            item.type === "ESSAY" &&
+            typeof item.content?.["prompt"] === "string" &&
+            String(item.content["prompt"]).trim().length > 0,
+        );
+        if (essayItem?.content?.["prompt"]) {
+          return String(essayItem.content["prompt"]).trim();
+        }
+      }
+    }
+    const matched = (assignmentsQuery.data ?? []).find((a) => a.id === submission.assignmentId);
+    return matched?.instructions?.trim() || "";
+  }, [publishedCourse.data?.snapshot?.modules, assignmentsQuery.data, submission.assignmentId]);
+
+  const fallbackQuizCell = useMemo(() => {
+    if (!canReview || !gradebook.data?.students?.length) return null;
+    const studentRow = gradebook.data.students.find((s) => s.userId === submission.studentId);
+    if (!studentRow) return null;
+    return studentRow.cells.find((c) => c.assignmentId === submission.assignmentId) ?? null;
+  }, [canReview, gradebook.data, submission.studentId, submission.assignmentId]);
+
+  const quizDisplay = useMemo(() => {
+    const quizEv = submission.courseQuizEvidence;
+    if (quizEv && quizEv.correctCount != null && quizEv.questionCount != null) {
+      const percent =
+        quizEv.questionCount > 0 ? Math.round((quizEv.correctCount / quizEv.questionCount) * 100) : 0;
+      const passed =
+        quizEv.status === "PASSED" ||
+        (quizEv.passPercent != null ? percent >= quizEv.passPercent : false);
+      return {
+        kind: "scored" as const,
+        correctCount: quizEv.correctCount,
+        questionCount: quizEv.questionCount,
+        percent,
+        passPercent: quizEv.passPercent ?? null,
+        passed,
+        submittedAt: quizEv.submittedAt ?? null,
+      };
+    }
+    if (fallbackQuizCell && fallbackQuizCell.quizBestScore != null) {
+      return {
+        kind: "percentOnly" as const,
+        percent: fallbackQuizCell.quizBestScore,
+        passed: fallbackQuizCell.quizPassed,
+      };
+    }
+    if (quizEv?.status === "NOT_ATTEMPTED") {
+      return {
+        kind: "notAttempted" as const,
+        questionCount: quizEv.questionCount ?? null,
+        passPercent: quizEv.passPercent ?? null,
+      };
+    }
+    return { kind: "notRequired" as const };
+  }, [submission.courseQuizEvidence, fallbackQuizCell]);
+
+  const writtenBlocks = useMemo(() => {
+    const blocks: Array<{ key: string; title: string; text: string }> = [];
+    const seenTexts = new Set<string>();
+    const hasStudioEvidence = Boolean(submission.studioEvidence);
+    for (let i = 0; i < (submission.studentSnapshots ?? []).length; i++) {
+      const snap = submission.studentSnapshots![i]!;
+      if (
+        hasStudioEvidence &&
+        (snap.step === "STEP_4_RUNTIME" || snap.snapshotId.startsWith("STUDIO_"))
+      ) {
+        continue;
+      }
+      const cleaned = snap.writtenExplanation
+        ? stripLegacySubmissionNoise(snap.writtenExplanation)
+        : "";
+      if (!cleaned) continue;
+      seenTexts.add(cleaned);
+      blocks.push({
+        key: `${snap.snapshotId}-${i}`,
+        title: formatWrittenBlockTitle(snap.title, locale),
+        text: cleaned,
+      });
+    }
+    const cleanedNotes = submission.submissionNotes
+      ? stripLegacySubmissionNoise(submission.submissionNotes)
+      : "";
+    if (cleanedNotes && !seenTexts.has(cleanedNotes)) {
+      blocks.push({
+        key: "submission-notes",
+        title: locale === "vi" ? "Bài làm tự luận" : "Written assignment",
+        text: cleanedNotes,
+      });
+    }
+    return blocks;
+  }, [submission.studentSnapshots, submission.studioEvidence, submission.submissionNotes, locale]);
+
+  const labLabel = formatCourseLabTitle(
+    submission.assignmentTitle,
+    submission.labOrder,
+    submission.assignmentId,
+  );
+  const statusKey =
+    submission.labOutcome === "PASSED"
+      ? "PASSED"
+      : submission.labOutcome === "NEEDS_REVISION"
+        ? "NEEDS_REVISION"
+        : submission.reviewStatus || "PENDING";
+  const statusVariant =
+    statusKey === "PASSED" ? "success" : statusKey === "NEEDS_REVISION" ? "warning" : "secondary";
+
+  return (
+    <div className="min-w-0 space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Button
+          asChild
+          size="sm"
+          variant="outline"
+          className="border-slate-300 bg-card text-foreground hover:bg-accent dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:bg-slate-700/80"
+        >
+          <Link href={backHref}>
+            ←{" "}
+            {canReview
+              ? t("Back to submissions", "Quay lại danh sách bài nộp")
+              : t("Back to my submissions", "Quay lại bài nộp của tôi")}
+          </Link>
+        </Button>
+        {canReview && nextPending && (
+          <Button asChild size="sm" className="bg-indigo-600 text-white hover:bg-indigo-700">
+            <Link href={`/submissions/${encodeURIComponent(nextPending.id)}`}>
+              {t(
+                `Next pending (${otherPendingCount}) →`,
+                `Bài chờ chấm tiếp theo (${otherPendingCount}) →`,
+              )}
+            </Link>
+          </Button>
+        )}
+        {canReview && pendingQueueSuccess && !nextPending && (
+          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+            {t("No other pending submissions", "Không còn bài chờ chấm khác")}
+          </span>
+        )}
+      </div>
+
+      <header className="space-y-1 border-b pb-3.5">
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {t("Submission Review", "Đánh giá bài nộp")}
+          </h1>
+          <ScreenHelpTrigger screenId="submission-review" />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {submission.studentName || submission.studentId}
+          </span>
+          <span>·</span>
+          <span>{labLabel}</span>
+          <span>·</span>
+          <span>{formatReviewTimestamp(submission.submittedAt, locale)}</span>
+          <StatusBadge status={statusKey} variant={statusVariant} />
+        </div>
+      </header>
+
+      <div
+        className={
+          canReview
+            ? "grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)] lg:items-start"
+            : "min-w-0 space-y-6"
+        }
+      >
+        <section id="review" className="min-w-0 scroll-mt-24 space-y-5">
+          <DetailPanel title={t("1. Quiz Result", "1. Kết quả bài kiểm tra (Quiz)")}>
+            {quizDisplay.kind === "scored" ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="mavis-tabular text-lg font-bold text-foreground">
+                    {quizDisplay.correctCount}/{quizDisplay.questionCount} ({quizDisplay.percent}%)
+                  </span>
+                  <Badge variant={quizDisplay.passed ? "success" : "warning"}>
+                    {quizDisplay.passed ? t("Passed", "Đạt") : t("Not passed", "Chưa đạt")}
+                  </Badge>
+                  {quizDisplay.passPercent != null && (
+                    <span className="text-xs text-muted-foreground">
+                      {t("Pass", "Yêu cầu")} ≥ {quizDisplay.passPercent}%
+                    </span>
+                  )}
+                </div>
+                {quizDisplay.submittedAt && (
+                  <span className="text-xs text-muted-foreground">
+                    {t("Taken", "Làm lúc")}: {formatReviewTimestamp(quizDisplay.submittedAt, locale)}
+                  </span>
+                )}
+              </div>
+            ) : quizDisplay.kind === "percentOnly" ? (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="mavis-tabular text-lg font-bold text-foreground">
+                  {quizDisplay.percent}%
+                </span>
+                <Badge variant={quizDisplay.passed ? "success" : "warning"}>
+                  {quizDisplay.passed ? t("Passed", "Đạt") : t("Not passed", "Chưa đạt")}
+                </Badge>
+              </div>
+            ) : quizDisplay.kind === "notAttempted" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{t("Not attempted", "Chưa làm bài")}</Badge>
+                {quizDisplay.questionCount != null && (
+                  <span className="text-xs text-muted-foreground">
+                    {quizDisplay.questionCount} {t("questions", "câu hỏi")}
+                    {quizDisplay.passPercent != null
+                      ? ` · ${t("Pass", "Yêu cầu")} ≥ ${quizDisplay.passPercent}%`
+                      : ""}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div>
+                <Badge variant="outline">{t("No Quiz required", "Không yêu cầu Quiz")}</Badge>
+              </div>
+            )}
+          </DetailPanel>
+
+          <DetailPanel title={t("2. Student Written Assignment", "2. Bài tập tự luận của sinh viên")}>
+            {essayPrompt && (
+              <div className="space-y-1.5 rounded-xl border bg-muted/20 p-3.5 text-sm">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {t("Assignment prompt", "Đề bài tự luận")}
+                </p>
+                <MarkdownPreview markdown={essayPrompt} />
+              </div>
+            )}
+
+            {writtenBlocks.length > 0 ? (
+              <div className="space-y-3">
+                {writtenBlocks.map((block) => (
+                  <div
+                    key={block.key}
+                    className="space-y-1.5 rounded-xl border bg-background p-3.5"
+                  >
+                    <p className="text-xs font-semibold text-muted-foreground">{block.title}</p>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                      {block.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "The student has not submitted a written response.",
+                  "Sinh viên chưa nhập nội dung tự luận.",
+                )}
+              </p>
+            )}
+
+            <StudioSubmissionEvidence
+              key={submission.id}
+              submissionId={submission.id}
+              available={Boolean(submission.studioEvidence)}
+              mode="media"
+            />
+          </DetailPanel>
+
+          {submission.diagramLayout && (
+            <details className="rounded-xl border bg-card px-4 py-3 text-xs">
+              <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">
+                {t(
+                  "Attached technical diagram files (optional)",
+                  "Tệp sơ đồ kỹ thuật đính kèm (tùy chọn)",
+                )}
+              </summary>
+              <div className="mt-3 border-t pt-3">
+                <FrozenArtifacts submission={submission} technicalOnly />
+              </div>
+            </details>
+          )}
+        </section>
+
+        <aside className="min-w-0 lg:sticky lg:top-20">
+          <GradingPanel
+            key={submission.id}
+            submissionId={submission.id}
+            guidedLab={submission.guidedLab === true}
+            studentSnapshots={submission.studentSnapshots ?? undefined}
+            studioAssistant={
+              canReview && submission.studioEvidence ? (
+                <StudioSubmissionEvidence
+                  key={`${submission.id}-assistant`}
+                  submissionId={submission.id}
+                  available
+                  mode="assistant"
+                />
+              ) : undefined
+            }
+            reviseHref={
+              !canReview && submission.workspaceId && submission.assignmentId
+                ? `/lab?workspace=${encodeURIComponent(submission.workspaceId)}&assignment=${encodeURIComponent(submission.assignmentId)}&step=3`
+                : undefined
+            }
+          />
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 export function SubmissionReview({ submissionId }: { submissionId: string }) {
-  const { t } = useLocale();
   const selection = useSelection();
   const canReview = usePermission("submission:review");
   const query = useApiQuery(
@@ -886,65 +1247,14 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
   return (
     <RequestState query={query}>
       {query.data && (
-        <div className="min-w-0 space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button
-              asChild
-              size="sm"
-              variant="outline"
-              className="border-slate-300 bg-card text-foreground hover:bg-accent dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:bg-slate-700/80"
-            >
-              <Link href={backHref}>
-                ← {canReview ? t("Back to class submissions", "Quay lại bài nộp của lớp") : t("Back to my submissions", "Quay lại bài nộp của tôi")}
-              </Link>
-            </Button>
-            {canReview && nextPending && (
-              <Button asChild size="sm" className="bg-indigo-600 text-white hover:bg-indigo-700">
-                <Link href={`/submissions/${encodeURIComponent(nextPending.id)}`}>
-                  {t(
-                    `Next pending (${otherPending.length}) →`,
-                    `Bài chờ chấm tiếp theo (${otherPending.length}) →`,
-                  )}
-                </Link>
-              </Button>
-            )}
-            {canReview && pendingQueue.isSuccess && !nextPending && (
-              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                {t("No other pending submissions", "Không còn bài chờ chấm khác")}
-              </span>
-            )}
-          </div>
-          <div
-            className={
-              canReview
-                ? "grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)] lg:items-start"
-                : "min-w-0 space-y-6"
-            }
-          >
-            <section id="review" className="min-w-0 scroll-mt-24 space-y-5">
-              <SubmissionVersionHeader submission={query.data} />
-              <FrozenArtifacts submission={query.data} />
-              <StudioSubmissionEvidence
-                key={query.data.id}
-                submissionId={query.data.id}
-                available={Boolean(query.data.studioEvidence)}
-              />
-            </section>
-            <aside className="min-w-0 lg:sticky lg:top-20">
-              <GradingPanel
-                key={query.data.id}
-                submissionId={query.data.id}
-                guidedLab={query.data.guidedLab === true}
-                studentSnapshots={query.data.studentSnapshots ?? undefined}
-                reviseHref={
-                  !canReview && query.data.workspaceId && query.data.assignmentId
-                    ? `/lab?workspace=${encodeURIComponent(query.data.workspaceId)}&assignment=${encodeURIComponent(query.data.assignmentId)}&step=3`
-                    : undefined
-                }
-              />
-            </aside>
-          </div>
-        </div>
+        <SubmissionReviewContent
+          submission={query.data}
+          canReview={canReview}
+          backHref={backHref}
+          nextPending={nextPending}
+          otherPendingCount={otherPending.length}
+          pendingQueueSuccess={pendingQueue.isSuccess}
+        />
       )}
     </RequestState>
   );

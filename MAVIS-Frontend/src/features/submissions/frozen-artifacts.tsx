@@ -61,8 +61,8 @@ function formatSnapshotTitle(
   t: (en: string, vi?: string) => string,
 ): string {
   const raw = (snap.title || "").trim();
-  if (!raw || /^theory explanation$/i.test(raw)) {
-    return t("Student explanation", "Giải thích của sinh viên");
+  if (!raw || /^theory explanation$/i.test(raw) || /^written assignment$/i.test(raw)) {
+    return t("Student explanation", "Bài làm tự luận");
   }
   const studioMatch = raw.match(/^studio snapshot\s+(\d+)$/i);
   if (studioMatch) {
@@ -136,7 +136,13 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
   );
 }
 
-export function FrozenArtifacts({ submission }: { submission: Submission }) {
+export function FrozenArtifacts({
+  submission,
+  technicalOnly = false,
+}: {
+  submission: Submission;
+  technicalOnly?: boolean | undefined;
+}) {
   const { t } = useLocale();
   const isDark = useIsDarkTheme();
   const layout = submission.diagramLayout;
@@ -146,6 +152,7 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
       Boolean(submission.studentSnapshots?.length) ||
       Boolean(submission.courseQuizEvidence));
   if (!layout) {
+    if (technicalOnly) return null;
     const hasHeaderContent =
       visibleStudentSnapshots(submission).length > 0 ||
       Boolean(submission.courseQuizEvidence && submission.courseQuizEvidence.status !== "NOT_REQUIRED");
@@ -154,7 +161,7 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
       <DetailPanel
         title={
           isV2NoDiagram
-            ? t("Student work & explanation", "Bài làm & Giải thích của sinh viên")
+            ? t("Student work & explanation", "Bài làm tự luận của sinh viên")
             : t("Submitted diagram", "Sơ đồ đã nộp")
         }
       >
@@ -177,52 +184,56 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
         layoutJson: Record<string, unknown>;
       }>)
     : [{ notation: submission.diagramNotation ?? "Diagram", layoutJson: layout }];
+  const artifactBlocks = artifacts.map((artifact, index) => {
+    const payload = artifact.layoutJson ?? {},
+      dsl = payload["mermaidDsl"] ?? payload["mermaid"] ?? projectionDsl(payload);
+    return (
+      <section key={index} className="space-y-3 rounded-xl border p-4">
+        <h3 className="text-sm font-semibold">
+          {artifact.notation}
+          {payload["viewId"] || artifact.level
+            ? ` · ${String(payload["viewId"] ?? artifact.level)}`
+            : ""}
+        </h3>
+        {typeof dsl === "string" ? (
+          <DiagramPreview
+            title={artifact.notation}
+            content={dsl}
+            format="MERMAID"
+            style={isDark ? "dark" : "clean"}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {t(
+              "Architecture snapshot saved as JSON. Download the file below to inspect.",
+              "Bản chụp kiến trúc được lưu dạng JSON. Tải tệp bên dưới để xem chi tiết.",
+            )}
+          </p>
+        )}
+        <div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              downloadArtifact(
+                `submitted-diagram-${index + 1}.json`,
+                JSON.stringify(payload, null, 2),
+              )
+            }
+          >
+            {t("Download diagram JSON", "Tải JSON sơ đồ")}
+          </Button>
+        </div>
+      </section>
+    );
+  });
+  if (technicalOnly) {
+    return <div className="space-y-4">{artifactBlocks}</div>;
+  }
   return (
     <DetailPanel title={t("Submitted diagrams", "Sơ đồ đã nộp")}>
       <SubmissionEvidenceHeader submission={submission} />
-      {artifacts.map((artifact, index) => {
-        const payload = artifact.layoutJson ?? {},
-          dsl = payload["mermaidDsl"] ?? payload["mermaid"] ?? projectionDsl(payload);
-        return (
-          <section key={index} className="space-y-3 rounded-xl border p-4">
-            <h3 className="text-sm font-semibold">
-              {artifact.notation}
-              {payload["viewId"] || artifact.level
-                ? ` · ${String(payload["viewId"] ?? artifact.level)}`
-                : ""}
-            </h3>
-            {typeof dsl === "string" ? (
-              <DiagramPreview
-                title={artifact.notation}
-                content={dsl}
-                format="MERMAID"
-                style={isDark ? "dark" : "clean"}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  "Architecture snapshot saved as JSON. Download the file below to inspect.",
-                  "Bản chụp kiến trúc được lưu dạng JSON. Tải tệp bên dưới để xem chi tiết.",
-                )}
-              </p>
-            )}
-            <div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  downloadArtifact(
-                    `submitted-diagram-${index + 1}.json`,
-                    JSON.stringify(payload, null, 2),
-                  )
-                }
-              >
-                {t("Download diagram JSON", "Tải JSON sơ đồ")}
-              </Button>
-            </div>
-          </section>
-        );
-      })}
+      {artifactBlocks}
     </DetailPanel>
   );
 }

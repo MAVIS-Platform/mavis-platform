@@ -311,7 +311,7 @@ export const assignmentSchema = z.object({
   dueAt: z.string(),
 });
 export const courseQuizEvidenceSchema = z.object({
-  status: z.enum(["PASSED", "NOT_REQUIRED"]),
+  status: z.enum(["PASSED", "FAILED", "NOT_ATTEMPTED", "NOT_REQUIRED"]),
   attemptId: z.string().nullish(),
   quizVersion: z.number().int().positive().nullish(),
   correctCount: z.number().int().nonnegative().nullish(),

@@ -45,8 +45,10 @@ export function resolveSubmissionOutcome(
 
 function formatGradeRowTitle(rawTitle: string, locale: string): string {
   const trimmed = rawTitle.trim();
-  if (locale !== "vi") return trimmed;
-  if (/^theory explanation$/i.test(trimmed)) return "Giải thích của sinh viên";
+  if (locale !== "vi") return /^theory explanation$/i.test(trimmed) ? "Written assignment" : trimmed;
+  if (/^theory explanation$/i.test(trimmed) || /^written assignment$/i.test(trimmed)) {
+    return "Bài làm tự luận";
+  }
   const studioMatch = trimmed.match(/^studio snapshot\s+(\d+)$/i);
   if (studioMatch) return `Ảnh chụp Studio #${studioMatch[1]}`;
   return trimmed;
@@ -57,11 +59,13 @@ export function GradingPanel({
   studentSnapshots,
   guidedLab,
   reviseHref,
+  studioAssistant,
 }: {
   submissionId: string;
   studentSnapshots?: StudentSnapshotItem[] | undefined;
   guidedLab: boolean;
   reviseHref?: string | undefined;
+  studioAssistant?: React.ReactNode | undefined;
 }) {
   const { locale, t } = useLocale();
   const canReview = usePermission("submission:review");
@@ -71,10 +75,17 @@ export function GradingPanel({
     { refreshMs: canReview ? 60000 : 15000 },
   );
   return (
-    <DetailPanel title={t("Lecturer review & grade")}>
+    <DetailPanel
+      title={
+        canReview
+          ? t("Grading & Feedback", "Chấm điểm & Nhận xét")
+          : t("Grading & Feedback", "Kết quả chấm điểm")
+      }
+    >
       <RequestState query={query}>
         {query.data && (
           <div className="space-y-3">
+            {canReview && studioAssistant}
             <div className="flex flex-wrap items-center gap-3">
               <StatusBadge
                 status={query.data.status}
@@ -128,17 +139,12 @@ export function GradingPanel({
                   ))}
                 </div>
               )}
-            {query.data.status === "PENDING" && (
+            {query.data.status === "PENDING" && !canReview && (
               <p className="text-sm text-muted-foreground">
-                {canReview
-                  ? t(
-                      "Awaiting lecturer review. Enter a score (0–10) and feedback below.",
-                      "Bài đang chờ chấm. Nhập điểm (0–10) và nhận xét bên dưới.",
-                    )
-                  : t(
-                      "Your submission is awaiting Lecturer review.",
-                      "Bài làm của bạn đang chờ Giảng viên chấm điểm.",
-                    )}
+                {t(
+                  "Your submission is awaiting Lecturer review.",
+                  "Bài làm của bạn đang chờ Giảng viên chấm điểm.",
+                )}
               </p>
             )}
             {query.data.summary && stripLegacySubmissionNoise(query.data.summary) && (
@@ -150,14 +156,14 @@ export function GradingPanel({
               <div className="space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3">
                 <p className="text-xs text-amber-900 dark:text-amber-200">
                   {t(
-                    "Open the Lab submission step to revise your explanation or Studio evidence and resubmit.",
-                    "Hãy mở lại bước nộp bài Lab để bổ sung giải thích hoặc minh chứng Studio và nộp lại.",
+                    "Open the Written Assignment & Submission step to revise your work and resubmit.",
+                    "Hãy mở lại mục Bài tập tự luận & Nộp bài để chỉnh sửa bài làm và nộp lại.",
                   )}
                 </p>
                 {reviseHref && (
                   <Button asChild size="sm" variant="outline">
                     <Link href={reviseHref}>
-                      {t("Revise and resubmit", "Chỉnh sửa và nộp lại")}
+                      {t("Revise and resubmit", "Sửa & nộp lại")}
                     </Link>
                   </Button>
                 )}
@@ -432,14 +438,8 @@ export function GradeForm({
 
   return (
     <div className="space-y-3 border-t pt-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Score above 5.0 / 10 with feedback to pass and unlock the next Lab; 5.0 or lower marks NEEDS REVISION.",
-            "Chấm điểm > 5.0 / 10 kèm nhận xét để ĐẠT và mở khóa Lab kế tiếp; ≤ 5.0 sẽ đánh dấu CẦN SỬA LẠI.",
-          )}
-        </p>
-        {!guidedLab && (
+      {!guidedLab && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <label className="flex items-center gap-2 text-xs font-medium">
             <input
               type="checkbox"
@@ -449,24 +449,24 @@ export function GradeForm({
                 setUsePerSnapshot(e.target.checked);
               }}
             />
-            <span>{t("Per-snapshot grading (0–10)")}</span>
+            <span>{t("Per-snapshot grading (0–10)", "Chấm riêng từng mục (0–10)")}</span>
           </label>
-        )}
-      </div>
+        </div>
+      )}
       {guidedLab && !hasFrozenRows && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(
-            "This submission has no frozen Snapshot list. Return it with instructions to resubmit.",
-            "Bài này thiếu danh sách Snapshot đã đóng băng. Hãy trả bài kèm hướng dẫn nộp lại.",
+            "This submission has no written answer attached. Return it with instructions to resubmit.",
+            "Bài nộp chưa có nội dung tự luận đính kèm. Hãy trả bài kèm hướng dẫn nộp lại.",
           )}
         </p>
       )}
       {usePerSnapshot ? (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <div className="space-y-2 rounded-xl border bg-muted/20 p-3.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label htmlFor="mavis-simple-score" className="text-xs font-semibold text-foreground">
-                {t("Score (0–10, > 5.0 pass)", "Điểm chấm (thang 0–10, > 5.0 đạt)")}
+                {t("Score (0–10)", "Điểm (0–10)")}
               </label>
               {computedTenScale !== null && (
                 <span className="mavis-tabular text-xs font-semibold text-foreground">
@@ -481,14 +481,14 @@ export function GradeForm({
                 min={0}
                 max={10}
                 step="0.01"
-                aria-label={t("Overall score for all snapshots", "Điểm chấm bài nộp")}
+                aria-label={t("Score (0–10)", "Điểm (0–10)")}
                 placeholder="0 – 10"
                 value={bulkScore}
                 onChange={(e) => applyScoreToAllSnapshots(e.target.value)}
-                className="w-36 bg-background font-mono text-sm font-semibold"
+                className="w-28 bg-background font-mono text-sm font-semibold"
               />
               <div className="flex flex-wrap items-center gap-1.5">
-                {["9.5", "8.5", "7.0", "5.0"].map((preset) => {
+                {["10", "9", "8", "7", "5"].map((preset) => {
                   const active = bulkScore.trim() === preset;
                   return (
                     <button
@@ -507,6 +507,12 @@ export function GradeForm({
                 })}
               </div>
             </div>
+            <p className="text-[11px] text-muted-foreground">
+              {t(
+                "> 5.0: Pass and unlock next Module · ≤ 5.0: Needs revision",
+                "> 5.0: Đạt và mở khóa Module tiếp theo · ≤ 5.0: Cần sửa lại",
+              )}
+            </p>
           </div>
 
           {snapshotRows.length > 1 && (
@@ -581,8 +587,8 @@ export function GradeForm({
           )}
         </div>
       ) : guidedLab ? null : (
-        <div className="space-y-2">
-          <FormField label={t("Lecturer score (0–10, > 5.0 pass)", "Điểm Giảng viên (0–10, > 5.0 đạt)")}>
+        <div className="space-y-2 rounded-xl border bg-muted/20 p-3.5">
+          <FormField label={t("Score (0–10)", "Điểm (0–10)")}>
             {(props) => (
               <Input
                 {...props}
@@ -595,68 +601,48 @@ export function GradeForm({
                   setDirty(true);
                   setScore(e.target.value);
                 }}
-                className="max-w-48"
+                className="max-w-28 bg-background font-mono text-sm font-semibold"
               />
             )}
           </FormField>
           <div className="flex flex-wrap gap-1.5">
-            {["10", "9", "8", "7", "5"].map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                className="rounded-lg border px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"
-                onClick={() => {
-                  setDirty(true);
-                  setScore(preset);
-                }}
-              >
-                {preset}/10
-              </button>
-            ))}
+            {["10", "9", "8", "7", "5"].map((preset) => {
+              const active = score.trim() === preset;
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                    active
+                      ? "border-indigo-500 bg-indigo-600 text-white"
+                      : "bg-background text-foreground hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                  }`}
+                  onClick={() => {
+                    setDirty(true);
+                    setScore(preset);
+                  }}
+                >
+                  {preset}
+                </button>
+              );
+            })}
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            {t(
+              "> 5.0: Pass and unlock next Module · ≤ 5.0: Needs revision",
+              "> 5.0: Đạt và mở khóa Module tiếp theo · ≤ 5.0: Cần sửa lại",
+            )}
+          </p>
         </div>
       )}
-      <div className="space-y-1.5">
-        <div className="flex flex-wrap gap-1.5">
-          {[
-            {
-              en: "Accurate analysis and clear Studio evidence.",
-              vi: "Phân tích đúng nguyên nhân và minh chứng Studio rõ ràng.",
-            },
-            {
-              en: "Lab actions and observations meet the requirements.",
-              vi: "Thao tác thực hành và quan sát đạt yêu cầu bài Lab.",
-            },
-            {
-              en: "Evidence is incomplete — please capture clearer proof and resubmit.",
-              vi: "Minh chứng chưa đầy đủ — vui lòng chụp/quay rõ hơn và nộp lại.",
-            },
-          ].map((item) => {
-            const text = t(item.en, item.vi);
-            return (
-              <button
-                key={item.en}
-                type="button"
-                className="rounded border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                onClick={() => {
-                  setDirty(true);
-                  setSummary((prev) => (prev.trim() ? `${prev.trim()}\n${text}` : text));
-                }}
-              >
-                + {text}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <FormField label={t("Feedback for student", "Nhận xét & phản hồi cho sinh viên")}>
+      <FormField label={t("Feedback for student", "Nhận xét cho sinh viên")}>
         {(props) => (
           <Textarea
             {...props}
-            rows={4}
+            rows={5}
             placeholder={t(
-              "Write brief feedback on the student's snapshots, video, and explanation...",
-              "Nhập nhận xét ngắn gọn về ảnh chụp, video và phần giải thích của sinh viên...",
+              "Write concise feedback for the student…",
+              "Nhập nhận xét ngắn gọn cho sinh viên…",
             )}
             value={summary}
             maxLength={10000}
@@ -740,7 +726,7 @@ export function GradeForm({
           {t("Add an overall review before publishing or returning this snapshot.")}
         </p>
       )}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap justify-end gap-2 pt-1">
         <Button
           variant="outline"
           disabled={
@@ -750,7 +736,7 @@ export function GradeForm({
           }
           onClick={() => submit("DRAFT")}
         >
-          {t("Save grading draft", "Lưu nháp")}
+          {t("Save draft", "Lưu nháp")}
         </Button>
         {!canPublish && (
           <Button
@@ -778,7 +764,7 @@ export function GradeForm({
             )
           }
         >
-          {t("Complete & publish grade", "Hoàn tất & Công bố điểm")}
+          {t("Grade & Publish", "Chấm điểm & Công bố")}
         </Button>
       </div>
       {save.error && (

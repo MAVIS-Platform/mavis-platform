@@ -677,6 +677,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
             SubmissionResponseDTO dto = rows.get(0).dto();
             requireLightweightSubmissionReadAccess(dto, actor);
+            enrichCourseQuizEvidenceIfMissing(dto);
             return dto;
         }
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
@@ -688,7 +689,78 @@ public class SubmissionServiceImpl implements SubmissionService {
         User actor = accessPolicyService.requireCurrentActiveUser();
         boolean revealDraft = actor != null && actor.getRole() != null
                 && !"STUDENT".equalsIgnoreCase(actor.getRole().getCode());
-        return SubmissionResponseDTO.fromEntity(submission, feedbackCount, review, revealDraft);
+        SubmissionResponseDTO dto = SubmissionResponseDTO.fromEntity(submission, feedbackCount, review, revealDraft);
+        enrichCourseQuizEvidenceIfMissing(dto);
+        return dto;
+    }
+
+    private void enrichCourseQuizEvidenceIfMissing(SubmissionResponseDTO dto) {
+        if (jdbc == null || dto == null || dto.getCourseQuizEvidence() != null
+                || dto.getAssignmentId() == null || dto.getSubmittedById() == null) {
+            return;
+        }
+        try {
+            ObjectMapper mapper = this.json != null ? this.json : new ObjectMapper();
+            List<JsonNode> attempts = jdbc.query("""
+                    SELECT a.attempt_id, a.quiz_version, a.correct_count,
+                           jsonb_array_length(q.questions) AS question_count,
+                           q.pass_percent, a.passed, a.submitted_at
+                    FROM course_quiz_attempts a
+                    JOIN course_quizzes q ON q.assignment_id = a.assignment_id AND q.version = a.quiz_version
+                    WHERE a.assignment_id = ? AND a.student_id = ?
+                    ORDER BY a.passed DESC, a.correct_count DESC, a.submitted_at DESC, a.attempt_id DESC
+                    LIMIT 1
+                    """, (rs, rowNum) -> {
+                var node = mapper.createObjectNode();
+                boolean passed = rs.getBoolean("passed");
+                node.put("status", passed ? "PASSED" : "FAILED");
+                UUID attemptId = toUuid(rs.getObject("attempt_id"));
+                if (attemptId != null) node.put("attemptId", attemptId.toString());
+                Integer quizVersion = toInteger(rs.getObject("quiz_version"));
+                if (quizVersion != null && quizVersion > 0) node.put("quizVersion", quizVersion);
+                Integer correctCount = toInteger(rs.getObject("correct_count"));
+                if (correctCount != null && correctCount >= 0) node.put("correctCount", correctCount);
+                Integer questionCount = toInteger(rs.getObject("question_count"));
+                if (questionCount != null && questionCount > 0) node.put("questionCount", questionCount);
+                Integer passPercent = toInteger(rs.getObject("pass_percent"));
+                if (passPercent != null && passPercent >= 1 && passPercent <= 100) {
+                    node.put("passPercent", passPercent);
+                }
+                OffsetDateTime submittedAt = toOffsetDateTime(rs, "submitted_at");
+                if (submittedAt != null) node.put("submittedAt", submittedAt.toString());
+                return (JsonNode) node;
+            }, dto.getAssignmentId(), dto.getSubmittedById());
+            if (!attempts.isEmpty()) {
+                dto.setCourseQuizEvidence(attempts.get(0));
+                return;
+            }
+            List<JsonNode> quizzes = jdbc.query("""
+                    SELECT jsonb_array_length(q.questions) AS question_count,
+                           q.pass_percent, q.version
+                    FROM course_quizzes q
+                    WHERE q.assignment_id = ?
+                    ORDER BY q.version DESC
+                    LIMIT 1
+                    """, (rs, rowNum) -> {
+                var node = mapper.createObjectNode().put("status", "NOT_ATTEMPTED");
+                Integer quizVersion = toInteger(rs.getObject("version"));
+                if (quizVersion != null && quizVersion > 0) node.put("quizVersion", quizVersion);
+                Integer questionCount = toInteger(rs.getObject("question_count"));
+                if (questionCount != null && questionCount > 0) node.put("questionCount", questionCount);
+                Integer passPercent = toInteger(rs.getObject("pass_percent"));
+                if (passPercent != null && passPercent >= 1 && passPercent <= 100) {
+                    node.put("passPercent", passPercent);
+                }
+                return (JsonNode) node;
+            }, dto.getAssignmentId());
+            if (!quizzes.isEmpty()) {
+                dto.setCourseQuizEvidence(quizzes.get(0));
+            } else {
+                dto.setCourseQuizEvidence(mapper.createObjectNode().put("status", "NOT_REQUIRED"));
+            }
+        } catch (Exception ignored) {
+            // Optional quiz lookup must never block submission retrieval when quiz tables are absent.
+        }
     }
 
     private void requireLightweightSubmissionReadAccess(SubmissionResponseDTO dto, User actor) {

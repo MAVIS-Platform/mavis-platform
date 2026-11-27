@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import { PageContainer, SectionHeader } from "@/components/layout/page";
+import { PageContainer } from "@/components/layout/page";
 import { SubmissionReview } from "@/features/submissions/screens";
 export default async function SubmissionPage({
   params,
@@ -11,13 +11,9 @@ export default async function SubmissionPage({
     <AppShell
       scope="review"
       activeId="review"
-      pageTitle="Submission Details & Review"
+      pageTitle="Submission Review"
     >
       <PageContainer>
-        <SectionHeader
-          title="Submission Details & Review"
-          screenId="submission-review"
-        />
         <SubmissionReview submissionId={submissionId} />
       </PageContainer>
     </AppShell>

@@ -6694,7 +6694,7 @@ test("Teaching submissions use the class shell, Lab filter and LMS review table"
   assert.match(submissions, /Assignment to review/);
   assert.match(submissions, /Outcome/);
   assert.match(submissions, /Open review/);
-  assert.match(submissions, /Back to class submissions|Quay lại bài nộp của lớp/);
+  assert.match(submissions, /Back to submissions|Quay lại danh sách bài nộp/);
 });
 
 test("backendErrorCode and publicErrorCode map duplicate and class/lab business errors", () => {

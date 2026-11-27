@@ -77,8 +77,8 @@ test("Commit #06 cleans student submission evidence, enables dark-mode Mermaid p
   assert.match(frozen, /style=\{isDark \? "dark" : "clean"\}/);
   assert.doesNotMatch(frozen, /Evidence package SHA-256/);
   assert.doesNotMatch(subV2, /\[CB=|DBPerService=|sectionId: "MITIGATION"/);
-  assert.match(grading, /t\("Save grading draft", "Lưu nháp"\)/);
-  assert.match(grading, /t\("Complete & publish grade", "Hoàn tất & Công bố điểm"\)/);
+  assert.match(grading, /t\("Save draft", "Lưu nháp"\)/);
+  assert.match(grading, /t\("Grade & Publish", "Chấm điểm & Công bố"\)/);
   assert.doesNotMatch(grading, /Return for changes|Refresh review/);
 });
 
@@ -114,4 +114,32 @@ test("Adversarial QA hardening: portal lightbox, WebGL release, UUID URL guards,
   assert.match(theoryLib, /usePermission\("workspace:manage"\)/);
   assert.match(apiError, /APPROVAL_SUMMARY_REQUIRED/);
   assert.match(apiError, /REPLICA_BOUNDS_EXCEEDED/);
+});
+
+test("Lecturer Submission Review Refactor: 2 clean left sections (Quiz + Written Assignment), collapsed technical artifacts, localized DiagramPreview, and streamlined right grading panel", () => {
+  const screens = read("src/features/submissions/screens.tsx");
+  const grading = read("src/features/submissions/grading.tsx");
+  const studioEvidence = read("src/features/submissions/studio-evidence.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  const diagramPreview = read("src/features/architecture/diagram-preview.tsx");
+
+  assert.match(screens, /t\("1\. Quiz Result", "1\. Kết quả bài kiểm tra \(Quiz\)"\)/);
+  assert.match(screens, /t\("2\. Student Written Assignment", "2\. Bài tập tự luận của sinh viên"\)/);
+  assert.match(screens, /t\("Back to submissions", "Quay lại danh sách bài nộp"\)/);
+  assert.match(screens, /<details className="rounded-xl border bg-card px-4 py-3 text-xs">/);
+  assert.doesNotMatch(screens, /<details open/);
+  assert.match(screens, /mode="media"/);
+  assert.match(screens, /mode="assistant"/);
+  assert.match(studioEvidence, /mode = "full"/);
+  assert.match(frozen, /technicalOnly\?: boolean/);
+
+  assert.match(diagramPreview, /useLocale/);
+  assert.match(diagramPreview, /Kéo để di chuyển/);
+  assert.match(diagramPreview, /t\("Fit diagram", "Vừa khung"\)/);
+  assert.match(diagramPreview, /t\("Fullscreen", "Toàn màn hình"\)/);
+
+  assert.match(grading, /\["10", "9", "8", "7", "5"\]/);
+  assert.doesNotMatch(grading, /Phân tích đúng nguyên nhân và minh chứng Studio rõ ràng/);
+  assert.doesNotMatch(grading, /giải trình/i);
+  assert.doesNotMatch(frozen, /giải trình/i);
 });

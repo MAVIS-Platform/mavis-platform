@@ -1303,7 +1303,13 @@ test("GradeForm renders student snapshot explanations and preserves dirty draft 
   );
 
   assert.ok(html.includes('id="mavis-simple-score"'));
-  assert.ok(html.includes("9.5") && html.includes("8.5") && html.includes("7.0"));
+  assert.ok(
+    html.includes("10") &&
+      html.includes("9") &&
+      html.includes("8") &&
+      html.includes("7") &&
+      html.includes("5"),
+  );
 });
 
 test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isolate classes strictly by workspaceId", () => {

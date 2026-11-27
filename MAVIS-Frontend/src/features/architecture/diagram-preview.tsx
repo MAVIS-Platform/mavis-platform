@@ -4,6 +4,7 @@ import { zoomDiagramCamera, type DiagramCamera } from "./diagram-camera";
 import { assessReadability, minimumSvgFont } from "@/lib/architecture/readability";
 import { svgHitTargets, type DiagramHit } from "./diagram-selection";
 import { Button } from "@/components/ui/button";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { renderDiagram, type DiagramFormat, type DrawingStyle } from "./diagram-renderer";
 export function DiagramPreview({
   content,
@@ -24,6 +25,7 @@ export function DiagramPreview({
   onSelect?: (id: string) => void;
   selectedId?: string | null;
 }) {
+  const { t } = useLocale();
   const [result, setResult] = useState<{
     url: string;
     width: number;
@@ -87,7 +89,10 @@ export function DiagramPreview({
       .catch((cause) => {
         if (live)
           setError(
-            `Diagram could not render: ${cause instanceof Error ? cause.message.slice(0, 220) : "unknown renderer error"}`,
+            t(
+              `Diagram could not render: ${cause instanceof Error ? cause.message.slice(0, 220) : "unknown renderer error"}`,
+              `Không thể hiển thị sơ đồ: ${cause instanceof Error ? cause.message.slice(0, 220) : "lỗi kết xuất"}`,
+            ),
           );
       });
     return () => {
@@ -148,7 +153,7 @@ export function DiagramPreview({
   return (
     <section
       className="overflow-hidden rounded-xl border bg-card shadow-sm"
-      aria-label="Selected diagram preview"
+      aria-label={t("Selected diagram preview", "Xem trước sơ đồ đã chọn")}
       data-format={svg ? "DRAWIO_SVG" : format}
       data-style={style}
     >
@@ -162,7 +167,7 @@ export function DiagramPreview({
             <Button
               size="sm"
               variant="outline"
-              aria-label="Zoom in"
+              aria-label={t("Zoom in", "Phóng to")}
               onClick={() => zoomAtCenter(1.2)}
             >
               +
@@ -170,13 +175,13 @@ export function DiagramPreview({
             <Button
               size="sm"
               variant="outline"
-              aria-label="Zoom out"
+              aria-label={t("Zoom out", "Thu nhỏ")}
               onClick={() => zoomAtCenter(1 / 1.2)}
             >
               −
             </Button>
             <Button size="sm" variant="outline" onClick={resetCamera}>
-              Fit diagram
+              {t("Fit diagram", "Vừa khung")}
             </Button>
             <Button
               size="sm"
@@ -191,7 +196,7 @@ export function DiagramPreview({
                 )?.catch(() => {});
               }}
             >
-              Fullscreen
+              {t("Fullscreen", "Toàn màn hình")}
             </Button>
           </div>
         )}
@@ -212,7 +217,9 @@ export function DiagramPreview({
       )}
       {svg && readability && (
         <details className="border-b px-4 py-2 text-xs text-muted-foreground">
-          <summary className="cursor-pointer">Readability details</summary>
+          <summary className="cursor-pointer">
+            {t("Readability details", "Chi tiết độ dễ đọc")}
+          </summary>
           <p>
             At fit: smallest text approximately {readability.minimumScreenFontPx.toFixed(1)}px · A3
             landscape: {readability.minimumA3FontPt.toFixed(1)}pt.{" "}
@@ -225,7 +232,7 @@ export function DiagramPreview({
         ref={viewport}
         className={`relative h-[620px] ${graphical ? `touch-none select-none overflow-hidden ${dragging ? "cursor-grabbing" : "cursor-grab"}` : "overflow-auto"}`}
         role={graphical ? "region" : undefined}
-        aria-label={graphical ? "Diagram canvas" : undefined}
+        aria-label={graphical ? t("Diagram canvas", "Vùng hiển thị sơ đồ") : undefined}
         aria-describedby={graphical ? instructions : undefined}
         tabIndex={graphical ? 0 : undefined}
         data-zoom={graphical ? camera.zoom : undefined}
@@ -356,7 +363,7 @@ export function DiagramPreview({
             </div>
           ) : (
             <p role="status" className="p-5 text-sm text-slate-500">
-              Rendering {format} diagram…
+              {t(`Rendering ${format} diagram…`, `Đang hiển thị sơ đồ ${format}…`)}
             </p>
           )
         ) : (
@@ -371,13 +378,17 @@ export function DiagramPreview({
       </div>
       {graphical && (
         <p id={instructions} className="border-t px-4 py-2 text-xs text-muted-foreground">
-          Drag to pan · Scroll to zoom at cursor · Arrow keys to pan · + / − to zoom · 0 or
-          double-click to fit
+          {t(
+            "Drag to pan · Scroll to zoom at cursor · Arrow keys to pan · + / − to zoom · 0 or double-click to fit",
+            "Kéo để di chuyển · Cuộn để phóng to/thu nhỏ · Phím mũi tên để di chuyển · + / − để phóng to/thu nhỏ · Nhấn 0 hoặc nhấp đúp để vừa khung",
+          )}
         </p>
       )}
       {graphical && !svg && (
         <details className="border-t p-4">
-          <summary className="cursor-pointer text-sm">View {format} source</summary>
+          <summary className="cursor-pointer text-sm">
+            {t(`View ${format} source`, `Xem mã nguồn ${format}`)}
+          </summary>
           <pre className="mt-3 max-h-80 overflow-auto text-xs">
             <code>{content}</code>
           </pre>
@@ -386,8 +397,14 @@ export function DiagramPreview({
       {!graphical && (
         <p className="border-t p-4 text-xs text-muted-foreground">
           {format === "DRAWIO_XML"
-            ? "Draw.io XML is an editable document format. Download and open it in diagrams.net to edit the drawing."
-            : "JSON shows the selected diagram's structured data."}
+            ? t(
+                "Draw.io XML is an editable document format. Download and open it in diagrams.net to edit the drawing.",
+                "Draw.io XML là định dạng sơ đồ có thể chỉnh sửa. Tải về và mở bằng diagrams.net nếu cần xem hoặc chỉnh sửa.",
+              )
+            : t(
+                "JSON shows the selected diagram's structured data.",
+                "Tệp JSON chứa dữ liệu cấu trúc của sơ đồ được chọn.",
+              )}
         </p>
       )}
     </section>

@@ -1494,4 +1494,51 @@ class SubmissionServiceImplTest {
         SubmissionResponseDTO lecturerDto = SubmissionResponseDTO.fromEntity(persisted[0], 0L, null, true);
         assertThat(lecturerDto.getStudioEvidence().path("finalExerciseEvaluation").path("scorePercent").asInt()).isEqualTo(100);
     }
+
+    @Test
+    @DisplayName("getSubmissionById enriches courseQuizEvidence from course_quiz_attempts when missing on submission")
+    void getSubmissionByIdEnrichesMissingCourseQuizEvidence() {
+        var jdbcMock = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(submissionService, "jdbc", jdbcMock);
+        try {
+            UUID subId = UUID.randomUUID();
+            User lecturer = User.builder().id(UUID.randomUUID()).role(Role.builder().code("LECTURER").build()).build();
+            when(accessPolicyService.requireCurrentActiveUser()).thenReturn(lecturer);
+
+            SubmissionResponseDTO rawDto = SubmissionResponseDTO.builder()
+                    .id(subId)
+                    .workspaceId(UUID.randomUUID())
+                    .assignmentId(assignmentId)
+                    .submittedById(userId)
+                    .labMode("THEORY_QUIZ")
+                    .courseQuizEvidence(null)
+                    .build();
+            var listMethod = Arrays.stream(SubmissionServiceImpl.class.getDeclaredClasses())
+                    .filter(c -> c.getSimpleName().equals("LightweightSubmissionRow"))
+                    .findFirst().orElseThrow();
+            var ctor = listMethod.getDeclaredConstructors()[0];
+            ctor.setAccessible(true);
+            Object row = ctor.newInstance(rawDto, true, false);
+
+            when(jdbcMock.query(contains("FROM submission_snapshots s"), any(org.springframework.jdbc.core.RowMapper.class), eq(subId)))
+                    .thenReturn(List.of(row));
+            var enrichedNode = objectMapper.createObjectNode()
+                    .put("status", "PASSED")
+                    .put("correctCount", 11)
+                    .put("questionCount", 12)
+                    .put("passPercent", 70);
+            when(jdbcMock.query(contains("FROM course_quiz_attempts a"), any(org.springframework.jdbc.core.RowMapper.class), eq(assignmentId), eq(userId)))
+                    .thenReturn(List.of(enrichedNode));
+
+            SubmissionResponseDTO result = submissionService.getSubmissionById(subId);
+            assertThat(result.getCourseQuizEvidence()).isNotNull();
+            assertThat(result.getCourseQuizEvidence().path("status").asText()).isEqualTo("PASSED");
+            assertThat(result.getCourseQuizEvidence().path("correctCount").asInt()).isEqualTo(11);
+            assertThat(result.getCourseQuizEvidence().path("questionCount").asInt()).isEqualTo(12);
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(submissionService, "jdbc", null);
+        }
+    }
 }

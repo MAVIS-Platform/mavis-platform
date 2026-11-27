@@ -562,10 +562,10 @@ test("Batch 2: Admin Studio Setup points to /workspaces and grading evidence dis
     path.join(__dirname, "../src/features/submissions/studio-evidence.tsx"),
     "utf8",
   );
-  assert.ok(evidenceSrc.includes("Automated grading assistant (hint only)"));
+  assert.ok(evidenceSrc.includes("Studio automated check"));
   assert.ok(evidenceSrc.includes("canReview && evidence.success"));
   assert.match(evidenceSrc, /exerciseEvaluation:\s*exerciseEvaluationSchema/);
-  assert.match(evidenceSrc, /\{\s*enabled:\s*available\s*\}/);
+  assert.match(evidenceSrc, /\{\s*enabled:\s*available\s*&&/);
 });
 
 test("Batch 3: Scale capped at 1..3, PNG snapshot downscales within 440k chars, visible-tab heartbeat active", () => {
