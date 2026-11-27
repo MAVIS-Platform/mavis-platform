@@ -229,6 +229,17 @@ test("assignment authoring keeps Lab details and Studio while Course owns source
   assert.doesNotMatch(read("src/features/assignments/lab-authoring.tsx"), /LabSourceSection|LabPublishSection/);
 });
 
+test("Class Passkey replaces the current code and paginates history three at a time", () => {
+  const access = read("src/features/workspaces/course-access.tsx");
+
+  assert.match(access, /history\.slice\(\(safeHistoryPage - 1\) \* 3, safeHistoryPage \* 3\)/);
+  assert.match(access, /t\("Create new Passkey", "Tạo Passkey mới"\)/);
+  assert.match(access, /cache\.setQueryData<PasskeyItem\[\]>\(passkeysKey\(workspaceId\)/);
+  assert.match(access, /\{ \.\.\.item, active: false, revokedAt: created\.createdAt \}/);
+  assert.doesNotMatch(access, /t\("Extend", "Gia hạn"\)/);
+  assert.doesNotMatch(access, /t\("Regenerate", "Tạo lại mã"\)/);
+});
+
 test("Coursera-style Lab table of contents shows progress, module items and lock reasons", () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");

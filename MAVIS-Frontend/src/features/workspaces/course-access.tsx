@@ -149,7 +149,17 @@ export function useCreateCoursePasskey(workspaceId: string) {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      cache.setQueryData<PasskeyItem[]>(passkeysKey(workspaceId), (previous) => [
+        created,
+        ...(previous ?? [])
+          .filter((item) => item.id !== created.id)
+          .map((item) =>
+            item.active && !item.revokedAt
+              ? { ...item, active: false, revokedAt: created.createdAt }
+              : item,
+          ),
+      ]);
       void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
@@ -1210,8 +1220,6 @@ function generateStructuredPasskey(): string {
   return `MAVIS-${suffix}`;
 }
 
-type PasskeyDialogMode = "create" | "renew" | "replace";
-
 function isUsablePasskey(item: PasskeyItem): boolean {
   return (
     item.active &&
@@ -1226,33 +1234,34 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const t = useCourseText();
   const passkeys = useCoursePasskeys(workspaceId);
   const createKey = useCreateCoursePasskey(workspaceId);
-  const updateKey = useUpdateCoursePasskey(workspaceId);
   const status = useQuery({
     queryKey: passkeyKey(workspaceId),
     queryFn: ({ signal }) =>
       courseApi<KeyStatus>(`workspaces/${workspaceId}/course-passkey`, { signal }),
   });
-  const [dialogMode, setDialogMode] = useState<PasskeyDialogMode | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [validHours, setValidHours] = useState(720);
   const [maxUses, setMaxUses] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const list = [...(passkeys.data ?? [])].sort(
     (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
   const current = list.find(isUsablePasskey) ?? null;
   const history = list.filter((item) => item.id !== current?.id);
-  const mutating = createKey.isPending || updateKey.isPending;
+  const historyPageCount = Math.max(1, Math.ceil(history.length / 3));
+  const safeHistoryPage = Math.min(historyPage, historyPageCount);
+  const visibleHistory = history.slice((safeHistoryPage - 1) * 3, safeHistoryPage * 3);
+  const mutating = createKey.isPending;
   const maxUsesInvalid =
     maxUses.trim() !== "" &&
     (!Number.isInteger(Number(maxUses)) || Number(maxUses) < 1);
 
-  const openDialog = (mode: PasskeyDialogMode) => {
-    setValidHours(mode === "renew" ? 720 : 720);
-    setMaxUses(
-      mode === "renew" && current?.maxUses != null ? String(current.maxUses) : "",
-    );
-    setDialogMode(mode);
+  const openDialog = () => {
+    setValidHours(720);
+    setMaxUses("");
+    setDialogOpen(true);
   };
 
   const handleCopy = (item: PasskeyItem) => {
@@ -1284,34 +1293,14 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
     if (maxUsesInvalid) return;
     const boundedHours = Math.min(8760, Math.max(1, validHours || 720));
     try {
-      if (dialogMode === "renew" && current) {
-        await updateKey.mutateAsync({
-          passkeyId: current.id,
-          validHours: boundedHours,
-          ...(maxUses.trim() ? { maxUses: parsedMaxUses } : {}),
-        });
-      } else {
-        if (dialogMode === "replace" && current) {
-          await Promise.all(
-            list
-              .filter((item) => item.active && !item.revokedAt)
-              .map((item) => updateKey.mutateAsync({ passkeyId: item.id, active: false })),
-          );
-        }
-        await createKey.mutateAsync({
-          customCode: generateStructuredPasskey(),
-          validHours: boundedHours,
-          ...(maxUses.trim() ? { maxUses: parsedMaxUses } : {}),
-        });
-      }
-      toast.success(
-        dialogMode === "renew"
-          ? t("Passkey extended successfully.", "Đã gia hạn Passkey.")
-          : dialogMode === "replace"
-            ? t("A new Passkey is ready.", "Passkey mới đã sẵn sàng.")
-            : t("Passkey created successfully.", "Đã tạo Passkey mới."),
-      );
-      setDialogMode(null);
+      await createKey.mutateAsync({
+        customCode: generateStructuredPasskey(),
+        validHours: boundedHours,
+        ...(maxUses.trim() ? { maxUses: parsedMaxUses } : {}),
+      });
+      toast.success(t("A new Passkey is ready.", "Passkey mới đã sẵn sàng."));
+      setHistoryPage(1);
+      setDialogOpen(false);
     } catch (error) {
       toast.error(
         error instanceof Error && error.message
@@ -1321,7 +1310,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
     }
   };
 
-  const mutationError = createKey.error ?? updateKey.error;
+  const mutationError = createKey.error;
 
   return (
     <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
@@ -1381,13 +1370,9 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => openDialog("renew")}>
-                <CalendarClock className="mr-1.5 size-4" aria-hidden="true" />
-                {t("Extend", "Gia hạn")}
-              </Button>
-              <Button type="button" onClick={() => openDialog("replace")}>
+              <Button type="button" onClick={openDialog}>
                 <RefreshCw className="mr-1.5 size-4" aria-hidden="true" />
-                {t("Regenerate", "Tạo lại mã")}
+                {t("Create new Passkey", "Tạo Passkey mới")}
               </Button>
             </div>
           </div>
@@ -1406,7 +1391,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
               )}
             </p>
           </div>
-          <Button type="button" onClick={() => openDialog("create")}>
+          <Button type="button" onClick={openDialog}>
             <Plus className="mr-1.5 size-4" aria-hidden="true" />
             {t("Create Passkey", "Tạo Passkey")}
           </Button>
@@ -1442,7 +1427,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {history.map((item) => {
+                {visibleHistory.map((item) => {
                   const expired = new Date(item.expiresAt).getTime() <= Date.now();
                   const exhausted = item.maxUses != null && item.usedCount >= item.maxUses;
                   return (
@@ -1466,22 +1451,45 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                 })}
               </tbody>
             </table>
+            {historyPageCount > 1 && (
+              <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={safeHistoryPage === 1}
+                  onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+                >
+                  {t("Previous", "Trước")}
+                </Button>
+                <span className="min-w-16 text-center text-xs text-muted-foreground">
+                  {safeHistoryPage}/{historyPageCount}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={safeHistoryPage === historyPageCount}
+                  onClick={() => setHistoryPage((page) => Math.min(historyPageCount, page + 1))}
+                >
+                  {t("Next", "Sau")}
+                </Button>
+              </div>
+            )}
           </div>
         </details>
       )}
 
-      <Dialog open={dialogMode != null} onOpenChange={(open) => !open && setDialogMode(null)}>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {dialogMode === "renew"
-                ? t("Extend Passkey", "Gia hạn Passkey")
-                : dialogMode === "replace"
-                  ? t("Regenerate Passkey", "Tạo lại Passkey")
-                  : t("Create Passkey", "Tạo Passkey")}
+              {current
+                ? t("Create new Passkey", "Tạo Passkey mới")
+                : t("Create Passkey", "Tạo Passkey")}
             </DialogTitle>
             <DialogDescription>
-              {dialogMode === "replace"
+              {current
                 ? t(
                     "The current Passkey will stop working immediately. Students who have not enrolled must use the new code.",
                     "Passkey hiện tại sẽ mất hiệu lực ngay. Sinh viên chưa ghi danh phải sử dụng mã mới.",
@@ -1559,7 +1567,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
             )}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDialogMode(null)}>
+            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
               {t("Cancel", "Hủy")}
             </Button>
             <Button
@@ -1568,12 +1576,10 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
               onClick={() => void submitDialog()}
             >
               {mutating
-                ? t("Saving…", "Đang lưu…")
-                : dialogMode === "renew"
-                  ? t("Extend", "Gia hạn")
-                  : dialogMode === "replace"
-                    ? t("Regenerate", "Tạo lại mã")
-                    : t("Create Passkey", "Tạo Passkey")}
+                ? t("Creating…", "Đang tạo…")
+                : current
+                  ? t("Create new Passkey", "Tạo Passkey mới")
+                  : t("Create Passkey", "Tạo Passkey")}
             </Button>
           </DialogFooter>
         </DialogContent>

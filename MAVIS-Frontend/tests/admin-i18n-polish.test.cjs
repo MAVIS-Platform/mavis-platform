@@ -59,10 +59,11 @@ test("Wave 2: Admin Accounts & RuntimeProfiles fix double-plus bug and localize 
   assert.match(screens, /t\("AI Quotas & Integrations", "Hạn mức AI & Tích hợp"\)/);
 });
 
-test("Wave 2: Passkey CRUD table action buttons stay single-line with whitespace-nowrap", () => {
+test("Wave 2: Passkey history stays single-line and creation uses one focused action", () => {
   const courseAccess = read("src/features/workspaces/course-access.tsx");
   assert.match(courseAccess, /className="whitespace-nowrap px-4 py-3"/);
-  assert.match(courseAccess, /openDialog\("renew"\)/);
+  assert.match(courseAccess, /t\("Create new Passkey", "Tạo Passkey mới"\)/);
+  assert.doesNotMatch(courseAccess, /openDialog\("renew"\)/);
 });
 
 test("Wave 3: status labels normalize TIMED_OUT/TIMEDOUT without underscores while keeping formatStatusLabel intact", () => {

@@ -408,6 +408,10 @@ class CourseAccessServiceTest {
         assertEquals("JAVA2026", created.code());
         assertEquals("Java Class", created.label());
         assertTrue(created.active());
+        verify(jdbc).update(
+                contains("UPDATE course_passkeys"),
+                any(OffsetDateTime.class),
+                eq(workspaceId));
 
         when(jdbc.query(contains("FROM course_passkeys"), any(RowMapper.class),
                 eq(created.id()), eq(workspaceId))).thenReturn(List.of(created));
