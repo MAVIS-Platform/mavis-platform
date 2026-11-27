@@ -170,11 +170,18 @@ test("Global Lecturer workspace hides its sidebar and uses a single Course Manag
 
 test("Course Management filters Archived classes separately from Inactive classes", () => {
   const workspace = read("src/features/workspaces/screens.tsx");
+  const controls = read("src/features/workspaces/manage.tsx");
   assert.match(workspace, /"all" \| "active" \| "inactive" \| "archived"/);
   assert.match(workspace, /statusFilter === "inactive" && status !== "INACTIVE"/);
   assert.match(workspace, /statusFilter === "archived" && status !== "ARCHIVED"/);
   assert.match(workspace, /t\("Archived", "Đã lưu trữ"\)/);
-  assert.match(workspace, /Reopen this archived course/);
+  assert.match(workspace, /t\("Restore class", "Khôi phục lớp"\)/);
+  assert.match(workspace, /status: "INACTIVE"/);
+  assert.doesNotMatch(workspace, /Reopen this archived course/);
+  assert.match(controls, /t\("Restore as Inactive", "Khôi phục về Chưa hoạt động"\)/);
+  assert.match(controls, /status: "INACTIVE"/);
+  assert.match(controls, /disabled=\{archived\}/);
+  assert.doesNotMatch(controls, /window\.confirm\("Archive this workspace\?"\)/);
 });
 
 test("opening a notification decrements unread count without removing notification history", () => {

@@ -2,7 +2,17 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { CheckCircle2, Clock3, ClipboardCheck, Plus, Search, Settings2, Users } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  CheckCircle2,
+  Clock3,
+  ClipboardCheck,
+  Plus,
+  Search,
+  Settings2,
+  Users,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CourseCover } from "@/components/course-cover";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
@@ -62,11 +72,12 @@ export function Workspaces() {
   const { workspaceId } = useSelection();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "active" | "inactive" | "archived"
-  >("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "archived">(
+    "all",
+  );
   const [page, setPage] = useState(1);
   const [changingStatusId, setChangingStatusId] = useState<string | null>(null);
+  const [restoreWorkspaceId, setRestoreWorkspaceId] = useState<string | null>(null);
   const [activationIssueById, setActivationIssueById] = useState<Record<string, string>>({});
   const updateWorkspace = useApiMutation("updateWorkspace");
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
@@ -87,6 +98,17 @@ export function Workspaces() {
       );
     });
   }, [query.data, search, statusFilter]);
+  const statusCounts = useMemo(() => {
+    const counts = { all: 0, active: 0, inactive: 0, archived: 0 };
+    for (const workspace of query.data ?? []) {
+      counts.all += 1;
+      const status = (workspace.status ?? "ACTIVE").toUpperCase();
+      if (status === "ACTIVE") counts.active += 1;
+      else if (status === "INACTIVE") counts.inactive += 1;
+      else if (status === "ARCHIVED") counts.archived += 1;
+    }
+    return counts;
+  }, [query.data]);
   const pageCount = Math.max(1, Math.ceil(visibleWorkspaces.length / WORKSPACES_PER_PAGE));
   const currentPage = Math.min(page, pageCount);
   const pagedWorkspaces = visibleWorkspaces.slice(
@@ -138,56 +160,56 @@ export function Workspaces() {
           </header>
 
           {isLecturerRole && (
-          <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
-            <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
-              <ClipboardCheck className="size-6" aria-hidden="true" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                {t("Needs your attention", "Cần bạn xem xét")}
-              </p>
-              <p className="mt-1 text-lg font-semibold">
-                {submissions.isLoading ? "…" : submissions.isSuccess ? pendingReviews : 0}{" "}
-                {t("submissions to review", "bài nộp chờ chấm")}
-              </p>
-              <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                {(query.data ?? [])
-                  .filter((w) => pendingByWorkspace.has(w.id))
-                  .map(
-                    (w) =>
-                      w.name +
-                      " · " +
-                      pendingByWorkspace.get(w.id) +
-                      " " +
-                      t("submission(s)", "bài nộp"),
-                  )
-                  .join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}
-              </p>
-            </div>
-            <Button
-              asChild
-              variant="outline"
-              className="rounded-lg border-primary/40 text-primary hover:bg-primary/10"
-            >
-              <Link
-                href={(() => {
-                  const firstPendingWs = (query.data ?? []).find(
-                    (w) => (pendingByWorkspace.get(w.id) ?? 0) > 0,
-                  )?.id;
-                  return firstPendingWs
-                    ? `/submissions?workspace=${encodeURIComponent(firstPendingWs)}&status=PENDING`
-                    : pendingReviews > 0
-                      ? "/submissions?status=PENDING"
-                      : "/submissions";
-                })()}
+            <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
+              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
+                <ClipboardCheck className="size-6" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  {t("Needs your attention", "Cần bạn xem xét")}
+                </p>
+                <p className="mt-1 text-lg font-semibold">
+                  {submissions.isLoading ? "…" : submissions.isSuccess ? pendingReviews : 0}{" "}
+                  {t("submissions to review", "bài nộp chờ chấm")}
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                  {(query.data ?? [])
+                    .filter((w) => pendingByWorkspace.has(w.id))
+                    .map(
+                      (w) =>
+                        w.name +
+                        " · " +
+                        pendingByWorkspace.get(w.id) +
+                        " " +
+                        t("submission(s)", "bài nộp"),
+                    )
+                    .join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}
+                </p>
+              </div>
+              <Button
+                asChild
+                variant="outline"
+                className="rounded-lg border-primary/40 text-primary hover:bg-primary/10"
               >
-                {t("Review submissions", "Chấm bài nộp")}
-                <span className="ml-2" aria-hidden="true">
-                  →
-                </span>
-              </Link>
-            </Button>
-          </div>
+                <Link
+                  href={(() => {
+                    const firstPendingWs = (query.data ?? []).find(
+                      (w) => (pendingByWorkspace.get(w.id) ?? 0) > 0,
+                    )?.id;
+                    return firstPendingWs
+                      ? `/submissions?workspace=${encodeURIComponent(firstPendingWs)}&status=PENDING`
+                      : pendingReviews > 0
+                        ? "/submissions?status=PENDING"
+                        : "/submissions";
+                  })()}
+                >
+                  {t("Review submissions", "Chấm bài nộp")}
+                  <span className="ml-2" aria-hidden="true">
+                    →
+                  </span>
+                </Link>
+              </Button>
+            </div>
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -235,7 +257,16 @@ export function Workspaces() {
                       : "rounded-full border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
                   }
                 >
-                  {label}
+                  <span>{label}</span>
+                  <span
+                    className={
+                      statusFilter === id
+                        ? "ml-1.5 text-xs text-white/80"
+                        : "ml-1.5 text-xs text-muted-foreground"
+                    }
+                  >
+                    {statusCounts[id]}
+                  </span>
                 </button>
               ))}
             </div>
@@ -282,6 +313,7 @@ export function Workspaces() {
                     aria-label={t(`Open ${workspace.name}`, `Mở ${workspace.name}`)}
                     onClick={() => window.location.assign(workspaceUrl)}
                     onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         window.location.assign(workspaceUrl);
@@ -301,92 +333,94 @@ export function Workspaces() {
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => event.stopPropagation()}
                       >
-                        <Switch
-                          checked={!inactive}
-                          disabled={changingStatusId === workspace.id}
-                          aria-label={t(
-                            `Set ${workspace.name} ${inactive ? "active" : "inactive"}`,
-                            `Chuyển ${workspace.name} sang ${inactive ? "hoạt động" : "không hoạt động"}`,
-                          )}
-                          onCheckedChange={async (active) => {
-                            const confirmed = window.confirm(
-                              active
-                                ? archived
-                                  ? t(
-                                      "Reopen this archived course? Its latest valid content will be published for students again.",
-                                      "Mở lại khóa học đã lưu trữ? Nội dung hợp lệ mới nhất sẽ được công bố lại cho sinh viên.",
-                                    )
-                                  : t(
-                                      "Activate this course? All valid Labs and the latest course draft will be published for students.",
-                                      "Kích hoạt khóa học? Tất cả Lab hợp lệ và bản nháp mới nhất sẽ được xuất bản cho sinh viên.",
-                                    )
-                                : t(
-                                    "Set this course to Inactive? Students will temporarily lose access while you edit its content.",
-                                    "Chuyển khóa học sang Inactive? Sinh viên sẽ tạm mất quyền truy cập trong lúc bạn chỉnh sửa nội dung.",
-                                  ),
-                            );
-                            if (!confirmed) return;
-                            setChangingStatusId(workspace.id);
-                            setActivationIssueById((current) => {
-                              const next = { ...current };
-                              delete next[workspace.id];
-                              return next;
-                            });
-                            try {
-                              if (active) {
-                                const course = await api<AuthoringCourse>(
-                                  `workspaces/${workspace.id}/course`,
-                                ).catch(() => null);
-                                const incomplete =
-                                  !course ||
-                                  course.modules.length === 0 ||
-                                  course.modules.some((module) => module.items.length === 0);
-                                if (incomplete) {
+                        {archived ? (
+                          <>
+                            <Archive className="size-4 text-amber-700" aria-hidden="true" />
+                            <span className="text-xs font-medium text-amber-700">
+                              {t("Archived", "Đã lưu trữ")}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Switch
+                              checked={!inactive}
+                              disabled={changingStatusId === workspace.id}
+                              aria-label={t(
+                                `Set ${workspace.name} ${inactive ? "active" : "inactive"}`,
+                                `Chuyển ${workspace.name} sang ${inactive ? "hoạt động" : "không hoạt động"}`,
+                              )}
+                              onCheckedChange={async (active) => {
+                                const confirmed = window.confirm(
+                                  active
+                                    ? t(
+                                        "Activate this course? All valid Labs and the latest course draft will be published for students.",
+                                        "Kích hoạt khóa học? Tất cả Lab hợp lệ và bản nháp mới nhất sẽ được xuất bản cho sinh viên.",
+                                      )
+                                    : t(
+                                        "Set this course to Inactive? Students will temporarily lose access while you edit its content.",
+                                        "Chuyển khóa học sang Inactive? Sinh viên sẽ tạm mất quyền truy cập trong lúc bạn chỉnh sửa nội dung.",
+                                      ),
+                                );
+                                if (!confirmed) return;
+                                setChangingStatusId(workspace.id);
+                                setActivationIssueById((current) => {
+                                  const next = { ...current };
+                                  delete next[workspace.id];
+                                  return next;
+                                });
+                                try {
+                                  if (active) {
+                                    const course = await api<AuthoringCourse>(
+                                      `workspaces/${workspace.id}/course`,
+                                    ).catch(() => null);
+                                    const incomplete =
+                                      !course ||
+                                      course.modules.length === 0 ||
+                                      course.modules.some((module) => module.items.length === 0);
+                                    if (incomplete) {
+                                      setActivationIssueById((current) => ({
+                                        ...current,
+                                        [workspace.id]: t(
+                                          "Complete the Course content and place at least one item in every Module before activation.",
+                                          "Hãy hoàn tất nội dung và xếp ít nhất một nội dung vào mỗi Module trước khi kích hoạt.",
+                                        ),
+                                      }));
+                                      return;
+                                    }
+                                  }
+                                  await updateWorkspace.mutateAsync({
+                                    workspaceId: workspace.id,
+                                    name: workspace.name,
+                                    status: active ? "ACTIVE" : "INACTIVE",
+                                  });
+                                } catch {
                                   setActivationIssueById((current) => ({
                                     ...current,
                                     [workspace.id]: t(
-                                      "Complete the Course content and place at least one item in every Module before activation.",
-                                      "Hãy hoàn tất nội dung và xếp ít nhất một nội dung vào mỗi Module trước khi kích hoạt.",
+                                      "The Course could not be activated. Review its draft content and try again.",
+                                      "Không thể kích hoạt khóa học. Hãy kiểm tra nội dung bản nháp rồi thử lại.",
                                     ),
                                   }));
-                                  return;
+                                } finally {
+                                  setChangingStatusId(null);
                                 }
+                              }}
+                            />
+                            <span
+                              className={
+                                inactive
+                                  ? "text-xs font-medium text-slate-600"
+                                  : "text-xs font-medium text-emerald-700"
                               }
-                              await updateWorkspace.mutateAsync({
-                                workspaceId: workspace.id,
-                                name: workspace.name,
-                                status: active ? "ACTIVE" : "INACTIVE",
-                              });
-                            } catch {
-                              setActivationIssueById((current) => ({
-                                ...current,
-                                [workspace.id]: t(
-                                  "The Course could not be activated. Review its draft content and try again.",
-                                  "Không thể kích hoạt khóa học. Hãy kiểm tra nội dung bản nháp rồi thử lại.",
-                                ),
-                              }));
-                            } finally {
-                              setChangingStatusId(null);
-                            }
-                          }}
-                        />
-                        <span
-                          className={
-                            archived
-                              ? "text-xs font-medium text-amber-700"
-                              : inactive
-                                ? "text-xs font-medium text-slate-600"
-                              : "text-xs font-medium text-emerald-700"
-                          }
-                        >
-                          {changingStatusId === workspace.id
-                            ? t("Updating…", "Đang cập nhật…")
-                            : archived
-                              ? t("Archived", "Đã lưu trữ")
-                              : inactive
-                                ? t("Inactive", "Không hoạt động")
-                              : t("Active", "Đang hoạt động")}
-                        </span>
+                            >
+                              {changingStatusId === workspace.id
+                                ? t("Updating…", "Đang cập nhật…")
+                                : inactive
+                                  ? t("Inactive", "Không hoạt động")
+                                  : t("Active", "Đang hoạt động")}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </CourseCover>
                     <div className="flex flex-1 flex-col gap-3 p-5">
@@ -441,6 +475,22 @@ export function Workspaces() {
                           </span>
                         )}
                       </div>
+                      {archived && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="mt-auto w-full border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
+                          disabled={changingStatusId === workspace.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setRestoreWorkspaceId(workspace.id);
+                          }}
+                        >
+                          <ArchiveRestore className="mr-2 size-4" aria-hidden="true" />
+                          {t("Restore class", "Khôi phục lớp")}
+                        </Button>
+                      )}
                     </div>
                   </article>
                 );
@@ -468,6 +518,51 @@ export function Workspaces() {
           © MAVIS — Architecture Learning &amp; Analysis
         </footer>
       )}
+      <Dialog
+        open={restoreWorkspaceId !== null}
+        onOpenChange={(open) => !open && setRestoreWorkspaceId(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("Restore this class?", "Khôi phục lớp học này?")}</DialogTitle>
+            <DialogDescription>
+              {t(
+                "The class will return as Inactive. Review its content before activating it for students.",
+                "Lớp sẽ trở về trạng thái Chưa hoạt động. Hãy kiểm tra nội dung trước khi kích hoạt lại cho sinh viên.",
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setRestoreWorkspaceId(null)}>
+              {t("Cancel", "Hủy")}
+            </Button>
+            <Button
+              type="button"
+              disabled={!restoreWorkspaceId || changingStatusId === restoreWorkspaceId}
+              onClick={async () => {
+                const workspace = (query.data ?? []).find((item) => item.id === restoreWorkspaceId);
+                if (!workspace) return;
+                setChangingStatusId(workspace.id);
+                try {
+                  await updateWorkspace.mutateAsync({
+                    workspaceId: workspace.id,
+                    name: workspace.name,
+                    status: "INACTIVE",
+                  });
+                  setRestoreWorkspaceId(null);
+                } finally {
+                  setChangingStatusId(null);
+                }
+              }}
+            >
+              <ArchiveRestore className="mr-2 size-4" aria-hidden="true" />
+              {changingStatusId === restoreWorkspaceId
+                ? t("Restoring…", "Đang khôi phục…")
+                : t("Restore as Inactive", "Khôi phục về Chưa hoạt động")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -506,9 +601,7 @@ export function WorkspaceOverview() {
   if (session.data?.user?.role === "student" && !query.isPending && !canManage) {
     return (
       <div className="mx-auto max-w-lg space-y-4 p-8" role="alert">
-        <h1 className="text-xl font-semibold">
-          {t("Access unavailable", "Không thể truy cập")}
-        </h1>
+        <h1 className="text-xl font-semibold">{t("Access unavailable", "Không thể truy cập")}</h1>
         <p className="text-sm text-muted-foreground">
           {t(
             "Your account does not have permission to view this page.",
@@ -516,9 +609,7 @@ export function WorkspaceOverview() {
           )}
         </p>
         <Button asChild variant="outline">
-          <Link href="/courses">
-            {t("Return to your courses", "Quay lại khóa học của tôi")}
-          </Link>
+          <Link href="/courses">{t("Return to your courses", "Quay lại khóa học của tôi")}</Link>
         </Button>
       </div>
     );
@@ -874,7 +965,10 @@ export function WorkspaceMembers() {
                                     : "font-semibold text-amber-700 dark:text-amber-400"
                                 }
                               >
-                                {formatTenScaleScore(stats?.averageScore, stats?.averageScoreTenScale)}
+                                {formatTenScaleScore(
+                                  stats?.averageScore,
+                                  stats?.averageScoreTenScale,
+                                )}
                               </span>
                             );
                           },

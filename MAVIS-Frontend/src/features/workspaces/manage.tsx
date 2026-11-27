@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Archive, ArchiveRestore } from "lucide-react";
 import { useApiMutation, useSession } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import {
@@ -114,7 +115,9 @@ export function CreateWorkspace({ onClose }: { onClose?: () => void } = {}) {
               </Button>
             )}
             <Button type="submit" disabled={create.isPending || !code.trim() || !name.trim()}>
-              {create.isPending ? t("Creating class…", "Đang tạo lớp…") : t("Create class", "Tạo lớp")}
+              {create.isPending
+                ? t("Creating class…", "Đang tạo lớp…")
+                : t("Create class", "Tạo lớp")}
             </Button>
           </DialogFooter>
         </form>
@@ -143,6 +146,12 @@ export function WorkspaceControls({
   const [email, setEmail] = useState(""),
     [name, setName] = useState(workspace.name),
     [memberRole, setMemberRole] = useState<"STUDENT" | "LECTURER">("STUDENT");
+  const [lifecycleAction, setLifecycleAction] = useState<"archive" | "restore" | null>(null);
+  const archived = workspace.status === "ARCHIVED";
+  useEffect(() => {
+    setName(workspace.name);
+    setDescription(workspace.description ?? "");
+  }, [workspace.description, workspace.name]);
   if (workspace.myRole !== "LECTURER" && session.data?.user?.role !== "admin") return null;
   const showOverview = mode === "overview" || mode === "all";
   const showMembers = mode === "members" || mode === "all";
@@ -168,6 +177,7 @@ export function WorkspaceControls({
                   required
                   maxLength={255}
                   value={name}
+                  disabled={archived}
                   onChange={(e) => setName(e.target.value)}
                 />
               )}
@@ -177,6 +187,7 @@ export function WorkspaceControls({
                 <Textarea
                   {...props}
                   value={description}
+                  disabled={archived}
                   onChange={(e) => setDescription(e.target.value)}
                   maxLength={5000}
                 />
@@ -185,7 +196,7 @@ export function WorkspaceControls({
             <div className="flex justify-end">
               <Button
                 type="submit"
-                disabled={update.isPending}
+                disabled={update.isPending || archived}
                 title="Rename and save class settings"
               >
                 {update.isPending ? "Saving..." : "Save class settings"}
@@ -266,43 +277,129 @@ export function WorkspaceControls({
           </details>
         </>
       )}
-      {showOverview && workspace.status !== "ARCHIVED" && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
-          <p className="mb-3 text-xs text-muted-foreground">
-            {t(
-              "Archive this class when the term ends. You can reopen it later.",
-              "Lưu trữ lớp học khi kết thúc học kỳ. Bạn có thể mở lại sau.",
-            )}
-          </p>
-          <Button
-            variant="destructive"
-            disabled={archive.isPending}
-            onClick={() => {
-              if (window.confirm("Archive this workspace?"))
-                archive.mutate(
-                  { workspaceId: workspace.id },
-                  { onSuccess: () => onSaved?.() },
-                );
-            }}
-          >
-            Archive workspace
-          </Button>
-        </div>
+      {showOverview && !archived && (
+        <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 font-semibold">
+                <Archive className="size-4 text-amber-600" aria-hidden="true" />
+                {t("Archive class", "Lưu trữ lớp học")}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t(
+                  "Move a completed class out of the active workspace list. Its content and history are preserved, and you can restore it later.",
+                  "Đưa lớp đã kết thúc khỏi danh sách đang sử dụng. Nội dung và lịch sử vẫn được giữ nguyên, và bạn có thể khôi phục sau.",
+                )}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 border-amber-500/50 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
+              disabled={archive.isPending}
+              onClick={() => setLifecycleAction("archive")}
+            >
+              <Archive className="mr-2 size-4" aria-hidden="true" />
+              {t("Archive class", "Lưu trữ lớp")}
+            </Button>
+          </div>
+        </section>
       )}
-      {showOverview && workspace.status === "ARCHIVED" && (
-        <Button
-          variant="outline"
-          disabled={update.isPending}
-          onClick={() =>
-            update.mutate({ workspaceId: workspace.id, name: workspace.name, status: "ACTIVE" })
-          }
-        >
-          Reopen workspace
-        </Button>
+      {showOverview && archived && (
+        <section className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2 font-semibold">
+                <Archive className="size-4 text-sky-600" aria-hidden="true" />
+                {t("This class is archived", "Lớp học đang được lưu trữ")}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t(
+                  "Restore it as Inactive to review and update the content before making it available to students again.",
+                  "Khôi phục lớp về trạng thái Chưa hoạt động để kiểm tra và cập nhật nội dung trước khi mở lại cho sinh viên.",
+                )}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0"
+              disabled={update.isPending}
+              onClick={() => setLifecycleAction("restore")}
+            >
+              <ArchiveRestore className="mr-2 size-4" aria-hidden="true" />
+              {t("Restore class", "Khôi phục lớp")}
+            </Button>
+          </div>
+        </section>
       )}
       {[add.error, remove.error, archive.error, update.error].filter(Boolean).map((e, i) => (
         <ErrorState key={i} error={e} />
       ))}
+      <Dialog
+        open={lifecycleAction !== null}
+        onOpenChange={(open) => !open && setLifecycleAction(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {lifecycleAction === "archive"
+                ? t("Archive this class?", "Lưu trữ lớp học này?")
+                : t("Restore this class?", "Khôi phục lớp học này?")}
+            </DialogTitle>
+            <DialogDescription>
+              {lifecycleAction === "archive"
+                ? t(
+                    "Students will no longer be able to access this class. Course content, members, grades, and submission history will not be deleted.",
+                    "Sinh viên sẽ không thể truy cập lớp học này. Nội dung, thành viên, điểm số và lịch sử bài nộp sẽ không bị xóa.",
+                  )
+                : t(
+                    "The class will return as Inactive. Students will remain unable to access it until you review the content and activate it.",
+                    "Lớp sẽ trở về trạng thái Chưa hoạt động. Sinh viên vẫn chưa thể truy cập cho đến khi bạn kiểm tra nội dung và kích hoạt lớp.",
+                  )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setLifecycleAction(null)}>
+              {t("Cancel", "Hủy")}
+            </Button>
+            <Button
+              type="button"
+              variant={lifecycleAction === "archive" ? "destructive" : "default"}
+              disabled={archive.isPending || update.isPending}
+              onClick={() => {
+                if (lifecycleAction === "archive") {
+                  archive.mutate(
+                    { workspaceId: workspace.id },
+                    {
+                      onSuccess: () => {
+                        setLifecycleAction(null);
+                        onSaved?.();
+                      },
+                    },
+                  );
+                  return;
+                }
+                update.mutate(
+                  { workspaceId: workspace.id, name: workspace.name, status: "INACTIVE" },
+                  {
+                    onSuccess: () => {
+                      setLifecycleAction(null);
+                      onSaved?.();
+                    },
+                  },
+                );
+              }}
+            >
+              {archive.isPending || update.isPending
+                ? t("Updating…", "Đang cập nhật…")
+                : lifecycleAction === "archive"
+                  ? t("Archive class", "Lưu trữ lớp")
+                  : t("Restore as Inactive", "Khôi phục về Chưa hoạt động")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
