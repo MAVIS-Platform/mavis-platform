@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
+import { formatLocalizedDateTime } from "@/lib/format/date-time";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 
@@ -323,7 +324,7 @@ export function AdminAnnouncements() {
                       </p>
                       <p className="mt-3 text-xs text-muted-foreground">
                         {t("Updated", "Cập nhật lúc")}{" "}
-                        {new Date(item.updatedAt).toLocaleString(locale === "vi" ? "vi-VN" : "en-US")}{" "}
+                        {formatLocalizedDateTime(item.updatedAt, locale)}{" "}
                         {t("by", "bởi")} {item.createdByName}
                       </p>
                     </div>

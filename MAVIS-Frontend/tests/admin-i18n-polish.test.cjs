@@ -129,7 +129,7 @@ test("Bug #08: workspaces exposes an h1 landmark, singular/plural counts avoid '
   assert.match(ws, /students === 1 \? t\("student", "sinh viên"\) : t\("students", "sinh viên"\)/);
   assert.match(ws, /totalLabs === 1 \? t\("Lab", "Lab"\) : t\("Labs", "Labs"\)/);
   assert.match(pages, /course\.labCount === 1 \? t\("Lab", "bài Lab"\) : t\("Labs", "bài Lab"\)/);
-  assert.match(admin, /date\.toLocaleDateString\("vi-VN"\)\}<\/span>\{" "\}/);
+  assert.match(admin, /formatLocalizedDate\(date, locale\)\}<\/span>\{" "\}/);
 });
 
 test("Bug #09: CourseBuilder uses single-scroll accordion with centered popup and Passkey table compacts padding with truncated labels", () => {
