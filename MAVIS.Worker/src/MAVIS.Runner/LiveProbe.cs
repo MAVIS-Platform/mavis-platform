@@ -446,6 +446,10 @@ public sealed class PrometheusServiceGraphScraper
     private static double? HistogramQuantile(Dictionary<double, double> cur, Dictionary<double, double>? prev, double q)
     {
         if (cur.Count == 0) return null;
+        if (prev is not null && cur.Any(kv => prev.TryGetValue(kv.Key, out var pv) && kv.Value < pv))
+        {
+            prev = null;
+        }
         var sorted = cur.Keys.Order().ToArray();
         var deltas = new double[sorted.Length];
         for (var i = 0; i < sorted.Length; i++)
