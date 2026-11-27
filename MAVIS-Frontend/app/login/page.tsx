@@ -388,14 +388,14 @@ function StudioStagePreview() {
         </div>
       </div>
 
-      {/* Real MAVIS Studio 3D stage with all sidebars/tabs closed for a clean showcase */}
-      <div className="relative aspect-[16/9.6] w-full overflow-hidden bg-slate-100 dark:bg-[#070d1a]">
+      {/* Real MAVIS Studio 3D stage (Gateway -> Services -> Database), tag-free and enlarged */}
+      <div className="relative aspect-[16/10.5] w-full overflow-hidden bg-slate-100 dark:bg-[#070d1a]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/homepage/login-studio-light.webp"
           alt={t(
-            "Real MAVIS Studio 3D stage showing 10 microservices and Change Impact path in light theme",
-            "Sân khấu 3D thật của MAVIS Studio hiển thị 10 microservice và đường kiểm chứng tác động ở chế độ sáng",
+            "Real MAVIS Studio 3D stage showing API Gateway, microservices, and database in light theme",
+            "Sân khấu 3D thật của MAVIS Studio hiển thị API Gateway, microservices và database ở chế độ sáng",
           )}
           className="block h-full w-full object-cover object-center dark:hidden"
         />
@@ -403,22 +403,12 @@ function StudioStagePreview() {
         <img
           src="/homepage/login-studio-dark.webp"
           alt={t(
-            "Real MAVIS Studio 3D stage showing 10 microservices and Change Impact path in dark theme",
-            "Sân khấu 3D thật của MAVIS Studio hiển thị 10 microservice và đường kiểm chứng tác động ở chế độ tối",
+            "Real MAVIS Studio 3D stage showing API Gateway, microservices, and database in dark theme",
+            "Sân khấu 3D thật của MAVIS Studio hiển thị API Gateway, microservices và database ở chế độ tối",
           )}
           className="hidden h-full w-full object-cover object-center dark:block"
         />
       </div>
-
-      <figcaption className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 bg-muted/30 px-3.5 py-2 text-[11px] text-foreground/75">
-        <span>
-          {t(
-            "Change Impact · Scale-Out · Outage Recovery · CPU Throttle",
-            "Phân tích ảnh hưởng · Scale-Out · Khôi phục sự cố · Giới hạn CPU",
-          )}
-        </span>
-        <span className="font-mono text-[10px] font-semibold text-primary">2D / 3D</span>
-      </figcaption>
     </figure>
   );
 }
