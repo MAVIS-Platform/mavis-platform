@@ -82,6 +82,9 @@ public class RuntimeStudioService {
         ObjectNode result=mapper.createObjectNode().put("sessionId",id.toString()).put("digest",session.getReceiptDigest());
         result.set("signature",control.path("receiptSignature"));
         result.set("receipt",session.getRunnerReceiptJson().deepCopy());
+        if (isStudentActor()) {
+            stripEvaluationFieldsRecursively(result);
+        }
         return result;
     }
     @Transactional(readOnly = true)
@@ -91,9 +94,9 @@ public class RuntimeStudioService {
         boolean student = isStudentActor();
         for(JsonNode snapshot:control(session).withArray("snapshots"))
             if(snapshotId.toString().equals(snapshot.path("id").asText())) {
-                if (student && snapshot.isObject()) {
-                    ObjectNode copy = ((ObjectNode) snapshot).deepCopy();
-                    copy.remove("exerciseEvaluation");
+                if (student && (snapshot.isObject() || snapshot.isArray())) {
+                    JsonNode copy = snapshot.deepCopy();
+                    stripEvaluationFieldsRecursively(copy);
                     return copy;
                 }
                 return snapshot;
@@ -218,7 +221,7 @@ public class RuntimeStudioService {
         notifyStateAfterCommit(session);
         if (isStudentActor()) {
             ObjectNode copy = evidence.deepCopy();
-            copy.remove("exerciseEvaluation");
+            stripEvaluationFieldsRecursively(copy);
             return copy;
         }
         return evidence;
@@ -794,15 +797,17 @@ public class RuntimeStudioService {
         }
     }
 
-    private static void redactStudioViewForStudent(ObjectNode node) {
-        node.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
-        if (node.path("snapshots").isArray()) {
-            for (JsonNode snap : node.path("snapshots")) {
-                if (snap.isObject()) {
-                    ((ObjectNode) snap).remove("exerciseEvaluation");
-                }
-            }
+    private static void stripEvaluationFieldsRecursively(JsonNode node) {
+        if (node instanceof ObjectNode obj) {
+            obj.remove(java.util.List.of("exerciseEvaluation", "finalExerciseEvaluation"));
+            obj.elements().forEachRemaining(RuntimeStudioService::stripEvaluationFieldsRecursively);
+        } else if (node instanceof com.fasterxml.jackson.databind.node.ArrayNode arr) {
+            arr.elements().forEachRemaining(RuntimeStudioService::stripEvaluationFieldsRecursively);
         }
+    }
+
+    private static void redactStudioViewForStudent(ObjectNode node) {
+        stripEvaluationFieldsRecursively(node);
         boolean isOutageRecovery = false;
         if (node.path("exerciseCriteria").isObject()) {
             ObjectNode criteria = (ObjectNode) node.get("exerciseCriteria");
