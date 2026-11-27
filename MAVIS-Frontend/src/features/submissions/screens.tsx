@@ -18,6 +18,7 @@ import {
   formatTenScaleScore,
   toTenScaleScore,
 } from "@/lib/format/course-display";
+import { formatLocalizedDate, formatLocalizedDateTime } from "@/lib/format/date-time";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { DataTable, DetailPanel, StatusBadge, StatusLabel } from "@/components/shared/data";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
@@ -50,7 +51,7 @@ export function Submissions() {
   return canReview ? <TeachingSubmissions /> : <MySubmissions />;
 }
 function MySubmissions() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const params = useSearchParams();
   const selection = useSelection();
   const assignmentId = params?.get("assignment") || "";
@@ -164,7 +165,7 @@ function MySubmissions() {
                 <SubmissionResult submission={s} />
                 <span className="text-[11px] text-muted-foreground">
                   {s.submittedAt
-                    ? new Date(s.submittedAt).toLocaleDateString()
+                    ? formatLocalizedDate(s.submittedAt, locale)
                     : t("Not submitted", "Chưa nộp")}
                 </span>
               </div>
@@ -247,7 +248,7 @@ function MySubmissions() {
               label: t("Submitted", "Đã nộp"),
               render: (s: Submission) =>
                 s.submittedAt
-                  ? new Date(s.submittedAt).toLocaleString()
+                  ? formatLocalizedDateTime(s.submittedAt, locale)
                   : t("Not submitted", "Chưa nộp"),
             },
             {
@@ -705,7 +706,7 @@ function AssignmentSubmissionList({
   );
 }
 function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(1);
   const filtered = rows.filter((s) =>
@@ -773,7 +774,7 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
             render: (s) => (
               <span className="block max-w-28 text-xs leading-4">
                 {s.submittedAt
-                  ? new Date(s.submittedAt).toLocaleString()
+                  ? formatLocalizedDateTime(s.submittedAt, locale)
                   : t("Not submitted", "Chưa nộp")}
               </span>
             ),
