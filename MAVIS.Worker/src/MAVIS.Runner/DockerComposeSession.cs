@@ -1105,7 +1105,14 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     if (poll.CancelRequested)
                     {
                         onRemoteCancel?.Invoke();
-                        startupCts.Cancel();
+                        try
+                        {
+                            startupCts.Cancel();
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // Startup already completed or timed out before the remote cancel poll returned.
+                        }
                         return;
                     }
                 }
