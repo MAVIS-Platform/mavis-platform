@@ -4,7 +4,7 @@ import { loginDestination } from "@/lib/auth/login-destination";
 import { SocialSignIn } from "@/features/auth/social-sign-in";
 import { LoginBackground } from "@/features/auth/login-background";
 import { publicErrorCode, publicErrors } from "@/lib/errors/api-error";
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -27,7 +27,6 @@ import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
 import { MavisLogo } from "@/components/mavis-logo";
 import { ErrorState } from "@/components/shared/request-state";
 import type { AppRole } from "@/types/domain";
-import { networkBadge, networkColor } from "@/features/architecture/cytoscape-network";
 export default function LoginPage() {
   const { t } = useLocale();
   const api = useApi();
@@ -123,21 +122,25 @@ export default function LoginPage() {
       </header>
       <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-6 px-4 py-3 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-12">
         <section className="hidden self-center lg:block">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+            {t("MAVIS Studio 3D · Live Docker & OpenTelemetry", "MAVIS Studio 3D · Docker thật & OpenTelemetry")}
+          </div>
           <h1 className="max-w-lg text-4xl font-bold leading-[1.15] tracking-tight text-foreground">
-            {t("Understand your services.", "Hiểu rõ các service của bạn.")}
+            {t("Visualize services in 3D.", "Trực quan hóa hệ thống 3D.")}
             <br />
             <span className="text-primary">
-              {t("See the connections.", "Xem các mối liên kết.")}
+              {t("Prove real change impact.", "Kiểm chứng tác động thực.")}
             </span>
           </h1>
-          <p className="mt-4 max-w-md text-base leading-7 text-foreground/80">
+          <p className="mt-3.5 max-w-lg text-sm leading-6 text-foreground/80">
             {t(
-              "Explore your architecture, trace dependencies, and make changes with the source evidence in view.",
-              "Khám phá kiến trúc, lần theo các phụ thuộc và kiểm chứng tác động thay đổi với bằng chứng mã nguồn rõ ràng.",
+              "Run real Docker microservice stacks, stream live OpenTelemetry traces, and verify fault propagation directly on an interactive 3D stage.",
+              "Vận hành cụm microservice trên Docker thật, quan sát OpenTelemetry trực tiếp và kiểm chứng lan truyền sự cố ngay trên sân khấu 3D tương tác.",
             )}
           </p>
-          <ArchitecturePreview />
-          <div className="mt-7 grid grid-cols-3 gap-4 border-t border-border pt-6">
+          <StudioStagePreview />
+          <div className="mt-6 grid grid-cols-3 gap-4 border-t border-border pt-5">
             {[
               {
                 icon: Layers3,
@@ -367,88 +370,52 @@ export default function LoginPage() {
     </div>
   );
 }
-function ArchitecturePreview() {
-  const markerId = useId();
-  const services = "SERVICE_CONTAINER";
-  const database = "DATABASE";
-  const nodes = [
-    { name: "api-gateway", x: 54, y: 108, radius: 11, type: services },
-    { name: "orders", x: 180, y: 62, radius: 14, type: services },
-    { name: "inventory", x: 180, y: 157, radius: 12, type: services },
-    { name: "payments", x: 300, y: 105, radius: 12, type: services },
-    { name: "orders-db", x: 300, y: 24, radius: 9, type: database },
-    { name: "inventory-db", x: 300, y: 201, radius: 9, type: database },
-    { name: "payments-db", x: 423, y: 105, radius: 9, type: database },
-  ];
-  const edges = [
-    { path: "M65 104 Q105 45 164 62", declared: false },
-    { path: "M64 114 Q104 170 166 157", declared: true },
-    { path: "M194 66 Q240 65 286 101", declared: false },
-    { path: "M192 153 Q243 153 287 111", declared: true },
-    { path: "M190 51 Q231 18 289 24", declared: false },
-    { path: "M192 163 Q237 207 289 201", declared: false },
-    { path: "M314 105 L412 105", declared: false },
-  ];
+function StudioStagePreview() {
+  const { t } = useLocale();
   return (
-    <figure className="mt-6 rounded-xl border border-border bg-card p-4 shadow-sm">
-      <figcaption className="mb-2 text-xs font-semibold text-foreground/80">
-        Illustrative dependency graph
+    <figure className="mt-5 overflow-hidden rounded-2xl border border-border/90 bg-card/95 shadow-lg">
+      <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-muted/40 px-3.5 py-2">
+        <div className="flex items-center gap-2 text-xs font-semibold text-foreground/90">
+          <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
+          <span>{t("MAVIS Studio 3D · Live Runtime", "MAVIS Studio 3D · Thực hành trực tiếp")}</span>
+        </div>
+        <div className="flex items-center gap-1.5 font-mono text-[10px] font-semibold text-foreground/70">
+          <span className="rounded border border-border bg-background/70 px-1.5 py-0.5">Docker</span>
+          <span className="rounded border border-border bg-background/70 px-1.5 py-0.5">OTel</span>
+          <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-primary">
+            SHA-256
+          </span>
+        </div>
+      </div>
+      <div className="relative aspect-[16/9.6] w-full overflow-hidden bg-slate-950/5 dark:bg-slate-950">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/homepage/studio.webp"
+          alt={t(
+            "MAVIS Studio 3D interactive microservice stage showing Change Impact propagation paths",
+            "Sân khấu 3D MAVIS Studio hiển thị cụm microservice và đường lan truyền tác động thay đổi",
+          )}
+          className="block h-full w-full object-cover object-left-top dark:hidden"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/homepage/studio-dark.webp"
+          alt={t(
+            "MAVIS Studio 3D interactive microservice stage showing Change Impact propagation paths",
+            "Sân khấu 3D MAVIS Studio hiển thị cụm microservice và đường lan truyền tác động thay đổi",
+          )}
+          className="hidden h-full w-full object-cover object-left-top dark:block"
+        />
+      </div>
+      <figcaption className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 bg-muted/30 px-3.5 py-2 text-[11px] text-foreground/75">
+        <span>
+          {t(
+            "Change Impact · Scale-Out · Outage Recovery · CPU Throttle",
+            "Phân tích ảnh hưởng · Scale-Out · Khôi phục sự cố · Giới hạn CPU",
+          )}
+        </span>
+        <span className="font-mono text-[10px] font-semibold text-primary">2D / 3D</span>
       </figcaption>
-      <svg
-        viewBox="0 0 500 245"
-        className="w-full"
-        fill="none"
-        role="img"
-        aria-label="Sample dependency graph: API gateway, orders, inventory and payments services connected to their databases"
-      >
-        <defs>
-          <marker
-            id={markerId}
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M0 0L10 5L0 10Z" fill={networkColor(services)} />
-          </marker>
-        </defs>
-        {edges.map((edge) => (
-          <path
-            key={edge.path}
-            d={edge.path}
-            stroke={networkColor(services)}
-            strokeWidth="1.6"
-            strokeOpacity="0.9"
-            strokeDasharray={edge.declared ? "5 4" : undefined}
-            markerEnd={`url(#${markerId})`}
-          />
-        ))}
-        {nodes.map((n) => (
-          <g key={n.name}>
-            <circle
-              cx={n.x}
-              cy={n.y}
-              r={n.radius}
-              fill={networkColor(n.type)}
-              className="stroke-foreground"
-              strokeWidth="1.4"
-            />
-            <text
-              x={n.x}
-              y={n.y + n.radius + 16}
-              className="fill-foreground"
-              fontSize="11"
-              fontWeight="600"
-              fontFamily="monospace"
-              textAnchor="middle"
-            >
-              {networkBadge(n.type)} {n.name}
-            </text>
-          </g>
-        ))}
-      </svg>
     </figure>
   );
 }
