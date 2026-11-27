@@ -297,6 +297,49 @@ public sealed class TraceTelemetryV2Tests
     }
 
     [Fact]
+    public void ServiceGraphScraperHandlesCounterAndHistogramResetsAndIdleExpiry()
+    {
+        var scraper = new PrometheusServiceGraphScraper(["api-gateway", "order-service"]);
+        var first = """
+            traces_service_graph_request_total{client="api-gateway",server="order-service"} 100
+            traces_service_graph_request_failed_total{client="api-gateway",server="order-service"} 5
+            traces_service_graph_request_server_seconds_bucket{client="api-gateway",server="order-service",le="0.05"} 80
+            traces_service_graph_request_server_seconds_bucket{client="api-gateway",server="order-service",le="0.2"} 100
+            traces_service_graph_request_server_seconds_bucket{client="api-gateway",server="order-service",le="+Inf"} 100
+            """;
+        Assert.Single(scraper.Update(first, 1.0));
+
+        // Simulate OTel Collector restart: counters & buckets reset below prior cumulative totals.
+        var afterReset = """
+            traces_service_graph_request_total{client="api-gateway",server="order-service"} 10
+            traces_service_graph_request_failed_total{client="api-gateway",server="order-service"} 1
+            traces_service_graph_request_server_seconds_bucket{client="api-gateway",server="order-service",le="0.01"} 9
+            traces_service_graph_request_server_seconds_bucket{client="api-gateway",server="order-service",le="0.02"} 10
+            traces_service_graph_request_server_seconds_bucket{client="api-gateway",server="order-service",le="+Inf"} 10
+            """;
+        var resetEdges = scraper.Update(afterReset, 1.0);
+        var resetEdge = Assert.Single(resetEdges);
+        Assert.Equal(10.0, resetEdge.Rps);
+        Assert.Equal(10.0, resetEdge.ErrorRatePercent);
+        Assert.NotNull(resetEdge.P95Ms);
+        Assert.InRange(resetEdge.P95Ms!.Value, 0.1, 20.0);
+
+        // Two idle ticks retain cached edge; third idle tick expires to empty; new traffic recovers cleanly.
+        Assert.Single(scraper.Update(afterReset, 1.0));
+        Assert.Single(scraper.Update(afterReset, 1.0));
+        Assert.Empty(scraper.Update(afterReset, 1.0));
+
+        var resumed = """
+            traces_service_graph_request_total{client="api-gateway",server="order-service"} 14
+            traces_service_graph_request_failed_total{client="api-gateway",server="order-service"} 1
+            traces_service_graph_request_server_seconds_bucket{client="api-gateway",server="order-service",le="0.02"} 14
+            traces_service_graph_request_server_seconds_bucket{client="api-gateway",server="order-service",le="+Inf"} 14
+            """;
+        var resumedEdge = Assert.Single(scraper.Update(resumed, 1.0));
+        Assert.Equal(4.0, resumedEdge.Rps);
+    }
+
+    [Fact]
     public async Task LiveProbeEmitsFramesAndAppliesDynamicTargetRpsEvenWithSynchronizedBlockingStdin()
     {
         // Regression test: SyncTextReader (Console.In) blocks synchronously on ReadLineAsync; LiveProbeRunner must still emit frames and react to SET_LOAD.
