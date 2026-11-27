@@ -37,6 +37,7 @@ const {
   CSHARP_AUDIT_LENSES,
 } = require("../src/features/architecture/csharp-audit-lenses.ts");
 const {
+  adaptAuditLensToModel,
   computeActiveLensFocus,
   detectAuditTrack,
   resolveModelElementByName,
@@ -344,4 +345,54 @@ test("WF-02: Static Studio workspace and Course Syllabus wire ModuleAuditLensBar
   assert.match(screens, /lensFocusActive=\{lensFocusEnabled && activeLens\.dimOthersByDefault\}/);
   assert.match(syllabus, /courseCode:\s*workspace\.code/);
   assert.match(outline, /resolveStaticAuditStepTitle/);
+});
+
+test("WF-02 parity: DependencyNetwork uses useLocale, C# lenses stay repo-agnostic, and adaptAuditLensToModel maps .NET aliases safely", () => {
+  const depNet = read("src/features/architecture/dependency-network.tsx");
+  assert.match(depNet, /useLocale/);
+  assert.doesNotMatch(depNet, /documentElement\??\.lang/);
+
+  assert.equal(detectAuditTrack({ projectName: "eshop-bookstore-dotnet-microservices" }), "CSHARP");
+  assert.equal(
+    detectAuditTrack({
+      model: {
+        id: "m-bs",
+        projectId: "p-bs",
+        revision: 1,
+        label: "Bookstore",
+        elements: [
+          { id: "s1", name: "Catalog.API", elementType: "SERVICE_CONTAINER", layer: "domain", description: "", parentId: null, properties: {}, evidence: [] },
+        ],
+        edges: [],
+      },
+    }),
+    "CSHARP",
+  );
+
+  for (const mod of [1, 2, 3, 4, 5]) {
+    assert.doesNotMatch(CSHARP_AUDIT_LENSES[mod].stepTitleVi, /Project Trái Cây/i);
+    assert.doesNotMatch(CSHARP_AUDIT_LENSES[mod].stepTitleEn, /Project Trai Cay/i);
+  }
+
+  const csM4 = resolveModuleAuditLens("CSHARP", 4);
+  const bookstoreModel = {
+    id: "m-bk",
+    projectId: "p-bk",
+    revision: 1,
+    label: "Bookstore .NET",
+    elements: [
+      { id: "b1", name: "Catalog.API", elementType: "SERVICE_CONTAINER", layer: "domain", description: "", parentId: null, properties: {}, evidence: [] },
+      { id: "b2", name: "Ordering.API", elementType: "SERVICE_CONTAINER", layer: "domain", description: "", parentId: null, properties: {}, evidence: [] },
+    ],
+    edges: [],
+  };
+  const adaptedM4 = adaptAuditLensToModel(csM4, bookstoreModel);
+  assert.equal(adaptedM4.defaultC3ServiceName, "Ordering.API");
+  const c3Chip = adaptedM4.quickChips.find((c) => c.targetView === "COMPONENT");
+  assert.ok(c3Chip);
+  assert.equal(c3Chip.targetServiceName, "Ordering.API");
+  assert.equal(c3Chip.targetNodeName, undefined);
+  const otelChip = adaptedM4.quickChips.find((c) => c.targetView === "CONTAINER");
+  assert.ok(otelChip);
+  assert.equal(otelChip.targetNodeName, undefined);
 });
