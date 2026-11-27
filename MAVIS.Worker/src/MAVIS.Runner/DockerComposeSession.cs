@@ -934,9 +934,18 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             catch (InvalidOperationException) when (definition.InteractiveStudio && studio is not null && !ct.IsCancellationRequested)
             {
                 // If Java rejected lifecycle-ack (HTTP 409) because the learner cancelled mid-boot, classify as Cancelled instead of Failed.
-                using var checkCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var poll = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, checkCts.Token);
-                if (poll.CancelRequested)
+                var cancelRequested = false;
+                try
+                {
+                    using var checkCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    var poll = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, checkCts.Token);
+                    cancelRequested = poll.CancelRequested;
+                }
+                catch
+                {
+                    // Preserve original AcknowledgeAsync exception if transient remote cancel probe fails.
+                }
+                if (cancelRequested)
                 {
                     onRemoteCancel?.Invoke();
                     throw new OperationCanceledException("Session cancelled before lifecycle acknowledgement.", ct);
@@ -1096,7 +1105,14 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     if (poll.CancelRequested)
                     {
                         onRemoteCancel?.Invoke();
-                        startupCts.Cancel();
+                        try
+                        {
+                            startupCts.Cancel();
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // Startup already completed or timed out before the remote cancel poll returned.
+                        }
                         return;
                     }
                 }

@@ -635,6 +635,34 @@ public sealed class RuntimeLifecycleTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task RemoteStudioAckFailureWithFailingCancelProbePreservesOriginalAckFailure()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-remote-cancel-probe-fail-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('b', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["api"] = new("passthrough", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var project = "mavisrun-" + new string('f', 32);
+        var definition = new RuntimeRunDefinition("session-rc-ack-err", "m", "snapshot", "profile",
+            $"services:\n  api:\n    image: sha256:{digest}", profile,
+            new("session-rc-ack-err", [new("health", "api", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario", ResourceProject: project, InteractiveStudio: true);
+        var docker = new RuntimesMockDocker("{\"runc\":{\"path\":\"runc\"}}", hostConfigRuntime: "runc", imageId: "sha256:" + digest);
+        using var handler = new CancelPollHandler("session-rc-ack-err", project, rejectRunningAckWith409: true, failStudioCommands: true);
+        using var java = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"), "svc-key", handler);
+        using var cts = new CancellationTokenSource();
+        try
+        {
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker,
+                lifecycle: java, studio: java, onRemoteCancel: cts.Cancel);
+            var result = await RuntimeSessionLifecycle.RunAsync(session, 30, cts.Token);
+            Assert.Equal("Failed", result.ExecutionStatus);
+            Assert.Contains("SESSION_EXECUTION_FAILED_AT_ACK_RUNNING", result.Diagnostics);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
     private sealed class RuntimesMockDocker(string runtimesJson, string hostConfigRuntime, string? imageId = null, bool blockComposeUpUntilCancelled = false) : IDockerCommands
     {
         private readonly string _appId = new('1', 64);
@@ -678,7 +706,7 @@ public sealed class RuntimeLifecycleTests
         }
     }
 
-    private sealed class CancelPollHandler(string sessionId, string project, bool rejectRunningAckWith409 = false) : HttpMessageHandler
+    private sealed class CancelPollHandler(string sessionId, string project, bool rejectRunningAckWith409 = false, bool failStudioCommands = false) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -697,7 +725,13 @@ public sealed class RuntimeLifecycleTests
                 payload = JsonSerializer.Serialize(new { status = 200, data = new { sessionId, resourceProject = project, stage } });
             }
             else if (path.EndsWith("/studio/commands", StringComparison.Ordinal))
+            {
+                if (failStudioCommands)
+                {
+                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest) { Content = new StringContent("{\"status\":400}", System.Text.Encoding.UTF8, "application/json") });
+                }
                 payload = JsonSerializer.Serialize(new { status = 200, data = new { sessionId, resourceProject = project, finishRequested = false, cancelRequested = true, command = (object?)null } });
+            }
             else
                 payload = JsonSerializer.Serialize(new { status = 200, data = new { sessionId, resourceProject = project } });
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json") });

@@ -355,12 +355,13 @@ public sealed class PrometheusServiceGraphScraper
         foreach (var (key, cur) in current.OrderBy(kv => kv.Key.Client, StringComparer.Ordinal).ThenBy(kv => kv.Key.Server, StringComparer.Ordinal))
         {
             _previous.TryGetValue(key, out var prev);
-            var deltaTotal = Math.Max(0.0, cur.Total - (prev?.Total ?? 0.0));
-            var deltaFailed = Math.Max(0.0, cur.Failed - (prev?.Failed ?? 0.0));
+            var reset = prev is not null && (cur.Total < prev.Total || cur.Failed < prev.Failed);
+            var deltaTotal = reset ? Math.Max(0.0, cur.Total) : Math.Max(0.0, cur.Total - (prev?.Total ?? 0.0));
+            var deltaFailed = reset ? Math.Max(0.0, cur.Failed) : Math.Max(0.0, cur.Failed - (prev?.Failed ?? 0.0));
             if (deltaTotal <= 0.0 && deltaFailed <= 0.0) continue;
 
             var buckets = cur.ServerBuckets.Count > 0 ? cur.ServerBuckets : cur.ClientBuckets;
-            var prevBuckets = cur.ServerBuckets.Count > 0 ? prev?.ServerBuckets : prev?.ClientBuckets;
+            var prevBuckets = reset ? null : (cur.ServerBuckets.Count > 0 ? prev?.ServerBuckets : prev?.ClientBuckets);
             var p95Seconds = HistogramQuantile(buckets, prevBuckets, 0.95);
             var rps = Math.Round(deltaTotal / effectiveDuration, 2);
             var errPerSec = Math.Round(deltaFailed / effectiveDuration, 2);
@@ -391,6 +392,7 @@ public sealed class PrometheusServiceGraphScraper
         _previous = current;
         _lastNonEmpty = Array.Empty<ServiceGraphEdgeMetrics>();
         _accumulatedWindowSeconds = 0.0;
+        _unchangedScrapes = 0;
         return results;
     }
 
@@ -444,6 +446,10 @@ public sealed class PrometheusServiceGraphScraper
     private static double? HistogramQuantile(Dictionary<double, double> cur, Dictionary<double, double>? prev, double q)
     {
         if (cur.Count == 0) return null;
+        if (prev is not null && cur.Any(kv => prev.TryGetValue(kv.Key, out var pv) && kv.Value < pv))
+        {
+            prev = null;
+        }
         var sorted = cur.Keys.Order().ToArray();
         var deltas = new double[sorted.Length];
         for (var i = 0; i < sorted.Length; i++)
