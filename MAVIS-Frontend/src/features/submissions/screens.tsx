@@ -465,6 +465,11 @@ function TeachingSubmissions() {
   );
 }
 
+export function escapeGradebookCsvCell(val: string): string {
+  const safe = /^[=+\-@\t\r]/.test(val) ? `'${val}` : val;
+  return `"${safe.replaceAll('"', '""')}"`;
+}
+
 function ClassGradebookMatrix({
   workspaceId,
   workspaceCode,
@@ -478,7 +483,6 @@ function ClassGradebookMatrix({
   const exportCsv = () => {
     const data = gradebook.data;
     if (!data) return;
-    const escape = (val: string) => `"${val.replaceAll('"', '""')}"`;
     const headers = [
       "Student",
       "Email",
@@ -487,7 +491,7 @@ function ClassGradebookMatrix({
       ...data.labs.map((lab) => formatCourseLabTitle(lab.title, lab.labOrder, lab.assignmentId)),
     ];
     const lines = [
-      headers.map(escape).join(","),
+      headers.map(escapeGradebookCsvCell).join(","),
       ...data.students.map((student) => {
         const cellMap = new Map(student.cells.map((c) => [c.assignmentId, c]));
         return [
@@ -509,7 +513,7 @@ function ClassGradebookMatrix({
             return quiz ? `${score} (${outcome} · ${quiz})` : `${score} (${outcome})`;
           }),
         ]
-          .map(escape)
+          .map(escapeGradebookCsvCell)
           .join(",");
       }),
     ];
@@ -518,8 +522,11 @@ function ClassGradebookMatrix({
     const a = document.createElement("a");
     a.href = url;
     a.download = `${workspaceCode.toLowerCase().replace(/[^a-z0-9-_]+/g, "-")}-gradebook.csv`;
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
   };
 
   return (
