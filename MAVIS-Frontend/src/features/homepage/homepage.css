@@ -555,9 +555,13 @@
 .v2-topology > svg {
   position: absolute;
   inset: 0;
+  z-index: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+.v2-topology path {
+  fill: none;
 }
 .v2-edge-base {
   fill: none;
@@ -595,6 +599,7 @@
 
 .v2-service {
   position: absolute;
+  z-index: 1;
   transform: translate(-50%, -50%);
   width: clamp(3.9rem, 21.5cqi, 6.85rem);
   min-height: 3.65rem;
@@ -635,12 +640,18 @@
 }
 .v2-service[aria-pressed="true"] {
   border-color: var(--v2-accent);
-  background: color-mix(in srgb, var(--v2-accent-soft) 65%, var(--v2-surface));
+  background: #eff6ff;
   box-shadow: 0 0 0 2px var(--v2-accent-soft), var(--v2-shadow-sm);
+}
+:root[data-appearance="dark"] .v2-service[aria-pressed="true"] {
+  background: #13233d;
 }
 .v2-service[data-impacted="true"] {
   border-color: color-mix(in srgb, var(--v2-amber) 55%, var(--v2-hairline));
-  background: color-mix(in srgb, var(--v2-amber-soft) 50%, var(--v2-surface));
+  background: #fffbeb;
+}
+:root[data-appearance="dark"] .v2-service[data-impacted="true"] {
+  background: #231c0f;
 }
 .v2-service[data-impacted="true"] .v2-service-dot {
   background: var(--v2-amber);
@@ -651,8 +662,11 @@
 .v2-service[data-stopped="true"] {
   color: var(--v2-fault);
   border-color: var(--v2-fault);
-  background: color-mix(in srgb, var(--v2-fault-soft) 68%, var(--v2-surface));
+  background: #fff1f2;
   box-shadow: 0 0 0 3px var(--v2-fault-soft);
+}
+:root[data-appearance="dark"] .v2-service[data-stopped="true"] {
+  background: #29131c;
 }
 .v2-service[data-stopped="true"] .v2-service-dot {
   background: var(--v2-fault);

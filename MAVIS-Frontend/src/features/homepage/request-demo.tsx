@@ -66,10 +66,7 @@ export function RequestDemo() {
               {t("Interactive fault explorer", "Mô phỏng tương tác kiến trúc")}
             </h2>
             <p>
-              {t(
-                "Click a service or pause Payments to trace impact",
-                "Chọn một service hoặc tạm dừng Payments để xem lan truyền",
-              )}
+              {t("Click a service or pause Payments", "Chọn service hoặc tạm dừng Payments")}
             </p>
           </div>
         </div>
@@ -123,15 +120,15 @@ export function RequestDemo() {
                   data-related={isRelated}
                   data-fault={isFaultEdge}
                 />
-                <path
-                  d={path}
-                  className={
-                    isRelated || isFaultEdge || !stopped ? "mavis-packet-edge v2-edge-flow" : undefined
-                  }
-                  vectorEffect="non-scaling-stroke"
-                  data-related={isRelated}
-                  data-fault={isFaultEdge}
-                />
+                {(isRelated || isFaultEdge || !stopped) && (
+                  <path
+                    d={path}
+                    className="mavis-packet-edge v2-edge-flow"
+                    vectorEffect="non-scaling-stroke"
+                    data-related={isRelated}
+                    data-fault={isFaultEdge}
+                  />
+                )}
               </g>
             );
           })}
