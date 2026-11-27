@@ -387,26 +387,185 @@ function StudioStagePreview() {
           </span>
         </div>
       </div>
-      <div className="relative aspect-[16/9.6] w-full overflow-hidden bg-slate-950/5 dark:bg-slate-950">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/homepage/studio.webp"
-          alt={t(
-            "MAVIS Studio 3D interactive microservice stage showing Change Impact propagation paths",
-            "Sân khấu 3D MAVIS Studio hiển thị cụm microservice và đường lan truyền tác động thay đổi",
+
+      {/* Clean, tab-free isometric 3D microservice stage illustration */}
+      <div className="relative w-full bg-gradient-to-br from-slate-50 via-sky-50/40 to-indigo-50/40 px-2 py-1 dark:from-[#070d1a] dark:via-[#0b1426] dark:to-[#0f172a]">
+        <svg
+          viewBox="0 0 540 285"
+          className="h-auto w-full select-none"
+          fill="none"
+          role="img"
+          aria-label={t(
+            "Clean isometric 3D illustration of MAVIS Studio showing api-gateway, order-service, payment-service (paused), catalog-service and notification-worker with Change Impact propagation",
+            "Minh họa sân khấu 3D MAVIS Studio với các khối microservice và đường lan truyền sự cố từ payment-service ngược lên order-service và api-gateway",
           )}
-          className="block h-full w-full object-cover object-left-top dark:hidden"
-        />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/homepage/studio-dark.webp"
-          alt={t(
-            "MAVIS Studio 3D interactive microservice stage showing Change Impact propagation paths",
-            "Sân khấu 3D MAVIS Studio hiển thị cụm microservice và đường lan truyền tác động thay đổi",
-          )}
-          className="hidden h-full w-full object-cover object-left-top dark:block"
-        />
+        >
+          <defs>
+            <linearGradient id="mavis-deck-light" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
+              <stop offset="100%" stopColor="#e2e8f0" stopOpacity="0.7" />
+            </linearGradient>
+            <linearGradient id="mavis-deck-dark" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#1e293b" stopOpacity="0.88" />
+              <stop offset="100%" stopColor="#0f172a" stopOpacity="0.94" />
+            </linearGradient>
+            <filter id="mavis-glow-amber" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="mavis-glow-rose" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Isometric Deck Platform (Light / Dark) */}
+          <polygon
+            points="270,22 508,136 270,262 32,136"
+            className="fill-[url(#mavis-deck-light)] stroke-slate-300/90 dark:fill-[url(#mavis-deck-dark)] dark:stroke-slate-700/80"
+            strokeWidth="1.2"
+          />
+          {/* Subtle 3D deck thickness */}
+          <polygon
+            points="32,136 270,262 270,271 32,145"
+            className="fill-slate-300/80 dark:fill-slate-900"
+          />
+          <polygon
+            points="270,262 508,136 508,145 270,271"
+            className="fill-slate-200/90 dark:fill-slate-800/90"
+          />
+
+          {/* Subtle Isometric Grid Lines */}
+          <g className="stroke-slate-300/45 dark:stroke-slate-700/35" strokeWidth="0.75">
+            <line x1="151" y1="79" x2="389" y2="199" />
+            <line x1="210" y1="50" x2="448" y2="168" />
+            <line x1="92" y1="108" x2="330" y2="230" />
+            <line x1="389" y1="79" x2="151" y2="199" />
+            <line x1="330" y1="50" x2="92" y2="168" />
+            <line x1="448" y1="108" x2="210" y2="230" />
+          </g>
+
+          {/* Inner Docker Network Zone Dashed Outline */}
+          <polygon
+            points="286,52 466,138 286,232 132,150"
+            className="fill-indigo-500/[0.04] stroke-indigo-400/50 dark:fill-indigo-400/[0.06] dark:stroke-indigo-400/40"
+            strokeWidth="1"
+            strokeDasharray="4 4"
+          />
+
+          {/* Healthy Call Arcs (Green / Emerald) */}
+          <path
+            d="M 224 140 Q 252 178 274 196"
+            className="stroke-emerald-500/85 dark:stroke-emerald-400/85"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 244 128 Q 292 106 320 96"
+            className="stroke-emerald-500/85 dark:stroke-emerald-400/85"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+
+          {/* Change Impact Propagation Arcs (Amber -> Rose) */}
+          <path
+            d="M 136 124 Q 170 102 204 124"
+            stroke="#f59e0b"
+            strokeWidth="2.4"
+            strokeDasharray="6 4"
+            strokeLinecap="round"
+            filter="url(#mavis-glow-amber)"
+          />
+          <path
+            d="M 248 136 Q 312 114 368 144"
+            stroke="#f43f5e"
+            strokeWidth="2.6"
+            strokeDasharray="6 4"
+            strokeLinecap="round"
+            filter="url(#mavis-glow-rose)"
+          />
+
+          {/* Node 1: api-gateway (Upstream Impacted - Amber) */}
+          <g transform="translate(114, 128)">
+            <ellipse cx="0" cy="14" rx="28" ry="12" fill="#f59e0b" opacity="0.22" />
+            <polygon points="0,-16 26,-4 0,8 -26,-4" className="fill-amber-100 stroke-amber-500 dark:fill-amber-950/90 dark:stroke-amber-400" strokeWidth="1.4" />
+            <polygon points="-26,-4 0,8 0,20 -26,8" className="fill-amber-200/90 stroke-amber-500/80 dark:fill-amber-900/80 dark:stroke-amber-500/70" strokeWidth="1" />
+            <polygon points="0,8 26,-4 26,8 0,20" className="fill-amber-300/80 stroke-amber-500/80 dark:fill-amber-800/80 dark:stroke-amber-500/70" strokeWidth="1" />
+            <rect x="-42" y="-38" width="84" height="17" rx="8.5" className="fill-white/95 stroke-amber-400 dark:fill-slate-900/95 dark:stroke-amber-400/80" strokeWidth="1.1" />
+            <text x="0" y="-26.5" textAnchor="middle" fontFamily="monospace" fontSize="8.8" fontWeight="700" className="fill-amber-800 dark:fill-amber-300">
+              api-gateway
+            </text>
+          </g>
+
+          {/* Node 2: order-service (Scaled x2, Upstream Impacted - Amber) */}
+          <g transform="translate(226, 134)">
+            <ellipse cx="0" cy="16" rx="34" ry="14" fill="#f59e0b" opacity="0.22" />
+            {/* Second replica subtle stacked layer */}
+            <polygon points="-28,0 0,13 28,0 28,8 0,21 -28,8" className="fill-amber-300/50 dark:fill-amber-900/50" />
+            <polygon points="0,-20 30,-6 0,8 -30,-6" className="fill-amber-100 stroke-amber-500 dark:fill-amber-950/95 dark:stroke-amber-400" strokeWidth="1.5" />
+            <polygon points="-30,-6 0,8 0,22 -30,8" className="fill-amber-200/90 stroke-amber-500/80 dark:fill-amber-900/85 dark:stroke-amber-500/70" strokeWidth="1" />
+            <polygon points="0,8 30,-6 30,8 0,22" className="fill-amber-300/80 stroke-amber-500/80 dark:fill-amber-800/85 dark:stroke-amber-500/70" strokeWidth="1" />
+            <rect x="-50" y="-42" width="100" height="17" rx="8.5" className="fill-white/95 stroke-amber-400 dark:fill-slate-900/95 dark:stroke-amber-400/80" strokeWidth="1.1" />
+            <text x="0" y="-30.5" textAnchor="middle" fontFamily="monospace" fontSize="8.8" fontWeight="700" className="fill-amber-800 dark:fill-amber-300">
+              order-service ×2
+            </text>
+          </g>
+
+          {/* Node 3: payment-service (Fault Target - Rose PAUSED) */}
+          <g transform="translate(384, 148)">
+            <ellipse cx="0" cy="16" rx="35" ry="15" fill="#f43f5e" opacity="0.28" filter="url(#mavis-glow-rose)" />
+            <polygon points="0,-18 28,-5 0,8 -28,-5" className="fill-rose-100 stroke-rose-500 dark:fill-rose-950/95 dark:stroke-rose-400" strokeWidth="1.6" />
+            <polygon points="-28,-5 0,8 0,20 -28,7" className="fill-rose-200/90 stroke-rose-500/80 dark:fill-rose-900/85 dark:stroke-rose-500/70" strokeWidth="1" />
+            <polygon points="0,8 28,-5 28,7 0,20" className="fill-rose-300/85 stroke-rose-500/80 dark:fill-rose-800/85 dark:stroke-rose-500/70" strokeWidth="1" />
+            {/* Pause bars icon on top face */}
+            <rect x="-4" y="-9" width="2.8" height="7" rx="1" className="fill-rose-600 dark:fill-rose-300" />
+            <rect x="1.5" y="-9" width="2.8" height="7" rx="1" className="fill-rose-600 dark:fill-rose-300" />
+            <rect x="-56" y="-40" width="112" height="17" rx="8.5" className="fill-rose-50 stroke-rose-400 dark:fill-rose-950/95 dark:stroke-rose-400/80" strokeWidth="1.1" />
+            <text x="0" y="-28.5" textAnchor="middle" fontFamily="monospace" fontSize="8.6" fontWeight="700" className="fill-rose-700 dark:fill-rose-300">
+              payment · PAUSED
+            </text>
+          </g>
+
+          {/* Node 4: catalog-service (Healthy - Blue/Sky) */}
+          <g transform="translate(332, 86)">
+            <ellipse cx="0" cy="12" rx="24" ry="10" fill="#0ea5e9" opacity="0.16" />
+            <polygon points="0,-14 23,-3 0,8 -23,-3" className="fill-sky-50 stroke-sky-400 dark:fill-slate-800 dark:stroke-sky-400/80" strokeWidth="1.3" />
+            <polygon points="-23,-3 0,8 0,18 -23,7" className="fill-sky-100 stroke-sky-300 dark:fill-slate-900 dark:stroke-sky-500/50" strokeWidth="1" />
+            <polygon points="0,8 23,-3 23,7 0,18" className="fill-sky-200/80 stroke-sky-300 dark:fill-slate-800/90 dark:stroke-sky-500/50" strokeWidth="1" />
+            <rect x="-46" y="-35" width="92" height="16" rx="8" className="fill-white/95 stroke-slate-300 dark:fill-slate-900/95 dark:stroke-sky-400/50" strokeWidth="1" />
+            <text x="0" y="-24" textAnchor="middle" fontFamily="monospace" fontSize="8.4" fontWeight="700" className="fill-slate-700 dark:fill-sky-200">
+              catalog-service
+            </text>
+          </g>
+
+          {/* Node 5: notification-worker (Healthy - Indigo/Violet) */}
+          <g transform="translate(278, 202)">
+            <ellipse cx="0" cy="12" rx="26" ry="10" fill="#6366f1" opacity="0.16" />
+            <polygon points="0,-14 25,-3 0,8 -25,-3" className="fill-indigo-50 stroke-indigo-400 dark:fill-slate-800 dark:stroke-indigo-400/80" strokeWidth="1.3" />
+            <polygon points="-25,-3 0,8 0,18 -25,7" className="fill-indigo-100 stroke-indigo-300 dark:fill-slate-900 dark:stroke-indigo-500/50" strokeWidth="1" />
+            <polygon points="0,8 25,-3 25,7 0,18" className="fill-indigo-200/80 stroke-indigo-300 dark:fill-slate-800/90 dark:stroke-indigo-500/50" strokeWidth="1" />
+            <rect x="-54" y="21" width="108" height="16" rx="8" className="fill-white/95 stroke-slate-300 dark:fill-slate-900/95 dark:stroke-indigo-400/50" strokeWidth="1" />
+            <text x="0" y="32" textAnchor="middle" fontFamily="monospace" fontSize="8.3" fontWeight="700" className="fill-slate-700 dark:fill-indigo-200">
+              notification-worker
+            </text>
+          </g>
+
+          {/* Clean floating telemetry callout badge */}
+          <g transform="translate(306, 125)">
+            <rect x="-32" y="-9" width="64" height="17" rx="8.5" className="fill-rose-600 dark:fill-rose-500" />
+            <text x="0" y="2.5" textAnchor="middle" fontFamily="monospace" fontSize="8.2" fontWeight="700" fill="#ffffff">
+              Impact Path
+            </text>
+          </g>
+        </svg>
       </div>
+
       <figcaption className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 bg-muted/30 px-3.5 py-2 text-[11px] text-foreground/75">
         <span>
           {t(
