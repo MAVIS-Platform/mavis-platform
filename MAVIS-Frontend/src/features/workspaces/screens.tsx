@@ -1000,7 +1000,14 @@ export function WorkspaceMembers() {
                                 variant="outline"
                                 disabled={remove.isPending || !courseAccess.canManageStudents}
                                 onClick={() => {
-                                  if (window.confirm(`Remove ${m.name} from this class?`))
+                                  if (
+                                    window.confirm(
+                                      t(
+                                        `Remove ${m.name} from this class?`,
+                                        `Xóa ${m.name} khỏi lớp học này?`,
+                                      ),
+                                    )
+                                  )
                                     remove.mutate({ workspaceId: workspace.id, userId: m.id });
                                 }}
                               >

@@ -431,8 +431,8 @@ export function GradeForm({
       status !== "DRAFT" &&
       !window.confirm(
         status === "GRADED"
-          ? t("Publish this score and summary to the student?")
-          : t("Return this submission with change requests?"),
+          ? t("Publish this score and summary to the student?", "Công bố điểm số và nhận xét này cho sinh viên?")
+          : t("Return this submission with change requests?", "Trả lại bài nộp này kèm yêu cầu chỉnh sửa?"),
       )
     )
       return;
