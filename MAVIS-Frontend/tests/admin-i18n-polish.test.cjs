@@ -341,7 +341,7 @@ test("Task #09 i18n, Modal Overlay & Navigation Polish: Inspector Evidence local
   assert.match(teacherDash, /decodePlainTextEntities\(workspace\.description\)/);
 });
 
-test("Task #11 Final Polish: NOT_APPLICABLE Cleanup translates cleanly in EN/VI and Breadcrumbs filter empty labels & protect current-page width", () => {
+test("Task #11 Final Polish: NOT_APPLICABLE Cleanup, resilient Breadcrumbs, and no duplicate class switcher", () => {
   const { translatedStatusLabel } = require("../src/lib/status-label.ts");
   const locale = read("src/lib/i18n/locale-context.tsx");
   const pageLayout = read("src/components/layout/page.tsx");
@@ -360,7 +360,8 @@ test("Task #11 Final Polish: NOT_APPLICABLE Cleanup translates cleanly in EN/VI 
 
   assert.match(pageLayout, /const visibleItems = items\.filter/);
   assert.match(pageLayout, /isLast\s*\?\s*"flex min-w-24 flex-1"/);
-  assert.match(appShell, /hidden h-8 max-w-40[\s\S]*lg:inline-flex/);
+  assert.doesNotMatch(appShell, /t\("Switch class", "Chọn lớp"\)/);
+  assert.doesNotMatch(appShell, /t\("Quick switch class", "Chuyển nhanh lớp học"\)/);
 });
 
 test("Task #12 Admin Runtime Sessions Timeout: backend-adapter grants runtimeReadSessions 60s budget", () => {
