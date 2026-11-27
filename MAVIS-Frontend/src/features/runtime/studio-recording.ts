@@ -127,12 +127,18 @@ export function startStudioRecording(
   ].find((type) => MediaRecorder.isTypeSupported(type));
 
   const stream = canvas.captureStream(15);
-  const recorder = new MediaRecorder(
-    stream,
-    mimeType
-      ? { mimeType, videoBitsPerSecond: 1_100_000 }
-      : { videoBitsPerSecond: 1_100_000 },
-  );
+  let recorder: MediaRecorder;
+  try {
+    recorder = new MediaRecorder(
+      stream,
+      mimeType
+        ? { mimeType, videoBitsPerSecond: 1_100_000 }
+        : { videoBitsPerSecond: 1_100_000 },
+    );
+  } catch (cause) {
+    stream.getTracks().forEach((track) => track.stop());
+    throw cause;
+  }
 
   const chunks: Blob[] = [];
   let timer = 0;
@@ -316,47 +322,60 @@ export function startStudioRecording(
   }
 
   // Draw initial frame synchronously BEFORE starting MediaRecorder so frame 0 is never blank.
-  drawWebglFrame();
-  recorder.start(500);
-  timer = window.setTimeout(tick, 66);
+  try {
+    drawWebglFrame();
+    recorder.start(500);
+    timer = window.setTimeout(tick, 66);
+  } catch (cause) {
+    ended = true;
+    window.clearTimeout(timer);
+    stream.getTracks().forEach((track) => track.stop());
+    throw cause;
+  }
+
+  let stopPromise: Promise<StudioVideoRecordingResult> | null = null;
 
   return {
-    async stop(): Promise<StudioVideoRecordingResult> {
-      if (!ended) {
-        // Draw one crisp final frame and update poster to final state before stopping
-        drawWebglFrame();
-        capturePosterSnapshot();
-      }
-      ended = true;
-      window.clearTimeout(timer);
-      const durationMs = Math.max(500, performance.now() - started);
-      if (recorder.state !== "inactive") {
-        try {
-          recorder.requestData();
-        } catch {
-          // Ignore if browser does not support explicit requestData before stop
+    stop(): Promise<StudioVideoRecordingResult> {
+      if (stopPromise) return stopPromise;
+      stopPromise = (async () => {
+        if (!ended) {
+          // Draw one crisp final frame and update poster to final state before stopping
+          drawWebglFrame();
+          capturePosterSnapshot();
         }
-        recorder.stop();
-        try {
-          const blob = await complete;
-          return {
-            blob,
-            durationMs,
-            mimeType: blob.type || mimeType || "video/webm",
-            ...(posterImageData ? { posterImageData } : {}),
-          };
-        } finally {
-          stream.getTracks().forEach((track) => track.stop());
+        ended = true;
+        window.clearTimeout(timer);
+        const durationMs = Math.max(500, performance.now() - started);
+        if (recorder.state !== "inactive") {
+          try {
+            recorder.requestData();
+          } catch {
+            // Ignore if browser does not support explicit requestData before stop
+          }
+          recorder.stop();
+          try {
+            const blob = await complete;
+            return {
+              blob,
+              durationMs,
+              mimeType: blob.type || mimeType || "video/webm",
+              ...(posterImageData ? { posterImageData } : {}),
+            };
+          } finally {
+            stream.getTracks().forEach((track) => track.stop());
+          }
         }
-      }
-      stream.getTracks().forEach((track) => track.stop());
-      const fallbackBlob = new Blob(chunks, { type: mimeType || "video/webm" });
-      return {
-        blob: fallbackBlob,
-        durationMs,
-        mimeType: fallbackBlob.type || mimeType || "video/webm",
-        ...(posterImageData ? { posterImageData } : {}),
-      };
+        stream.getTracks().forEach((track) => track.stop());
+        const fallbackBlob = new Blob(chunks, { type: mimeType || "video/webm" });
+        return {
+          blob: fallbackBlob,
+          durationMs,
+          mimeType: fallbackBlob.type || mimeType || "video/webm",
+          ...(posterImageData ? { posterImageData } : {}),
+        };
+      })();
+      return stopPromise;
     },
   };
 }
