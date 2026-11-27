@@ -152,13 +152,13 @@ const learningSteps: LearningStep[] = [
   },
   {
     id: 3,
-    title: "Summary & Submit",
-    shortTitle: "Summary & Submit",
+    title: "Written Assignment & Submission",
+    shortTitle: "Written Assignment",
     description:
-      "Review your Studio practice results and receipt, then submit the completed Lab for grading.",
-    titleVi: "Tổng hợp & Nộp bài",
-    shortTitleVi: "Tổng hợp & Nộp bài",
-    descriptionVi: "Tổng hợp kết quả thực hành Studio và nộp bài hoàn tất để giảng viên chấm điểm.",
+      "Review your written assignment for this module and submit it to your lecturer.",
+    titleVi: "Bài tập tự luận & Nộp bài",
+    shortTitleVi: "Bài tập tự luận",
+    descriptionVi: "Xem lại bài tập tự luận của Module và nộp cho Giảng viên.",
     icon: ShieldCheck,
   },
 ];
@@ -194,9 +194,9 @@ function resolveStepMeta(
     return {
       ...base,
       description:
-        "Review your architecture notes and required evidence before submitting this Lab for grading.",
+        "Review your written assignment for this module and submit it to your lecturer.",
       descriptionVi:
-        "Kiểm tra ghi chú kiến trúc và bằng chứng cần thiết trước khi nộp Lab để chấm điểm.",
+        "Xem lại bài tập tự luận của Module và nộp cho Giảng viên.",
     };
   }
   return base;
@@ -1257,14 +1257,16 @@ export function LabWorkspace() {
 
           <div className="w-full min-w-0">
             <div className="min-w-0 space-y-5">
-              <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
-                <h2 className="text-base font-semibold text-foreground">
-                  {t(activeStepMeta.title, activeStepMeta.titleVi)}
-                </h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t(activeStepMeta.description, activeStepMeta.descriptionVi)}
-                </p>
-              </div>
+              {displayedStep !== 3 && (
+                <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
+                  <h2 className="text-base font-semibold text-foreground">
+                    {t(activeStepMeta.title, activeStepMeta.titleVi)}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {t(activeStepMeta.description, activeStepMeta.descriptionVi)}
+                  </p>
+                </div>
+              )}
               <StepContent
                 requiresRuntime={requiresRuntime}
                 hasReferenceArch={hasReferenceArch}

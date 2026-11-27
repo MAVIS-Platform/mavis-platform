@@ -64,7 +64,12 @@ function formatSyllabusItemTitle(
   item: Pick<OutlineItemData, "title">,
   t: (en: string, vi: string) => string,
 ) {
-  return item.title.replace(/^Quiz Gate\s*·\s*/i, `${t("Quiz", "Bài kiểm tra")} · `);
+  return item.title
+    .replace(/^Quiz Gate\s*·\s*/i, `${t("Quiz", "Bài kiểm tra")} · `)
+    .replace(
+      /^(?:Tổng hợp & Nộp bài|Summary & Submit)(\s*·\s*|$)/i,
+      `${t("Written Assignment & Submission", "Bài tập tự luận & Nộp bài")}$1`,
+    );
 }
 
 function stripModulePrefix(title: string) {
@@ -120,7 +125,7 @@ function itemBadgeMeta(
       };
     default:
       return {
-        label: t("Module submission", "Nộp bài Module"),
+        label: t("Written assignment", "Bài tập tự luận"),
         pillClass:
           "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
       };
@@ -837,6 +842,11 @@ export function StudentCourseSyllabus({
                       ? labs.find((l) => l.assignmentId === submitItem.assignmentId)
                       : undefined;
                     const isPassed = linkedLab?.state === "PASSED";
+                    const hasSubmitted =
+                      isPassed ||
+                      (submitItem.assignmentId
+                        ? classSubmissions.some((sub) => sub.assignmentId === submitItem.assignmentId)
+                        : false);
                     const lockedLabRecord = lockedLabForItem(submitItem);
                     const isLocked = isItemLocked(submitItem);
                     return (
@@ -849,11 +859,10 @@ export function StudentCourseSyllabus({
                             {formatSyllabusItemTitle(submitItem, t)}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {submitItem.description ||
-                              t(
-                                "Review your completed work in this Module before submitting.",
-                                "Kiểm tra lại kết quả học tập của Module trước khi nộp bài.",
-                              )}
+                            {t(
+                              "Review your written assignment for this module and submit it to your lecturer.",
+                              "Xem lại bài tập tự luận của Module và nộp cho Giảng viên.",
+                            )}
                           </p>
                           {isLocked && (
                             <p className="text-xs text-amber-700 dark:text-amber-300">
@@ -866,17 +875,17 @@ export function StudentCourseSyllabus({
                         <Button
                           type="button"
                           size="sm"
-                          variant={isPassed ? "outline" : "default"}
+                          variant={hasSubmitted ? "outline" : "default"}
                           disabled={isLocked}
                           onClick={() => {
                             if (!isLocked) selectCurriculumItem(submitItem);
                           }}
                         >
-                          {isPassed
-                            ? t("Review submission", "Xem bài đã nộp")
+                          {hasSubmitted
+                            ? t("View submission", "Xem bài đã nộp")
                             : isLocked
                               ? t("Locked", "Đang khóa")
-                              : t("Review & Submit", "Tổng hợp & Nộp bài")}
+                              : t("Submit", "Nộp bài")}
                         </Button>
                       </div>
                     );
@@ -1393,8 +1402,8 @@ export function StudentCourseSyllabus({
                 query={submissionsQuery}
                 empty={!classSubmissions.length}
                 emptyMessage={t(
-                  "You have not submitted any Labs in this class yet. Open Evidence & Submit in a Lab to submit.",
-                  "Bạn chưa nộp bài Lab nào trong lớp này. Hãy vào mục Tổng hợp & Nộp bài trong Lab để nộp bài.",
+                  "You have not submitted any Labs in this class yet. Open Written Assignment & Submission in a Module to submit.",
+                  "Bạn chưa nộp bài nào trong lớp này. Hãy vào mục Bài tập tự luận & Nộp bài ở cuối Module để nộp bài.",
                 )}
               >
                 <div className="divide-y">

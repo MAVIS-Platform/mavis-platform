@@ -213,10 +213,16 @@ function buildLabModuleSequence(
   sequence.push({
     id: `module-submit:${assignmentId}`,
     type: "IMPACT_LAB",
-    title: isVi ? `Tổng hợp & Nộp bài · ${labLabel}` : `Summary & Submit · ${labLabel}`,
+    title: isVi
+      ? labLabel
+        ? `Bài tập tự luận & Nộp bài · ${labLabel}`
+        : "Bài tập tự luận & Nộp bài"
+      : labLabel
+        ? `Written Assignment & Submission · ${labLabel}`
+        : "Written Assignment & Submission",
     description: isVi
-      ? "Kiểm tra lại toàn bộ tiến độ và gửi bài tổng hợp cho Giảng viên."
-      : "Review your progress and submit your final reflection for grading.",
+      ? "Xem lại bài tập tự luận của Module và nộp cho Giảng viên."
+      : "Review your written assignment for this module and submit it to your lecturer.",
     position: positionStart + sequence.length + 1,
     assignmentId,
     required: true,

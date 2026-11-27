@@ -201,7 +201,7 @@ export function LabSubmissionV2({
       {effectiveDescription && (
         <div className="space-y-1 rounded-lg border bg-background/90 p-3">
           <p className="text-[11px] font-semibold text-muted-foreground">
-            {t("Exercise description", "Mô tả đề bài thực hành")}
+            {t("Assignment prompt", "Đề bài tự luận")}
           </p>
           <MarkdownPreview markdown={effectiveDescription} />
         </div>
@@ -302,7 +302,7 @@ export function LabSubmissionV2({
     return (
       <div id="lab-submit">
         <DetailPanel
-          title={t("Review & Lab Submission", "Xem lại & Xác nhận nộp bài Lab")}
+          title={t("Written Assignment & Submission", "Bài tập tự luận & Nộp bài")}
         >
           <div className="space-y-4 rounded-xl border border-emerald-300/70 bg-emerald-500/5 p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -326,7 +326,7 @@ export function LabSubmissionV2({
             {!studio && essayPrompt?.trim() && (
               <div className="space-y-1.5 rounded-md border bg-background p-3 text-xs">
                 <p className="font-semibold text-muted-foreground">
-                  {t("Assignment prompt", "Đề bài")}
+                  {t("Assignment prompt", "Đề bài tự luận")}
                 </p>
                 <MarkdownPreview markdown={essayPrompt} />
               </div>
@@ -335,7 +335,7 @@ export function LabSubmissionV2({
             {submittedAnswer && (
               <div className="space-y-1.5 rounded-md border bg-background/95 p-3 text-xs">
                 <p className="font-semibold text-muted-foreground">
-                  {t("Your submitted description & explanation", "Mô tả & giải thích bài làm đã nộp")}
+                  {t("Your submitted written assignment", "Bài làm tự luận đã nộp")}
                 </p>
                 <p className="whitespace-pre-wrap leading-5 text-foreground">{submittedAnswer}</p>
               </div>
@@ -393,8 +393,8 @@ export function LabSubmissionV2({
                           <span className="font-medium">
                             {(() => {
                               const rawTitle = (g.title || g.snapshotId).trim();
-                              if (/^theory explanation$/i.test(rawTitle)) {
-                                return t("Theory explanation", "Giải trình lý thuyết");
+                              if (/^theory explanation$/i.test(rawTitle) || /^written assignment$/i.test(rawTitle)) {
+                                return t("Written assignment", "Bài làm tự luận");
                               }
                               const snapMatch = /^studio snapshot\s*#?(\d+)$/i.exec(rawTitle);
                               if (snapMatch) {
@@ -445,7 +445,7 @@ export function LabSubmissionV2({
                     setRevising(true);
                   }}
                 >
-                  {t("Revise and resubmit", "Chỉnh sửa và nộp lại")}
+                  {t("Revise and resubmit", "Sửa & nộp lại")}
                 </Button>
               </div>
             )}
@@ -458,7 +458,7 @@ export function LabSubmissionV2({
   return (
     <div id="lab-submit">
       <DetailPanel
-        title={t("Review & Confirm Lab Submission", "Xem lại bài thực hành & Xác nhận nộp bài")}
+        title={t("Written Assignment & Submission", "Bài tập tự luận & Nộp bài")}
       >
         <div className="space-y-4">
           {revising && activeReview && (activeReview.status === "RETURNED" || activeReview.labOutcome === "NEEDS_REVISION") && (
@@ -490,7 +490,7 @@ export function LabSubmissionV2({
               <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3.5 text-sm">
                 <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                   <FileText className="size-3.5 shrink-0" aria-hidden="true" />
-                  {t("Assignment prompt", "Đề bài")}
+                  {t("Assignment prompt", "Đề bài tự luận")}
                 </p>
                 <MarkdownPreview markdown={essayPrompt} />
               </div>
@@ -516,10 +516,10 @@ export function LabSubmissionV2({
               <span className="font-semibold text-foreground">
                 {studio
                   ? t(
-                      "Lab observation & explanation (sent to Lecturer)",
-                      "Mô tả & giải thích kết quả bài làm (gửi cho Giảng viên chấm)",
+                      "Your written assignment & Studio observations",
+                      "Bài làm tự luận & kết quả thực hành Studio của bạn",
                     )
-                  : t("Your response", "Nội dung bài làm của bạn")}
+                  : t("Your written assignment", "Bài làm tự luận của bạn")}
               </span>
               {studio && capturedSnapshots && capturedSnapshots.length > 0 && (
                 <button
@@ -551,10 +551,10 @@ export function LabSubmissionV2({
               placeholder={
                 studio
                   ? t(
-                      "Explain what happened in your Docker experiment, why affected services behaved that way, and what your screenshots/video show…",
-                      "Mô tả quá trình thực hành trong Studio, nguyên nhân hệ thống phản hồi như vậy và giải thích ảnh chụp / video minh chứng của bạn…",
+                      "Summarize what you observed in MAVIS Studio and write your module assignment response…",
+                      "Trình bày kết quả quan sát trong MAVIS Studio và nội dung bài làm tự luận của bạn…",
                     )
-                  : t("Write your explanation here…", "Nhập nội dung giải thích của bạn tại đây…")
+                  : t("Write your answer here…", "Nhập nội dung bài làm tự luận của bạn tại đây…")
               }
               value={answer}
               maxLength={20000}
@@ -568,7 +568,7 @@ export function LabSubmissionV2({
                   // Ignore storage quota / private-mode restrictions
                 }
               }}
-              aria-label={t("Module essay response", "Nội dung giải thích bài làm")}
+              aria-label={t("Written assignment response", "Nội dung bài làm tự luận")}
             />
           </label>
 
@@ -630,13 +630,13 @@ export function LabSubmissionV2({
                 <span className="ml-2 text-amber-700 dark:text-amber-300">
                   ·{" "}
                   {t(
-                    "Enter your explanation to confirm submission",
-                    "Nhập phần giải thích để xác nhận nộp bài",
+                    "Write your assignment response before submitting",
+                    "Vui lòng nhập bài làm tự luận trước khi nộp",
                   )}
                 </span>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               {revising && latest && (
                 <Button
                   type="button"
@@ -683,7 +683,7 @@ export function LabSubmissionV2({
                     runtimeSessionId: studio ? runtimeSessionId! : null,
                     submissionNotes: trimmed,
                     theoryAnswers: [
-                      { sectionId: "THEORY", title: "Theory explanation", answer: trimmed },
+                      { sectionId: "THEORY", title: "Written assignment", answer: trimmed },
                     ],
                     ...(snapshots.length > 0 ? { studentSnapshots: snapshots } : {}),
                   },
@@ -715,7 +715,7 @@ export function LabSubmissionV2({
             >
               {submit.isPending
                 ? t("Submitting…", "Đang nộp bài…")
-                : t("Confirm & Submit for Grading", "Xác nhận nộp bài")}
+                : t("Submit", "Nộp bài")}
             </Button>
             </div>
           </div>

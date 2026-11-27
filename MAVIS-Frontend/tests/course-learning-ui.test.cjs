@@ -1488,7 +1488,7 @@ test("Round 4 guards isolate each Lab entry, adapt Theory Only labs, prevent sig
   assert.match(screens, /Lab objective/);
   assert.match(screens, /title: "Static Studio"/);
   assert.match(screens, /title: "MAVIS Runtime Studio"/);
-  assert.match(screens, /title: "Summary & Submit"/);
+  assert.match(screens, /title: "Written Assignment & Submission"/);
   assert.doesNotMatch(screens, /<CourseQuiz/);
   assert.match(appShell, /const canQueryAuth =\s*!signingOut/);
   assert.match(
@@ -2433,7 +2433,7 @@ test("Commit #06: Module Summary & Submit fixes stuck studioStateQuery.isPending
   assert.match(screens, /quizSummary=\{quizSummary\}/);
   assert.match(screens, /nextModuleHref=\{nextModuleHref\}/);
   assert.match(access, /latestCorrectCount\?:\s*number \| null/);
-  assert.match(subV2, /t\("Confirm & Submit for Grading", "Xác nhận nộp bài"\)/);
+  assert.match(subV2, /t\("Submit", "Nộp bài"\)/);
   assert.match(subV2, /Revise and resubmit/);
 });
 
@@ -2474,7 +2474,7 @@ test("Sprint 2 #03 Module Submit: streamlines step=3 to Lab review, visual media
   const subV2 = read("src/features/courses/lab-submission-v2.tsx");
   assert.ok(!lab.includes("1. Tiến độ hoàn thành Module"));
   assert.ok(!lab.includes("2. Kết quả bài kiểm tra (Quiz)"));
-  assert.ok(subV2.includes("Review & Confirm Lab Submission"));
+  assert.ok(subV2.includes("Written Assignment & Submission"));
   assert.ok(subV2.includes("StudioSnapshotPreviewCard"));
   assert.doesNotMatch(lab, /Telemetry & service interactions|Before \/ After studio actions|Verified Studio session/);
   assert.doesNotMatch(subV2, /4\. Kết quả nộp bài/);
@@ -2694,4 +2694,25 @@ test("E2E #09 StudioWorkbench SSR Guard: defers StudioWorkbench mount to client 
   assert.match(studio, /export function StudioWorkbench\(\) \{\s*const \[mounted, setMounted\] = useState\(false\);/);
   assert.match(studio, /function StudioWorkbenchInner\(\)/);
   assert.match(studio, /useApiQuery\(\s*"runtimeReadSessions",\s*\{ projectId: projectId \|\| "\*" \},\s*\{ enabled: Boolean\(projectId\) \}/);
+});
+
+
+test("Written Assignment & Submission Refactor: streamlines /roadmap card & single step=3 panel without jargon", () => {
+  const steps = read("src/features/courses/module-steps.ts");
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const screens = read("src/features/courses/screens.tsx");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
+
+  assert.match(steps, /Bài tập tự luận & Nộp bài/);
+  assert.match(steps, /Written Assignment & Submission/);
+  assert.match(steps, /Xem lại bài tập tự luận của Module và nộp cho Giảng viên\./);
+  assert.doesNotMatch(steps, /Kiểm tra lại toàn bộ tiến độ và gửi bài tổng hợp cho Giảng viên\./);
+
+  assert.match(syllabus, /t\("Submit", "Nộp bài"\)/);
+  assert.match(syllabus, /t\("View submission", "Xem bài đã nộp"\)/);
+  assert.match(screens, /\{displayedStep !== 3 && \(/);
+  assert.match(subV2, /t\("Written Assignment & Submission", "Bài tập tự luận & Nộp bài"\)/);
+  assert.match(subV2, /t\("Written assignment", "Bài làm tự luận"\)/);
+  assert.match(subV2, /t\("Revise and resubmit", "Sửa & nộp lại"\)/);
+  assert.doesNotMatch(subV2, /giải trình/i);
 });
