@@ -8,6 +8,25 @@ const instantKey = (value: string) =>
   );
 const atOrBefore = (value: string, cutoff: string) => instantKey(value) <= instantKey(cutoff);
 type ReadOperation = "readNotification" | "readAllNotifications";
+
+export function applyOptimisticNotificationRead(
+  data: Response<"notifications"> | undefined,
+  filter: Request<"notifications"> | undefined,
+  notificationId: string,
+  readAt: string,
+) {
+  if (!data || !filter) return data;
+  const target = data.items.find((item) => item.id === notificationId);
+  if (!target || target.readAt) return data;
+  const items = data.items.map((item) => (item.id === notificationId ? { ...item, readAt } : item));
+  return {
+    ...data,
+    items: filter.unreadOnly ? items.filter((item) => !item.readAt) : items,
+    unreadCount: Math.max(0, data.unreadCount - 1),
+    total: filter.unreadOnly ? Math.max(0, data.total - 1) : data.total,
+  };
+}
+
 export function applyNotificationRead(
   data: Response<"notifications"> | undefined,
   filter: Request<"notifications"> | undefined,

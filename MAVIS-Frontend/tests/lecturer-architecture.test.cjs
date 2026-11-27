@@ -76,7 +76,10 @@ test("Lecturer Course navigation centralizes authoring in Overview", () => {
   assert.match(workspace, /contentStep=\{contentStep\}/);
   assert.doesNotMatch(workspace, /CourseFirstSetupFlow/);
   assert.doesNotMatch(workspaceOverview, /Start course setup|Bắt đầu thiết lập khóa học/);
-  assert.match(courseOutline, /courseSetupStepHref\(workspaceId, "repository", undefined, "setup"\)/);
+  assert.match(
+    courseOutline,
+    /courseSetupStepHref\(workspaceId, "repository", undefined, "setup"\)/,
+  );
   assert.match(courseOutline, /Click to start setting up your course/);
   assert.doesNotMatch(workspaceOverview, /Review submissions|Update Course/);
   assert.match(courseBuilder, /isPublishStep/);
@@ -143,6 +146,9 @@ test("Publish Changes reports actionable Module and learning-item validation err
   assert.match(courseBuilder, /function collectPublishIssues/);
   assert.match(courseBuilder, /has no learning content/);
   assert.match(courseBuilder, /Complete these items before publishing/);
+  assert.match(courseBuilder, /Course is not ready to publish/);
+  assert.match(courseBuilder, /<Dialog open=\{publishErrorOpen\}/);
+  assert.doesNotMatch(courseBuilder, /publishIssues\.length > 0 && \(\s*<div/);
   assert.match(courseBuilder, /setPublishIssues\(\[message\]\)/);
   assert.match(apiErrors, /COURSE_MODULE_EMPTY/);
   assert.match(apiErrors, /COURSE_STUDIO_TOPOLOGY/);
@@ -158,6 +164,51 @@ test("Global Lecturer workspace hides its sidebar and uses a single Course Manag
   assert.doesNotMatch(workspace, /Open a class to organize/);
   assert.doesNotMatch(shell, /label: t\("Course Workspace"/);
   assert.doesNotMatch(shell, /label: t\("Grades", "Chấm điểm"\)/);
+  assert.doesNotMatch(shell, /t\("Switch class", "Chọn lớp"\)/);
+  assert.doesNotMatch(shell, /t\("Quick switch class", "Chuyển nhanh lớp học"\)/);
+});
+
+test("Course Management filters Archived classes separately from Inactive classes", () => {
+  const workspace = read("src/features/workspaces/screens.tsx");
+  assert.match(workspace, /"all" \| "active" \| "inactive" \| "archived"/);
+  assert.match(workspace, /statusFilter === "inactive" && status !== "INACTIVE"/);
+  assert.match(workspace, /statusFilter === "archived" && status !== "ARCHIVED"/);
+  assert.match(workspace, /t\("Archived", "Đã lưu trữ"\)/);
+  assert.match(workspace, /Reopen this archived course/);
+});
+
+test("opening a notification decrements unread count without removing notification history", () => {
+  const {
+    applyOptimisticNotificationRead,
+  } = require("../src/features/notifications/read-cache.ts");
+  const unread = { id: "unread", createdAt: "2026-11-27T09:00:00Z", readAt: null };
+  const data = {
+    items: [unread],
+    total: 5,
+    unreadCount: 5,
+    page: 0,
+    size: 5,
+    asOf: "2026-11-27T10:00:00Z",
+  };
+  const next = applyOptimisticNotificationRead(
+    data,
+    { page: 0, size: 5, unreadOnly: false },
+    "unread",
+    "2026-11-27T10:01:00Z",
+  );
+  assert.equal(next.unreadCount, 4);
+  assert.equal(next.total, 5);
+  assert.equal(next.items.length, 1);
+  assert.equal(next.items[0].readAt, "2026-11-27T10:01:00Z");
+  assert.equal(
+    applyOptimisticNotificationRead(
+      next,
+      { page: 0, size: 5, unreadOnly: false },
+      "unread",
+      "2026-11-27T10:02:00Z",
+    ),
+    next,
+  );
 });
 
 test("Lecturer course cards open directly and own an Active-Inactive lifecycle toggle", () => {

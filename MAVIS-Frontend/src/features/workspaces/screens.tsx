@@ -62,7 +62,9 @@ export function Workspaces() {
   const { workspaceId } = useSelection();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "active" | "inactive" | "archived"
+  >("all");
   const [page, setPage] = useState(1);
   const [changingStatusId, setChangingStatusId] = useState<string | null>(null);
   const [activationIssueById, setActivationIssueById] = useState<Record<string, string>>({});
@@ -74,9 +76,10 @@ export function Workspaces() {
   const visibleWorkspaces = useMemo(() => {
     const term = search.trim().toLowerCase();
     return (query.data ?? []).filter((workspace) => {
-      const inactive = (workspace.status ?? "ACTIVE") !== "ACTIVE";
-      if (statusFilter === "active" && inactive) return false;
-      if (statusFilter === "inactive" && !inactive) return false;
+      const status = (workspace.status ?? "ACTIVE").toUpperCase();
+      if (statusFilter === "active" && status !== "ACTIVE") return false;
+      if (statusFilter === "inactive" && status !== "INACTIVE") return false;
+      if (statusFilter === "archived" && status !== "ARCHIVED") return false;
       return (
         !term ||
         workspace.name.toLowerCase().includes(term) ||
@@ -208,13 +211,14 @@ export function Workspaces() {
             <div
               role="group"
               aria-label={t("Filter classes", "Lọc lớp")}
-              className="inline-flex gap-3"
+              className="inline-flex flex-wrap gap-2"
             >
               {(
                 [
                   ["all", t("All", "Tất cả")],
                   ["active", t("Active", "Đang hoạt động")],
                   ["inactive", t("Inactive", "Không hoạt động")],
+                  ["archived", t("Archived", "Đã lưu trữ")],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -266,7 +270,9 @@ export function Workspaces() {
                     .find((member) => member.role.toUpperCase() === "LECTURER")
                     ?.name?.trim() ||
                   "";
-                const inactive = (workspace.status ?? "ACTIVE") !== "ACTIVE";
+                const workspaceStatus = (workspace.status ?? "ACTIVE").toUpperCase();
+                const inactive = workspaceStatus !== "ACTIVE";
+                const archived = workspaceStatus === "ARCHIVED";
                 const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
                 return (
                   <article
@@ -305,10 +311,15 @@ export function Workspaces() {
                           onCheckedChange={async (active) => {
                             const confirmed = window.confirm(
                               active
-                                ? t(
-                                    "Activate this course? All valid Labs and the latest course draft will be published for students.",
-                                    "Kích hoạt khóa học? Tất cả Lab hợp lệ và bản nháp mới nhất sẽ được xuất bản cho sinh viên.",
-                                  )
+                                ? archived
+                                  ? t(
+                                      "Reopen this archived course? Its latest valid content will be published for students again.",
+                                      "Mở lại khóa học đã lưu trữ? Nội dung hợp lệ mới nhất sẽ được công bố lại cho sinh viên.",
+                                    )
+                                  : t(
+                                      "Activate this course? All valid Labs and the latest course draft will be published for students.",
+                                      "Kích hoạt khóa học? Tất cả Lab hợp lệ và bản nháp mới nhất sẽ được xuất bản cho sinh viên.",
+                                    )
                                 : t(
                                     "Set this course to Inactive? Students will temporarily lose access while you edit its content.",
                                     "Chuyển khóa học sang Inactive? Sinh viên sẽ tạm mất quyền truy cập trong lúc bạn chỉnh sửa nội dung.",
@@ -361,15 +372,19 @@ export function Workspaces() {
                         />
                         <span
                           className={
-                            inactive
-                              ? "text-xs font-medium text-slate-600"
+                            archived
+                              ? "text-xs font-medium text-amber-700"
+                              : inactive
+                                ? "text-xs font-medium text-slate-600"
                               : "text-xs font-medium text-emerald-700"
                           }
                         >
                           {changingStatusId === workspace.id
                             ? t("Updating…", "Đang cập nhật…")
-                            : inactive
-                              ? t("Inactive", "Không hoạt động")
+                            : archived
+                              ? t("Archived", "Đã lưu trữ")
+                              : inactive
+                                ? t("Inactive", "Không hoạt động")
                               : t("Active", "Đang hoạt động")}
                         </span>
                       </div>

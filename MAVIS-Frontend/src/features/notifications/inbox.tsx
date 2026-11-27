@@ -6,10 +6,8 @@ import {
   Bell,
   Loader2,
   CheckCheck,
-  Check,
   ArrowUpRight,
   Inbox,
-  RefreshCw,
   BookOpen,
   Users,
   FileCheck,
@@ -169,17 +167,6 @@ function NotificationList({
                   ? t(`Assignment: ${item.contextLabel}`, `Bài Lab: ${item.contextLabel}`)
                   : localized.body}
               </p>
-              {item.actionRequired && (
-                <span
-                  className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                    item.resolvedAt
-                      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                      : "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                  }`}
-                >
-                  {item.resolvedAt ? t("Reviewed", "Đã xử lý") : t("Needs review", "Cần chấm")}
-                </span>
-              )}
               <time
                 dateTime={item.createdAt}
                 title={new Date(item.createdAt).toLocaleString(locale === "vi" ? "vi-VN" : "en-US")}
@@ -188,27 +175,6 @@ function NotificationList({
                 {timeLabel(item.createdAt, locale, t)}
               </time>
             </Link>
-            {!item.readAt ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 shrink-0"
-                disabled={read.isPending}
-                aria-label={`${t("Mark as read", "Đánh dấu đã đọc")}: ${displayTitle}`}
-                title={t("Mark as read", "Đánh dấu đã đọc")}
-                onClick={() => read.mutate({ notificationId: item.id })}
-              >
-                <Check className="size-4" />
-              </Button>
-            ) : (
-              <span
-                className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"
-                title={t("Read", "Đã đọc")}
-                aria-label={t("Read", "Đã đọc")}
-              >
-                <CheckCheck className="size-4" aria-hidden="true" />
-              </span>
-            )}
           </li>
         );
       })}
@@ -278,7 +244,7 @@ function ConnectedNotificationBell() {
     { enabled: !!session.data?.user, refreshMs: 25000 },
   );
   const all = useApiMutation("readAllNotifications");
-  const count = q.isError ? undefined : lecturer ? q.data?.actionCount : q.data?.unreadCount;
+  const count = q.isError ? undefined : q.data?.unreadCount;
   return (
     <Popover
       open={open}
@@ -294,9 +260,7 @@ function ConnectedNotificationBell() {
           className="relative"
           aria-label={
             count
-              ? lecturer
-                ? t(`${count} submissions need review`, `${count} bài nộp cần chấm`)
-                : t(`Notifications, ${count} unread`, `Thông báo, ${count} chưa đọc`)
+              ? t(`Notifications, ${count} unread`, `Thông báo, ${count} chưa đọc`)
               : t("Notifications", "Thông báo")
           }
         >
@@ -320,7 +284,7 @@ function ConnectedNotificationBell() {
               : t("Notifications", "Thông báo")}{" "}
             {count !== undefined && (
               <span className="ml-1 text-xs font-normal text-muted-foreground">
-                {count} {lecturer ? t("pending", "chờ xử lý") : t("unread", "chưa đọc")}
+                {count} {t("unread", "chưa đọc")}
               </span>
             )}
           </h2>
@@ -419,38 +383,25 @@ export function NotificationCenter() {
           {q.isError
             ? t("Inbox unavailable", "Hộp thư tạm thời không khả dụng")
             : q.data
-              ? lecturer
-                ? `${q.data.actionCount} ${t("submissions need review", "bài nộp cần chấm")}`
-                : `${q.data.unreadCount} ${t("unread updates", "thông báo chưa đọc")}`
+              ? `${q.data.unreadCount} ${t("unread updates", "thông báo chưa đọc")}`
               : t("Your activity inbox", "Hộp thư hoạt động của bạn")}{" "}
           · {t("refreshes automatically", "tự động làm mới")}
         </p>
-        <div className="flex gap-2">
+        {!lecturer && (
           <Button
             variant="outline"
             size="sm"
-            disabled={q.isFetching}
-            onClick={() => void q.refetch()}
+            disabled={!q.data?.unreadCount || all.isPending}
+            onClick={() => q.data && all.mutate({ before: q.data.asOf })}
           >
-            <RefreshCw className={q.isFetching ? "size-4 animate-spin" : "size-4"} />
-            {t("Refresh", "Làm mới")}
+            {all.isPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <CheckCheck className="size-4" />
+            )}
+            {t("Mark all as read", "Đánh dấu tất cả đã đọc")}
           </Button>
-          {!lecturer && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!q.data?.unreadCount || all.isPending}
-              onClick={() => q.data && all.mutate({ before: q.data.asOf })}
-            >
-              {all.isPending ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <CheckCheck className="size-4" />
-              )}
-              {t("Mark all as read", "Đánh dấu tất cả đã đọc")}
-            </Button>
-          )}
-        </div>
+        )}
       </div>
       <div className="flex flex-wrap items-end gap-4 rounded-xl border bg-card p-4">
         {!lecturer && (

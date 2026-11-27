@@ -28,6 +28,7 @@ import {
   Search,
   Settings2,
   Trash2,
+  TriangleAlert,
   X,
   Zap,
   type LucideIcon,
@@ -1086,6 +1087,7 @@ export function CourseBuilder({
   const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
   const [addContentError, setAddContentError] = useState<string | null>(null);
   const [publishIssues, setPublishIssues] = useState<string[]>([]);
+  const [publishErrorOpen, setPublishErrorOpen] = useState(false);
   const referenceVersions = useApiQuery(
     "referenceVersions",
     { workspaceId },
@@ -1128,6 +1130,7 @@ export function CourseBuilder({
 
   useEffect(() => {
     setPublishIssues([]);
+    setPublishErrorOpen(false);
   }, [course.data?.draftRevision]);
 
   const isDraft = course.data?.status === "DRAFT";
@@ -1379,6 +1382,7 @@ export function CourseBuilder({
     const issues = collectPublishIssues(modules, assignmentRows, t);
     setPublishIssues(issues);
     if (issues.length > 0) {
+      setPublishErrorOpen(true);
       const emptyModuleIds = modules
         .filter((module) => module.items.length === 0)
         .map((module) => module.id);
@@ -1389,14 +1393,6 @@ export function CourseBuilder({
           return next;
         });
       }
-      toast.error(
-        issues.length === 1
-          ? issues[0]
-          : t(
-              `${issues.length} issues must be fixed before publishing.`,
-              `Cần sửa ${issues.length} lỗi trước khi công bố.`,
-            ),
-      );
       return;
     }
     activateCourse.mutate(
@@ -1404,6 +1400,7 @@ export function CourseBuilder({
       {
         onSuccess: () => {
           setPublishIssues([]);
+          setPublishErrorOpen(false);
           window.location.assign(
             `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`,
           );
@@ -1417,7 +1414,7 @@ export function CourseBuilder({
                   "Không thể công bố khóa học. Hãy kiểm tra các lỗi được hiển thị và thử lại.",
                 );
           setPublishIssues([message]);
-          toast.error(message);
+          setPublishErrorOpen(true);
         },
       },
     );
@@ -1601,11 +1598,6 @@ export function CourseBuilder({
       t("Could not update the learning item.", "Không cập nhật được nội dung.")) ||
     (course.deleteItem.isError &&
       t("Could not delete the learning item.", "Không xóa được nội dung.")) ||
-    (activateCourse.isError && publishIssues.length === 0 &&
-      t(
-        "Could not publish and activate the Course. Check incomplete content and try again.",
-        "Không thể publish và kích hoạt khóa học. Hãy kiểm tra nội dung chưa hoàn tất rồi thử lại.",
-      )) ||
     null;
 
   return (
@@ -1734,21 +1726,37 @@ export function CourseBuilder({
           {activeError}
         </div>
       )}
-      {publishIssues.length > 0 && (
-        <div
-          role="alert"
-          className="border-b border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          <p className="font-semibold">
-            {t("Complete these items before publishing:", "Hoàn tất các mục sau trước khi công bố:")}
-          </p>
-          <ul className="mt-1.5 list-disc space-y-1 pl-5">
-            {publishIssues.map((issue) => (
-              <li key={issue}>{issue}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <Dialog open={publishErrorOpen} onOpenChange={setPublishErrorOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader className="text-left">
+            <div className="mb-1 flex size-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <TriangleAlert className="size-5" aria-hidden="true" />
+            </div>
+            <DialogTitle>{t("Course is not ready to publish", "Khóa học chưa thể công bố")}</DialogTitle>
+            <DialogDescription>
+              {t(
+                "Fix the items below, then publish the course again.",
+                "Hãy hoàn tất các mục bên dưới rồi công bố lại khóa học.",
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-4">
+            <p className="text-sm font-semibold text-foreground">
+              {t("Complete these items before publishing:", "Hoàn tất các mục sau trước khi công bố:")}
+            </p>
+            <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-5 text-foreground/85">
+              {publishIssues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button type="button" onClick={() => setPublishErrorOpen(false)}>
+              {t("Review course", "Quay lại chỉnh sửa")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* Single-Column 1-Scroll Curriculum Accordion + Slide-Over Inspector Drawer */}
       {data && (
         <div className="min-w-0 bg-muted/10">

@@ -1,7 +1,10 @@
 "use client";
 import { useContext, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { applyNotificationRead } from "@/features/notifications/read-cache";
+import {
+  applyNotificationRead,
+  applyOptimisticNotificationRead,
+} from "@/features/notifications/read-cache";
 import { toast } from "sonner";
 import { ApiContext, SelectionContext } from "@/providers/app-context";
 import type { Operation, Request, Response } from "@/lib/api/contracts";
@@ -100,11 +103,35 @@ export function useApiQuery<K extends Operation>(
 export function useApiMutation<K extends Operation>(operation: K) {
   const api = useApi();
   const client = useQueryClient();
-  return useMutation<Response<K>, Error, Request<K>>({
+  type MutationContext = {
+    notificationSnapshots?: Array<[readonly unknown[], Response<"notifications"> | undefined]>;
+  };
+  return useMutation<Response<K>, Error, Request<K>, MutationContext>({
     mutationKey: ["api", operation],
-    onMutate: async () => {
-      if (["readNotification", "readAllNotifications"].includes(operation))
+    onMutate: async (input) => {
+      if (["readNotification", "readAllNotifications"].includes(operation)) {
         await client.cancelQueries({ queryKey: ["api", "notifications"] });
+        const notificationSnapshots = client.getQueriesData<Response<"notifications">>({
+          queryKey: ["api", "notifications"],
+        });
+        if (operation === "readNotification") {
+          const notificationId = (input as Request<"readNotification">).notificationId;
+          const readAt = new Date().toISOString();
+          for (const [key, cached] of notificationSnapshots) {
+            client.setQueryData(
+              key,
+              applyOptimisticNotificationRead(
+                cached,
+                key[2] as Request<"notifications">,
+                notificationId,
+                readAt,
+              ),
+            );
+          }
+        }
+        return { notificationSnapshots };
+      }
+      return {};
     },
     mutationFn: (input) => api.execute(operation, input),
     onSuccess: (data, input) => {
@@ -288,7 +315,10 @@ export function useApiMutation<K extends Operation>(operation: K) {
         },
       });
     },
-    onError: (error) => {
+    onError: (error, _input, context) => {
+      for (const [key, cached] of context?.notificationSnapshots ?? []) {
+        client.setQueryData(key, cached);
+      }
       toast.error(normalizeError(error).message);
     },
   });
