@@ -67,9 +67,6 @@ export function Profile() {
             <h1 className="text-2xl font-bold tracking-tight">{t("My Profile")}</h1>
             <ScreenHelpTrigger screenId="profile" />
           </div>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            {t("Manage your personal information and account security.")}
-          </p>
         </div>
       </header>
       {session.isPending ? (
@@ -391,12 +388,6 @@ export function ProfileDetails({ user }: { user: User }) {
                 <h2 id="profile-information" className="text-lg font-semibold text-foreground">
                   {t("Personal Information")}
                 </h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t(
-                    "Keep your display name, photo, and language consistent across classes and certificates.",
-                    "Đồng bộ họ tên, ảnh đại diện và ngôn ngữ hiển thị trên toàn bộ lớp học và hồ sơ bài nộp.",
-                  )}
-                </p>
               </div>
               <Button
                 type="button"

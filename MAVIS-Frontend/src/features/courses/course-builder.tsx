@@ -706,6 +706,7 @@ function ItemFields({
 }
 
 function AddContentDialog({
+  mode = "create",
   open,
   onOpenChange,
   module,
@@ -722,6 +723,7 @@ function AddContentDialog({
   onSubmit,
   t,
 }: {
+  mode?: "create" | "edit";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   module: Module | null;
@@ -747,7 +749,9 @@ function AddContentDialog({
   const selectedQuiz = quizAssets.find((asset) => asset.id === draft.quizAssetId);
   const selectedLab = studioLabs.find((assignment) => assignment.id === draft.assignmentId);
   const submitLabel =
-    contentKind === "LESSON"
+    mode === "edit"
+      ? t("Save changes", "Lưu thay đổi")
+      : contentKind === "LESSON"
       ? t("Add Lesson to milestone", "Thêm Lesson vào mốc")
       : contentKind === "QUIZ"
         ? t("Add Quiz to milestone", "Thêm Quiz vào mốc")
@@ -768,7 +772,11 @@ function AddContentDialog({
       <DialogContent className="max-w-3xl p-0">
         <form onSubmit={onSubmit}>
           <DialogHeader className="border-b px-6 py-5">
-            <DialogTitle>{t("Add content to this milestone", "Thêm nội dung vào mốc")}</DialogTitle>
+            <DialogTitle>
+              {mode === "edit"
+                ? t("Update learning content", "Cập nhật nội dung học")
+                : t("Add content to this milestone", "Thêm nội dung vào mốc")}
+            </DialogTitle>
             <DialogDescription>
               {module
                 ? `${t("Module", "Chương")} ${module.position} · ${module.title}`
@@ -1037,7 +1045,13 @@ function AddContentDialog({
 
           <DialogFooter className="border-t px-6 py-4">
             <Button type="button" variant="ghost" disabled={saving} onClick={() => onOpenChange(false)}>{t("Cancel", "Hủy")}</Button>
-            <Button disabled={saving || loading}>{saving ? t("Adding…", "Đang thêm…") : submitLabel}</Button>
+            <Button disabled={saving || loading}>
+              {saving
+                ? mode === "edit"
+                  ? t("Saving…", "Đang lưu…")
+                  : t("Adding…", "Đang thêm…")
+                : submitLabel}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -1086,34 +1100,35 @@ export function CourseBuilder({
   const [addingItemModuleId, setAddingItemModuleId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
   const [addContentError, setAddContentError] = useState<string | null>(null);
+  const [editContentError, setEditContentError] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<{
+    moduleId: string;
+    itemId: string;
+    draft: ItemDraft;
+  } | null>(null);
   const [publishIssues, setPublishIssues] = useState<string[]>([]);
   const [publishErrorOpen, setPublishErrorOpen] = useState(false);
   const referenceVersions = useApiQuery(
     "referenceVersions",
     { workspaceId },
-    { enabled: Boolean(workspaceId && addingItemModuleId) },
+    { enabled: Boolean(workspaceId && (addingItemModuleId || editingItem)) },
   );
 
   const theoryAssets = useQuery({
     queryKey: ["api", "theory-assets", workspaceId],
     queryFn: ({ signal }) =>
       api<TheoryAssetRow[]>(`workspaces/${workspaceId}/theory-assets`, { signal }),
-    enabled: Boolean(workspaceId && addingItemModuleId),
+    enabled: Boolean(workspaceId && (addingItemModuleId || editingItem)),
     retry: false,
   });
   const quizAssets = useQuery({
     queryKey: ["api", "quiz-assets", workspaceId],
     queryFn: ({ signal }) =>
       api<QuizAssetRow[]>(`workspaces/${workspaceId}/quiz-assets`, { signal }),
-    enabled: Boolean(workspaceId && addingItemModuleId),
+    enabled: Boolean(workspaceId && (addingItemModuleId || editingItem)),
     retry: false,
   });
 
-  const [editingItem, setEditingItem] = useState<{
-    moduleId: string;
-    itemId: string;
-    draft: ItemDraft;
-  } | null>(null);
   const [selectedItem, setSelectedItem] = useState<{ moduleId: string; itemId: string } | null>(
     null,
   );
@@ -1360,9 +1375,11 @@ export function CourseBuilder({
 
   const openEditItem = (moduleId: string, item: Item) => {
     clearRightEditors();
+    setEditContentError(null);
+    course.updateItem.reset();
     setSelectedItem({ moduleId, itemId: item.id });
     setEditingItem({ moduleId, itemId: item.id, draft: draftFromItem(item) });
-    setDrawerOpen(true);
+    setDrawerOpen(false);
   };
 
   const saveCourse = (event: React.FormEvent) => {
@@ -1525,8 +1542,36 @@ export function CourseBuilder({
 
   const saveItem = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!editingItem || !draftValid(editingItem.draft)) return;
+    if (!editingItem) return;
     const draft = editingItem.draft;
+    setEditContentError(null);
+    if (!draft.title.trim()) {
+      setEditContentError(t("Enter a display title.", "Hãy nhập tên hiển thị."));
+      return;
+    }
+    if (
+      draft.type === "THEORY" &&
+      (draft.lessonKind === "THEORY" ? !draft.theoryAssetId : !draft.referenceModelId)
+    ) {
+      setEditContentError(
+        draft.lessonKind === "ARCHITECTURE"
+          ? t("Select an analyzed Repository version.", "Hãy chọn phiên bản Repository đã phân tích.")
+          : t("Select a Lesson from the library.", "Hãy chọn Lesson từ thư viện."),
+      );
+      return;
+    }
+    if (draft.type === "QUIZ" && !draft.quizAssetId) {
+      setEditContentError(t("Select a Quiz from the library.", "Hãy chọn Quiz từ thư viện."));
+      return;
+    }
+    if (draft.type === "RUNTIME_LAB" && !draft.assignmentId) {
+      setEditContentError(t("Select a Runtime/Studio Lab.", "Hãy chọn Lab có Runtime/Studio."));
+      return;
+    }
+    if (!draftValid(draft)) {
+      setEditContentError(t("Complete all required content fields.", "Hãy hoàn thành các trường nội dung bắt buộc."));
+      return;
+    }
     const body: {
       moduleId: string;
       itemId: string;
@@ -1546,11 +1591,28 @@ export function CourseBuilder({
     };
     if (draft.description.trim()) body.description = draft.description.trim();
     if (draft.assignmentId) body.assignmentId = draft.assignmentId;
-    course.updateItem.mutate(body, { onSuccess: () => setEditingItem(null) });
+    course.updateItem.mutate(body, {
+      onSuccess: () => {
+        setEditingItem(null);
+        setEditContentError(null);
+        toast.success(t("Learning content updated.", "Đã cập nhật nội dung học."));
+      },
+      onError: (cause) => {
+        const message =
+          cause instanceof Error
+            ? cause.message
+            : t("Could not update this content. Try again.", "Không thể cập nhật nội dung. Hãy thử lại.");
+        setEditContentError(message);
+        toast.error(message);
+      },
+    });
   };
 
   const addingItemModule = addingItemModuleId
     ? (modules.find((mod) => mod.id === addingItemModuleId) ?? null)
+    : null;
+  const editingItemModule = editingItem
+    ? (modules.find((mod) => mod.id === editingItem.moduleId) ?? null)
     : null;
   const contentLibraryError =
     theoryAssets.isError || quizAssets.isError || assignments.isError || referenceVersions.isError
@@ -1563,7 +1625,6 @@ export function CourseBuilder({
   const isDrawerVisible = Boolean(
     (isDraft && canCreateModules && showAddModule) ||
       (isDraft && editingModule) ||
-      (isDraft && editingItem) ||
       (drawerOpen && inspectedItem),
   );
 
@@ -2173,10 +2234,10 @@ export function CourseBuilder({
             </div>
           </div>
 
-          {/* SLIDE-OVER INSPECTOR & EDITOR DRAWER */}
+          {/* CENTERED CURRICULUM INSPECTOR & EDITOR DIALOG */}
           {isDrawerVisible && (
             <div
-              className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-[1px]"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm sm:p-6"
               onClick={(event) => {
                 if (event.target === event.currentTarget) closeDrawer();
               }}
@@ -2186,7 +2247,7 @@ export function CourseBuilder({
                 role="dialog"
                 aria-modal="true"
                 aria-label={t("Curriculum Inspector", "Trình xem & sửa học liệu")}
-                className="flex h-full w-full max-w-2xl min-w-0 flex-col border-l border-border bg-background shadow-2xl"
+                className="flex max-h-[min(90svh,56rem)] min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
               >
                 {isDraft && canCreateModules && showAddModule ? (
                   <form onSubmit={addModule} className="flex min-h-0 flex-1 flex-col">
@@ -2348,55 +2409,6 @@ export function CourseBuilder({
                       </Button>
                       <Button size="sm" disabled={busy || !editModuleTitle.trim()}>
                         {t("Save module", "Lưu chương")}
-                      </Button>
-                    </div>
-                  </form>
-                ) : isDraft && editingItem ? (
-                  <form onSubmit={saveItem} className="flex min-h-0 flex-1 flex-col">
-                    <div className="flex items-center justify-between gap-2 border-b bg-card/60 px-5 py-3">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
-                          {t("Editing Learning Item", "Đang chỉnh sửa nội dung")}
-                        </p>
-                        <h3 className="truncate text-sm font-semibold">
-                          {editingItem.draft.title || "—"}
-                        </h3>
-                      </div>
-                      <Button
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setEditingItem(null)}
-                      >
-                        <X className="size-4" aria-hidden="true" />
-                        <span className="sr-only">{t("Close", "Đóng")}</span>
-                      </Button>
-                    </div>
-                    <div ref={inspectorBodyRef} className="min-h-0 flex-1 overflow-y-auto p-5">
-                      <ItemFields
-                        draft={editingItem.draft}
-                        onChange={(patch) =>
-                          setEditingItem((current) =>
-                            current
-                              ? { ...current, draft: { ...current.draft, ...patch } }
-                              : current,
-                          )
-                        }
-                        assignments={assignmentRows}
-                        t={t}
-                      />
-                    </div>
-                    <div className="flex items-center justify-end gap-2 border-t bg-muted/15 px-5 py-3">
-                      <Button
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setEditingItem(null)}
-                      >
-                        {t("Cancel", "Hủy")}
-                      </Button>
-                      <Button size="sm" disabled={busy || !draftValid(editingItem.draft)}>
-                        {t("Save item", "Lưu nội dung")}
                       </Button>
                     </div>
                   </form>
@@ -2633,6 +2645,41 @@ export function CourseBuilder({
           if (addingItemModule) addItem(addingItemModule.id, event);
           else event.preventDefault();
         }}
+        t={t}
+      />
+
+      <AddContentDialog
+        mode="edit"
+        open={Boolean(isDraft && editingItem)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingItem(null);
+            setEditContentError(null);
+            course.updateItem.reset();
+          }
+        }}
+        module={editingItemModule}
+        draft={editingItem?.draft ?? emptyDraft()}
+        onChange={(patch) => {
+          setEditingItem((current) =>
+            current ? { ...current, draft: { ...current.draft, ...patch } } : current,
+          );
+          setEditContentError(null);
+        }}
+        theoryAssets={theoryAssets.data ?? []}
+        quizAssets={quizAssets.data ?? []}
+        referenceVersions={(referenceVersions.data ?? []) as ReferenceVersionRow[]}
+        assignments={assignmentRows}
+        loading={
+          theoryAssets.isPending ||
+          quizAssets.isPending ||
+          assignments.isPending ||
+          referenceVersions.isPending
+        }
+        loadError={contentLibraryError}
+        submitError={editContentError}
+        saving={course.updateItem.isPending}
+        onSubmit={saveItem}
         t={t}
       />
 

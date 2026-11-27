@@ -475,9 +475,6 @@ function CourseOutlineBody({
               <Target className="size-4 text-primary" aria-hidden="true" />
               {t("Learning Outcomes & Progression", "Mục tiêu & Lộ trình kết quả đạt được")}
             </h3>
-            <span className="text-sm text-muted-foreground">
-              {t("What you'll master step by step", "Kiến thức & kỹ năng đạt được theo từng chặng")}
-            </span>
           </div>
           <ol className="grid gap-3 sm:grid-cols-2">
             {modules.map((module, index) => {
@@ -630,9 +627,11 @@ function CourseOutlineBody({
                         );
                   return (
                     <li key={item.id} className="flex flex-wrap items-start gap-3.5 px-5 py-4">
-                      <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                        <Icon className="size-4" aria-hidden="true" />
-                      </span>
+                      {item.type !== "THEORY" && item.type !== "QUIZ" && (
+                        <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                          <Icon className="size-4" aria-hidden="true" />
+                        </span>
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           {isLab && (
@@ -695,7 +694,7 @@ function CourseOutlineBody({
                         {item.type === "THEORY" && typeof item.content?.["body"] === "string" && (
                           <details className="mt-2.5 text-sm">
                             <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                              📖 {t("Read lesson", "Đọc bài học")}
+                              {t("Read lesson", "Đọc bài học")}
                             </summary>
                             <div className="mt-3 max-w-4xl space-y-4 rounded-xl border bg-background p-4 shadow-xs sm:p-5">
                               <MarkdownPreview markdown={String(item.content["body"])} />
@@ -853,7 +852,7 @@ function LazyOutlineQuizDetails({
       }}
     >
       <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-sky-950/50 dark:text-sky-300">
-        ❓ {summaryLabel}
+        {summaryLabel}
       </summary>
       {opened && (
         <ChapterQuizRunner

@@ -131,11 +131,12 @@ test("Bug #08: workspaces exposes an h1 landmark, singular/plural counts avoid '
   assert.match(admin, /date\.toLocaleDateString\("vi-VN"\)\}<\/span>\{" "\}/);
 });
 
-test("Bug #09: CourseBuilder uses single-scroll accordion with slide-over drawer and Passkey table compacts padding with truncated labels", () => {
+test("Bug #09: CourseBuilder uses single-scroll accordion with centered popup and Passkey table compacts padding with truncated labels", () => {
   const builder = read("src/features/courses/course-builder.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
 
-  assert.match(builder, /fixed inset-0 z-50 flex justify-end bg-black\/40/);
+  assert.match(builder, /fixed inset-0 z-50 flex items-center justify-center bg-black\/55/);
+  assert.match(builder, /max-h-\[min\(90svh,56rem\)\].*max-w-4xl.*rounded-2xl/);
   assert.match(builder, /role="dialog"/);
   assert.match(builder, /overflow-x-auto rounded-lg border bg-background p-4/);
   assert.match(access, /className="whitespace-nowrap px-4 py-3 text-muted-foreground"/);
