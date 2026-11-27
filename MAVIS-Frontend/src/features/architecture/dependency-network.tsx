@@ -4,6 +4,7 @@ import type { ArchitecturalModel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { DiagramViewportToolbar } from "./diagram-viewport-toolbar";
 import { Pagination, SelectField } from "@/components/shared/forms";
+import { useLocale } from "@/lib/i18n/locale-context";
 import {
   projectGraphModel,
   filterGraphCategories,
@@ -159,10 +160,7 @@ export function DependencyNetwork({
       graph.current?.fit(undefined, 28);
     });
   }, [overlayFullscreen]);
-  const isVi =
-    typeof document !== "undefined" &&
-    Boolean(document.documentElement?.lang?.toLowerCase().startsWith("vi"));
-  const t = (en: string, vi: string) => (isVi ? vi : en);
+  const { t } = useLocale();
   const [elementPage, setElementPage] = useState(1);
   const [hovered, setHovered] = useState<string | null>(null);
   const viewport = useRef<HTMLDivElement>(null);

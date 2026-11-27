@@ -83,9 +83,17 @@ export function detectAuditTrack(input: {
     code.includes("DOTNET") ||
     projectName.includes("trái cây") ||
     projectName.includes("fruit") ||
+    projectName.includes("dotnet") ||
+    projectName.includes("c#") ||
+    projectName.includes("csharp") ||
+    projectName.includes("bookstore") ||
     labTitle.includes("(.net)") ||
+    labTitle.includes("dotnet") ||
+    labTitle.includes("c#") ||
     labTitle.includes("roslyn") ||
-    labTitle.includes("polly")
+    labTitle.includes("polly") ||
+    labTitle.includes("yarp") ||
+    labTitle.includes("masstransit")
   ) {
     return "CSHARP";
   }
@@ -96,7 +104,8 @@ export function detectAuditTrack(input: {
         el.name === "FruitOrdering.API" ||
         el.name === "FruitCatalog.API" ||
         el.name === "FruitBasket.API" ||
-        el.name === "ApiGateway",
+        el.name === "ApiGateway" ||
+        (el.elementType === "SERVICE_CONTAINER" && el.name.endsWith(".API")),
     )
   ) {
     return "CSHARP";
@@ -148,7 +157,13 @@ export function resolveModuleAuditLens(
 const SERVICE_ALIASES: Record<string, string[]> = {
   "identity-service": ["auth-service", "user-service"],
   "catalog-service": ["inventory-service", "product-service"],
+  "order-service": ["orders-service", "ordering-service", "checkout-service"],
+  "notification-service": ["notifications-service", "mailer-service", "email-service"],
   "service-discovery": ["discovery-service", "eureka-server", "consul"],
+  "fruitcatalog.api": ["catalog.api", "books.api", "bookcatalog.api", "catalog-api", "catalog-service"],
+  "fruitordering.api": ["ordering.api", "orders.api", "order.api", "ordering-api", "order-service"],
+  "fruitbasket.api": ["basket.api", "cart.api", "basket-api", "cart-service"],
+  apigateway: ["api-gateway", "gateway.api", "yarp-gateway", "gateway"],
 };
 
 export function adaptAuditLensToModel(
@@ -163,6 +178,11 @@ export function adaptAuditLensToModel(
   );
   if (serviceNames.size === 0) return lens;
 
+  const allElementNames = new Map(model.elements.map((el) => [el.name.toLowerCase(), el.name]));
+  const firstBroker = model.elements.find(
+    (el) => el.elementType === "QUEUE_BROKER" || el.elementType === "MESSAGE_CHANNEL",
+  );
+
   const mapServiceName = (raw: string): string => {
     const exact = serviceNames.get(raw.toLowerCase());
     if (exact) return exact;
@@ -173,33 +193,73 @@ export function adaptAuditLensToModel(
     return raw;
   };
 
+  const resolveKnownNode = (raw: string | undefined): string | undefined => {
+    if (!raw) return undefined;
+    const mapped = mapServiceName(raw);
+    const direct = allElementNames.get(mapped.toLowerCase());
+    if (direct) return direct;
+    if (/^(kafka|rabbitmq|servicebus)$/i.test(raw) && firstBroker) {
+      return firstBroker.name;
+    }
+    return undefined;
+  };
+
   const adaptedFocusNames = Array.from(new Set(lens.focusNodeNames.map(mapServiceName)));
   const adaptedChips = lens.quickChips
     .map((chip): AuditLensQuickChip | null => {
-      if (!chip.targetServiceName) return chip;
-      const resolvedSvc = mapServiceName(chip.targetServiceName);
-      if (!serviceNames.has(resolvedSvc.toLowerCase())) {
-        return null;
+      let resolvedSvc = chip.targetServiceName;
+      if (resolvedSvc) {
+        resolvedSvc = mapServiceName(resolvedSvc);
+        if (!serviceNames.has(resolvedSvc.toLowerCase())) {
+          return null;
+        }
       }
-      if (resolvedSvc === chip.targetServiceName) return chip;
-      return {
+      const nextLabelEn =
+        resolvedSvc && chip.targetServiceName && resolvedSvc !== chip.targetServiceName
+          ? chip.labelEn.replace(chip.targetServiceName, resolvedSvc)
+          : chip.labelEn;
+      const nextLabelVi =
+        resolvedSvc && chip.targetServiceName && resolvedSvc !== chip.targetServiceName
+          ? chip.labelVi.replace(chip.targetServiceName, resolvedSvc)
+          : chip.labelVi;
+
+      const resolvedNode = chip.targetNodeName
+        ? resolveKnownNode(chip.targetNodeName)
+        : undefined;
+      const nextChip: AuditLensQuickChip = {
         ...chip,
-        targetServiceName: resolvedSvc,
-        labelEn: chip.labelEn.replace(chip.targetServiceName, resolvedSvc),
-        labelVi: chip.labelVi.replace(chip.targetServiceName, resolvedSvc),
+        labelEn: nextLabelEn,
+        labelVi: nextLabelVi,
+        ...(resolvedSvc ? { targetServiceName: resolvedSvc } : {}),
       };
+      if (chip.targetNodeName && !resolvedNode) {
+        delete nextChip.targetNodeName;
+      } else if (resolvedNode) {
+        nextChip.targetNodeName = resolvedNode;
+      }
+      return nextChip;
     })
     .filter((chip): chip is AuditLensQuickChip => chip !== null);
 
+  const mappedDefaultC3 = lens.defaultC3ServiceName
+    ? mapServiceName(lens.defaultC3ServiceName)
+    : undefined;
+  const resolvedDefaultC3 =
+    mappedDefaultC3 && serviceNames.has(mappedDefaultC3.toLowerCase())
+      ? mappedDefaultC3
+      : undefined;
+  const resolvedDefaultNode = lens.defaultSelectedNodeName
+    ? (resolveKnownNode(lens.defaultSelectedNodeName) ??
+      Array.from(serviceNames.values())[0])
+    : undefined;
+
+  const { defaultC3ServiceName: _origC3, defaultSelectedNodeName: _origNode, ...baseLens } = lens;
+
   return {
-    ...lens,
+    ...baseLens,
     focusNodeNames: adaptedFocusNames,
-    ...(lens.defaultC3ServiceName
-      ? { defaultC3ServiceName: mapServiceName(lens.defaultC3ServiceName) }
-      : {}),
-    ...(lens.defaultSelectedNodeName
-      ? { defaultSelectedNodeName: mapServiceName(lens.defaultSelectedNodeName) }
-      : {}),
+    ...(resolvedDefaultC3 ? { defaultC3ServiceName: resolvedDefaultC3 } : {}),
+    ...(resolvedDefaultNode ? { defaultSelectedNodeName: resolvedDefaultNode } : {}),
     quickChips: adaptedChips,
   };
 }

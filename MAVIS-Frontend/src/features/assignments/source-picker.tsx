@@ -24,8 +24,10 @@ export const CURATED_SAMPLE_REPOS: readonly CuratedSampleRepo[] = [
     name: "Moc-Huong-Shop",
     stack: "Java 21 · Spring Boot 3",
     url: "https://github.com/MAVIS-Platform/Moc-Huong-Shop",
-    summaryEn: "E-commerce microservices system with Gateway, Orders, Inventory, and Shipping.",
-    summaryVi: "Hệ thống thương mại điện tử microservices gồm Gateway, Orders, Inventory và Shipping.",
+    summaryEn:
+      "E-commerce microservices system with API Gateway, Identity, Catalog, Order, Notification, and Service Discovery.",
+    summaryVi:
+      "Hệ thống thương mại điện tử microservices gồm API Gateway, Identity, Catalog, Order, Notification và Service Discovery.",
   },
   {
     id: "mavis-commerce-seed",

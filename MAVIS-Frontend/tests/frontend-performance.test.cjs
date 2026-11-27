@@ -181,6 +181,15 @@ test("performance: controlled graph avoids fallbacks, lays out once, restores ca
           ]);
         },
       },
+      "@/lib/i18n/locale-context": {
+        useLocale: () => ({
+          locale: "en",
+          t: (en) => en,
+          tr: (s) => s,
+          setLocale: () => {},
+          toggleLocale: () => {},
+        }),
+      },
     },
     globals,
   );
