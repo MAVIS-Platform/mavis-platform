@@ -726,7 +726,7 @@ export function LiveStudioWorkbench({
     return () => window.clearInterval(id);
   }, [verifiedModalOpen, activeSessionId, data.executionStatus, data.receiptDigest, refetchStudioState]);
   const [leftWidth, setLeftWidth] = useState(244);
-  const [rightWidth, setRightWidth] = useState(() => (authoring ? 360 : 340));
+  const [rightWidth, setRightWidth] = useState(() => (authoring ? 440 : 360));
   const [rightHeight, setRightHeight] = useState<number | null>(null);
   const [rightOffset, setRightOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [missionWidth, setMissionWidth] = useState(316);
@@ -2195,6 +2195,7 @@ export function LiveStudioWorkbench({
           <ScreenHelpTrigger
             screenId={authoring ? "studio-live-author" : "studio-live"}
             surfaceTheme={isLight ? "light" : "dark"}
+            directStart
             onTriggerClick={() => {
               setTelemetryPopoverOpen(false);
               setStylePopoverOpen(false);
@@ -7166,15 +7167,15 @@ export function LiveStudioWorkbench({
                 return (
                   <section
                     aria-label="Visual Studio Builder"
-                    style={{ fontSize: 12, lineHeight: "1.35" }}
-                    className="space-y-3"
+                    style={{ fontSize: 13.5, lineHeight: "1.4" }}
+                    className="space-y-3.5"
                   >
                     {/* Top Stage Service Selector (belongs to the 3D Stage, separate from Exercise Goal details) */}
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <label
                           htmlFor="studio-stage-service-select"
-                          style={{ fontSize: 11 }}
+                          style={{ fontSize: 12 }}
                           className={`font-semibold uppercase tracking-wide ${themeSubtleText}`}
                         >
                           {t("Service on 3D Stage", "Service trên sân khấu 3D")} ({stageBlocks.length})
@@ -7186,7 +7187,7 @@ export function LiveStudioWorkbench({
                               studio.setService("");
                               setSelectedAuthorWire(null);
                             }}
-                            style={{ fontSize: 11 }}
+                            style={{ fontSize: 12 }}
                             className={`font-medium underline underline-offset-2 transition hover:opacity-100 ${themeSubtleText}`}
                           >
                             {t("Clear", "Bỏ chọn")}
@@ -7204,8 +7205,8 @@ export function LiveStudioWorkbench({
                           id="studio-stage-service-select"
                           aria-label={t("Select service on 3D stage", "Chọn service trên sân khấu 3D")}
                           data-testid="studio-stage-service-select"
-                          style={{ fontSize: 13, lineHeight: "1.25" }}
-                          className={`h-9 w-full px-2.5 py-0 font-sans font-medium shadow-none focus:ring-1 focus:ring-offset-0 ${styleCfg.inputClass}`}
+                          style={{ fontSize: 13.5, lineHeight: "1.25" }}
+                          className={`h-10 w-full px-3 py-0 font-sans font-medium shadow-none focus:ring-1 focus:ring-offset-0 ${styleCfg.inputClass}`}
                         >
                           <SelectValue placeholder={t("Select service…", "Chọn service…")} />
                         </SelectTrigger>
@@ -7290,21 +7291,21 @@ export function LiveStudioWorkbench({
                     </div>
 
                     {/* 1. Quick Starters (4 Easy/Medium Goals + 1 Hard Blind Exam Preset) */}
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <p
-                          style={{ fontSize: 11 }}
+                          style={{ fontSize: 12 }}
                           className={`font-semibold uppercase tracking-wide ${themeSubtleText}`}
                         >
                           {t("1. Exercise Goal", "1. Chọn dạng bài")}
                         </p>
                         {authoring.saving && (
-                          <span style={{ fontSize: 11 }} className={themeSubtleText}>
+                          <span style={{ fontSize: 12 }} className={themeSubtleText}>
                             {t("Saving…", "Đang lưu…")}
                           </span>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <div className="grid grid-cols-2 gap-2">
                         {AUTHOR_GOALS.map((goal) => {
                           const isActive = activeGoalId === goal.id;
                           return (
@@ -7321,22 +7322,22 @@ export function LiveStudioWorkbench({
                                   canvasSelected || goalTargetSvc || undefined,
                                 );
                               }}
-                              className={`border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
+                              className={`border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
                                 isActive ? themeActiveBtn : themeIdleBtn
                               }`}
                             >
                               <div className="flex items-center justify-between gap-1">
-                                <span style={{ fontSize: 12.5, lineHeight: "1.3" }} className="font-semibold">
+                                <span style={{ fontSize: 13.5, lineHeight: "1.3" }} className="font-semibold">
                                   {t(goal.titleEn, goal.titleVi)}
                                 </span>
                                 {isActive && (
-                                  <span style={{ fontSize: 10 }} className="font-mono font-bold opacity-85">
+                                  <span style={{ fontSize: 11 }} className="font-mono font-bold opacity-85">
                                     ON
                                   </span>
                                 )}
                               </div>
                               <p
-                                style={{ fontSize: 11.5, lineHeight: "1.35" }}
+                                style={{ fontSize: 12.5, lineHeight: "1.4" }}
                                 className={`mt-1 ${isActive ? themeActiveMuted : themeSubtleText}`}
                               >
                                 {t(goal.descEn, goal.descVi)}
@@ -7358,18 +7359,18 @@ export function LiveStudioWorkbench({
                           data-testid="author-exam-preset-btn"
                           disabled={authoring.busy || authoring.frozen}
                           onClick={() => authoring.onApplyExamPreset?.()}
-                          className={`flex w-full items-center justify-between gap-2 border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
+                          className={`flex w-full items-center justify-between gap-2 border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
                             isCompoundActive
                               ? themeActiveBtn
                               : themeIdleBtn
                           }`}
                         >
                           <div className="min-w-0">
-                            <span style={{ fontSize: 12 }} className="block font-semibold">
+                            <span style={{ fontSize: 13.5 }} className="block font-semibold">
                               {t("Compound Incident Exam (Hard)", "Đề thi Tổng hợp (Hard)")}
                             </span>
                             <span
-                              style={{ fontSize: 11 }}
+                              style={{ fontSize: 12 }}
                               className={
                                 isCompoundActive
                                   ? themeActiveMuted
@@ -7382,7 +7383,7 @@ export function LiveStudioWorkbench({
                               )}
                             </span>
                           </div>
-                          <span style={{ fontSize: 10 }} className="shrink-0 font-mono font-bold uppercase opacity-85">
+                          <span style={{ fontSize: 11 }} className="shrink-0 font-mono font-bold uppercase opacity-85">
                             {isCompoundActive ? "ON" : "HARD"}
                           </span>
                         </button>
@@ -7399,29 +7400,29 @@ export function LiveStudioWorkbench({
                       const hasAnyPaintedFault =
                         authoring.initialStoppedServices.length > 0 || activeCpuTraps.length > 0;
                       const painterBtn = (active: boolean) =>
-                        `h-7 border px-1.5 font-mono text-[10.5px] font-semibold transition disabled:opacity-45 ${themeRadius} ${
+                        `h-8 border px-2 font-mono text-xs font-semibold transition disabled:opacity-45 ${themeRadius} ${
                           active ? themeActiveBtn : themeIdleBtn
                         }`;
                       return (
                         <div
                           data-testid="studio-3d-fault-painter"
-                          className={`space-y-2 p-2.5 ${themeBox}`}
+                          className={`space-y-2.5 p-3 ${themeBox}`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span
-                              style={{ fontSize: 11 }}
+                              style={{ fontSize: 12 }}
                               className={`font-semibold uppercase tracking-wide ${themeSubtleText}`}
                             >
                               {t("Initial Fault Painter (3D)", "Cài sẵn sự cố trên khối 3D")}
                             </span>
                             {svc && (
-                              <span className="truncate font-mono text-[11px] font-semibold text-foreground">
+                              <span className="truncate font-mono text-xs font-semibold text-foreground">
                                 {svc}
                               </span>
                             )}
                           </div>
                           {svc ? (
-                            <div className="grid grid-cols-4 gap-1">
+                            <div className="grid grid-cols-4 gap-1.5">
                               <button
                                 type="button"
                                 disabled={authoring.busy || authoring.frozen}
@@ -7461,7 +7462,7 @@ export function LiveStudioWorkbench({
                               </button>
                             </div>
                           ) : (
-                            <p style={{ fontSize: 11 }} className={themeSubtleText}>
+                            <p style={{ fontSize: 12.5, lineHeight: "1.45" }} className={themeSubtleText}>
                               {t(
                                 "Click any service on the 3D stage to paint a stopped (0x) or hidden CPU-throttled fault.",
                                 "Bấm vào bất kỳ khối service nào trên sân khấu 3D để cài sẵn lỗi dừng 0x hoặc bóp CPU ẩn.",

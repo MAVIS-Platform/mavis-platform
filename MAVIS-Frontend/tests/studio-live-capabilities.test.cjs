@@ -669,7 +669,7 @@ test("Studio Live mounts comprehensive bilingual Guided Tour (?) with confirmati
   const studentTour = resolveScreenTour("studio-live");
   assert.ok(studentTour, "Missing studio-live guided tour catalog entry");
   assert.equal(studentTour.cards.length, 2);
-  assert.equal(studentTour.steps.length, 10);
+  assert.equal(studentTour.steps.length, 9);
   for (const step of studentTour.steps) {
     assert.ok(step.title.en && step.title.vi, `Missing bilingual title on ${step.id}`);
     assert.ok(step.description.en && step.description.vi, `Missing bilingual description on ${step.id}`);
@@ -679,7 +679,7 @@ test("Studio Live mounts comprehensive bilingual Guided Tour (?) with confirmati
   const authorTour = resolveScreenTour("studio-live-author");
   assert.ok(authorTour, "Missing studio-live-author guided tour catalog entry");
   assert.equal(authorTour.cards.length, 2);
-  assert.equal(authorTour.steps.length, 11);
+  assert.equal(authorTour.steps.length, 10);
   for (const step of authorTour.steps) {
     assert.ok(step.title.en && step.title.vi, `Missing bilingual title on author step ${step.id}`);
     assert.ok(step.description.en && step.description.vi, `Missing bilingual description on author step ${step.id}`);

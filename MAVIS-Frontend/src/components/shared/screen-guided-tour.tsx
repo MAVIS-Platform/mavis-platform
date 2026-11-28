@@ -101,6 +101,7 @@ export function ScreenHelpTrigger({
   iconClassName,
   onTriggerClick,
   surfaceTheme,
+  directStart = false,
 }: {
   screenId?: string | null | undefined;
   onCustomStart?: (() => void) | undefined;
@@ -109,6 +110,7 @@ export function ScreenHelpTrigger({
   iconClassName?: string | undefined;
   onTriggerClick?: (() => void) | undefined;
   surfaceTheme?: "light" | "dark" | undefined;
+  directStart?: boolean | undefined;
 }) {
   const { t } = useLocale();
   const tour = resolveScreenTour(screenId);
@@ -135,26 +137,36 @@ export function ScreenHelpTrigger({
     }
   };
 
+  const triggerButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      onClick={() => {
+        onTriggerClick?.();
+        if (directStart) {
+          startTour();
+        }
+      }}
+      className={
+        triggerClassName ??
+        "size-9 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+      }
+      aria-label={t("Screen guide", "Hướng dẫn màn hình")}
+      title={t("Screen guide", "Hướng dẫn màn hình")}
+      data-tour-trigger={tour.id}
+    >
+      <CircleHelp className={iconClassName ?? "size-5"} aria-hidden="true" />
+    </Button>
+  );
+
   return (
     <>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onTriggerClick}
-            className={
-              triggerClassName ??
-              "size-9 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
-            }
-            aria-label={t("Screen guide", "Hướng dẫn màn hình")}
-            title={t("Screen guide", "Hướng dẫn màn hình")}
-            data-tour-trigger={tour.id}
-          >
-            <CircleHelp className={iconClassName ?? "size-5"} aria-hidden="true" />
-          </Button>
-        </DialogTrigger>
+      {directStart ? (
+        triggerButton
+      ) : (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>{triggerButton}</DialogTrigger>
         <DialogContent
           data-tour-surface={surfaceTheme ?? "auto"}
           data-tour-confirm-dialog={tour.id}
@@ -312,6 +324,7 @@ export function ScreenHelpTrigger({
           </div>
         </DialogContent>
       </Dialog>
+      )}
       {stepIndex !== null && (
         <ScreenSpotlightOverlay
           tour={tour}
