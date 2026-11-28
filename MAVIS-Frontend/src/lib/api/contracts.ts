@@ -781,6 +781,7 @@ export const contracts = {
               service: z.string(),
               replicas: z.number(),
               runningReplicas: z.number(),
+              cpuQuotaPercent: z.number().nullable().optional(),
               stats: z.array(
                 z.object({
                   containerId: z.string().nullable(),
@@ -884,6 +885,7 @@ export const contracts = {
                   service: z.string(),
                   replicas: z.number(),
                   runningReplicas: z.number(),
+                  cpuQuotaPercent: z.number().nullable().optional(),
                   stats: z
                     .array(
                       z.object({

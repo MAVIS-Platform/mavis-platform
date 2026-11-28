@@ -849,7 +849,10 @@ public class CourseSetupService {
                 || path.contains("{") || path.contains("*")) {
             return Integer.MIN_VALUE;
         }
-        String lower = path.toLowerCase();
+        String lower = path.toLowerCase();
+        if (lower.matches(".*(?:^|[/-])(sim|chaos|fault|fail|boom)(?:$|[/-]).*")) {
+            return Integer.MIN_VALUE;
+        }
         String svcLower = service == null ? "" : service.toLowerCase();
         int score = bonus;
         if (svcLower.contains("gateway") || svcLower.contains("edge")

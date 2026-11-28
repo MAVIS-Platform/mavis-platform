@@ -144,7 +144,7 @@ public final class StudioExerciseEvaluator {
         int passedCount = 0;
         for (int i = 0; i < specs.size(); i++) {
             RuleSpec spec = specs.get(i);
-            RuleOutcome outcome = evaluateRule(spec, split, latestTelemetry, confirmedActions, f1Score, predictionLocked, hasChange, canonicalServices);
+            RuleOutcome outcome = evaluateRule(spec, split, frames, latestTelemetry, confirmedActions, f1Score, predictionLocked, hasChange, canonicalServices);
             if (outcome.passed) passedCount++;
             ObjectNode r = rulesArr.addObject()
                     .put("id", "rule-" + (i + 1))
@@ -519,6 +519,7 @@ public final class StudioExerciseEvaluator {
     private static RuleOutcome evaluateRule(
             RuleSpec spec,
             WindowSplit split,
+            List<JsonNode> allFrames,
             JsonNode latestTelemetry,
             List<JsonNode> confirmedActions,
             Double f1Score,
@@ -532,7 +533,7 @@ public final class StudioExerciseEvaluator {
             case "ERROR_RATE" -> resolveErrorRate(spec.target, latestTelemetry, split.after(), confirmedActions, canonicalServices);
             case "EDGE_ERROR_RATE" -> resolveEdgeErrorRate(spec.target, latestTelemetry, split.after(), canonicalServices);
             case "P95_MS" -> resolveP95Ms(spec.target, latestTelemetry, split.after(), confirmedActions, canonicalServices);
-            case "P95_DELTA_PCT" -> resolveP95DeltaPct(spec.target, split, confirmedActions);
+            case "P95_DELTA_PCT" -> resolveP95DeltaPct(spec.target, split, allFrames, latestTelemetry, confirmedActions, canonicalServices);
             default -> null;
         };
 
@@ -603,11 +604,26 @@ public final class StudioExerciseEvaluator {
         return false;
     }
 
+    private static boolean isGlobalTarget(String target) {
+        if (target == null || target.isBlank()) return true;
+        String trimmed = target.trim();
+        return "ALL".equalsIgnoreCase(trimmed)
+                || "gateway".equalsIgnoreCase(trimmed)
+                || "*".equals(trimmed);
+    }
+
+    private static boolean routeMatchesService(String target, String routeService, Map<String, String> canonicalServices) {
+        if (target == null || routeService == null) return false;
+        if (target.equalsIgnoreCase(routeService)) return true;
+        return normalizeServiceName(target, canonicalServices)
+                .equals(normalizeServiceName(routeService, canonicalServices));
+    }
+
     private static Double resolveErrorRate(String target, JsonNode latestTelemetry, List<JsonNode> afterFrames, List<JsonNode> confirmedActions, Map<String, String> canonicalServices) {
         if (target.contains("->")) {
             return resolveEdgeErrorRate(target, latestTelemetry, afterFrames, canonicalServices);
         }
-        if ("ALL".equalsIgnoreCase(target)) {
+        if (isGlobalTarget(target)) {
             if (latestTelemetry != null && latestTelemetry.path("probe").isObject()
                     && latestTelemetry.path("probe").path("requests").asInt(0) > 0) {
                 return latestTelemetry.path("probe").path("errorRatePercent").asDouble();
@@ -623,7 +639,7 @@ public final class StudioExerciseEvaluator {
         if (latestTelemetry != null && latestTelemetry.path("probe").path("routes").isArray()) {
             double reqs = 0, errs = 0;
             for (JsonNode r : latestTelemetry.path("probe").path("routes")) {
-                if (target.equals(r.path("service").asText())) {
+                if (routeMatchesService(target, r.path("service").asText(""), canonicalServices)) {
                     reqs += r.path("requests").asDouble(0);
                     errs += r.path("errors").asDouble(0);
                 }
@@ -667,7 +683,7 @@ public final class StudioExerciseEvaluator {
             }
             return null;
         }
-        if ("ALL".equalsIgnoreCase(target)) {
+        if (isGlobalTarget(target)) {
             if (latestTelemetry != null && latestTelemetry.path("probe").isObject()
                     && latestTelemetry.path("probe").path("p95Ms").isNumber()) {
                 return latestTelemetry.path("probe").path("p95Ms").asDouble();
@@ -683,7 +699,7 @@ public final class StudioExerciseEvaluator {
         if (latestTelemetry != null && latestTelemetry.path("probe").path("routes").isArray()) {
             double maxP95 = -1;
             for (JsonNode r : latestTelemetry.path("probe").path("routes")) {
-                if (target.equals(r.path("service").asText()) && r.path("p95Ms").isNumber()) {
+                if (routeMatchesService(target, r.path("service").asText(""), canonicalServices) && r.path("p95Ms").isNumber()) {
                     maxP95 = Math.max(maxP95, r.path("p95Ms").asDouble());
                 }
             }
@@ -692,13 +708,44 @@ public final class StudioExerciseEvaluator {
         return spanP95Ms(target, latestTelemetry, canonicalServices);
     }
 
-    private static Double resolveP95DeltaPct(String target, WindowSplit split, List<JsonNode> confirmedActions) {
-        Double beforeP95 = avgWindowP95(target, split.before());
-        Double afterP95 = avgWindowP95(target, split.after());
+    private static Double resolveP95DeltaPct(
+            String target,
+            WindowSplit split,
+            List<JsonNode> allFrames,
+            JsonNode latestTelemetry,
+            List<JsonNode> confirmedActions,
+            Map<String, String> canonicalServices) {
+        Double beforeP95 = avgWindowP95(target, split.before(), canonicalServices);
+        Double afterP95 = null;
+        // For multi-step remediations, compare baseline before the first action against steady state after the last action.
+        if (confirmedActions.size() > 1 && allFrames != null && !allFrames.isEmpty()) {
+            JsonNode lastAction = confirmedActions.get(confirmedActions.size() - 1);
+            Instant lastEnd = parseInstant(lastAction.path("completedAt").asText(""));
+            if (lastEnd == null) lastEnd = parseInstant(lastAction.path("requestedAt").asText(""));
+            if (lastEnd != null) {
+                List<JsonNode> postLast = new ArrayList<>();
+                for (JsonNode f : allFrames) {
+                    Instant ts = parseInstant(f.path("observedAt").asText(""));
+                    if (ts != null && !ts.isBefore(lastEnd)) {
+                        postLast.add(f);
+                    }
+                }
+                if (!postLast.isEmpty()) {
+                    afterP95 = avgWindowP95(target, postLast, canonicalServices);
+                }
+            }
+        }
+        if (afterP95 == null) {
+            afterP95 = avgWindowP95(target, split.after(), canonicalServices);
+        }
+        if (afterP95 == null && latestTelemetry != null && latestTelemetry.isObject()) {
+            afterP95 = avgWindowP95(target, List.of(latestTelemetry), canonicalServices);
+        }
         if ((beforeP95 == null || afterP95 == null) && !confirmedActions.isEmpty()) {
+            JsonNode first = confirmedActions.get(0).path("result");
             JsonNode last = confirmedActions.get(confirmedActions.size() - 1).path("result");
-            if (beforeP95 == null && last.path("metricsBefore").path("p95LatencyMs").isNumber()) {
-                beforeP95 = last.path("metricsBefore").path("p95LatencyMs").asDouble();
+            if (beforeP95 == null && first.path("metricsBefore").path("p95LatencyMs").isNumber()) {
+                beforeP95 = first.path("metricsBefore").path("p95LatencyMs").asDouble();
             }
             if (afterP95 == null && last.path("metricsAfter").path("p95LatencyMs").isNumber()) {
                 afterP95 = last.path("metricsAfter").path("p95LatencyMs").asDouble();
@@ -708,17 +755,17 @@ public final class StudioExerciseEvaluator {
         return ((afterP95 - beforeP95) / beforeP95) * 100.0;
     }
 
-    private static Double avgWindowP95(String target, List<JsonNode> frames) {
+    private static Double avgWindowP95(String target, List<JsonNode> frames, Map<String, String> canonicalServices) {
         if (frames.isEmpty()) return null;
         List<Double> values = new ArrayList<>();
         for (JsonNode f : frames) {
-            if ("ALL".equalsIgnoreCase(target)) {
+            if (isGlobalTarget(target)) {
                 if (f.path("probe").path("p95Ms").isNumber()) {
                     values.add(f.path("probe").path("p95Ms").asDouble());
                 }
             } else if (f.path("probe").path("routes").isArray()) {
                 for (JsonNode r : f.path("probe").path("routes")) {
-                    if (target.equals(r.path("service").asText()) && r.path("p95Ms").isNumber()) {
+                    if (routeMatchesService(target, r.path("service").asText(""), canonicalServices) && r.path("p95Ms").isNumber()) {
                         values.add(r.path("p95Ms").asDouble());
                     }
                 }

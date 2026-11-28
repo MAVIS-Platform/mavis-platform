@@ -467,6 +467,7 @@ public class RuntimePlanningService {
    String path=ep.getPath()==null?"":ep.getPath().trim();
    if(!path.startsWith("/")||path.length()>200||path.contains("{")||path.contains("*"))continue;
    String lower=path.toLowerCase(Locale.ROOT);
+   if(lower.matches(".*(?:^|[/-])(sim|chaos|fault|fail|boom)(?:$|[/-]).*"))continue;
    String svcLower=ep.getService()==null?"":ep.getService().toLowerCase(Locale.ROOT);
    int score=10;
    if(svcLower.contains("gateway")||svcLower.contains("edge")||svcLower.contains("proxy")||svcLower.contains("bff"))score+=40;

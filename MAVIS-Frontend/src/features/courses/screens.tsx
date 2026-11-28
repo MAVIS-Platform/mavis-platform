@@ -2665,7 +2665,11 @@ function StepContent({
                     : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`)
                 }
               >
-                <span>{t("Next", "Tiếp theo")}</span>
+                <span>
+                  {step === 1 && requiresRuntime && !preview
+                    ? t("Open MAVIS Studio Live", "Mở MAVIS Studio Live")
+                    : t("Next", "Tiếp theo")}
+                </span>
                 <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
               </Link>
             ) : (

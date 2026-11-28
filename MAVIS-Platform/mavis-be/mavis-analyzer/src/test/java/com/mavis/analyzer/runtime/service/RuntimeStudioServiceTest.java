@@ -754,11 +754,17 @@ class RuntimeStudioServiceTest {
         var poll2 = service.poll(id, session.getResourceProject());
         assertFalse(poll2.has("command"));
 
-        // Student view hides systemSetup action, keeps actionsUsed=0, allows submitPrediction, and finish() still demands a real student action
+        // Telemetry frame published while CPU limit is active exposes live container cpuQuotaPercent without leaking systemSetup actions
+        ObjectNode rawTel = mapper.createObjectNode().put("observedAt", "2026-11-28T01:00:00Z");
+        rawTel.putArray("services").addObject().put("service", "orders").put("replicas", 1).put("runningReplicas", 1);
+        service.telemetry(id, new RuntimeStudioService.TelemetryRequest(id, session.getResourceProject(), rawTel));
+
+        // Student view hides systemSetup action, keeps actionsUsed=0, exposes real cgroup cpuQuotaPercent, allows submitPrediction, and finish() still demands a real student action
         var state = service.state(id);
         assertEquals(0, state.path("actions").size());
         assertEquals(0, state.path("actionsUsed").asInt());
         assertFalse(state.has("appliedInitialCpuLimits"));
+        assertEquals(25, state.path("telemetry").path("services").get(0).path("cpuQuotaPercent").asInt());
         var predicted = service.submitPrediction(id, new RuntimeStudioService.PredictionRequest(java.util.List.of("orders"), "CPU bottleneck"));
         assertEquals("orders", predicted.path("prediction").path("predictedServices").get(0).asText());
         assertThrows(BusinessException.class, () -> service.finish(id));

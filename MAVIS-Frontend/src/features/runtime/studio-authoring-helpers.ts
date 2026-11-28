@@ -292,6 +292,10 @@ export function extractRepoEndpointOptions(
   };
 
   if (profile && typeof profile === "object") {
+    const isFaultOrSimPath = (raw: unknown): boolean =>
+      typeof raw === "string" && /(?:^|[/-])(sim|chaos|fault|fail|boom)(?:$|[/-])/i.test(raw);
+    const isGatewayName = (svc?: string): boolean =>
+      Boolean(svc && /gateway|edge|proxy|bff/i.test(svc.toLowerCase()));
     const scenario = profile["scenario"];
     if (scenario && typeof scenario === "object") {
       const steps = (scenario as Record<string, unknown>)["steps"];
@@ -301,6 +305,7 @@ export function extractRepoEndpointOptions(
           const rec = step as Record<string, unknown>;
           const method = String(rec["method"] ?? "GET").toUpperCase();
           if (method !== "GET" && method !== "HEAD") continue;
+          if (isFaultOrSimPath(rec["path"])) continue;
           const svc = typeof rec["service"] === "string" ? rec["service"] : undefined;
           add(rec["path"], svc, 60, true);
         }
@@ -313,8 +318,10 @@ export function extractRepoEndpointOptions(
         const rec = ep as Record<string, unknown>;
         const method = String(rec["method"] ?? "GET").toUpperCase();
         if (method !== "GET" && method !== "HEAD") continue;
+        const rawPath = rec["path"];
+        if (typeof rawPath !== "string" || isFaultOrSimPath(rawPath)) continue;
         const svc = typeof rec["service"] === "string" ? rec["service"] : undefined;
-        add(rec["path"], svc, 10, true);
+        add(rawPath, svc, isGatewayName(svc) ? 20 : 10, true);
       }
     }
   }
@@ -541,10 +548,52 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
     maxErrorRatePercent,
     maxP95Ms,
     targetRps,
+    rules = [],
     locale = "vi",
   } = params;
 
   const isVi = locale === "vi";
+
+  const describeExtraRules = (extraRules: readonly DeclarativeRuleInput[] | null | undefined): string => {
+    if (!extraRules || extraRules.length === 0) return "";
+    const parts: string[] = [];
+    for (const r of extraRules) {
+      const target = (r.target || "ALL").trim();
+      const isGlobal = !target || target.toUpperCase() === "ALL" || target.toLowerCase() === "gateway";
+      if (r.metric === "REPLICAS" && target && !isGlobal) {
+        parts.push(
+          isVi
+            ? `mở rộng ${target} lên >= ${r.threshold}x`
+            : `scale ${target} to >= ${r.threshold}x`,
+        );
+      } else if (r.metric === "P95_DELTA_PCT") {
+        const dropPct = Math.abs(r.threshold);
+        parts.push(
+          isVi
+            ? `giảm độ trễ p95 ${isGlobal ? "toàn hệ thống" : target} tối thiểu ${dropPct}%`
+            : `reduce ${isGlobal ? "system" : target} p95 latency by at least ${dropPct}%`,
+        );
+      } else if (r.metric === "P95_MS") {
+        parts.push(
+          isVi
+            ? `p95 ${isGlobal ? "toàn hệ thống" : target} <= ${r.threshold} ms`
+            : `${isGlobal ? "system" : target} p95 <= ${r.threshold} ms`,
+        );
+      } else if (r.metric === "ERROR_RATE") {
+        parts.push(
+          isVi
+            ? `tỉ lệ lỗi ${isGlobal ? "toàn hệ thống" : target} <= ${r.threshold}%`
+            : `${isGlobal ? "system" : target} error rate <= ${r.threshold}%`,
+        );
+      } else if (r.metric === "EDGE_ERROR_RATE") {
+        parts.push(isVi ? `tỉ lệ lỗi nhánh ${target} <= ${r.threshold}%` : `${target} edge error <= ${r.threshold}%`);
+      } else if (r.metric === "TRACE_EDGE") {
+        parts.push(isVi ? `kiểm chứng đường gọi ${target}` : `verify trace edge ${target}`);
+      }
+    }
+    return parts.join("; ");
+  };
+  const extraRulesNote = describeExtraRules(rules);
 
   const hasCpuTrap =
     initialCpuLimits && Object.values(initialCpuLimits).some((pct) => pct > 0 && pct < 100);
@@ -585,7 +634,8 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
           ? "1. Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM từng container để xác định service nguyên nhân gốc, sau đó chọn nguyên nhân và bấm Khóa chẩn đoán trước khi sửa."
           : "1. Quan sát sơ đồ 3D và Log & Trace để xác định các service bị ảnh hưởng, sau đó bấm Khóa dự đoán trước khi thao tác."
         : "1. Quan sát sơ đồ 3D, Log & Trace và chỉ số CPU/RAM từng container để truy vết đúng service nguyên nhân gốc đang gây lỗi hoặc nghẽn cổ chai.";
-      const step2 = `2. Khắc phục chính xác nguyên nhân gốc (Khởi động service dừng, gỡ giới hạn CPU 100% hoặc Scale replica)${budgetVi} để đưa hệ thống về SLA (tỉ lệ lỗi ${errText}${p95Vi}).`;
+      const extraVi = extraRulesNote ? ` Yêu cầu bổ sung: ${extraRulesNote}.` : "";
+      const step2 = `2. Khắc phục chính xác nguyên nhân gốc (Khởi động service dừng, gỡ giới hạn CPU 100% hoặc Scale replica)${budgetVi} để đưa hệ thống về SLA (tỉ lệ lỗi ${errText}${p95Vi}).${extraVi}`;
       const step3 =
         "3. Quan sát biểu đồ lỗi & độ trễ p95 sau khi xử lý, chụp Snapshot Trước/Sau làm minh chứng rồi bấm Kết thúc Studio để nộp bài chờ Giảng viên chấm.";
       return [`Mục tiêu: ${symptomVi}${loadVi}.`, step1, step2, step3].join("\n");
@@ -602,7 +652,8 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
         ? "1. Inspect the 3D topology, Logs & Traces, and per-container CPU/RAM stats to pinpoint the root-cause service(s), then click Lock Diagnosis before making any changes."
         : "1. Inspect the 3D topology and Logs & Traces to identify impacted services, then lock your prediction before acting."
       : "1. Inspect the 3D topology, Logs & Traces, and per-container CPU/RAM stats to isolate the root-cause service(s).";
-    const step2 = `2. Remediate the root cause(s) (Start stopped services, restore 100% CPU, or Scale replicas)${budgetEn} to restore SLA (error rate ${errText}${p95En}).`;
+    const extraEn = extraRulesNote ? ` Additional requirements: ${extraRulesNote}.` : "";
+    const step2 = `2. Remediate the root cause(s) (Start stopped services, restore 100% CPU, or Scale replicas)${budgetEn} to restore SLA (error rate ${errText}${p95En}).${extraEn}`;
     const step3 =
       "3. Observe error rate and p95 latency after remediation, capture Before/After Snapshots as evidence, and click Finish Studio to submit for Lecturer grading.";
     return [`Goal: ${symptomEn}${loadEn}.`, step1, step2, step3].join("\n");
@@ -622,33 +673,62 @@ export function buildStudentExerciseInstructions(params: StudentInstructionsPara
   if (resolvedType === "CHANGE_IMPACT") {
     const svc = targetAction?.service || "target-service";
     const act = targetAction?.action === "STOP" ? "STOP" : "PAUSE";
+    const recoverAct = act === "STOP" ? "START" : "RESUME";
+    const hasSlaRecovery = maxErrorRatePercent != null || maxP95Ms != null;
     void minImpactF1;
     if (isVi) {
       const actLabel = act === "STOP" ? "dừng hẳn (STOP)" : "tạm dừng (PAUSE)";
+      const recoverLabel = act === "STOP" ? "khởi động lại (START)" : "tiếp tục (RESUME)";
+      const slaParts = [
+        maxErrorRatePercent != null ? `tỉ lệ lỗi <= ${maxErrorRatePercent}%` : null,
+        maxP95Ms ? `p95 <= ${maxP95Ms} ms` : null,
+      ].filter(Boolean);
       const step1 = predictionRequired
         ? `1. Quan sát sơ đồ phụ thuộc 3D, chọn các service gọi ngược vào ${svc} sẽ bị kéo lỗi và bấm Khóa dự đoán.`
         : `1. Quan sát sơ đồ phụ thuộc 3D để nắm các nhánh đang gọi vào ${svc} ở trạng thái bình thường.`;
-      const step3 =
-        "3. Chụp snapshot Trước/Sau hoặc quay video làm bằng chứng rồi bấm Kết thúc Studio để nộp bài cho giảng viên chấm.";
-      return [
+      const extraVi = extraRulesNote ? ` Yêu cầu bổ sung: ${extraRulesNote}.` : "";
+      const lines = [
         `Mục tiêu: Kiểm chứng phạm vi lan truyền sự cố khi ${actLabel} service ${svc}.`,
         step1,
-        `2. Thực hiện ${act} trên ${svc}, sau đó theo dõi tỉ lệ lỗi và luồng trace đổi màu trên các service upstream.`,
-        step3,
-      ].join("\n");
+        `2. Thực hiện ${act} trên ${svc}, sau đó theo dõi tỉ lệ lỗi và luồng trace đổi màu trên các service upstream.${extraVi}`,
+      ];
+      if (hasSlaRecovery) {
+        lines.push(
+          `3. Sau khi ghi nhận sự cố lan truyền, ${recoverLabel} service ${svc} để đưa hệ thống về SLA (${slaParts.join(" và ")}).`,
+          "4. Chụp snapshot Trước/Sau hoặc quay video làm bằng chứng rồi bấm Kết thúc Studio để nộp bài cho giảng viên chấm.",
+        );
+      } else {
+        lines.push(
+          "3. Chụp snapshot Trước/Sau hoặc quay video làm bằng chứng rồi bấm Kết thúc Studio để nộp bài cho giảng viên chấm.",
+        );
+      }
+      return lines.join("\n");
     }
     const actVerb = act === "STOP" ? "stopped (STOP)" : "paused (PAUSE)";
+    const slaPartsEn = [
+      maxErrorRatePercent != null ? `error rate <= ${maxErrorRatePercent}%` : null,
+      maxP95Ms ? `p95 <= ${maxP95Ms} ms` : null,
+    ].filter(Boolean);
     const step1 = predictionRequired
       ? `1. Inspect the 3D dependency graph, select every upstream service affected if ${svc} fails, and lock your prediction.`
       : `1. Inspect the 3D dependency graph to identify callers depending on ${svc} under healthy traffic.`;
-    const step3 =
-      "3. Capture Before/After snapshots or record a video as evidence, then click Finish Studio to submit for lecturer grading.";
-    return [
+    const extraEn = extraRulesNote ? ` Additional requirements: ${extraRulesNote}.` : "";
+    const lines = [
       `Goal: Verify the blast radius when ${svc} is ${actVerb}.`,
       step1,
-      `2. Execute ${act} on ${svc} and observe error propagation across upstream traces and service health.`,
-      step3,
-    ].join("\n");
+      `2. Execute ${act} on ${svc} and observe error propagation across upstream traces and service health.${extraEn}`,
+    ];
+    if (hasSlaRecovery) {
+      lines.push(
+        `3. After observing fault propagation, execute ${recoverAct} on ${svc} to restore SLA (${slaPartsEn.join(" and ")}).`,
+        "4. Capture Before/After snapshots or record a video as evidence, then click Finish Studio to submit for lecturer grading.",
+      );
+    } else {
+      lines.push(
+        "3. Capture Before/After snapshots or record a video as evidence, then click Finish Studio to submit for lecturer grading.",
+      );
+    }
+    return lines.join("\n");
   }
 
   if (resolvedType === "SCALE_UNDER_LOAD") {

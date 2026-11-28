@@ -427,11 +427,12 @@ export function buildSmartSnapshotPlan(
   } else if (exerciseType === "CIRCUIT_BREAKER") {
     badge = t("OUTAGE RECOVERY", "KHÔI PHỤC SỰ CỐ");
     accentColor = "#f43f5e";
+    const allowAutoFaultFocus = options?.includeAutoCheck !== false || confirmed.length > 0;
     primaryService =
-      initiallyStopped ??
+      (allowAutoFaultFocus ? initiallyStopped : null) ??
       criteria?.targetChangeAction?.service ??
       recoveredService ??
-      liveDownService ??
+      (allowAutoFaultFocus ? liveDownService : null) ??
       faultService ??
       options?.authoringTargetService ??
       options?.selectedService ??

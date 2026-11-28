@@ -262,6 +262,9 @@ public class StudioTelemetryHub {
                 s.put("service", svc.path("service").asText(""));
                 s.put("replicas", svc.path("replicas").asInt(0));
                 s.put("runningReplicas", svc.path("runningReplicas").asInt(0));
+                if (svc.has("cpuQuotaPercent") && svc.get("cpuQuotaPercent").isNumber()) {
+                    s.put("cpuQuotaPercent", svc.get("cpuQuotaPercent").asInt());
+                }
                 if (svc.has("stats") && svc.get("stats").isArray()) {
                     s.set("stats", svc.get("stats").deepCopy());
                 }

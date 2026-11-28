@@ -865,7 +865,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 .Select(s => s.Stat).ToList();
             var logs = logResults[index];
             var text = RedactSecrets(logs.StandardOutput + (string.IsNullOrEmpty(logs.StandardError) ? "" : "\n" + logs.StandardError));
-            services.Add(new { service = state.Service, replicas = state.Total, runningReplicas = state.Running, stats, logs = text[..Math.Min(text.Length, 4000)] });
+            var cpuQuotaPercent = _activeCpuLimits.GetValueOrDefault(state.Service, 100);
+            services.Add(new { service = state.Service, replicas = state.Total, runningReplicas = state.Running, cpuQuotaPercent, stats, logs = text[..Math.Min(text.Length, 4000)] });
         }
         var publishCount = ++_telemetryPublishCount;
         var shouldCopyTrace = _forceTraceRefresh || _lastLiveTrace is null || (publishCount % 3 == 1);

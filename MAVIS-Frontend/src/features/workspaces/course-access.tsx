@@ -949,8 +949,10 @@ export function useRuntimeSetupReadiness(projectId: string | null) {
 
 export function CourseEnrollment({
   destination = "workspaces",
+  embedded = destination === "roadmap",
 }: {
   destination?: "workspaces" | "roadmap" | "workspace-overview";
+  embedded?: boolean;
 }) {
   const t = useCourseText();
   const client = useApi();
@@ -975,8 +977,8 @@ export function CourseEnrollment({
   if (client.mode !== "backend") return null;
   const status = redeem.error instanceof ApiError ? redeem.error.status : undefined;
   const formatInvalid = code.length > 0 && !/^[A-Za-z0-9_-]{4,32}$/.test(code);
-  return (
-    <DetailPanel title={t("Join a class with Passkey", "Tham gia lớp bằng Passkey")}>
+  const body = (
+    <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         {t(
           "Enter the 4–32 character Passkey issued by your Lecturer to enroll immediately.",
@@ -1058,6 +1060,12 @@ export function CourseEnrollment({
                 )}
         </p>
       )}
+    </div>
+  );
+  if (embedded) return body;
+  return (
+    <DetailPanel title={t("Join a class with Passkey", "Tham gia lớp bằng Passkey")}>
+      {body}
     </DetailPanel>
   );
 }

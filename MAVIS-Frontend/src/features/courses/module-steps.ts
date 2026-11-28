@@ -178,12 +178,20 @@ function buildLabModuleSequence(
     curriculumCode: options?.curriculumCode ?? labItem.curriculumCode ?? labItem.id,
   });
   const activeLens = resolveModuleAuditLens(track, moduleIndex);
+  const labCountInModule = allItems.filter((item) =>
+    ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type),
+  ).length;
+  const staticTitleBase = isVi ? activeLens.stepTitleVi : activeLens.stepTitleEn;
+  const staticTitle =
+    labCountInModule > 1 && labLabel
+      ? `${staticTitleBase} · ${labLabel}`
+      : staticTitleBase;
   const sequence: OutlineItemData[] = [];
   if (hasReferenceArch) {
     sequence.push({
       id: `static-view:${assignmentId}`,
       type: "STATIC_LAB",
-      title: isVi ? activeLens.stepTitleVi : activeLens.stepTitleEn,
+      title: staticTitle,
       description: isVi ? activeLens.stepDescriptionVi : activeLens.stepDescriptionEn,
       position: positionStart + sequence.length + 1,
       assignmentId,
@@ -291,27 +299,42 @@ export function expandModuleFlowItems(
     return ordered;
   }
 
-  const matchedQuizIds = new Set<string>();
-  for (const labItem of labItems) {
-    const labQuizzes = labItem.assignmentId
-      ? quizItems.filter((q) => q.assignmentId === labItem.assignmentId)
-      : [];
-    for (const q of labQuizzes) matchedQuizIds.add(q.id);
-    ordered.push(
-      ...buildLabModuleSequence(
-        labItem,
-        labQuizzes,
-        assignments,
-        isVi,
-        ordered.length,
-        options,
-        filtered,
-      ),
-    );
-  }
-  for (const quiz of quizItems) {
-    if (!matchedQuizIds.has(quiz.id)) {
-      ordered.push(quiz);
+  // Preserve lecturer-authored ordering across multiple Labs and inline Quizzes so Quiz Gates sit where authored.
+  const matchedQuizIds = new Set<string>(
+    quizItems
+      .filter((q) => q.assignmentId && labItems.some((l) => l.assignmentId === q.assignmentId))
+      .map((q) => q.id),
+  );
+  const nonTheorySorted = [...filtered]
+    .filter((item) => item.type !== "THEORY")
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const seenExpandedAssignments = new Set<string>();
+  for (const entry of nonTheorySorted) {
+    if (entry.type === "QUIZ") {
+      if (!matchedQuizIds.has(entry.id)) {
+        ordered.push({ ...entry, position: ordered.length + 1 });
+      }
+      continue;
+    }
+    if (["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(entry.type)) {
+      if (entry.assignmentId) {
+        if (seenExpandedAssignments.has(entry.assignmentId)) continue;
+        seenExpandedAssignments.add(entry.assignmentId);
+      }
+      const labQuizzes = entry.assignmentId
+        ? quizItems.filter((q) => q.assignmentId === entry.assignmentId)
+        : [];
+      ordered.push(
+        ...buildLabModuleSequence(
+          entry,
+          labQuizzes,
+          assignments,
+          isVi,
+          ordered.length,
+          options,
+          filtered,
+        ),
+      );
     }
   }
   return ordered;

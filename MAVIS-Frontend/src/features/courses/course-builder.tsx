@@ -19,6 +19,7 @@ import {
   FileText,
   GitFork,
   HelpCircle,
+  Loader2,
   Lock,
   Pencil,
   Play,
@@ -132,6 +133,7 @@ type Module = {
 type AssignmentRow = {
   id: string;
   title: string;
+  labOrder?: number | null | undefined;
   instructions?: string;
   labMode?: string | null;
   requireRuntimeTrace?: boolean;
@@ -1205,6 +1207,11 @@ export function CourseBuilder({
     () => (assignments.data ?? []) as AssignmentRow[],
     [assignments.data],
   );
+  const [quickAttaching, setQuickAttaching] = useState<{
+    moduleId: string;
+    done: number;
+    total: number;
+  } | null>(null);
 
   useEffect(() => {
     if (intentHandledRef.current || !isDraft || modules.length === 0) return;
@@ -2163,33 +2170,72 @@ export function CourseBuilder({
                                     size="sm"
                                     variant="outline"
                                     className="h-7 text-xs"
-                                    disabled={busy}
+                                    disabled={busy || Boolean(quickAttaching)}
                                     onClick={() => {
                                       void (async () => {
-                                        for (const a of assignmentRows) {
-                                          await course.addItem.mutateAsync({
-                                            moduleId: module.id,
-                                            type: itemTypeForAssignment(a),
-                                            title: a.title,
-                                            description:
-                                              a.instructions
-                                                ?.split("\n")[0]
-                                                ?.replace(/^#+\s*/, "")
-                                                .slice(0, 160) ?? "",
-                                            required: true,
-                                            content: {},
-                                            assignmentId: a.id,
-                                          });
+                                        const ordered = [...assignmentRows].sort((a, b) => {
+                                          const ao = typeof a.labOrder === "number" ? a.labOrder : Number.MAX_SAFE_INTEGER;
+                                          const bo = typeof b.labOrder === "number" ? b.labOrder : Number.MAX_SAFE_INTEGER;
+                                          if (ao !== bo) return ao - bo;
+                                          return a.title.localeCompare(b.title);
+                                        });
+                                        setQuickAttaching({ moduleId: module.id, done: 0, total: ordered.length });
+                                        try {
+                                          let done = 0;
+                                          for (const a of ordered) {
+                                            await course.addItem.mutateAsync({
+                                              moduleId: module.id,
+                                              type: itemTypeForAssignment(a),
+                                              title: a.title,
+                                              description:
+                                                a.instructions
+                                                  ?.split("\n")[0]
+                                                  ?.replace(/^#+\s*/, "")
+                                                  .slice(0, 160) ?? "",
+                                              required: true,
+                                              content: {},
+                                              assignmentId: a.id,
+                                            });
+                                            done++;
+                                            setQuickAttaching({ moduleId: module.id, done, total: ordered.length });
+                                          }
+                                          toast.success(
+                                            t(
+                                              `Attached ${ordered.length} Labs in order.`,
+                                              `Đã gắn nhanh ${ordered.length} Lab đúng thứ tự.`,
+                                            ),
+                                          );
+                                        } finally {
+                                          setQuickAttaching(null);
                                         }
                                       })();
                                     }}
                                   >
-                                    <Zap className="mr-1 size-3" aria-hidden="true" />
-                                    {t(
-                                      `Assign all ${assignmentRows.length}`,
-                                      `Gắn nhanh ${assignmentRows.length} Lab`,
+                                    {quickAttaching?.moduleId === module.id ? (
+                                      <Loader2 className="mr-1 size-3 animate-spin" aria-hidden="true" />
+                                    ) : (
+                                      <Zap className="mr-1 size-3" aria-hidden="true" />
                                     )}
+                                    {quickAttaching?.moduleId === module.id
+                                      ? t(
+                                          `Attaching ${quickAttaching.done}/${quickAttaching.total}…`,
+                                          `Đang gắn ${quickAttaching.done}/${quickAttaching.total}…`,
+                                        )
+                                      : t(
+                                          `Assign all ${assignmentRows.length}`,
+                                          `Gắn nhanh ${assignmentRows.length} Lab`,
+                                        )}
                                   </Button>
+                                )}
+                              </div>
+                            )}
+
+                            {quickAttaching?.moduleId === module.id && (
+                              <div className="flex items-center gap-2 border-t bg-primary/5 px-3 py-2 text-xs font-medium text-primary">
+                                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                                {t(
+                                  `Attaching Labs in order (${quickAttaching.done}/${quickAttaching.total})…`,
+                                  `Đang gắn các bài Lab theo đúng thứ tự (${quickAttaching.done}/${quickAttaching.total})…`,
                                 )}
                               </div>
                             )}

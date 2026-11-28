@@ -192,6 +192,8 @@ export function MavisHomePage() {
   const [courseFilter, setCourseFilter] = useState<"active" | "archived">("active");
   const [coursePage, setCoursePage] = useState(0);
   const [showAllAnnouncements, setShowAllAnnouncements] = useState(false);
+  const [passkeyOpen, setPasskeyOpen] = useState(false);
+  const isStudent = session.data?.user?.role?.toLowerCase() === "student";
   const allCourses = courses.data ?? [];
   const activeCourses = useMemo(
     () => allCourses.filter((c) => !isArchivedOrQaCourse(c)),
@@ -210,6 +212,7 @@ export function MavisHomePage() {
   return (
     <MavisShell>
       <div className="space-y-8">
+        <PasskeyEnrollmentModal open={passkeyOpen} onClose={() => setPasskeyOpen(false)} />
         <PageTitle
           title={`${t("Welcome back", "Chào mừng bạn trở lại")}${session.data?.user?.name ? `, ${session.data.user.name}` : ""}`}
           description={t(
@@ -308,11 +311,24 @@ export function MavisHomePage() {
                 )}
               </p>
             </div>
-            <Button asChild variant="link">
-              <Link href="/courses">
-                {t("View all", "Xem tất cả")} <ArrowRight className="size-4" />
-              </Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {isStudent && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-teal-600 text-white hover:bg-teal-700"
+                  onClick={() => setPasskeyOpen(true)}
+                >
+                  <KeyRound className="mr-1.5 size-3.5" aria-hidden="true" />
+                  {t("Enter Class Passkey", "Nhập Mã Lớp (Passkey)")}
+                </Button>
+              )}
+              <Button asChild variant="link">
+                <Link href="/courses">
+                  {t("View all", "Xem tất cả")} <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            </div>
           </div>
           {archivedCourses.length > 0 && (
             <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label={t("Course status filter", "Lọc trạng thái khóa học")}>

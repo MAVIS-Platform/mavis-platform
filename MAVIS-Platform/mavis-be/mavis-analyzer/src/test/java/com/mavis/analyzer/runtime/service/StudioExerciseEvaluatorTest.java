@@ -406,6 +406,41 @@ class StudioExerciseEvaluatorTest {
         assertTrue(eval.path("passed").asBoolean());
     }
 
+    @Test
+    void gatewayTargetAliasesGlobalProbeAndMeasuresMultiActionP95DeltaAcrossAllSteps() {
+        ObjectNode criteria = mapper.createObjectNode()
+                .put("exerciseType", "CUSTOM")
+                .put("maxErrorRatePercent", 0)
+                .put("maxP95Ms", 1500);
+        ArrayNode rules = criteria.putArray("rules");
+        rules.addObject().put("metric", "ERROR_RATE").put("target", "gateway").put("operator", "LTE").put("threshold", 0);
+        rules.addObject().put("metric", "P95_DELTA_PCT").put("target", "gateway").put("operator", "LTE").put("threshold", -20);
+        rules.addObject().put("metric", "P95_MS").put("target", "gateway").put("operator", "LTE").put("threshold", 200);
+
+        ObjectNode control = mapper.createObjectNode();
+        ArrayNode actions = control.putArray("actions");
+        actions.addObject().put("action", "START").put("service", "payment").put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-28T01:00:10Z").put("completedAt", "2026-11-28T01:00:15Z");
+        actions.addObject().put("action", "THROTTLE_CPU").put("service", "orders").put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-28T01:00:55Z").put("completedAt", "2026-11-28T01:01:00Z");
+
+        ObjectNode before1 = frame("2026-11-28T01:00:05Z", 1, 0, 50.0, 500.0, 50.0, 500.0);
+        ObjectNode mid1 = frame("2026-11-28T01:00:25Z", 1, 1, 0.0, 480.0, 0.0, 480.0);
+        ObjectNode afterLast = frame("2026-11-28T01:01:05Z", 1, 1, 0.0, 100.0, 0.0, 100.0);
+
+        ObjectNode eval = StudioExerciseEvaluator.evaluate(
+                mapper, criteria, control, afterLast, List.of(before1, mid1, afterLast));
+
+        JsonNode deltaRule = findRule(eval, "P95_DELTA_PCT");
+        assertNotNull(deltaRule);
+        assertTrue(deltaRule.path("passed").asBoolean(), "Multi-step delta should compare before-first (500ms) vs after-last (100ms) = -80%");
+        assertEquals(-80.0, deltaRule.path("observedValue").asDouble(), 0.5);
+        for (JsonNode r : eval.path("rules")) {
+            assertTrue(r.path("passed").asBoolean(), "Expected rule to pass: " + r);
+        }
+        assertTrue(eval.path("passed").asBoolean());
+    }
+
     private ObjectNode frame(String observedAt, int ordersRep, int paymentRep,
                              double probeErr, double probeP95, double edgeErr, double edgeP95) {
         ObjectNode f = mapper.createObjectNode().put("observedAt", observedAt);

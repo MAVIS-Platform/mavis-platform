@@ -118,6 +118,7 @@ public class RuntimeStudioService {
         if (!request.telemetry().isObject() || request.telemetry().toString().length() > 524288)
             throw error(ErrorCode.BAD_REQUEST, "Telemetry exceeds the session budget.");
         JsonNode redacted = com.mavis.analyzer.runtime.util.SecretRedactor.redactJson(request.telemetry());
+        applyCpuQuotas(redacted, activeCpuQuotaByService(session.getStudioControl()));
         String nowIso = OffsetDateTime.now().toString();
         if (telemetryHub != null) {
             boolean forcePersist = !"RUNNING".equals(session.getExecutionStatus());
@@ -773,7 +774,7 @@ public class RuntimeStudioService {
             if (liveOpt.isPresent()) {
                 var live = liveOpt.get();
                 if (live.latestTelemetry() != null) {
-                    result.set("telemetry", live.latestTelemetry());
+                    result.set("telemetry", live.latestTelemetry().deepCopy());
                     if (live.receivedAt() != null) result.put("telemetryReceivedAt", live.receivedAt());
                 }
                 if (!live.history().isEmpty()) {
@@ -830,6 +831,7 @@ public class RuntimeStudioService {
             .put("sourceSnapshotId", session.getSourceSnapshot() == null ? "" : session.getSourceSnapshot().getId().toString())
             .put("receiptDigest", session.getReceiptDigest())
             .put("executionStatus", execution).put("cleanupStatus", session.getCleanupStatus() == null ? "UNKNOWN" : session.getCleanupStatus());
+        applyCpuQuotas(out.get("telemetry"), activeCpuQuotaByService(out));
         stripSystemSetupActions(out);
         if (redactForStudent) {
             redactStudioViewForStudent(out);
@@ -897,6 +899,34 @@ public class RuntimeStudioService {
         ObjectNode copy = action.deepCopy();
         copy.remove("systemSetup");
         return copy;
+    }
+
+    private static java.util.Map<String, Integer> activeCpuQuotaByService(JsonNode control) {
+        java.util.Map<String, Integer> quotas = new java.util.LinkedHashMap<>();
+        if (control == null || !control.path("actions").isArray()) return quotas;
+        for (JsonNode action : control.path("actions")) {
+            if (!"CONFIRMED".equals(action.path("status").asText())) continue;
+            if (!"THROTTLE_CPU".equals(action.path("action").asText())) continue;
+            String svc = action.path("service").asText("").trim();
+            int pct = action.path("cpuPercent").asInt(100);
+            if (!svc.isBlank() && pct >= 10 && pct <= 100) {
+                quotas.put(svc, pct);
+            }
+        }
+        return quotas;
+    }
+
+    private static void applyCpuQuotas(JsonNode telemetryNode, java.util.Map<String, Integer> quotas) {
+        if (telemetryNode == null || !telemetryNode.isObject() || !telemetryNode.path("services").isArray()) return;
+        for (JsonNode svcNode : telemetryNode.path("services")) {
+            if (!(svcNode instanceof ObjectNode obj)) continue;
+            if (obj.has("cpuQuotaPercent") && obj.get("cpuQuotaPercent").isNumber()) continue;
+            String name = obj.path("service").asText("").trim();
+            Integer pct = quotas.get(name);
+            if (pct != null) {
+                obj.put("cpuQuotaPercent", pct);
+            }
+        }
     }
 
     private static void stripSystemSetupActions(ObjectNode out) {

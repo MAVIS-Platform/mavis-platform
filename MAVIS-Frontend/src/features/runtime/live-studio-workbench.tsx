@@ -306,6 +306,7 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
     maxActions?: number | null;
     rules?: DeclarativeRuleInput[];
     allowedActions?: string[];
+    requiredTraceEdge?: { from: string; to: string } | null;
     replicaService: string;
     replicaCount: string;
   }) => void;
@@ -709,19 +710,21 @@ export function LiveStudioWorkbench({
     }
     prevFinishSuccessRef.current = finish.isSuccess;
   }, [finish.isSuccess]);
-  // Fallback poll while sealing modal is open in case SSE closes early on completion.
+  // Poll every 2s while sealing modal is open until COMPLETED + receiptDigest (or terminal failure/cancel).
+  const refetchStudioState = state.refetch;
   useEffect(() => {
     if (!verifiedModalOpen || !activeSessionId) return;
     const done =
-      data.executionStatus === "COMPLETED" ||
+      (data.executionStatus === "COMPLETED" && Boolean(data.receiptDigest)) ||
       data.executionStatus === "FAILED" ||
       data.executionStatus === "CANCELLED";
     if (done) return;
+    void refetchStudioState();
     const id = window.setInterval(() => {
-      void state.refetch();
-    }, 3000);
+      void refetchStudioState();
+    }, 2000);
     return () => window.clearInterval(id);
-  }, [verifiedModalOpen, activeSessionId, data.executionStatus, state]);
+  }, [verifiedModalOpen, activeSessionId, data.executionStatus, data.receiptDigest, refetchStudioState]);
   const [leftWidth, setLeftWidth] = useState(244);
   const [rightWidth, setRightWidth] = useState(() => (authoring ? 360 : 340));
   const [rightHeight, setRightHeight] = useState<number | null>(null);
@@ -1138,6 +1141,9 @@ export function LiveStudioWorkbench({
     [],
   );
 
+  const authoringBaselinePathsKey = authoring?.baselinePaths?.join(",") ?? "";
+  const authoringRulesKey = authoring?.declarativeRules ? JSON.stringify(authoring.declarativeRules) : "";
+  const authoringAllowedActionsKey = authoring?.allowedActions?.join(",") ?? "";
   useEffect(() => {
     if (!authoring) return;
     setMissionDraft(authoring.instructions);
@@ -1164,16 +1170,16 @@ export function LiveStudioWorkbench({
   }, [
     authoring?.instructions,
     authoring?.baselinePath,
-    authoring?.baselinePaths,
+    authoringBaselinePathsKey,
     authoring?.initialLoadRps,
     authoring?.predictionMode,
     authoring?.maxActions,
-    authoring?.declarativeRules,
+    authoringRulesKey,
     authoring?.maxErrorRatePercent,
     authoring?.maxP95Ms,
     authoring?.minImpactF1,
     authoring?.predictionRequired,
-    authoring?.allowedActions,
+    authoringAllowedActionsKey,
     authoring?.replicaService,
     authoring?.replicaCount,
   ]);
@@ -1342,6 +1348,7 @@ export function LiveStudioWorkbench({
     () =>
       buildSmartSnapshotPlan(data, {
         locale: locale === "en" ? "en" : "vi",
+        includeAutoCheck: Boolean(authoring),
         selectedService: canvasSelected || null,
         authoringExerciseType: authoring?.exerciseType ?? null,
         authoringTargetService: authoring?.targetChangeAction?.service ?? null,
@@ -1349,6 +1356,7 @@ export function LiveStudioWorkbench({
     [
       data,
       locale,
+      authoring,
       canvasSelected,
       authoring?.exerciseType,
       authoring?.targetChangeAction?.service,
@@ -2867,7 +2875,7 @@ export function LiveStudioWorkbench({
             ) : isBooting ? (
               <div
                 className={`grid h-full place-items-center p-6 pb-20 text-center ${
-                  !authoring && !missionHidden ? "lg:pl-[380px]" : ""
+                  !authoring && !missionHidden ? "md:pl-[360px]" : ""
                 } ${showRight ? "lg:pr-[360px]" : ""}`}
               >
                 <div className={`max-w-sm space-y-2.5 p-5 ${styleCfg.floatingCardClass}`}>
@@ -2883,7 +2891,7 @@ export function LiveStudioWorkbench({
             ) : (
               <div
                 className={`grid h-full place-items-center p-6 pb-20 text-center ${
-                  !authoring && !missionHidden ? "lg:pl-[380px]" : ""
+                  !authoring && !missionHidden ? "md:pl-[360px]" : ""
                 } ${showRight ? "lg:pr-[360px]" : ""}`}
               >
                 <div className={`max-w-sm space-y-3 p-6 ${styleCfg.floatingCardClass}`}>
@@ -3368,7 +3376,7 @@ export function LiveStudioWorkbench({
               <div
                 data-tour="studio-command-dock"
                 aria-label={t("Live Command Dock", "Thanh điều khiển trực tiếp")}
-                className={`pointer-events-auto absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 px-3 py-2 ${styleCfg.floatingPillClass}`}
+                className={`pointer-events-auto absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${styleCfg.floatingPillClass}`}
               >
                 {faultedServices.length > 0 && (
                   <>
@@ -3448,12 +3456,13 @@ export function LiveStudioWorkbench({
                       Snapshot
                     </Button>
 
-                    <span className="inline-flex" title={finishDisabledReason}>
+                    <span className="inline-flex shrink-0" title={finishDisabledReason}>
                       <Button
                         type="button"
                         size="sm"
-                        className="h-8 rounded-full bg-emerald-600 px-3.5 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
+                        className="h-8 whitespace-nowrap rounded-full bg-emerald-600 px-3.5 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
                         disabled={finishDisabled}
+                        title={finishDisabled ? finishDisabledReason : undefined}
                         aria-label={
                           finishDisabled
                             ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})`
@@ -3639,13 +3648,14 @@ export function LiveStudioWorkbench({
                   </Button>
                 )}
                 {showLiveSessionControls && data.executionStatus === "RUNNING" && (
-                  <span className="inline-flex" title={finishDisabledReason}>
+                  <span className="inline-flex shrink-0" title={finishDisabledReason}>
                     <Button
                       type="button"
                       size="sm"
                       data-testid="drawer-finish-studio-btn"
-                      className="h-6 rounded-full bg-emerald-600 px-2.5 text-[11.5px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
+                      className="h-6 whitespace-nowrap rounded-full bg-emerald-600 px-2.5 text-[11.5px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
                       disabled={finishDisabled}
+                      title={finishDisabled ? finishDisabledReason : undefined}
                       aria-label={
                         finishDisabled
                           ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})`
@@ -4160,9 +4170,27 @@ export function LiveStudioWorkbench({
               const throttleAction = [...observedData.actions]
                 .reverse()
                 .find((a) => a.service === service && a.status === "CONFIRMED" && a.action === "THROTTLE_CPU");
+              const telemetryQuotaPct =
+                typeof telemetry?.cpuQuotaPercent === "number" && telemetry.cpuQuotaPercent < 100
+                  ? telemetry.cpuQuotaPercent
+                  : null;
               const cpuQuotaPct =
-                typeof throttleAction?.cpuPercent === "number" && throttleAction.cpuPercent < 100
+                telemetryQuotaPct ??
+                (typeof throttleAction?.cpuPercent === "number" && throttleAction.cpuPercent < 100
                   ? throttleAction.cpuPercent
+                  : null);
+              const rawCpuNumMatch = agg.cpu.match(/(\d+(?:\.\d+)?)\s*%/);
+              const rawCpuPct = rawCpuNumMatch ? Number(rawCpuNumMatch[1]) : null;
+              const baseCpus = observedData.limits?.cpus ?? 0.5;
+              const effPerPodCpus =
+                cpuQuotaPct !== null
+                  ? Math.max(0.05, Math.round(baseCpus * cpuQuotaPct) / 100)
+                  : baseCpus;
+              const effTotalCpus =
+                Math.round(effPerPodCpus * Math.max(1, running ?? agg.containers ?? 1) * 100) / 100;
+              const cpuSaturationPct =
+                rawCpuPct !== null && effTotalCpus > 0
+                  ? Math.min(100, Math.round((rawCpuPct / (effTotalCpus * 100)) * 100))
                   : null;
               const allServiceSpans = (observedData.telemetry?.spans ?? []).filter(
                 (span) => span.runtimeService === service,
@@ -4255,6 +4283,7 @@ export function LiveStudioWorkbench({
                 desired,
                 isPaused,
                 cpuQuotaPct,
+                cpuSaturationPct,
                 svcLimit,
                 serviceSpans,
                 errorSpanCount,
@@ -4426,6 +4455,21 @@ export function LiveStudioWorkbench({
                                   }`}
                                 >
                                   Quota {row.cpuQuotaPct}%
+                                </span>
+                              )}
+                              {row.cpuSaturationPct !== null && row.cpuSaturationPct >= 75 && (
+                                <span
+                                  className={`ml-1 rounded px-1 py-0.5 text-[10px] font-bold ${
+                                    row.cpuSaturationPct >= 90
+                                      ? isLight
+                                        ? "bg-rose-100 text-rose-700"
+                                        : "bg-rose-500/20 text-rose-200"
+                                      : isLight
+                                        ? "bg-amber-100 text-amber-800"
+                                        : "bg-amber-500/20 text-amber-200"
+                                  }`}
+                                >
+                                  {t(`Throttled ${row.cpuSaturationPct}%`, `Bão hòa ${row.cpuSaturationPct}%`)}
                                 </span>
                               )}
                             </td>
@@ -5080,7 +5124,7 @@ export function LiveStudioWorkbench({
               scrollbarWidth: "thin",
               scrollbarColor: isLight ? "#cbd5e1 #ffffff" : "#334155 #0a0f18",
             }}
-            className={`pointer-events-auto absolute flex max-w-[calc(100%-1rem)] flex-col overflow-hidden ${
+            className={`pointer-events-auto absolute flex max-w-[calc(100%-4.5rem)] flex-col overflow-hidden sm:max-w-[calc(100%-1rem)] ${
               frontPanel === "right" ? "z-30" : "z-20"
             } ${styleCfg.floatingCardClass}`}
           >
@@ -5449,21 +5493,59 @@ export function LiveStudioWorkbench({
                       : needsPrediction
                         ? isRootCauseDiagnosis
                           ? t(
-                              "Lock your root-cause diagnosis below before running a Docker action",
-                              "Hãy khóa chẩn đoán nguyên nhân gốc ở khung bên dưới trước khi chạy thao tác Docker",
+                              "Lock your root-cause diagnosis above before running a Docker action",
+                              "Hãy khóa chẩn đoán nguyên nhân gốc ở khung bên trên trước khi chạy thao tác Docker",
                             )
                           : t(
-                              "Lock your impact prediction below before running a Docker action",
-                              "Hãy khóa dự đoán phạm vi ảnh hưởng ở khung bên dưới trước khi chạy thao tác Docker",
+                              "Lock your impact prediction above before running a Docker action",
+                              "Hãy khóa dự đoán phạm vi ảnh hưởng ở khung bên trên trước khi chạy thao tác Docker",
                             )
                         : !isAllowed(act)
                           ? t("Disabled by exercise configuration", "Thao tác bị tắt trong cấu hình đề bài")
                           : undefined;
+                  const selThrottleAct = [...data.actions]
+                    .reverse()
+                    .find(
+                      (a) =>
+                        a.service === selSvc &&
+                        a.status === "CONFIRMED" &&
+                        a.action === "THROTTLE_CPU",
+                    );
+                  const selLiveQuotaPct =
+                    typeof selObs?.cpuQuotaPercent === "number"
+                      ? selObs.cpuQuotaPercent
+                      : typeof selThrottleAct?.cpuPercent === "number"
+                        ? selThrottleAct.cpuPercent
+                        : 100;
+                  const selActiveQuotaPct = selLiveQuotaPct < 100 ? selLiveQuotaPct : null;
                   return (
                     <section
                       aria-label={t("Live Service Controls", "Điều khiển Service")}
                       className={`space-y-3.5 text-[13px] ${isLight ? "text-slate-900" : "dark text-slate-100"}`}
                     >
+                      {/* When prediction/diagnosis lock is required and not locked yet, pin it at the very top so newcomers immediately see why Docker buttons wait. */}
+                      {needsPrediction &&
+                        !isPreviewMode &&
+                        studio.services.length > 0 &&
+                        data.executionStatus === "RUNNING" && (
+                          <StudioExercisePanel
+                            data={data}
+                            services={studio.services}
+                            busy={busy}
+                            isLight={isLight}
+                            submittingPrediction={studio.prediction.isPending}
+                            onLockPrediction={(svcs, rationale) =>
+                              void studio.submitPrediction(svcs, rationale)
+                            }
+                            onRunPrescribedChange={(kind, svc, rep, cpuPct, targetRps) => {
+                              if (kind === "STOP" || kind === "START" || kind === "SCALE") {
+                                void dispatchCommand(kind, svc, rep);
+                              } else {
+                                void studio.send(kind, svc, rep, cpuPct, targetRps);
+                              }
+                            }}
+                          />
+                        )}
                       {/* Service Picker & Status */}
                       <div className={`p-3 ${styleCfg.subSurfaceClass}`}>
                         <div className="flex items-center justify-between gap-2">
@@ -5508,26 +5590,13 @@ export function LiveStudioWorkbench({
                           <div
                             title={(() => {
                               const baseCpus = data.limits?.cpus ?? 0.5;
-                              const throttleAct = [...data.actions]
-                                .reverse()
-                                .find(
-                                  (a) =>
-                                    a.service === selSvc &&
-                                    a.status === "CONFIRMED" &&
-                                    a.action === "THROTTLE_CPU",
-                                );
-                              const quotaPct =
-                                typeof throttleAct?.cpuPercent === "number" &&
-                                throttleAct.cpuPercent < 100
-                                  ? throttleAct.cpuPercent
-                                  : null;
                               const effCpus =
-                                quotaPct !== null
-                                  ? Math.max(0.05, Math.round(baseCpus * quotaPct) / 100)
+                                selActiveQuotaPct !== null
+                                  ? Math.max(0.05, Math.round(baseCpus * selActiveQuotaPct) / 100)
                                   : baseCpus;
                               return t(
-                                `% of 1 host CPU core · Pod cgroup limit: ${effCpus} vCPU (${Math.round(effCpus * 100)}% host core)`,
-                                `% trên 1 nhân CPU máy chủ · Hạn mức pod: ${effCpus} vCPU (${Math.round(effCpus * 100)}% 1 nhân)`,
+                                `% of 1 host CPU core · Pod cgroup limit: ${effCpus} vCPU (${Math.round(effCpus * 100)}% host core)${selActiveQuotaPct !== null ? ` · Quota ${selActiveQuotaPct}%` : ""}`,
+                                `% trên 1 nhân CPU máy chủ · Hạn mức pod: ${effCpus} vCPU (${Math.round(effCpus * 100)}% 1 nhân)${selActiveQuotaPct !== null ? ` · Quota ${selActiveQuotaPct}%` : ""}`,
                               );
                             })()}
                             className={`flex items-center justify-between gap-1.5 border px-2.5 py-1.5 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
@@ -5536,28 +5605,15 @@ export function LiveStudioWorkbench({
                             <dd className="whitespace-nowrap font-mono text-xs font-bold">
                               {selStats.cpu}
                               {data.limits?.cpus !== undefined && (
-                                <span className={`ml-1 text-[10px] font-medium ${styleCfg.subtleTextClass}`}>
+                                <span className={`ml-1 text-[10px] font-medium ${selActiveQuotaPct !== null ? (isLight ? "text-amber-700 font-bold" : "text-amber-300 font-bold") : styleCfg.subtleTextClass}`}>
                                   /
                                   {(() => {
-                                    const throttleAct = [...data.actions]
-                                      .reverse()
-                                      .find(
-                                        (a) =>
-                                          a.service === selSvc &&
-                                          a.status === "CONFIRMED" &&
-                                          a.action === "THROTTLE_CPU",
-                                      );
-                                    const quotaPct =
-                                      typeof throttleAct?.cpuPercent === "number" &&
-                                      throttleAct.cpuPercent < 100
-                                        ? throttleAct.cpuPercent
-                                        : null;
                                     const replicas = Math.max(1, selRunning ?? selStats.containers ?? 1);
                                     const perPod =
-                                      quotaPct !== null
+                                      selActiveQuotaPct !== null
                                         ? Math.max(
                                             0.05,
-                                            Math.round(data.limits.cpus * quotaPct) / 100,
+                                            Math.round(data.limits.cpus * selActiveQuotaPct) / 100,
                                           )
                                         : data.limits.cpus;
                                     return Math.round(perPod * replicas * 100) / 100;
@@ -5756,24 +5812,45 @@ export function LiveStudioWorkbench({
 
                         {/* CPU Throttle (cgroup) */}
                         <div className="space-y-1">
-                          <span className={`text-[10.5px] font-semibold uppercase tracking-wide ${styleCfg.subtleTextClass}`}>
-                            {t("CPU Throttle (cgroup)", "Giới hạn CPU (cgroup)")}
-                          </span>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {[25, 50, 100].map((pct) => (
-                              <Button
-                                key={pct}
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                title={disabledHint("THROTTLE_CPU")}
-                                disabled={!canLiveAct || busy || needsPrediction || selPhase !== "running" || !isAllowed("THROTTLE_CPU")}
-                                onClick={() => void studio.send("THROTTLE_CPU", selSvc, undefined, pct)}
-                                className={`h-8 whitespace-nowrap border font-mono text-xs font-semibold disabled:opacity-45 ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
+                          <div className={`flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-wide ${styleCfg.subtleTextClass}`}>
+                            <span>{t("CPU Throttle (cgroup)", "Giới hạn CPU (cgroup)")}</span>
+                            {selPhase === "running" && (
+                              <span
+                                className={`font-mono font-bold ${
+                                  selActiveQuotaPct !== null
+                                    ? isLight
+                                      ? "text-amber-700"
+                                      : "text-amber-300"
+                                    : "text-foreground"
+                                }`}
                               >
-                                CPU {pct}%
-                              </Button>
-                            ))}
+                                {selLiveQuotaPct}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {[25, 50, 100].map((pct) => {
+                              const isCurrentQuota = selPhase === "running" && selLiveQuotaPct === pct;
+                              return (
+                                <Button
+                                  key={pct}
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  aria-pressed={isCurrentQuota}
+                                  title={disabledHint("THROTTLE_CPU")}
+                                  disabled={!canLiveAct || busy || needsPrediction || selPhase !== "running" || !isAllowed("THROTTLE_CPU")}
+                                  onClick={() => void studio.send("THROTTLE_CPU", selSvc, undefined, pct)}
+                                  className={`h-8 whitespace-nowrap border font-mono text-xs font-semibold disabled:opacity-45 ${styleCfg.controlRadiusClass} ${
+                                    isCurrentQuota
+                                      ? styleCfg.controlActiveClass
+                                      : styleCfg.controlIdleClass
+                                  }`}
+                                >
+                                  CPU {pct}%
+                                </Button>
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -5857,8 +5934,9 @@ export function LiveStudioWorkbench({
                         </div>
                       )}
 
-                      {/* Change Impact Exercise Panel (Prediction Lock & Prescribed Action) */}
+                      {/* Change Impact Exercise Panel (when prediction already locked or not gating actions) */}
                       {!isPreviewMode &&
+                        !needsPrediction &&
                         studio.services.length > 0 &&
                         (data.executionStatus === "RUNNING" || Boolean(data.exerciseEvaluation)) && (
                           <StudioExercisePanel
@@ -6054,7 +6132,7 @@ export function LiveStudioWorkbench({
                     ...prev,
                     {
                       metric: "P95_DELTA_PCT",
-                      target: "gateway",
+                      target: "ALL",
                       operator: "LTE",
                       threshold: -20,
                     },
@@ -6624,45 +6702,6 @@ export function LiveStudioWorkbench({
                           </div>
                         )}
 
-                        {/* 3. Outage Recovery Specialized Advanced Controls */}
-                        {activeGoalId === "recovery" && (
-                          <div data-testid="advanced-recovery" className="space-y-1.5">
-                            <span className={`block text-[11px] font-semibold ${isLight ? "text-slate-700" : "text-slate-200"}`}>
-                              {t("Recovery Error Threshold (Max Error %)", "Ngưỡng lỗi xác nhận hồi phục (%)")}
-                            </span>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              <button
-                                type="button"
-                                disabled={authoring.frozen}
-                                onClick={() => setMaxErrDraft("0")}
-                                className={presetBtn(maxErrDraft === "0")}
-                              >
-                                0%
-                              </button>
-                              <button
-                                type="button"
-                                disabled={authoring.frozen}
-                                onClick={() => setMaxErrDraft("5")}
-                                className={presetBtn(maxErrDraft === "5")}
-                              >
-                                &lt;= 5%
-                              </button>
-                              <Input
-                                type="number"
-                                disabled={authoring.frozen}
-                                aria-label="Max Error %"
-                                style={{ fontSize: 12 }}
-                                min={0}
-                                max={100}
-                                value={maxErrDraft}
-                                onChange={(e) => setMaxErrDraft(e.target.value)}
-                                placeholder="0"
-                                className={`h-7 px-2 font-mono ${styleCfg.inputClass}`}
-                              />
-                            </div>
-                          </div>
-                        )}
-
                         {/* 4. CPU Degradation Specialized Advanced Controls */}
                         {activeGoalId === "cpu" && (
                           <div data-testid="advanced-cpu" className="space-y-1.5">
@@ -6714,7 +6753,10 @@ export function LiveStudioWorkbench({
 
                         {/* Unified Composable SLA Thresholds (available in EVERY mode — Easy, Medium, Hard Exam!) */}
                         <div className="space-y-2">
-                          <div className="space-y-1">
+                          <div
+                            data-testid="advanced-recovery"
+                            className="space-y-1"
+                          >
                             <span className={`block text-[11px] font-medium ${styleCfg.subtleTextClass}`}>
                               {t("Max Error (%)", "Lỗi tối đa (%)")}
                             </span>
@@ -6724,7 +6766,10 @@ export function LiveStudioWorkbench({
                                   key={val || "any"}
                                   type="button"
                                   disabled={authoring.frozen}
-                                  onClick={() => setMaxErrDraft(val)}
+                                  onClick={() => {
+                                    setMaxErrDraft(val);
+                                    setP95ValidationError("");
+                                  }}
                                   className={presetBtn(maxErrDraft === val)}
                                 >
                                   {val ? `${val}%` : "—"}
@@ -6738,7 +6783,10 @@ export function LiveStudioWorkbench({
                                 min={0}
                                 max={100}
                                 value={maxErrDraft}
-                                onChange={(e) => setMaxErrDraft(e.target.value)}
+                                onChange={(e) => {
+                                  setMaxErrDraft(e.target.value);
+                                  setP95ValidationError("");
+                                }}
                                 placeholder="—"
                                 className={`h-7 min-w-0 px-2 font-mono ${styleCfg.inputClass}`}
                               />
@@ -6812,10 +6860,34 @@ export function LiveStudioWorkbench({
                             </button>
                           </div>
 
-                          {rulesDraft.map((rule, idx) => (
+                          {rulesDraft.map((rule, idx) => {
+                            const isEdgeMetric =
+                              rule.metric === "TRACE_EDGE" || rule.metric === "EDGE_ERROR_RATE";
+                            const isReplicaMetric = rule.metric === "REPLICAS";
+                            const targetOptions: Array<{ value: string; label: string }> = isEdgeMetric
+                              ? staticEdgesForBlast.map((e) => ({
+                                  value: `${e.from}->${e.to}`,
+                                  label: `${e.from} → ${e.to}`,
+                                }))
+                              : isReplicaMetric
+                                ? blocks.map((b) => ({ value: b.service, label: b.service }))
+                                : [
+                                    { value: "ALL", label: t("All (System)", "Toàn hệ thống") },
+                                    ...blocks.map((b) => ({ value: b.service, label: b.service })),
+                                  ];
+                            const normalizedTarget =
+                              !isEdgeMetric &&
+                              !isReplicaMetric &&
+                              rule.target.trim().toLowerCase() === "gateway"
+                                ? "ALL"
+                                : rule.target;
+                            const hasCurrentOption = targetOptions.some(
+                              (opt) => opt.value === normalizedTarget,
+                            );
+                            return (
                             <div
                               key={`${rule.metric}-${idx}`}
-                              className={`grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_52px_24px] items-center gap-1.5 border p-1.5 ${themeRadius} ${
+                              className={`grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)_52px_24px] items-center gap-1.5 border p-1.5 ${themeRadius} ${
                                 isLight
                                   ? "border-slate-200 bg-slate-50/70"
                                   : "border-slate-800 bg-slate-900/50"
@@ -6840,7 +6912,7 @@ export function LiveStudioWorkbench({
                                           ? staticEdgesForBlast[0]
                                             ? `${staticEdgesForBlast[0].from}->${staticEdgesForBlast[0].to}`
                                             : "api-gateway->order-service"
-                                          : "gateway",
+                                          : "ALL",
                                     threshold:
                                       nextMetric === "REPLICAS"
                                         ? 2
@@ -6862,15 +6934,23 @@ export function LiveStudioWorkbench({
                                 <option value="EDGE_ERROR_RATE">{t("Edge Err", "Lỗi cạnh")}</option>
                                 <option value="TRACE_EDGE">Trace</option>
                               </select>
-                              <input
-                                type="text"
+                              <select
                                 aria-label="Rule target"
                                 disabled={authoring.frozen}
-                                value={rule.target}
+                                value={normalizedTarget}
+                                title={normalizedTarget}
                                 onChange={(e) => updateComposableRule(idx, { target: e.target.value })}
-                                placeholder="service / A->B"
-                                className={`h-7 min-w-0 rounded border px-1.5 font-mono text-[10.5px] ${styleCfg.inputClass}`}
-                              />
+                                className={`h-7 min-w-0 rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                              >
+                                {!hasCurrentOption && normalizedTarget && (
+                                  <option value={normalizedTarget}>{normalizedTarget}</option>
+                                )}
+                                {targetOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
                               <input
                                 type="number"
                                 aria-label="Rule threshold"
@@ -6891,7 +6971,8 @@ export function LiveStudioWorkbench({
                                 <X className="size-3" aria-hidden="true" />
                               </button>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
 
                         {/* Shared Technical Controls (Required Trace Edge, Allowed Actions, Sync Docker) */}
@@ -8060,6 +8141,18 @@ export function LiveStudioWorkbench({
                       : undefined
                   }
                   onClick={() => {
+                    if (maxErrDraft.trim()) {
+                      const parsedErr = Number(maxErrDraft);
+                      if (!Number.isFinite(parsedErr) || parsedErr < 0 || parsedErr > 100) {
+                        setP95ValidationError(
+                          t(
+                            "Max error rate must be between 0% and 100%.",
+                            "Tỉ lệ lỗi tối đa phải nằm trong khoảng 0% đến 100%.",
+                          ),
+                        );
+                        return;
+                      }
+                    }
                     if (maxP95Draft.trim()) {
                       const parsedP95 = Number(maxP95Draft);
                       if (!Number.isFinite(parsedP95) || parsedP95 < 1 || parsedP95 > 60000) {
@@ -8086,6 +8179,7 @@ export function LiveStudioWorkbench({
                       maxActions: maxActionsDraft,
                       rules: rulesDraft,
                       allowedActions: allowedActionsDraft,
+                      requiredTraceEdge: authoring.requiredTraceEdge ?? null,
                       replicaService: replicaSvcDraft,
                       replicaCount: replicaCountDraft,
                     });

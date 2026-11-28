@@ -417,17 +417,26 @@ export function StudentCourseSyllabus({
   };
 
   const inlineQuizGateItemFor = (item: OutlineItemData): OutlineItemData | undefined => {
-    if (resolveModuleFlowKind(item) !== "STUDIO_RUNTIME") return undefined;
+    const flowKind = resolveModuleFlowKind(item);
+    if (flowKind !== "STUDIO_RUNTIME" && flowKind !== "MODULE_SUBMIT") return undefined;
     const owner = syllabusModules.find((mod) =>
       mod.items.some((candidate) => candidate.id === item.id),
     );
     if (!owner) return undefined;
-    const inlineQuiz = owner.items.find(
-      (candidate) =>
-        candidate.type === "QUIZ" &&
-        !candidate.assignmentId &&
-        candidate.required !== false,
-    );
+    const itemIdx = owner.items.findIndex((candidate) => candidate.id === item.id);
+    const labCountInOwner = new Set(
+      owner.items
+        .filter((c) => c.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(c.type))
+        .map((c) => c.assignmentId),
+    ).size;
+    // Scope standalone module Quiz Gates strictly to Labs placed AFTER the Quiz (single-lab modules keep gating that lab).
+    const inlineQuiz = owner.items.find((candidate, candidateIdx) => {
+      if (candidate.type !== "QUIZ" || candidate.assignmentId || candidate.required === false) {
+        return false;
+      }
+      if (labCountInOwner <= 1) return true;
+      return candidateIdx < itemIdx;
+    });
     if (inlineQuiz && !isStandaloneQuizItemPassed(inlineQuiz)) {
       return inlineQuiz;
     }
@@ -435,6 +444,7 @@ export function StudentCourseSyllabus({
       (candidate) =>
         candidate.type === "QUIZ" &&
         Boolean(candidate.assignmentId) &&
+        candidate.assignmentId === item.assignmentId &&
         candidate.required !== false,
     );
     if (
@@ -804,10 +814,13 @@ export function StudentCourseSyllabus({
                                 {lockedLabRecord?.reason === "COURSE_ARCHIVED"
                                   ? t("This archived course is read-only", "Khóa học đã lưu trữ · chỉ xem")
                                   : inlineQuizGate
-                                    ? t(
-                                        "Pass the Quiz (>= 70%) to unlock Studio Live",
-                                        "Hoàn thành bài Quiz (>= 70%) để mở khóa MAVIS Studio",
-                                      )
+                                    ? (() => {
+                                        const reqPct = parseInlineQuizPassPercent(inlineQuizGate.content);
+                                        return t(
+                                          `Pass the Quiz (>= ${reqPct}%) to unlock Studio Live`,
+                                          `Hoàn thành bài Quiz (>= ${reqPct}%) để mở khóa MAVIS Studio`,
+                                        );
+                                      })()
                                     : t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
                               </span>
                             )}
@@ -842,12 +855,12 @@ export function StudentCourseSyllabus({
                       ? labs.find((l) => l.assignmentId === submitItem.assignmentId)
                       : undefined;
                     const isPassed = linkedLab?.state === "PASSED";
-                    const hasSubmitted =
-                      isPassed ||
-                      (submitItem.assignmentId
-                        ? classSubmissions.some((sub) => sub.assignmentId === submitItem.assignmentId)
-                        : false);
+                    const latestSubmissionForLab = submitItem.assignmentId
+                      ? classSubmissions.find((sub) => sub.assignmentId === submitItem.assignmentId)
+                      : undefined;
+                    const hasSubmitted = isPassed || Boolean(latestSubmissionForLab);
                     const lockedLabRecord = lockedLabForItem(submitItem);
+                    const submitQuizGate = inlineQuizGateItemFor(submitItem);
                     const isLocked = isItemLocked(submitItem);
                     return (
                       <div
@@ -868,7 +881,15 @@ export function StudentCourseSyllabus({
                             <p className="text-xs text-amber-700 dark:text-amber-300">
                               {lockedLabRecord?.reason === "COURSE_ARCHIVED"
                                 ? t("This archived course is read-only", "Khóa học đã lưu trữ · chỉ xem")
-                                : t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
+                                : submitQuizGate
+                                  ? (() => {
+                                      const reqPct = parseInlineQuizPassPercent(submitQuizGate.content);
+                                      return t(
+                                        `Pass the Quiz (>= ${reqPct}%) to unlock submission`,
+                                        `Hoàn thành bài Quiz (>= ${reqPct}%) để mở khóa nộp bài`,
+                                      );
+                                    })()
+                                  : t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
                             </p>
                           )}
                         </div>
@@ -876,8 +897,14 @@ export function StudentCourseSyllabus({
                           type="button"
                           size="sm"
                           variant={hasSubmitted ? "outline" : "default"}
-                          disabled={isLocked}
+                          disabled={isLocked && !hasSubmitted}
                           onClick={() => {
+                            if (hasSubmitted && latestSubmissionForLab?.id) {
+                              router.push(
+                                `/submissions/${encodeURIComponent(latestSubmissionForLab.id)}`,
+                              );
+                              return;
+                            }
                             if (!isLocked) selectCurriculumItem(submitItem);
                           }}
                         >

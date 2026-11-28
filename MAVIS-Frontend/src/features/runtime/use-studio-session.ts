@@ -74,15 +74,19 @@ export function useStudioSession(sessionId: string) {
   const queryClient = useQueryClient();
   const [sseConnected, setSseConnected] = useState(false);
   const [cachedStatus, setCachedStatus] = useState("");
-  const isTerminalCached = TERMINAL_STUDIO_STATUSES.has(cachedStatus);
-  const slowPoll = sseConnected && cachedStatus === "RUNNING";
+  const [hasSealedReceipt, setHasSealedReceipt] = useState(false);
+  const isTerminalCached =
+    TERMINAL_STUDIO_STATUSES.has(cachedStatus) &&
+    (cachedStatus !== "COMPLETED" || hasSealedReceipt);
+  const fastFinishPoll = cachedStatus === "FINISHING" || (cachedStatus === "COMPLETED" && !hasSealedReceipt);
+  const slowPoll = sseConnected && cachedStatus === "RUNNING" && !fastFinishPoll;
   const state = useApiQuery(
     "studioState",
     { sessionId },
     {
       enabled: !!sessionId,
       poll: Boolean(sessionId) && !isTerminalCached,
-      ...(slowPoll ? { refreshMs: 8000 } : {}),
+      ...(fastFinishPoll ? { refreshMs: 2000 } : slowPoll ? { refreshMs: 8000 } : {}),
     },
   );
   const action = useApiMutation("studioAction");
@@ -128,6 +132,7 @@ export function useStudioSession(sessionId: string) {
     setDownloadError(null);
     setChaosTarget("");
     setSseConnected(false);
+    setHasSealedReceipt(false);
     setCancelledWhileQueued(false);
     pending.current = null;
     prevStatusRef.current = undefined;
@@ -145,6 +150,7 @@ export function useStudioSession(sessionId: string) {
   latestObservedAtRef.current = data?.telemetry?.observedAt;
   const executionStatus = data?.executionStatus?.toUpperCase() ?? "";
   useEffect(() => {
+    setHasSealedReceipt(Boolean(data?.receiptDigest));
     setCachedStatus(
       TERMINAL_STUDIO_STATUSES.has(executionStatus)
         ? executionStatus
@@ -161,7 +167,7 @@ export function useStudioSession(sessionId: string) {
       sawQueuedRef.current = false;
       setCancelledWhileQueued(false);
     }
-  }, [executionStatus, data?.finishRequested]);
+  }, [executionStatus, data?.finishRequested, data?.receiptDigest]);
 
   // Visible-tab heartbeat: refetch /studio/state every 30s (and on tab return) so only visible tabs keep QUEUED/RUNNING sessions alive.
   const activeHeartbeatStatus =

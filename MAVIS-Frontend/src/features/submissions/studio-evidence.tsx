@@ -136,14 +136,29 @@ function formatSnapshotTime(iso: string, locale: string): string {
   });
 }
 
+function localizeRuleTarget(target: string, locale: string): string {
+  const clean = target.trim();
+  if (locale === "vi" && (clean.toUpperCase() === "ALL" || clean.toLowerCase() === "gateway" || clean === "*")) {
+    return "toàn hệ thống";
+  }
+  return clean;
+}
+
 function localizeRuleLabel(label: string, locale: string): string {
   if (locale !== "vi") return label;
   return label
     .replace(/^Global error rate\b/i, "Tỉ lệ lỗi toàn hệ thống")
     .replace(/^Global p95 latency\b/i, "Độ trễ p95 toàn hệ thống")
     .replace(/^Replicas\(([^)]+)\)/i, "Số bản sao ($1)")
+    .replace(/^REPLICAS\(([^)]+)\)/i, "Số bản sao ($1)")
+    .replace(/^ERROR_RATE\(([^)]+)\)/i, (_, tgt: string) => `Tỉ lệ lỗi (${localizeRuleTarget(tgt, locale)})`)
+    .replace(/^EDGE_ERROR_RATE\(([^)]+)\)/i, "Tỉ lệ lỗi nhánh ($1)")
+    .replace(/^P95_MS\(([^)]+)\)/i, (_, tgt: string) => `Độ trễ p95 (${localizeRuleTarget(tgt, locale)})`)
+    .replace(/^P95_DELTA_PCT\(([^)]+)\)/i, (_, tgt: string) => `Giảm độ trễ p95 (${localizeRuleTarget(tgt, locale)})`)
+    .replace(/^TRACE_EDGE\(([^)]+)\)/i, "Luồng gọi bắt buộc ($1)")
+    .replace(/^Root Cause Diagnosis F1\b/i, "Chẩn đoán nguyên nhân gốc (F1)")
     .replace(/^Change Impact F1\b/i, "Độ chính xác dự đoán (F1)")
-    .replace(/^Required trace\b/i, "Luồng gọi bắt buộc")
+    .replace(/^(?:Required|Observed) trace\b/i, "Luồng gọi bắt buộc")
     .replace(/<=/g, "≤")
     .replace(/>=/g, "≥");
 }
@@ -173,6 +188,9 @@ function detectSupportedExerciseLabel(
   t: (en: string, vi?: string) => string,
 ): string {
   const explicitType = latestEval?.exerciseType?.toUpperCase();
+  if (explicitType === "CUSTOM") {
+    return t("Compound Exam", "Đề thi tổng hợp");
+  }
   if (explicitType === "CHANGE_IMPACT" || latestEval?.impact || latestEval?.predictionLocked) {
     return t("Change Impact Analysis", "Phân tích ảnh hưởng (Change Impact)");
   }

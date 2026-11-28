@@ -2148,12 +2148,12 @@ export const SCREEN_TOUR_CATALOG = {
         id: "studio-dock",
         selectors: ['[data-tour="studio-command-dock"]'],
         title: {
-          en: "5. Run, Snapshot & Telemetry Dock",
-          vi: "5. Thanh Chạy Docker, Snapshot & Chẩn đoán",
+          en: "5. Run, Snapshot & Logs Dock",
+          vi: "5. Thanh Chạy Docker, Snapshot & Log",
         },
         description: {
-          en: "Click Run to boot real Docker containers. While live, capture evidence Snapshots, open Impact or Logs & Traces, then click Finish Studio.",
-          vi: "Bấm Chạy Docker để boot hệ thống thật. Khi đang chạy, chụp Snapshot bằng chứng, mở nhanh Tác động / Log & Trace, rồi bấm Kết thúc Studio.",
+          en: "Click Run to boot real Docker containers. While live, capture evidence Snapshots, open Logs & Traces, then click Finish Studio.",
+          vi: "Bấm Chạy Docker để boot hệ thống thật. Khi đang chạy, chụp Snapshot bằng chứng, mở nhanh Log & Trace, rồi bấm Kết thúc Studio.",
         },
       },
       {
@@ -2176,8 +2176,8 @@ export const SCREEN_TOUR_CATALOG = {
           vi: "7. Thanh chuyển nhanh bảng công cụ",
         },
         description: {
-          en: "Toggle panels from top to bottom: Lab Mission, Service Controls, Change Impact Diagnostics, Snapshots (when running), and Logs & Traces.",
-          vi: "Bật/tắt nhanh các bảng từ trên xuống: Mục tiêu Lab, Điều khiển Service, Chẩn đoán Change Impact, Lịch sử Snapshot (khi đang chạy) và Log & Trace.",
+          en: "Toggle panels from top to bottom: Lab Mission, Service Controls, Snapshots (when running), and Logs & Traces.",
+          vi: "Bật/tắt nhanh các bảng từ trên xuống: Mục tiêu Lab, Điều khiển Service, Lịch sử Snapshot (khi đang chạy) và Log & Trace.",
         },
       },
       {
@@ -2208,12 +2208,12 @@ export const SCREEN_TOUR_CATALOG = {
         id: "studio-style-settings",
         selectors: ['[data-tour="studio-top-right-tools"]', '[data-tour="studio-style-picker"]'],
         title: {
-          en: "10. Studio Themes & 3D Tag Settings",
-          vi: "10. Giao diện Sáng/Tối & Cài đặt 3D",
+          en: "10. 4 Studio Themes & 3D Settings",
+          vi: "10. 4 Phong cách Studio & Cài đặt 3D",
         },
         description: {
-          en: "Switch between Light and Dark themes and open Settings to show/hide 3D service/path tags, open the Service List sidebar, or Stop & Cancel your Docker session.",
-          vi: "Chuyển đổi giữa giao diện Sáng (Daylight Cloud) và Tối (Control Glass), mở Cài đặt để bật/tắt nhãn nổi 3D, mở Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
+          en: "Switch across 4 Studio themes (Daylight Cloud, Blueprint, Tactile Pop, Control Glass) and open Settings to toggle 3D labels, Service List sidebar, or Stop & Cancel Docker.",
+          vi: "Chuyển đổi giữa 4 phong cách Studio (Daylight Cloud, Blueprint, Tactile Pop, Control Glass), mở Cài đặt để bật/tắt nhãn nổi 3D, mở Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
         },
       },
     ],
@@ -2274,8 +2274,8 @@ export const SCREEN_TOUR_CATALOG = {
           vi: "2. Bảng Soạn bài trên Studio 3D",
         },
         description: {
-          en: "Pick any service from the top dropdown (scales cleanly to 20+ services), choose 1 of 4 Exercise Goals, tune only that goal's details + Reverse BFS preview, or switch to Mission & Advanced.",
-          vi: "Chọn service bằng dropdown trên cùng (gọn đẹp cho cả 20+ service), chọn 1 trong 4 dạng bài, chỉnh đúng thông số riêng của dạng bài đó + Dự báo Reverse BFS, hoặc sang tab Đề bài & Nâng cao.",
+          en: "Pick any service from the top dropdown (scales cleanly to 20+ services), choose 1 of 5 Exercise Goals (Easy to Compound Exam), tune that goal's details + Reverse BFS preview, or switch to Mission & Advanced.",
+          vi: "Chọn service bằng dropdown trên cùng (gọn đẹp cho cả 20+ service), chọn 1 trong 5 dạng bài (từ Easy đến Đề tổng hợp), chỉnh thông số mục tiêu + Dự báo Reverse BFS, hoặc sang tab Đề bài & Nâng cao.",
         },
       },
       {
@@ -2366,12 +2366,12 @@ export const SCREEN_TOUR_CATALOG = {
         id: "studio-style-settings",
         selectors: ['[data-tour="studio-top-right-tools"]', '[data-tour="studio-style-picker"]'],
         title: {
-          en: "10. Themes & Studio Settings",
-          vi: "10. Giao diện Sáng/Tối & Cài đặt 3D",
+          en: "10. 4 Studio Themes & 3D Settings",
+          vi: "10. 4 Phong cách Studio & Cài đặt 3D",
         },
         description: {
-          en: "Switch between Light and Dark themes and open Settings to toggle floating 3D service/path tags, open the Service List sidebar, or Stop & Cancel Docker.",
-          vi: "Chuyển giữa giao diện Sáng/Tối và mở Cài đặt để bật/tắt nhãn nổi 3D, bật Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
+          en: "Switch across 4 Studio themes (Daylight Cloud, Blueprint, Tactile Pop, Control Glass) and open Settings to toggle floating 3D tags, open the Service List sidebar, or Stop & Cancel Docker.",
+          vi: "Chuyển giữa 4 phong cách Studio (Daylight Cloud, Blueprint, Tactile Pop, Control Glass) và mở Cài đặt để bật/tắt nhãn nổi 3D, bật Thanh danh sách service hoặc Dừng & Hủy phiên Docker.",
         },
       },
       {

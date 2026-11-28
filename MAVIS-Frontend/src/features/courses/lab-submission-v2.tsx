@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Camera, CheckCircle2, FileText, Lock, PlayCircle, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
@@ -107,6 +108,7 @@ export function LabSubmissionV2({
   const [revising, setRevising] = useState(false);
 
   useEffect(() => {
+    setRevising(false);
     try {
       const saved = window.localStorage.getItem(draftKey);
       setAnswer(saved ?? "");
@@ -139,7 +141,10 @@ export function LabSubmissionV2({
     { submissionId: latest?.id ?? "" },
     { enabled: Boolean(latest) },
   );
-  const activeReview = review.data ?? initialReview;
+  // Avoid leaking an older attempt's review (e.g. 4.00/10) onto a newly created resubmission.
+  const activeReview =
+    review.data ??
+    (latest && initialSubmission && latest.id === initialSubmission.id ? initialReview : undefined);
   const canSubmit = answer.trim().length > 0 && (!studio || Boolean(runtimeSessionId));
   const missingStudioSnapshot =
     studio &&
@@ -695,17 +700,40 @@ export function LabSubmissionV2({
                     ...(snapshots.length > 0 ? { studentSnapshots: snapshots } : {}),
                   },
                   {
-                    onSuccess: () => {
+                    onSuccess: (created) => {
                       try {
                         window.localStorage.removeItem(draftKey);
                       } catch {
                         // Ignore storage cleanup errors
                       }
+                      const createdRec = created as Response<"submissions">[number] | undefined;
+                      if (createdRec?.id) {
+                        cache.setQueryData<Response<"submissions">>(
+                          ["api", "submissions", { workspaceId }],
+                          (prev) => {
+                            const entry: Response<"submissions">[number] = {
+                              ...createdRec,
+                              assignmentId: createdRec.assignmentId || assignmentId,
+                              submittedAt: createdRec.submittedAt || nowIso,
+                              submissionNotes: createdRec.submissionNotes || trimmed,
+                            };
+                            return [entry, ...(prev ?? []).filter((item) => item.id !== entry.id)];
+                          },
+                        );
+                      }
                       setAnswer("");
                       setRevising(false);
+                      toast.success(
+                        t(
+                          "Assignment submitted! Waiting for your Lecturer to grade.",
+                          "Đã nộp bài thành công! Đang chờ Giảng viên chấm điểm.",
+                        ),
+                      );
                       void cache.invalidateQueries({ queryKey: ["api", "submissions"] });
                       void cache.invalidateQueries({ queryKey: ["api", "submission"] });
+                      void cache.invalidateQueries({ queryKey: ["api", "submissionReview"] });
                       void cache.invalidateQueries({ queryKey: ["api", "workspaceSubmissions"] });
+                      void cache.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
                       void cache.invalidateQueries({
                         queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
                       });

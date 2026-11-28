@@ -541,14 +541,30 @@ public class CourseLabStudentService {
                 ? activeExercise.get("baselineRequests")
                 : exercise == null ? null : exercise.getBaselineRequests();
         if (configuredBaseline != null && configuredBaseline.isArray() && !configuredBaseline.isEmpty()) {
+            // Map detected GET/HEAD endpoints by path so any non-gateway baseline route hits its real owning service instead of 404ing on api-gateway.
+            Map<String, java.util.Set<String>> pathServices = new LinkedHashMap<>();
+            if (refProfile != null && refProfile.path("detectedEndpoints").isArray()) {
+                for (JsonNode ep : refProfile.path("detectedEndpoints")) {
+                    String epPath = ep.path("path").asText("").trim();
+                    String epSvc = ep.path("service").asText("").trim();
+                    if (!epPath.isBlank() && !epSvc.isBlank() && appsNode != null && appsNode.has(epSvc)) {
+                        pathServices.computeIfAbsent(epPath, k -> new java.util.LinkedHashSet<>()).add(epSvc);
+                    }
+                }
+            }
             int index = 0;
             for (JsonNode request : configuredBaseline) {
                 if (!request.isObject()) continue;
+                String reqPath = request.path("path").asText("/health");
+                java.util.Set<String> owners = pathServices.get(reqPath);
+                String targetService = (owners != null && !owners.isEmpty() && !owners.contains(primaryService))
+                        ? owners.iterator().next()
+                        : primaryService;
                 stepsNode.addObject()
                         .put("id", "studio-baseline-" + index)
-                        .put("service", primaryService)
+                        .put("service", targetService)
                         .put("method", request.path("method").asText("GET"))
-                        .put("path", request.path("path").asText("/health"))
+                        .put("path", reqPath)
                         .put("expectedStatus", request.path("expectedStatus").asInt(200));
                 index++;
             }

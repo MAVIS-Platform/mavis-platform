@@ -426,12 +426,25 @@ function StandaloneStudioContent() {
       ),
     );
     if (!ownerMod) return undefined;
-    const inlineQuiz = ownerMod.items.find(
-      (candidate) =>
-        candidate.type === "QUIZ" &&
-        !candidate.assignmentId &&
-        candidate.required !== false,
+    const sortedModItems = [...ownerMod.items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    const targetLabIdx = sortedModItems.findIndex(
+      (item) =>
+        item.assignmentId === assignmentId &&
+        ["RUNTIME_LAB", "STATIC_LAB", "IMPACT_LAB"].includes(item.type),
     );
+    const labCountInMod = new Set(
+      sortedModItems
+        .filter((item) => item.assignmentId && ["RUNTIME_LAB", "STATIC_LAB", "IMPACT_LAB"].includes(item.type))
+        .map((item) => item.assignmentId),
+    ).size;
+    // Only require standalone module quizzes positioned BEFORE this lab (or the sole lab in a single-lab module).
+    const inlineQuiz = sortedModItems.find((candidate, candidateIdx) => {
+      if (candidate.type !== "QUIZ" || candidate.assignmentId || candidate.required === false) {
+        return false;
+      }
+      if (labCountInMod <= 1) return true;
+      return targetLabIdx >= 0 && candidateIdx < targetLabIdx;
+    });
     if (!inlineQuiz) return undefined;
     const normalizedTitle = inlineQuiz.title.replace(
       /^Quiz Gate\s*·\s*/i,
@@ -1710,6 +1723,9 @@ function StandaloneStudioContent() {
               ...(patch.rules !== undefined ? { rules: patch.rules } : {}),
               ...(patch.allowedActions !== undefined
                 ? { allowedActions: patch.allowedActions }
+                : {}),
+              ...(patch.requiredTraceEdge !== undefined
+                ? { requiredTraceEdge: patch.requiredTraceEdge }
                 : {}),
               minReplicas,
             });
