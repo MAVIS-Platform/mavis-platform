@@ -82,6 +82,12 @@ public class StudioTelemetryHub {
             String prevObserved = stream.latestTelemetry != null
                     ? stream.latestTelemetry.path("observedAt").asText("")
                     : "";
+            String nextObserved = redactedTelemetry.path("observedAt").asText("");
+            if (!isStrictlyNewer(nextObserved, prevObserved)) {
+                log.debug("Ignoring out-of-order Studio telemetry for session {}: observedAt={} latest={}",
+                        sessionId, nextObserved, prevObserved);
+                return false;
+            }
             if (!prevObserved.isBlank()) {
                 stream.recentObservedAt.addLast(prevObserved);
                 while (stream.recentObservedAt.size() > MAX_RECENT_OBSERVED_AT) {
@@ -113,6 +119,18 @@ public class StudioTelemetryHub {
             broadcast(stream, "telemetry", payload);
         }
         return shouldPersist;
+    }
+
+    private static boolean isStrictlyNewer(String candidate, String current) {
+        if (candidate == null || candidate.isBlank() || current == null || current.isBlank()) {
+            return true;
+        }
+        try {
+            return Instant.parse(candidate).isAfter(Instant.parse(current));
+        } catch (RuntimeException ignored) {
+            // Keep compatibility with older/custom Runners whose observedAt was not strict ISO-8601.
+            return true;
+        }
     }
 
     /** Pushes a state transition (action submitted/acked, finish requested, terminal status) over SSE. */

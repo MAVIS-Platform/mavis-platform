@@ -65,6 +65,16 @@ export function resolveRunningReplicas(
   return confirmedReplicas;
 }
 
+export function shouldAcceptTelemetryFrame(
+  currentObservedAt: string | null | undefined,
+  candidateObservedAt: string | null | undefined,
+): boolean {
+  if (!currentObservedAt || !candidateObservedAt) return true;
+  const currentTime = Date.parse(currentObservedAt);
+  const candidateTime = Date.parse(candidateObservedAt);
+  return !Number.isFinite(currentTime) || !Number.isFinite(candidateTime) || candidateTime > currentTime;
+}
+
 /**
  * Shared Live-session state and commands for the card and workbench layouts.
  * Keeping this in one hook prevents the two layouts from drifting apart.
@@ -270,6 +280,9 @@ export function useStudioSession(sessionId: string) {
         let shouldSyncState = false;
         queryClient.setQueryData<StudioState>(["api", "studioState", { sessionId }], (prev) => {
           if (!prev) return prev;
+          const previousObservedAt = prev.telemetry?.observedAt;
+          const nextObservedAt = nextTelemetry.observedAt;
+          if (!shouldAcceptTelemetryFrame(previousObservedAt, nextObservedAt)) return prev;
           const nextHistory =
             parsedFrame?.success
               ? [...(prev.telemetryHistory ?? []).slice(-59), parsedFrame.data]

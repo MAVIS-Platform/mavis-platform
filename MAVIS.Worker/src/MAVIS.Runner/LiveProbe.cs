@@ -44,7 +44,8 @@ public sealed record ServiceGraphEdgeMetrics(
     double Rps,
     double ErrorsPerSec,
     double ErrorRatePercent,
-    double? P95Ms);
+    double? P95Ms,
+    bool Stale = false);
 
 public sealed record LiveProbeFrame(
     DateTimeOffset ObservedAt,
@@ -386,7 +387,7 @@ public sealed class PrometheusServiceGraphScraper
         if (_unchangedScrapes <= 2 && _lastNonEmpty.Count > 0 && current.Count > 0)
         {
             _accumulatedWindowSeconds += duration;
-            return _lastNonEmpty;
+            return _lastNonEmpty.Select(edge => edge with { Stale = true }).ToArray();
         }
 
         _previous = current;

@@ -151,7 +151,7 @@ test("studioState contract preserves simulatedSandbox and derives operationName 
 
 test("resolveRunningReplicas reflects post-action container crashes once newer telemetry arrives", () => {
   const originalLoad = Module._load;
-  let resolveRunningReplicas;
+  let resolveRunningReplicas, shouldAcceptTelemetryFrame;
   try {
     Module._load = function (id, ...args) {
       if (id.endsWith("use-api") || id.endsWith("studio-observability") || id === "@tanstack/react-query") {
@@ -159,7 +159,7 @@ test("resolveRunningReplicas reflects post-action container crashes once newer t
       }
       return originalLoad.call(this, id, ...args);
     };
-    ({ resolveRunningReplicas } = require("../src/features/runtime/use-studio-session.ts"));
+    ({ resolveRunningReplicas, shouldAcceptTelemetryFrame } = require("../src/features/runtime/use-studio-session.ts"));
   } finally {
     Module._load = originalLoad;
   }
@@ -187,6 +187,9 @@ test("resolveRunningReplicas reflects post-action container crashes once newer t
     ),
     0,
   );
+  assert.equal(shouldAcceptTelemetryFrame("2026-11-20T19:00:15Z", "2026-11-20T19:00:14Z"), false);
+  assert.equal(shouldAcceptTelemetryFrame("2026-11-20T19:00:15Z", "2026-11-20T19:00:15Z"), false);
+  assert.equal(shouldAcceptTelemetryFrame("2026-11-20T19:00:15Z", "2026-11-20T19:00:16Z"), true);
 });
 
 test("terminal timestamp parser normalizes container UTC logs and comparator is strictly transitive", () => {
@@ -1379,6 +1382,19 @@ test("Studio 3D WYSIWYG authoring: Reverse BFS blast radius (incl. cycles), repo
   assert.doesNotMatch(labStudioSrc, /[\u26A1\u{1F3AF}\u{1F525}\u{1F680}\u2705\u274C\u{1F527}]/u);
 });
 
+test("Studio deployment metrics distinguish observed data and warn within the supported scale range", () => {
+  const observability = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  assert.match(observability, /replicasNow >= 2 && dsReplicas <= 1/);
+  assert.doesNotMatch(observability, /replicasNow >= 4 && dsReplicas <= 1/);
+  assert.match(observability, /Observed running instances/);
+  assert.match(observability, /Average observed CPU \/ container/);
+  assert.match(observability, /observedContainerCount/);
+  assert.match(observability, /planned \/ not observed/);
+});
+
 test("Studio Settings toggles 3D node & edge tags, Stats shows rich Service Health & Lab Scope overview, and SE EN/VI switcher sits next to ?", () => {
   const workbenchSrc = fs.readFileSync(
     path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
@@ -1615,6 +1631,7 @@ test("Studio Live serializes visual saves (zero 409), supports text/plain 3D DnD
     assert.ok(Number.isFinite(z.cx) && Number.isFinite(z.cz));
     assert.ok(z.width >= 1.75 && z.depth >= 1.65);
   }
+
   const edgeZ = zones.find((z) => z.key === "EDGE");
   const coreZ = zones.find((z) => z.key === "CORE");
   assert.ok(edgeZ.cx + edgeZ.width / 2 <= coreZ.cx - coreZ.width / 2 + 0.01, "EDGE & CORE zones stay separated");

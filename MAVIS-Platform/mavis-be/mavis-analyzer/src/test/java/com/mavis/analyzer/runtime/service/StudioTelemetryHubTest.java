@@ -67,6 +67,25 @@ class StudioTelemetryHubTest {
     }
 
     @Test
+    void delayedOrDuplicateFramesCannotReplaceTheLatestObservedState() {
+        UUID id = UUID.randomUUID();
+        var first = frame("2026-11-28T05:00:02Z", "new state");
+        assertTrue(hub.publish(id, first, "received-new", false, 1_000L));
+
+        assertFalse(hub.publish(id, frame("2026-11-28T05:00:01Z", "delayed old state"),
+                "received-late", true, 12_000L));
+        assertFalse(hub.publish(id, frame("2026-11-28T05:00:02Z", "duplicate"),
+                "received-duplicate", true, 13_000L));
+
+        var latest = hub.latest(id).orElseThrow();
+        assertEquals("2026-11-28T05:00:02Z", latest.latestTelemetry().path("observedAt").asText());
+        assertEquals("new state", latest.latestTelemetry().path("services").get(0).path("logs").asText());
+        assertEquals("received-new", latest.receivedAt());
+        assertEquals(1, latest.history().size());
+        assertTrue(latest.recentObservedAt().isEmpty());
+    }
+
+    @Test
     void concurrentSubscribeClearAndNotifyOverSubscriberCapNeverThrows() throws Exception {
         UUID id = UUID.randomUUID();
         ObjectNode initial = mapper.createObjectNode().put("executionStatus", "RUNNING");

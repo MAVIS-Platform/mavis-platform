@@ -1980,7 +1980,7 @@ export function StudioObservability({
       const downstreamServices = outboundStatic.map((e) => e.to);
       const bottleneckTarget = downstreamServices.find((ds) => {
         const dsReplicas = resolveLiveReplicas(ds);
-        return replicasNow >= 4 && dsReplicas <= 1;
+        return replicasNow >= 2 && dsReplicas <= 1;
       });
 
       return {
@@ -1996,6 +1996,7 @@ export function StudioObservability({
         replicasBefore,
         replicasNow,
         avgCpu,
+        cpuSampleCount: cpuValues.length,
         perInstanceRamMiB,
         totalServiceRamMiB,
         ramLimitMiB,
@@ -2011,10 +2012,13 @@ export function StudioObservability({
 
   const totalRunningInstances = deploymentRows.reduce((sum, r) => sum + r.replicasNow, 0);
   const totalRamMiB = deploymentRows.reduce((sum, r) => sum + r.totalServiceRamMiB, 0);
-  const avgClusterCpu =
-    deploymentRows.length > 0
-      ? deploymentRows.reduce((sum, r) => sum + r.avgCpu, 0) / deploymentRows.length
+  const observedContainerCount = deploymentRows.reduce((sum, r) => sum + r.cpuSampleCount, 0);
+  const avgObservedContainerCpu =
+    observedContainerCount > 0
+      ? deploymentRows.reduce((sum, r) => sum + r.avgCpu * r.cpuSampleCount, 0) /
+        observedContainerCount
       : 0;
+  const hasObservedDeployment = Boolean(telemetry?.services.length);
 
   return (
     <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
@@ -3764,13 +3768,16 @@ export function StudioObservability({
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="rounded border bg-muted/40 px-2.5 py-1 font-mono">
-              {t("Total running instances")}: <strong>{totalRunningInstances}</strong>
+              {t("Observed running instances")}:{" "}
+              <strong>{hasObservedDeployment ? totalRunningInstances : "—"}</strong>
             </span>
             <span className="rounded border bg-muted/40 px-2.5 py-1 font-mono">
-              {t("Total CPU load")}: <strong>{avgClusterCpu.toFixed(1)}%</strong>
+              {t("Average observed CPU / container")}:{" "}
+              <strong>{observedContainerCount > 0 ? avgObservedContainerCpu.toFixed(1) + "%" : "—"}</strong>
             </span>
             <span className="rounded border bg-muted/40 px-2.5 py-1 font-mono">
-              {t("Total RAM footprint")}: <strong>{Math.round(totalRamMiB)} MiB</strong>
+              {t("Observed RAM footprint")}:{" "}
+              <strong>{hasObservedDeployment ? Math.round(totalRamMiB) + " MiB" : "—"}</strong>
             </span>
           </div>
         </div>
@@ -3818,6 +3825,11 @@ export function StudioObservability({
                     </td>
                     <td className="px-2 py-2 font-mono">
                       {row.replicasBefore} → <strong>{row.replicasNow}</strong>
+                      {!row.cpuSampleCount && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">
+                          ({t("planned / not observed")})
+                        </span>
+                      )}
                       {scaleFactor > 1 && (
                         <span className="ml-1 rounded bg-primary/15 px-1 py-0.5 text-[10px] text-primary">
                           ×{scaleFactor.toFixed(0)}

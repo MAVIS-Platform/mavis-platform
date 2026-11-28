@@ -443,6 +443,7 @@ test("Commit #08 scopes notification categories by role and coalesces duplicate 
   assert.match(inbox, /visibleCategoriesForRole\(session\.data\?\.user\?\.role\)/);
   assert.match(inbox, /groupDuplicateNotifications\(items\)/);
   assert.match(inbox, /item\.duplicateCount > 1/);
+  assert.match(inbox, /current\.readAt && !item\.readAt \? item : current/);
 });
 test("Commit #10 strips legacy preview/CB tags across submission views, prevents profile stat word breaks, and cleans Quiz Gate copy", () => {
   const ts = require("typescript");

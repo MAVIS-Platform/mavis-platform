@@ -870,6 +870,7 @@ export const contracts = {
                 errorsPerSec: z.number(),
                 errorRatePercent: z.number(),
                 p95Ms: z.number().nullable().optional(),
+                stale: z.boolean().optional(),
               }),
             )
             .nullish(),

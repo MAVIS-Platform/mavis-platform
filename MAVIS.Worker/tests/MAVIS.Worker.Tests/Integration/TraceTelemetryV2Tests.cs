@@ -325,8 +325,8 @@ public sealed class TraceTelemetryV2Tests
         Assert.InRange(resetEdge.P95Ms!.Value, 0.1, 20.0);
 
         // Two idle ticks retain cached edge; third idle tick expires to empty; new traffic recovers cleanly.
-        Assert.Single(scraper.Update(afterReset, 1.0));
-        Assert.Single(scraper.Update(afterReset, 1.0));
+        Assert.True(Assert.Single(scraper.Update(afterReset, 1.0)).Stale);
+        Assert.True(Assert.Single(scraper.Update(afterReset, 1.0)).Stale);
         Assert.Empty(scraper.Update(afterReset, 1.0));
 
         var resumed = """
@@ -337,6 +337,7 @@ public sealed class TraceTelemetryV2Tests
             """;
         var resumedEdge = Assert.Single(scraper.Update(resumed, 1.0));
         Assert.Equal(4.0, resumedEdge.Rps);
+        Assert.False(resumedEdge.Stale);
     }
 
     [Fact]

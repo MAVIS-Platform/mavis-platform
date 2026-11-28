@@ -643,6 +643,11 @@ export function StudioRedCharts({
                     <tr key={`${edge.client}->${edge.server}`}>
                       <td className={`px-3 py-1.5 ${isLight ? "text-slate-900" : "text-slate-200"}`}>
                         {edge.client} <span className="text-slate-400">→</span> {edge.server}
+                        {edge.stale && (
+                          <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-300">
+                            {t("(cached)", "(dữ liệu cũ)")}
+                          </span>
+                        )}
                       </td>
                       <td className={`px-3 py-1.5 font-semibold ${isLight ? "text-emerald-700" : "text-emerald-300"}`}>
                         {fmt(edge.rps, 1)}

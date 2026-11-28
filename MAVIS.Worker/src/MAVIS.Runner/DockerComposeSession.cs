@@ -606,11 +606,17 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 foreach(var traceId in workload.Steps.Select(step=>step.TraceId).Distinct()) traceIds.Add(traceId);
                 metrics["traceIds"]=traceIds;
                 var samples = workload.Steps.Select(step => step.ElapsedMilliseconds).Order().ToArray();
+                metrics["metricSource"] = "WORKLOAD";
+                metrics["workloadRequestCount"] = samples.Length;
                 metrics["requestCount"] = samples.Length;
                 if (samples.Length > 0)
                 {
-                    metrics["p95LatencyMs"] = samples[(int)Math.Ceiling(samples.Length * 0.95) - 1];
-                    metrics["errorRatePercent"] = 100d * workload.Steps.Count(step => step.Status != "Passed") / samples.Length;
+                    var workloadP95 = samples[(int)Math.Ceiling(samples.Length * 0.95) - 1];
+                    var workloadErrorRate = 100d * workload.Steps.Count(step => step.Status != "Passed") / samples.Length;
+                    metrics["workloadP95LatencyMs"] = workloadP95;
+                    metrics["workloadErrorRatePercent"] = workloadErrorRate;
+                    metrics["p95LatencyMs"] = workloadP95;
+                    metrics["errorRatePercent"] = workloadErrorRate;
                 }
             }
             // Prefer steady-state live probe over boot-time cold-start _scenario so Before->After never reports inverted p95.
@@ -619,6 +625,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 && probeObj["p95Ms"]?.GetValue<double>() is double warmP95 && double.IsFinite(warmP95)
                 && probeObj["errorRatePercent"]?.GetValue<double>() is double warmErr && double.IsFinite(warmErr))
             {
+                var probeRequests = probeObj["requests"]!.GetValue<int>();
+                metrics["metricSource"] = "LIVE_PROBE";
+                metrics["probeRequestCount"] = probeRequests;
+                metrics["requestCount"] = probeRequests;
                 metrics["p95LatencyMs"] = Math.Round(warmP95, 2);
                 metrics["errorRatePercent"] = Math.Round(warmErr, 2);
             }

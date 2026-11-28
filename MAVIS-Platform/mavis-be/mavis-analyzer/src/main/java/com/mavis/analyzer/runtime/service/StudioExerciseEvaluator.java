@@ -595,6 +595,7 @@ public final class StudioExerciseEvaluator {
             }
         }
         for (JsonNode sg : frame.path("serviceGraph")) {
+            if (sg.path("stale").asBoolean(false)) continue;
             if (from.equals(normalizeServiceName(sg.path("client").asText(), canonicalServices))
                     && to.equals(normalizeServiceName(sg.path("server").asText(), canonicalServices))
                     && sg.path("rps").asDouble(0) > 0) {
@@ -657,6 +658,7 @@ public final class StudioExerciseEvaluator {
         if (agg.containsKey(key)) return agg.get(key).avgErrorPct();
         if (latestTelemetry != null && latestTelemetry.path("serviceGraph").isArray()) {
             for (JsonNode sg : latestTelemetry.path("serviceGraph")) {
+                if (sg.path("stale").asBoolean(false)) continue;
                 String sgKey = normalizeServiceName(sg.path("client").asText(""), canonicalServices) + "->"
                         + normalizeServiceName(sg.path("server").asText(""), canonicalServices);
                 if (key.equals(sgKey) && sg.path("errorRatePercent").isNumber()) {
@@ -676,6 +678,7 @@ public final class StudioExerciseEvaluator {
             if (agg.containsKey(key) && agg.get(key).avgP95() != null) return agg.get(key).avgP95();
             if (latestTelemetry != null && latestTelemetry.path("serviceGraph").isArray()) {
                 for (JsonNode sg : latestTelemetry.path("serviceGraph")) {
+                    if (sg.path("stale").asBoolean(false)) continue;
                     String sgKey = normalizeServiceName(sg.path("client").asText(""), canonicalServices) + "->"
                             + normalizeServiceName(sg.path("server").asText(""), canonicalServices);
                     if (key.equals(sgKey) && sg.path("p95Ms").isNumber()) return sg.path("p95Ms").asDouble();
@@ -852,6 +855,7 @@ public final class StudioExerciseEvaluator {
         for (JsonNode frame : frames) {
             if (!frame.path("serviceGraph").isArray()) continue;
             for (JsonNode sg : frame.path("serviceGraph")) {
+                if (sg.path("stale").asBoolean(false)) continue;
                 String c = normalizeServiceName(sg.path("client").asText(""), canonicalServices);
                 String s = normalizeServiceName(sg.path("server").asText(""), canonicalServices);
                 if (c.isBlank() || s.isBlank()) continue;
