@@ -1160,9 +1160,9 @@ export function CourseBuilder({
   const intentHandledRef = useRef(false);
 
   useEffect(() => {
-    setTitle(course.data?.title ?? "");
+    setTitle(course.data ? (course.data.title ?? "") : (workspaceName || ""));
     setDescription(course.data?.description ?? "");
-  }, [course.data?.id, course.data?.title, course.data?.description]);
+  }, [course.data, course.data?.id, course.data?.title, course.data?.description, workspaceName]);
 
   useEffect(() => {
     setPublishIssues([]);
@@ -1726,7 +1726,6 @@ export function CourseBuilder({
             </Badge>
           )}
           {isDraft &&
-            isPublishStep &&
             workspaceName &&
             data?.modules.some((module) => module.items.length > 0) && (
             <Button
@@ -1794,12 +1793,12 @@ export function CourseBuilder({
             </p>
           )}
           {!data && (
-            <p className="mt-2 text-xs text-muted-foreground">
+            <div className="mt-2.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-900 dark:text-sky-200">
               {t(
-                "Save the course details to start its roadmap.",
-                "Lưu thông tin khóa học để bắt đầu tạo lộ trình.",
+                "Click Save draft above to initialize the course outline, then add Chapters and attach lessons or labs.",
+                "Bấm Lưu bản nháp ở trên để khởi tạo khung chương trình học, sau đó thêm Chương và gắn bài học.",
               )}
-            </p>
+            </div>
           )}
         </div>
       )}
