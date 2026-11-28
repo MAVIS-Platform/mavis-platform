@@ -404,6 +404,40 @@ public class CourseAuthoringService {
         }
     }
 
+    public void syncLabItemTypesWithAssignments(UUID workspaceId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        courses.findByWorkspaceId(workspaceId).ifPresent(course -> {
+            Set<String> labItemTypes = Set.of("STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB");
+            for (CourseModule module : modules.findByCourseIdOrderByPositionAsc(course.getId())) {
+                for (CourseItem item : items.findByModuleIdOrderByPositionAsc(module.getId())) {
+                    if (item.getAssignmentId() == null || !labItemTypes.contains(item.getItemType())) {
+                        continue;
+                    }
+                    assignments.findWithDetailsById(item.getAssignmentId()).ifPresent(assignment -> {
+                        String targetType;
+                        if (Boolean.TRUE.equals(assignment.getRequireRuntimeTrace())) {
+                            targetType = "RUNTIME_LAB";
+                        } else {
+                            String explicitTier = assignment.getAiPolicy() == null
+                                    ? ""
+                                    : assignment.getAiPolicy().path("labTier").asText("");
+                            String labMode = assignment.getLabMode() == null ? "" : assignment.getLabMode();
+                            if ("THEORY_ONLY".equalsIgnoreCase(explicitTier) || "THEORY_ONLY".equalsIgnoreCase(labMode)) {
+                                targetType = "STATIC_LAB";
+                            } else {
+                                targetType = "IMPACT_LAB";
+                            }
+                        }
+                        if (!targetType.equals(item.getItemType())) {
+                            item.setItemType(targetType);
+                            items.save(item);
+                        }
+                    });
+                }
+            }
+        });
+    }
+
     private boolean assignmentBelongsToWorkspace(UUID assignmentId, UUID workspaceId) {
         return assignments.existsByIdAndWorkspaceId(assignmentId, workspaceId);
     }

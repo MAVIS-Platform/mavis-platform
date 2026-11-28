@@ -124,7 +124,7 @@ public class CourseAccessService {
                     && !labTheoryAssets.findByAssignmentIdOrderByPositionAsc(assignmentId).isEmpty();
             if ((assignment.getDescription() == null || assignment.getDescription().isBlank()) && !hasTheoryAsset) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
-                        "Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab");
+                        "Lab \"" + assignment.getTitle() + "\": Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab");
             }
             assignment.setRequireRuntimeTrace(false);
         } else {
@@ -139,7 +139,7 @@ public class CourseAccessService {
                     || "DELETED".equals(snapshot.getProject().getStatus())
                     || ("GITHUB_COMMIT".equals(snapshot.getSourceType())
                         && (snapshot.getCommitSha() == null || !snapshot.getCommitSha().matches("[a-fA-F0-9]{40}")))) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Attach a published reference model and a pinned source archive before publishing the Lab");
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab \"" + assignment.getTitle() + "\": Attach a published reference model and a pinned source archive before publishing the Lab");
             }
             referenceArchive.resolve(snapshot, true);
         }
@@ -153,7 +153,7 @@ public class CourseAccessService {
         }
         if (assignment.getStudioExerciseSnapshot() != null && assignment.getStudioTopologySnapshot() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_READINESS_BLOCKED",
-                    "Studio Live exercise is configured, but Docker runtime topology is not ready yet. Run Sync Docker in Step 5 before publishing.");
+                    "Lab \"" + assignment.getTitle() + "\": Studio Live exercise is configured, but Docker runtime topology is not ready yet. Run Sync Docker in Step 5 before publishing.");
         }
         int next = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)
                 .stream().mapToInt(Assignment::getLabOrder).max().orElse(0) + 1;
