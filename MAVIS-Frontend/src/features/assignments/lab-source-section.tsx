@@ -1445,7 +1445,7 @@ export function LabSourceSection({
               <p className="text-xs text-muted-foreground">
                 {hasUnsavedSelection
                   ? t("Analysis ready — click Save source to Lab to pin it.", "Đã phân tích xong — bấm Lưu nguồn vào Lab để ghim.")
-                  : t("Import a GitHub repo, ZIP archive, or select an analyzed project.", "Nhập repo GitHub, tệp ZIP hoặc chọn dự án đã phân tích.")}
+                  : ""}
               </p>
               <div className="flex items-center gap-2">
                 <Button

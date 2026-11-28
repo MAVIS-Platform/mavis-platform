@@ -337,12 +337,53 @@ export function AssignmentSourcePicker({
     prepare.reset();
     retry.reset();
   }
-  const otherWorkspaceProjects = (allProjects.data ?? []).filter(
-    (p) =>
-      p.workspaceId !== workspaceId &&
-      (p.projectType === "TEACHER_REFERENCE" || p.isReferenceTemplate) &&
-      /^https?:\/\/github\.com\//i.test(p.repository ?? ""),
-  );
+  const normalizeRepoKey = (url: string) =>
+    url.trim().replace(/\.git$/i, "").replace(/\/+$/, "").toLowerCase();
+  const parseGithubSlug = (url?: string | null) => {
+    const cleaned = (url ?? "").trim().replace(/\.git$/i, "").replace(/\/+$/, "");
+    const match = cleaned.match(/github\.com\/([^/\s]+)\/([^/\s]+)/i);
+    return match ? { owner: match[1]!, repo: match[2]! } : null;
+  };
+  const isGenericProjectName = (name: string) =>
+    /^(course repository|repository khóa học)(\s*·\s*reference)?$/i.test(name.trim());
+  const formatClassProjectLabel = (p: { name: string; repository?: string | null }) => {
+    const slug = parseGithubSlug(p.repository);
+    if (!slug) return p.name;
+    return isGenericProjectName(p.name) ? slug.repo : `${slug.repo} · ${p.name}`;
+  };
+
+  const otherWorkspaceProjects = (() => {
+    const seen = new Set<string>();
+    const unique: typeof allProjects.data = [];
+    for (const p of allProjects.data ?? []) {
+      if (
+        p.workspaceId === workspaceId ||
+        !(p.projectType === "TEACHER_REFERENCE" || p.isReferenceTemplate) ||
+        !/^https?:\/\/github\.com\//i.test(p.repository ?? "")
+      ) {
+        continue;
+      }
+      const key = normalizeRepoKey(p.repository);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(p);
+    }
+    return unique;
+  })();
+  const otherRepoNameCounts = new Map<string, number>();
+  for (const p of otherWorkspaceProjects) {
+    const slug = parseGithubSlug(p.repository);
+    if (!slug) continue;
+    const key = slug.repo.toLowerCase();
+    otherRepoNameCounts.set(key, (otherRepoNameCounts.get(key) ?? 0) + 1);
+  }
+  const formatOtherRepoLabel = (p: { name: string; repository: string }) => {
+    const slug = parseGithubSlug(p.repository);
+    if (!slug) return p.name;
+    return (otherRepoNameCounts.get(slug.repo.toLowerCase()) ?? 0) > 1
+      ? `${slug.owner}/${slug.repo}`
+      : slug.repo;
+  };
   const selectedOtherProject = otherWorkspaceProjects.find((p) => p.id === otherProjectId);
   const sortedVersions = [...(versions.data ?? [])].sort((a, b) => b.revision - a.revision);
 
@@ -392,41 +433,38 @@ export function AssignmentSourcePicker({
               { value: "", label: t("Select an analyzed project…", "Chọn dự án đã phân tích…") },
               ...(projects.data ?? [])
                 .filter((p) => p.projectType === "TEACHER_REFERENCE" || p.isReferenceTemplate)
-                .map((p) => ({ value: p.id, label: p.name })),
+                .map((p) => ({ value: p.id, label: formatClassProjectLabel(p) })),
             ]}
           />
           {otherWorkspaceProjects.length > 0 && (
-            <div className="space-y-2 rounded-lg border border-dashed bg-background/60 p-3">
-              <SelectField
-                label={t(
-                  "Reuse from your other classes",
-                  "Dùng lại dự án từ lớp học khác của bạn",
-                )}
-                value={otherProjectId}
-                onChange={(value) => {
-                  setOtherProjectId(value);
-                  if (value) {
-                    setProjectId("");
-                    setModelId("");
-                    setSnapshotId("");
-                  }
-                }}
-                options={[
-                  {
-                    value: "",
-                    label: t(
-                      "Choose a reference project from another class…",
-                      "Chọn dự án tham chiếu từ lớp khác…",
-                    ),
-                  },
-                  ...otherWorkspaceProjects.map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                  })),
-                ]}
-              />
+            <div className="space-y-2.5 rounded-lg border border-dashed bg-background/60 p-3">
+              <p className="text-sm font-medium">
+                {t("Reuse from your other classes", "Dùng lại từ lớp học khác")}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {otherWorkspaceProjects.map((p) => (
+                  <Button
+                    key={p.id}
+                    type="button"
+                    size="sm"
+                    variant={otherProjectId === p.id ? "default" : "outline"}
+                    className="h-7 px-2.5 text-xs"
+                    title={p.repository}
+                    onClick={() => {
+                      setOtherProjectId(otherProjectId === p.id ? "" : p.id);
+                      if (otherProjectId !== p.id) {
+                        setProjectId("");
+                        setModelId("");
+                        setSnapshotId("");
+                      }
+                    }}
+                  >
+                    {formatOtherRepoLabel(p)}
+                  </Button>
+                ))}
+              </div>
               {selectedOtherProject && (
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
                   <span className="truncate font-mono text-muted-foreground">
                     {selectedOtherProject.repository}
                   </span>
@@ -506,37 +544,11 @@ export function AssignmentSourcePicker({
         <>
           {mode === "github" ? (
             <>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">
-                  {t("Quick-pick MAVIS sample repositories", "Chọn nhanh kho mã nguồn mẫu MAVIS")}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {CURATED_SAMPLE_REPOS.map((repo) => (
-                    <Button
-                      key={repo.id}
-                      type="button"
-                      size="sm"
-                      variant={repository.trim() === repo.url ? "default" : "outline"}
-                      className="h-7 px-2.5 text-xs"
-                      onClick={() => {
-                        setRepository(repo.url);
-                        setLookup(repo.url);
-                        setBranch("");
-                        setModelId("");
-                        setJobId("");
-                      }}
-                    >
-                      {repo.name}
-                    </Button>
-                  ))}
-                </div>
-              </div>
               <label className="block space-y-1 text-sm">
                 <span>{t("GitHub repository URL", "Đường dẫn GitHub repository")}</span>
                 <Input
                   aria-label={t("GitHub repository URL", "Đường dẫn GitHub repository")}
                   value={repository}
-                  placeholder="https://github.com/MAVIS-Platform/mavis-studio-live-demo"
                   onChange={(e) => {
                     setRepository(e.target.value);
                     setModelId("");
@@ -563,14 +575,10 @@ export function AssignmentSourcePicker({
                 ]}
               />
               <label className="block space-y-1 text-sm">
-                <span>{t("Commit SHA (optional)", "Commit SHA (tùy chọn)")}</span>
+                <span>Commit SHA</span>
                 <Input
                   value={commit}
-                  aria-label={t("Commit SHA", "Commit SHA")}
-                  placeholder={t(
-                    "Leave blank for branch HEAD or paste 40-char SHA",
-                    "Để trống để lấy mới nhất hoặc dán 40 ký tự SHA",
-                  )}
+                  aria-label="Commit SHA"
                   onChange={(e) => {
                     setCommit(e.target.value);
                     setModelId("");

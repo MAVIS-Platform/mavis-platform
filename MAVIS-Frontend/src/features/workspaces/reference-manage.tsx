@@ -254,10 +254,7 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                       "Analysis is complete and the repository version is available for the next steps.",
                       "Phân tích đã hoàn tất và phiên bản repository có thể dùng cho các bước tiếp theo.",
                     )
-                  : t(
-                      "Import a GitHub repo, ZIP archive, or select an analyzed project.",
-                      "Nhập repo GitHub, file ZIP hoặc chọn dự án đã phân tích.",
-                    )}
+                  : ""}
               </p>
               <div className="flex items-center gap-2">
                 {(importCompleted || (selectedModelId && !sourcePending)) && (
