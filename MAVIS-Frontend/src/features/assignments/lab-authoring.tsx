@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  ArrowUpRight,
   CheckCircle2,
   Eye,
   FilePlus2,
@@ -16,11 +18,12 @@ import { api } from "@/lib/mainflow-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingState, RequestState } from "@/components/shared/request-state";
-import { useApiQuery, useSelection, useSession } from "@/hooks/use-api";
+import { useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { CourseSetupFlowFrame } from "@/features/courses/course-setup-flow-navigation";
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
+import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
 import { Assignments } from "./screens";
 import { type Assignment } from "./requirements";
 import { lecturerCourseAccess } from "@/features/lecturer/application/course-access-policy";
@@ -88,6 +91,65 @@ export function LabAuthoring() {
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const courseAccess = lecturerCourseAccess(workspace?.status);
   const isPublished = Boolean(setupLab?.published || assignment?.labOrder != null);
+  const cache = useQueryClient();
+  const createDraftLab = useApiMutation("createAssignment");
+  const autoLaunchedRef = useRef(false);
+
+  const launchNewStudioLab = () => {
+    if (!workspaceId || !courseAccess.canCreateLabs || createDraftLab.isPending) return;
+    const nextNumber = String(allLabs.length + 1).padStart(2, "0");
+    const referenceModelId = setup.data?.reference?.modelId;
+    const payload: Record<string, unknown> = {
+      workspaceId,
+      title: `Studio Lab ${nextNumber}`,
+      description: "",
+      dueAt: null,
+      requireRuntimeTrace: true,
+      labMode: "THEORY_QUIZ_STUDIO",
+      aiPolicy: {
+        labTier: "THEORY_QUIZ_STUDIO",
+        skipQuiz: false,
+      },
+      requiredDiagramTypes: [],
+      clearReferenceSource: false,
+      ...(referenceModelId ? { referenceModelId } : {}),
+    };
+    createDraftLab.mutate(payload as Parameters<typeof createDraftLab.mutate>[0], {
+      onSuccess: (saved: Assignment) => {
+        void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
+        void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+        router.push(
+          buildStudioLiveHref({
+            workspaceId,
+            assignmentId: saved.id,
+            mode: "author",
+            returnTo: `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&section=library&flow=${flowMode}`,
+          }),
+        );
+      },
+    });
+  };
+
+  useEffect(() => {
+    if (
+      section !== "create" ||
+      activeAssignmentId ||
+      flowMode !== "setup" ||
+      !canManage ||
+      !courseAccess.canCreateLabs ||
+      workspaces.isPending ||
+      assignments.isPending ||
+      session.isPending ||
+      setup.isPending ||
+      allLabs.length > 0 ||
+      autoLaunchedRef.current ||
+      createDraftLab.isPending
+    ) {
+      return;
+    }
+    autoLaunchedRef.current = true;
+    launchNewStudioLab();
+  });
 
   useEffect(() => {
     if (!activeAssignmentId) {
@@ -174,25 +236,38 @@ export function LabAuthoring() {
 
   const content = (
     <div className="min-w-0">
-      {tab === "info" && (
+      {!assignment ? (
+        <section className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-card px-6 py-14 text-center shadow-sm dark:border-border">
+          <Button
+            type="button"
+            size="lg"
+            disabled={createDraftLab.isPending || !courseAccess.canCreateLabs}
+            onClick={launchNewStudioLab}
+          >
+            {createDraftLab.isPending
+              ? t("Opening Studio 3D…", "Đang mở Studio 3D…")
+              : t("Open Studio 3D", "Mở Studio 3D")}
+            <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
+          </Button>
+          {createDraftLab.error && (
+            <div className="mt-4 w-full max-w-md text-left">
+              <ErrorState error={createDraftLab.error} onRetry={launchNewStudioLab} />
+            </div>
+          )}
+        </section>
+      ) : tab === "info" ? (
         <LabInfoForm
-          key={assignment?.id ?? "new-lab"}
+          key={assignment.id}
           workspaceId={workspaceId}
           assignment={assignment}
           onSaved={onSaved}
         />
-      )}
-      {tab === "studio" && assignment && (
+      ) : (
         <LabStudioSection
           key={assignment.id}
           workspaceId={workspaceId}
           assignment={assignment}
         />
-      )}
-      {!assignment && tab !== "info" && (
-        <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
-          {t("Save the Lab information first.", "Hãy lưu thông tin Lab trước.")}
-        </p>
       )}
     </div>
   );
@@ -266,13 +341,8 @@ export function LabAuthoring() {
                   size="sm"
                   variant="outline"
                   className="shrink-0 px-2.5 text-xs whitespace-nowrap"
-                  onClick={() => {
-                    setCreatedAssignmentId("");
-                    setTab("info");
-                    router.push(
-                      `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`,
-                    );
-                  }}
+                  disabled={createDraftLab.isPending}
+                  onClick={launchNewStudioLab}
                 >
                   <Plus className="mr-1 size-3.5" aria-hidden="true" />
                   {t("New Lab", "Tạo Lab mới")}
@@ -302,7 +372,7 @@ export function LabAuthoring() {
           )}
         </div>
 
-        {section === "create" && courseAccess.isEditable && (
+        {section === "create" && courseAccess.isEditable && assignment && (
           <nav
             aria-label={t("Lab creation steps", "Các bước tạo Lab")}
             className="flex flex-wrap items-center gap-1.5 border-t border-slate-200 pt-2.5 dark:border-border"

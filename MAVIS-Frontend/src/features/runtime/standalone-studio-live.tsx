@@ -2,14 +2,18 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Lock } from "lucide-react";
+import { ArrowLeft, ArrowRight, Lock, X } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ErrorState, LoadingState } from "@/components/shared/request-state";
 import { RequireSession } from "@/features/auth/access";
-import { useApi, useApiQuery, useSession } from "@/hooks/use-api";
+import { resolveLabTier } from "@/features/assignments/requirements";
+import { useApi, useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import type { Response } from "@/lib/api/contracts";
 import { ApiError } from "@/lib/errors/api-error";
 import { api } from "@/lib/mainflow-api";
@@ -156,10 +160,15 @@ function safeRelativeHref(raw: string | null, fallback: string) {
 
 function StandaloneStudioContent() {
   const { locale, t } = useLocale();
+  const router = useRouter();
   const params = useSearchParams();
   const client = useApi();
   const cache = useQueryClient();
   const session = useSession();
+  const updateAssignment = useApiMutation("updateAssignment");
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportTitle, setExportTitle] = useState("");
+  const [exportDescription, setExportDescription] = useState("");
 
   const workspaceId = params?.get("workspace") ?? "";
   const assignmentId = params?.get("assignment") ?? "";
@@ -1852,15 +1861,22 @@ function StandaloneStudioContent() {
             </Link>
           </Button>
           <Button
-            asChild
+            type="button"
             size="sm"
             className="h-8 shrink-0 whitespace-nowrap bg-emerald-600 px-2 text-xs text-white hover:bg-emerald-500"
+            onClick={() => {
+              if (!assignment) {
+                router.push(publishHref);
+                return;
+              }
+              setExportTitle(assignment.title ?? "");
+              setExportDescription(assignment.instructions ?? "");
+              setExportModalOpen(true);
+            }}
           >
-            <Link href={publishHref}>
-              <span className="hidden xl:inline">{t("Done · Course Builder", "Xong · Khung khóa học")}</span>
-              <span className="xl:hidden">{t("Done", "Xong")}</span>
-              <ArrowRight className="ml-1 size-3" aria-hidden="true" />
-            </Link>
+            <span className="hidden xl:inline">{t("Done · Course Builder", "Xong · Khung khóa học")}</span>
+            <span className="xl:hidden">{t("Done", "Xong")}</span>
+            <ArrowRight className="ml-1 size-3" aria-hidden="true" />
           </Button>
         </>
       )}
@@ -2157,6 +2173,122 @@ function StandaloneStudioContent() {
           />
         )}
       </main>
+      {exportModalOpen && assignment && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("Save Lab", "Lưu bài Lab")}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => {
+            if (!updateAssignment.isPending) setExportModalOpen(false);
+          }}
+        >
+          <form
+            className="w-full max-w-md space-y-4 rounded-2xl border bg-card p-6 text-card-foreground shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const cleanTitle = exportTitle.trim();
+              if (!cleanTitle || updateAssignment.isPending) return;
+              const existingPolicy =
+                assignment.aiPolicy && typeof assignment.aiPolicy === "object"
+                  ? (assignment.aiPolicy as Record<string, unknown>)
+                  : {};
+              const preservedTier = resolveLabTier(assignment);
+              const persistedLabMode =
+                preservedTier === "THEORY_ONLY" ? "THEORY_QUIZ" : preservedTier;
+              const referenceModelId =
+                assignment.referenceSource?.modelId ?? previewModelId ?? undefined;
+              const payload: Record<string, unknown> = {
+                workspaceId,
+                assignmentId: assignment.id,
+                title: cleanTitle,
+                description: exportDescription,
+                dueAt:
+                  assignment.dueAt && assignment.dueAt !== "No deadline"
+                    ? assignment.dueAt
+                    : null,
+                requireRuntimeTrace: preservedTier === "THEORY_QUIZ_STUDIO",
+                labMode: persistedLabMode,
+                aiPolicy: {
+                  ...existingPolicy,
+                  labTier: preservedTier,
+                  skipQuiz: preservedTier === "THEORY_ONLY",
+                },
+                requiredDiagramTypes: [],
+                clearReferenceSource: false,
+                ...(referenceModelId ? { referenceModelId } : {}),
+              };
+              updateAssignment.mutate(
+                payload as Parameters<typeof updateAssignment.mutate>[0],
+                {
+                  onSuccess: () => {
+                    void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
+                    void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+                    toast.success(t("Lab saved.", "Đã lưu bài Lab."));
+                    setExportModalOpen(false);
+                    router.push(publishHref);
+                  },
+                },
+              );
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-semibold">{t("Save Lab", "Lưu bài Lab")}</h2>
+              <button
+                type="button"
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={t("Close", "Đóng")}
+                disabled={updateAssignment.isPending}
+                onClick={() => setExportModalOpen(false)}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+            <label className="block space-y-1.5 text-sm">
+              <span className="font-medium">{t("Lab title", "Tên bài Lab")}</span>
+              <Input
+                autoFocus
+                required
+                maxLength={255}
+                value={exportTitle}
+                onChange={(event) => setExportTitle(event.target.value)}
+              />
+            </label>
+            <label className="block space-y-1.5 text-sm">
+              <span className="font-medium">{t("Description", "Mô tả")}</span>
+              <Textarea
+                rows={4}
+                value={exportDescription}
+                onChange={(event) => setExportDescription(event.target.value)}
+              />
+            </label>
+            {updateAssignment.error && <ErrorState error={updateAssignment.error} />}
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={updateAssignment.isPending}
+                onClick={() => setExportModalOpen(false)}
+              >
+                {t("Cancel", "Hủy")}
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="bg-emerald-600 text-white hover:bg-emerald-500"
+                disabled={!exportTitle.trim() || updateAssignment.isPending}
+              >
+                {updateAssignment.isPending
+                  ? t("Saving…", "Đang lưu…")
+                  : t("Save & Finish", "Lưu & Hoàn tất")}
+                <ArrowRight className="ml-1.5 size-3.5" aria-hidden="true" />
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
