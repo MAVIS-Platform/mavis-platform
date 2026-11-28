@@ -1159,6 +1159,40 @@ function StandaloneStudioContent() {
               ...(nextTopology ? { nextTopology } : {}),
             });
           },
+          onClearGoal: () => {
+            const nextTopology = previewTopology
+              ? {
+                  ...previewTopology,
+                  blocks: previewTopology.blocks.map((b) => ({
+                    ...b,
+                    initiallyStopped: false,
+                  })),
+                  connections: (previewTopology.connections ?? []).map((c) => ({
+                    ...c,
+                    initiallyStopped: false,
+                  })),
+                }
+              : undefined;
+            saveVisualExercise.mutate({
+              exerciseType: "CUSTOM",
+              blindMode: false,
+              predictionRequired: false,
+              predictionMode: null,
+              minImpactF1: "",
+              maxActions: null,
+              rules: [],
+              targetChangeAction: null,
+              stoppedServices: [],
+              stoppedControllers: [],
+              cpuLimits: {},
+              initialLoadRps: null,
+              minReplicas: [],
+              maxErrorRatePercent: "",
+              maxP95Ms: "",
+              instructions: "",
+              ...(nextTopology ? { nextTopology } : {}),
+            });
+          },
           onApplyExamPreset: () => {
             const currentBlocks = previewTopology?.blocks ?? [];
             const serviceNames =

@@ -274,6 +274,7 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   hasVerifiedSession?: boolean | undefined;
   publishHref?: string | undefined;
   onSelectGoal?: ((goalId: StudioGoalId, preferredService?: string) => void) | undefined;
+  onClearGoal?: (() => void) | undefined;
   onApplyExamPreset?: (() => void) | undefined;
   onSetInitialCpuLimit?: ((service: string, cpuPercent: number | null) => void) | undefined;
   onApplyBlockChip?: ((chipId: AuthorBlockChipId, service: string) => void) | undefined;
@@ -7314,6 +7315,11 @@ export function LiveStudioWorkbench({
                               type="button"
                               disabled={authoring.busy || authoring.frozen}
                               onClick={() => {
+                                if (isActive) {
+                                  setMaxErrDraft("");
+                                  authoring.onClearGoal?.();
+                                  return;
+                                }
                                 setMaxErrDraft(
                                   goal.id === "scale" ? "5" : goal.id === "recovery" ? "0" : "",
                                 );
@@ -7358,7 +7364,14 @@ export function LiveStudioWorkbench({
                           type="button"
                           data-testid="author-exam-preset-btn"
                           disabled={authoring.busy || authoring.frozen}
-                          onClick={() => authoring.onApplyExamPreset?.()}
+                          onClick={() => {
+                            if (isCompoundActive) {
+                              setMaxErrDraft("");
+                              authoring.onClearGoal?.();
+                              return;
+                            }
+                            authoring.onApplyExamPreset?.();
+                          }}
                           className={`flex w-full items-center justify-between gap-2 border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:opacity-45 ${themeRadius} ${
                             isCompoundActive
                               ? themeActiveBtn
@@ -7437,9 +7450,7 @@ export function LiveStudioWorkbench({
                               <button
                                 type="button"
                                 disabled={authoring.busy || authoring.frozen}
-                                onClick={() => {
-                                  if (!startsDown) authoring.onToggleInitialStopped(svc, false);
-                                }}
+                                onClick={() => authoring.onToggleInitialStopped(svc, false)}
                                 className={painterBtn(startsDown)}
                               >
                                 {t("Down 0x", "Tắt 0x")}
@@ -7447,7 +7458,12 @@ export function LiveStudioWorkbench({
                               <button
                                 type="button"
                                 disabled={authoring.busy || authoring.frozen}
-                                onClick={() => authoring.onSetInitialCpuLimit?.(svc, 25)}
+                                onClick={() =>
+                                  authoring.onSetInitialCpuLimit?.(
+                                    svc,
+                                    !startsDown && selCpuLimit === 25 ? null : 25,
+                                  )
+                                }
                                 className={painterBtn(!startsDown && selCpuLimit === 25)}
                               >
                                 CPU 25%
@@ -7455,7 +7471,12 @@ export function LiveStudioWorkbench({
                               <button
                                 type="button"
                                 disabled={authoring.busy || authoring.frozen}
-                                onClick={() => authoring.onSetInitialCpuLimit?.(svc, 50)}
+                                onClick={() =>
+                                  authoring.onSetInitialCpuLimit?.(
+                                    svc,
+                                    !startsDown && selCpuLimit === 50 ? null : 50,
+                                  )
+                                }
                                 className={painterBtn(!startsDown && selCpuLimit === 50)}
                               >
                                 CPU 50%
