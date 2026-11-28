@@ -37,11 +37,8 @@ export function CreateWorkspace({ onClose }: { onClose?: () => void } = {}) {
           <DialogTitle id="create-class-title">
             {t("Create a class", "Tạo lớp học mới")}
           </DialogTitle>
-          <DialogDescription>
-            {t(
-              "Use a short class code and the name students will recognize.",
-              "Nhập mã lớp ngắn gọn và tên lớp học để sinh viên dễ nhận diện.",
-            )}
+          <DialogDescription className="sr-only">
+            {t("Create a class", "Tạo lớp học mới")}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -71,7 +68,6 @@ export function CreateWorkspace({ onClose }: { onClose?: () => void } = {}) {
                 {...props}
                 autoFocus
                 aria-label="Workspace code"
-                placeholder="SE181070"
                 required
                 maxLength={50}
                 value={code}
@@ -84,7 +80,6 @@ export function CreateWorkspace({ onClose }: { onClose?: () => void } = {}) {
               <Input
                 {...props}
                 aria-label="Workspace name"
-                placeholder={t("Software Architecture · Fall 2026", "Kiến trúc phần mềm · Kỳ 2026")}
                 required
                 maxLength={255}
                 value={name}
@@ -92,16 +87,12 @@ export function CreateWorkspace({ onClose }: { onClose?: () => void } = {}) {
               />
             )}
           </FormField>
-          <FormField label={t("Description (optional)", "Mô tả ngắn (tùy chọn)")}>
+          <FormField label={t("Description", "Mô tả")}>
             {(props) => (
               <Textarea
                 {...props}
                 rows={3}
                 maxLength={2000}
-                placeholder={t(
-                  "Schedule, cohort, or learning objectives for this class…",
-                  "Lịch học, khóa sinh viên hoặc mục tiêu môn học…",
-                )}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
