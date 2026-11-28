@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, CheckCircle2, FolderGit2, GitBranch, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -21,6 +21,7 @@ import {
 export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
   const allowed = usePermission("workspace:manage");
   const { t } = useLocale();
+  const router = useRouter();
   const params = useSearchParams();
   const flowMode = params?.get("flow") === "setup" ? "setup" : "content";
   const [importOpen, setImportOpen] = useState(false);
@@ -223,10 +224,12 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
                         void projects.refetch();
                         toast.success(
                           t(
-                            "Repository analyzed and C1–C3 architecture is ready. Review the result below before continuing.",
-                            "Repository đã phân tích xong và sơ đồ C1–C3 đã sẵn sàng. Hãy kiểm tra thông tin bên dưới trước khi sang bước tiếp theo.",
+                            "Repository analyzed and ready.",
+                            "Đã phân tích xong repository.",
                           ),
                         );
+                        setImportOpen(false);
+                        router.push(nextStepHref);
                       },
                       onError: () => {
                         toast.error(
