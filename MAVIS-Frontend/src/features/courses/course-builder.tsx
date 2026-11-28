@@ -743,13 +743,13 @@ function AddContentDialog({
   t: (en: string, vi: string) => string;
 }) {
   const contentKind = draft.type === "THEORY" ? "LESSON" : draft.type === "QUIZ" ? "QUIZ" : "PRACTICE";
-  const studioLabs = assignments.filter((assignment) => assignment.requireRuntimeTrace);
+  const availableLabs = assignments;
   const selectedTheory = theoryAssets.find((asset) => asset.id === draft.theoryAssetId);
   const selectedReference = referenceVersions.find(
     (version) => version.id === draft.referenceVersionId,
   );
   const selectedQuiz = quizAssets.find((asset) => asset.id === draft.quizAssetId);
-  const selectedLab = studioLabs.find((assignment) => assignment.id === draft.assignmentId);
+  const selectedLab = availableLabs.find((assignment) => assignment.id === draft.assignmentId);
   const submitLabel =
     mode === "edit"
       ? t("Save changes", "Lưu thay đổi")
@@ -976,34 +976,53 @@ function AddContentDialog({
             {contentKind === "PRACTICE" && (
               <div className="space-y-4">
                 <label className="block space-y-1.5 text-sm font-medium">
-                  <span>{t("Select Studio Lab", "Chọn Studio Lab")}</span>
+                  <span>{t("Select Lab", "Chọn bài Lab")}</span>
                   <select
                     className="w-full rounded-md border bg-background px-3 py-2.5"
                     value={draft.assignmentId}
                     onChange={(event) => {
-                      const lab = studioLabs.find((entry) => entry.id === event.target.value);
+                      const lab = availableLabs.find((entry) => entry.id === event.target.value);
                       onChange({
                         assignmentId: event.target.value,
+                        type: lab ? itemTypeForAssignment(lab) : "RUNTIME_LAB",
                         title: lab?.title ?? "",
                         description: lab?.instructions?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 160) ?? "",
                       });
                     }}
                   >
-                    <option value="">{t("Choose a Runtime/Studio Lab…", "Chọn Lab có Runtime/Studio…")}</option>
-                    {studioLabs.map((lab) => <option key={lab.id} value={lab.id}>{lab.title}</option>)}
+                    <option value="">{t("Choose a Lab…", "Chọn bài Lab…")}</option>
+                    {availableLabs.map((lab) => {
+                      const tier = resolveLabTier(lab);
+                      const tierLabel =
+                        tier === "THEORY_QUIZ_STUDIO"
+                          ? "Studio Live"
+                          : tier === "THEORY_QUIZ"
+                            ? "Theory + Quiz"
+                            : "Theory/Static";
+                      return (
+                        <option key={lab.id} value={lab.id}>
+                          {`${lab.title} [${tierLabel}]`}
+                        </option>
+                      );
+                    })}
                   </select>
                 </label>
-                {!loading && studioLabs.length === 0 && (
+                {!loading && availableLabs.length === 0 && (
                   <p role="alert" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
-                    {t("No Runtime/Studio Lab is ready. Configure Studio Live first.", "Chưa có Lab Runtime/Studio. Hãy cấu hình Studio Live trước.")}
+                    {t("No Lab has been created in this class yet. Create a Lab first.", "Chưa có bài Lab nào trong lớp này. Hãy tạo bài Lab trước.")}
                   </p>
                 )}
                 {selectedLab && (
                   <p className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
-                    {t(
-                      "The student mission and completion criteria are managed in MAVIS Studio.",
-                      "Nhiệm vụ sinh viên và tiêu chí hoàn thành được quản lý trong MAVIS Studio.",
-                    )}
+                    {selectedLab.requireRuntimeTrace
+                      ? t(
+                          "The student mission and completion criteria are managed in MAVIS Studio.",
+                          "Nhiệm vụ sinh viên và tiêu chí hoàn thành được quản lý trong MAVIS Studio.",
+                        )
+                      : t(
+                          "This Lab uses static analysis / theory & quiz assessment without Runtime Studio.",
+                          "Bài Lab này đánh giá theo phân tích tĩnh / lý thuyết & trắc nghiệm (chưa bật Runtime Studio).",
+                        )}
                   </p>
                 )}
               </div>
@@ -1503,8 +1522,8 @@ export function CourseBuilder({
       setAddContentError(t("Select a Quiz from the library.", "Hãy chọn Quiz từ thư viện."));
       return;
     }
-    if (draft.type === "RUNTIME_LAB" && !draft.assignmentId) {
-      setAddContentError(t("Select a Runtime/Studio Lab.", "Hãy chọn Lab có Runtime/Studio."));
+    if (["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(draft.type) && !draft.assignmentId) {
+      setAddContentError(t("Select a Lab for this Practice item.", "Hãy chọn bài Lab cho mục thực hành này."));
       return;
     }
     if (!draftValid(draft)) {
