@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 470" width="1120" height="470" role="img" aria-label="MAVIS System Architecture">
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+      .mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; }
+    </style>
+
+    <!-- Subtle background grid pattern -->
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#1C2330" stroke-width="1"/>
+    </pattern>
+
+    <!-- Arrowheads -->
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#38BDF8"/>
+    </marker>
+    <marker id="arrow-emerald" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#34D399"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#A78BFA"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#FBBF24"/>
+    </marker>
+    <marker id="arrow-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <!-- Outer Frame -->
+  <rect x="0" y="0" width="1120" height="470" rx="16" fill="#0B1018"/>
+  <rect x="0" y="0" width="1120" height="470" rx="16" fill="url(#grid)" opacity="0.55"/>
+  <rect x="0.75" y="0.75" width="1118.5" height="468.5" rx="15.5" fill="none" stroke="#1E293B" stroke-width="1.5"/>
+
+  <!-- Header Strip -->
+  <text x="32" y="38" class="sans" font-size="13" font-weight="700" letter-spacing="1.4" fill="#94A3B8">MAVIS PLATFORM ARCHITECTURE</text>
+  <text x="1088" y="38" text-anchor="end" class="mono" font-size="11.5" fill="#475569">maviss.site · Production Topology</text>
+  <line x1="32" y1="52" x2="1088" y2="52" stroke="#1E293B" stroke-width="1"/>
+
+  <!-- Zone 1: Edge & Application Control Plane -->
+  <rect x="32" y="72" width="600" height="366" rx="12" fill="#0F172A" fill-opacity="0.72" stroke="#1E293B" stroke-width="1.2"/>
+  <text x="48" y="96" class="mono" font-size="11" font-weight="600" letter-spacing="0.8" fill="#38BDF8">CONTROL PLANE &amp; WEB LAYER</text>
+
+  <!-- Zone 2: Isolated Runtime Execution Plane -->
+  <rect x="668" y="72" width="420" height="366" rx="12" fill="#131124" fill-opacity="0.72" stroke="#2E2356" stroke-width="1.2"/>
+  <text x="684" y="96" class="mono" font-size="11" font-weight="600" letter-spacing="0.8" fill="#A78BFA">ISOLATED RUNTIME &amp; TELEMETRY PLANE</text>
+
+  <!-- ==================== NODE 1: CLIENTS ==================== -->
+  <g transform="translate(52, 118)">
+    <rect width="160" height="122" rx="10" fill="#111C2D" stroke="#334155" stroke-width="1.2"/>
+    <rect x="0" y="0" width="160" height="4" rx="2" fill="#94A3B8"/>
+    <text x="16" y="30" class="sans" font-size="13.5" font-weight="700" fill="#F8FAFC">Users &amp; Roles</text>
+    <text x="16" y="54" class="sans" font-size="11.5" fill="#94A3B8">• Admin Control Center</text>
+    <text x="16" y="74" class="sans" font-size="11.5" fill="#94A3B8">• Lecturer Authoring</text>
+    <text x="16" y="94" class="sans" font-size="11.5" fill="#94A3B8">• Student Studio Labs</text>
+    <text x="16" y="112" class="mono" font-size="10" fill="#64748B">HTTPS / WebGL / SSE</text>
+  </g>
+
+  <!-- ==================== NODE 2: NEXT.JS FRONTEND ==================== -->
+  <g transform="translate(262, 118)">
+    <rect width="176" height="122" rx="10" fill="#0C2230" stroke="#0284C7" stroke-width="1.4"/>
+    <rect x="0" y="0" width="176" height="4" rx="2" fill="#38BDF8"/>
+    <text x="16" y="30" class="sans" font-size="13.5" font-weight="700" fill="#F0F9FF">Next.js 15 + BFF</text>
+    <text x="16" y="48" class="mono" font-size="10.5" fill="#38BDF8">React 19 · Three.js</text>
+    <text x="16" y="72" class="sans" font-size="11.5" fill="#CBD5E1">• 2D/3D Studio Live</text>
+    <text x="16" y="90" class="sans" font-size="11.5" fill="#CBD5E1">• C4 &amp; 5 UML Views</text>
+    <text x="16" y="108" class="sans" font-size="11.5" fill="#CBD5E1">• LMS &amp; SpeedGrader</text>
+  </g>
+
+  <!-- ==================== NODE 3: SPRING BOOT API ==================== -->
+  <g transform="translate(262, 286)">
+    <rect width="346" height="128" rx="10" fill="#0B241E" stroke="#10B981" stroke-width="1.4"/>
+    <rect x="0" y="0" width="346" height="4" rx="2" fill="#34D399"/>
+    <text x="16" y="30" class="sans" font-size="14" font-weight="700" fill="#ECFDF5">Spring Boot 3.5 Core API</text>
+    <text x="16" y="48" class="mono" font-size="10.5" fill="#34D399">Java 21 · Maven Multi-Module</text>
+
+    <rect x="16" y="62" width="150" height="24" rx="5" fill="#064E3B" fill-opacity="0.55" stroke="#059669" stroke-width="0.8"/>
+    <text x="91" y="78" text-anchor="middle" class="sans" font-size="11" fill="#A7F3D0">Java Static Analyzer</text>
+
+    <rect x="178" y="62" width="152" height="24" rx="5" fill="#064E3B" fill-opacity="0.55" stroke="#059669" stroke-width="0.8"/>
+    <text x="254" y="78" text-anchor="middle" class="sans" font-size="11" fill="#A7F3D0">Exercise Evaluator</text>
+
+    <rect x="16" y="92" width="150" height="24" rx="5" fill="#064E3B" fill-opacity="0.55" stroke="#059669" stroke-width="0.8"/>
+    <text x="91" y="108" text-anchor="middle" class="sans" font-size="11" fill="#A7F3D0">SSE Telemetry Hub</text>
+
+    <rect x="178" y="92" width="152" height="24" rx="5" fill="#064E3B" fill-opacity="0.55" stroke="#059669" stroke-width="0.8"/>
+    <text x="254" y="108" text-anchor="middle" class="sans" font-size="11" fill="#A7F3D0">HMAC-SHA256 Receipts</text>
+  </g>
+
+  <!-- ==================== NODE 4: POSTGRESQL ==================== -->
+  <g transform="translate(52, 286)">
+    <rect width="160" height="128" rx="10" fill="#131936" stroke="#6366F1" stroke-width="1.4"/>
+    <rect x="0" y="0" width="160" height="4" rx="2" fill="#818CF8"/>
+    <text x="16" y="30" class="sans" font-size="13.5" font-weight="700" fill="#EEF2FF">PostgreSQL</text>
+    <text x="16" y="48" class="mono" font-size="10.5" fill="#818CF8">Flyway V1..V50</text>
+    <text x="16" y="72" class="sans" font-size="11.5" fill="#CBD5E1">• Courses &amp; Grading</text>
+    <text x="16" y="90" class="sans" font-size="11.5" fill="#CBD5E1">• Architecture Models</text>
+    <text x="16" y="108" class="sans" font-size="11.5" fill="#CBD5E1">• Sealed Submissions</text>
+  </g>
+
+  <!-- ==================== NODE 5: .NET 10 WORKER ==================== -->
+  <g transform="translate(692, 118)">
+    <rect width="372" height="114" rx="10" fill="#1D1538" stroke="#8B5CF6" stroke-width="1.4"/>
+    <rect x="0" y="0" width="372" height="4" rx="2" fill="#A78BFA"/>
+    <text x="16" y="30" class="sans" font-size="14" font-weight="700" fill="#F5F3FF">.NET 10 Worker &amp; Runner</text>
+    <text x="16" y="48" class="mono" font-size="10.5" fill="#C4B5FD">MAVIS.Runner · Roslyn · Docker Orchestrator</text>
+
+    <rect x="16" y="62" width="166" height="36" rx="6" fill="#2E1065" fill-opacity="0.6" stroke="#7C3AED" stroke-width="0.8"/>
+    <text x="99" y="78" text-anchor="middle" class="sans" font-size="11" font-weight="600" fill="#EDE9FE">C# Static + Reverse BFS</text>
+    <text x="99" y="92" text-anchor="middle" class="mono" font-size="9.5" fill="#C4B5FD">Cycle-safe blast radius</text>
+
+    <rect x="192" y="62" width="164" height="36" rx="6" fill="#2E1065" fill-opacity="0.6" stroke="#7C3AED" stroke-width="0.8"/>
+    <text x="274" y="78" text-anchor="middle" class="sans" font-size="11" font-weight="600" fill="#EDE9FE">Bounded Chaos Controls</text>
+    <text x="274" y="92" text-anchor="middle" class="mono" font-size="9.5" fill="#C4B5FD">Scale 1..3 · CPU · 1-50 RPS</text>
+  </g>
+
+  <!-- ==================== NODE 6: DOCKER SANDBOX ==================== -->
+  <g transform="translate(692, 286)">
+    <rect width="194" height="128" rx="10" fill="#23190C" stroke="#D97706" stroke-width="1.4"/>
+    <rect x="0" y="0" width="194" height="4" rx="2" fill="#FBBF24"/>
+    <text x="14" y="29" class="sans" font-size="13" font-weight="700" fill="#FFFBEB">Docker Sandbox</text>
+    <text x="14" y="46" class="mono" font-size="10" fill="#FBBF24">runc / gVisor · cgroups</text>
+    <text x="14" y="70" class="sans" font-size="11" fill="#FDE68A">• Read-only rootfs</text>
+    <text x="14" y="88" class="sans" font-size="11" fill="#FDE68A">• Internal network only</text>
+    <text x="14" y="106" class="sans" font-size="11" fill="#FDE68A">• Live HTTP load probe</text>
+  </g>
+
+  <!-- ==================== NODE 7: OTEL + PROMETHEUS ==================== -->
+  <g transform="translate(908, 286)">
+    <rect width="156" height="128" rx="10" fill="#1F1221" stroke="#EC4899" stroke-width="1.4"/>
+    <rect x="0" y="0" width="156" height="4" rx="2" fill="#F472B6"/>
+    <text x="14" y="29" class="sans" font-size="13" font-weight="700" fill="#FDF2F8">Observability</text>
+    <text x="14" y="46" class="mono" font-size="10" fill="#F472B6">OTel + Prometheus</text>
+    <text x="14" y="70" class="sans" font-size="11" fill="#FBCFE8">• OTLP Traces</text>
+    <text x="14" y="88" class="sans" font-size="11" fill="#FBCFE8">• ServiceGraph</text>
+    <text x="14" y="106" class="sans" font-size="11" fill="#FBCFE8">• CPU Throttle %</text>
+  </g>
+
+  <!-- ==================== CONNECTORS & LABELS ==================== -->
+  <!-- Users <-> Next.js -->
+  <line x1="212" y1="179" x2="254" y2="179" stroke="#38BDF8" stroke-width="1.8" marker-end="url(#arrow-cyan)"/>
+
+  <!-- Next.js <-> Spring Boot -->
+  <line x1="350" y1="240" x2="350" y2="278" stroke="#34D399" stroke-width="1.8" marker-start="url(#arrow-cyan)" marker-end="url(#arrow-emerald)"/>
+  <rect x="360" y="250" width="96" height="20" rx="4" fill="#0F172A" stroke="#1E293B" stroke-width="1"/>
+  <text x="408" y="264" text-anchor="middle" class="mono" font-size="10" fill="#94A3B8">REST + SSE</text>
+
+  <!-- Spring Boot <-> PostgreSQL -->
+  <line x1="262" y1="350" x2="220" y2="350" stroke="#64748B" stroke-width="1.8" marker-end="url(#arrow-slate)"/>
+  <text x="237" y="342" text-anchor="middle" class="mono" font-size="9.5" fill="#94A3B8">JDBC</text>
+
+  <!-- Spring Boot <-> .NET Worker (Signed Dispatch & Callbacks) -->
+  <path d="M 608 328 L 648 328 L 648 175 L 684 175" fill="none" stroke="#A78BFA" stroke-width="1.8" marker-end="url(#arrow-violet)"/>
+  <rect x="470" y="150" width="144" height="38" rx="6" fill="#0F172A" stroke="#4C1D95" stroke-width="1"/>
+  <text x="542" y="166" text-anchor="middle" class="mono" font-size="10" font-weight="600" fill="#C4B5FD">Signed Dispatch</text>
+  <text x="542" y="180" text-anchor="middle" class="mono" font-size="9.5" fill="#94A3B8">&amp; Live Callbacks</text>
+  <line x1="614" y1="175" x2="648" y2="175" stroke="#A78BFA" stroke-width="1.2" stroke-dasharray="3 3"/>
+
+  <!-- Worker -> Docker Sandbox -->
+  <line x1="789" y1="232" x2="789" y2="278" stroke="#FBBF24" stroke-width="1.8" marker-end="url(#arrow-amber)"/>
+  <rect x="704" y="246" width="170" height="20" rx="4" fill="#131124" stroke="#78350F" stroke-width="1"/>
+  <text x="789" y="260" text-anchor="middle" class="mono" font-size="9.5" fill="#FCD34D">Compose + cgroup quotas</text>
+
+  <!-- Sandbox -> OTel -->
+  <line x1="886" y1="350" x2="900" y2="350" stroke="#FBBF24" stroke-width="1.8" marker-end="url(#arrow-amber)"/>
+
+  <!-- OTel -> Worker (Metrics & Traces feedback) -->
+  <line x1="986" y1="286" x2="986" y2="240" stroke="#A78BFA" stroke-width="1.8" marker-end="url(#arrow-violet)"/>
+  <rect x="920" y="246" width="132" height="20" rx="4" fill="#131124" stroke="#581C87" stroke-width="1"/>
+  <text x="986" y="260" text-anchor="middle" class="mono" font-size="9.5" fill="#F9A8D4">Snapshots &amp; Logs</text>
+</svg>

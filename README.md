@@ -27,16 +27,9 @@
 
 ## System Architecture
 
-```mermaid
-flowchart LR
-    User["Lecturer / Student / Admin"] --> FE["Next.js 15 Frontend + BFF<br/>(App Router · 2D/3D Three.js Studio)"]
-    FE -->|REST + SSE| BE["Spring Boot 3.5 API<br/>(Auth · LMS · Evaluator · Telemetry Hub)"]
-    BE --> DB[("PostgreSQL<br/>Flyway V1..V50")]
-    BE -->|Signed Dispatch + Callbacks| Worker[".NET 10 Worker & Runner<br/>(Roslyn Analyzer · Docker Orchestrator)"]
-    Worker -->|Compose + cgroup limits| Sandbox["Isolated Microservices Sandbox<br/>(Read-only rootfs · Internal net · HTTP Probe)"]
-    Sandbox -->|OTLP Traces & Metrics| OTel["OpenTelemetry Collector<br/>+ Prometheus ServiceGraph"]
-    OTel -->|Live Snapshots & Logs| Worker
-```
+<p align="center">
+  <img src="docs/assets/mavis-architecture.svg" alt="MAVIS System Architecture" width="100%" />
+</p>
 
 | Layer | Technology | Responsibilities |
 | :--- | :--- | :--- |
