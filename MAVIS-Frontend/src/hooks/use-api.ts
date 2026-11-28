@@ -47,7 +47,16 @@ export function useApiQuery<K extends Operation>(
             const data: unknown = query.state.data;
             const active = (value: unknown) => {
               if (!value || typeof value !== "object") return false;
-              if ("executionStatus" in value)
+              if ("executionStatus" in value) {
+                const statusStr = String(value.executionStatus);
+                if (
+                  statusStr === "COMPLETED" &&
+                  "interactive" in value &&
+                  Boolean((value as { interactive?: unknown }).interactive) &&
+                  !("receiptDigest" in value && Boolean((value as { receiptDigest?: unknown }).receiptDigest))
+                ) {
+                  return true;
+                }
                 return [
                   "NOT_STARTED",
                   "PENDING",
@@ -57,7 +66,8 @@ export function useApiQuery<K extends Operation>(
                   "ALLOCATED",
                   "RUNNING",
                   "CANCELLING",
-                ].includes(String(value.executionStatus));
+                ].includes(statusStr);
+              }
               return (
                 "status" in value &&
                 [

@@ -80,13 +80,14 @@ export function useStudioSession(sessionId: string) {
     (cachedStatus !== "COMPLETED" || hasSealedReceipt);
   const fastFinishPoll = cachedStatus === "FINISHING" || (cachedStatus === "COMPLETED" && !hasSealedReceipt);
   const slowPoll = sseConnected && cachedStatus === "RUNNING" && !fastFinishPoll;
+  // Omit refreshMs during finishing so useApiQuery uses its native 1500ms non-aborting poll instead of clamping to 10s.
   const state = useApiQuery(
     "studioState",
     { sessionId },
     {
       enabled: !!sessionId,
       poll: Boolean(sessionId) && !isTerminalCached,
-      ...(fastFinishPoll ? { refreshMs: 2000 } : slowPoll ? { refreshMs: 8000 } : {}),
+      ...(slowPoll ? { refreshMs: 8000 } : {}),
     },
   );
   const action = useApiMutation("studioAction");

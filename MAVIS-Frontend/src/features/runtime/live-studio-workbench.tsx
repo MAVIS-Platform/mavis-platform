@@ -710,7 +710,7 @@ export function LiveStudioWorkbench({
     }
     prevFinishSuccessRef.current = finish.isSuccess;
   }, [finish.isSuccess]);
-  // Poll every 2s while sealing modal is open until COMPLETED + receiptDigest (or terminal failure/cancel).
+  // Poll every 2.5s while sealing modal is open without aborting an in-flight /studio/state request.
   const refetchStudioState = state.refetch;
   useEffect(() => {
     if (!verifiedModalOpen || !activeSessionId) return;
@@ -719,10 +719,10 @@ export function LiveStudioWorkbench({
       data.executionStatus === "FAILED" ||
       data.executionStatus === "CANCELLED";
     if (done) return;
-    void refetchStudioState();
+    void refetchStudioState({ cancelRefetch: false });
     const id = window.setInterval(() => {
-      void refetchStudioState();
-    }, 2000);
+      void refetchStudioState({ cancelRefetch: false });
+    }, 2500);
     return () => window.clearInterval(id);
   }, [verifiedModalOpen, activeSessionId, data.executionStatus, data.receiptDigest, refetchStudioState]);
   const [leftWidth, setLeftWidth] = useState(244);
@@ -6887,7 +6887,7 @@ export function LiveStudioWorkbench({
                             return (
                             <div
                               key={`${rule.metric}-${idx}`}
-                              className={`grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)_52px_24px] items-center gap-1.5 border p-1.5 ${themeRadius} ${
+                              className={`grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.25fr)_62px_22px] items-center gap-1 border p-1.5 ${themeRadius} ${
                                 isLight
                                   ? "border-slate-200 bg-slate-50/70"
                                   : "border-slate-800 bg-slate-900/50"
@@ -6925,7 +6925,7 @@ export function LiveStudioWorkbench({
                                               : 0,
                                   });
                                 }}
-                                className={`h-7 min-w-0 rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                                className={`h-7 min-w-0 truncate rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
                               >
                                 <option value="P95_DELTA_PCT">p95 Δ%</option>
                                 <option value="REPLICAS">{t("Replicas", "Replica ≥")}</option>
@@ -6940,7 +6940,7 @@ export function LiveStudioWorkbench({
                                 value={normalizedTarget}
                                 title={normalizedTarget}
                                 onChange={(e) => updateComposableRule(idx, { target: e.target.value })}
-                                className={`h-7 min-w-0 rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                                className={`h-7 min-w-0 truncate rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
                               >
                                 {!hasCurrentOption && normalizedTarget && (
                                   <option value={normalizedTarget}>{normalizedTarget}</option>
@@ -6959,7 +6959,7 @@ export function LiveStudioWorkbench({
                                 onChange={(e) =>
                                   updateComposableRule(idx, { threshold: Number(e.target.value) || 0 })
                                 }
-                                className={`h-7 w-full rounded border px-1.5 font-mono text-[10.5px] ${styleCfg.inputClass}`}
+                                className={`h-7 w-full rounded border px-1 font-mono text-[10.5px] ${styleCfg.inputClass}`}
                               />
                               <button
                                 type="button"
