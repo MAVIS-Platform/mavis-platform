@@ -326,6 +326,37 @@ function StandaloneStudioContent() {
     exercise.isPending,
     exercise.data,
   ]);
+  const infrastructureServices = useMemo(() => {
+    const raw = runtimeConfig.data?.profile?.["infrastructureServices"];
+    if (!Array.isArray(raw)) return [] as string[];
+    return Array.from(
+      new Set(
+        raw
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean),
+      ),
+    );
+  }, [runtimeConfig.data?.profile]);
+
+  const displayTopology = useMemo(() => {
+    if (!previewTopology) return undefined;
+    if (infrastructureServices.length === 0) return previewTopology;
+    const existing = new Set(previewTopology.blocks.map((b) => b.service));
+    const infraBlocks = infrastructureServices
+      .filter((svc) => !existing.has(svc))
+      .map((svc) => ({
+        service: svc,
+        label: svc,
+        canScale: false,
+        initiallyStopped: false,
+      }));
+    if (infraBlocks.length === 0) return previewTopology;
+    return {
+      ...previewTopology,
+      blocks: [...previewTopology.blocks, ...infraBlocks],
+    };
+  }, [previewTopology, infrastructureServices]);
+
   const previewModelId =
     runtimeConfig.data?.modelId ??
     assignment?.referenceSource?.modelId ??
@@ -2203,7 +2234,7 @@ function StandaloneStudioContent() {
             }}
             starting={startStudio.isPending}
             hideSwitchToSandbox
-            previewTopology={previewTopology}
+            previewTopology={displayTopology}
             previewModelId={previewModelId}
             previewServiceMappings={previewServiceMappings}
             authoring={authoringProps}

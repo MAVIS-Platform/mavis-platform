@@ -7406,6 +7406,11 @@ export function LiveStudioWorkbench({
 
                     {/* Direct 3D Initial Fault Painter (works independently on ANY service — Easy or Hard Exam) */}
                     {(() => {
+                      const isInfraService = (name: string) =>
+                        /(postgres|mysql|mariadb|mongo|redis|rabbitmq|kafka|zookeeper|nats|memcached|minio|elasticsearch|broker|-db$)/i.test(
+                          name,
+                        );
+                      const isSelectedInfra = Boolean(svc && isInfraService(svc));
                       const selCpuLimit = svc ? authoring.initialCpuLimits?.[svc] ?? null : null;
                       const activeCpuTraps = Object.entries(authoring.initialCpuLimits ?? {}).filter(
                         ([, pct]) => pct > 0 && pct < 100,
@@ -7434,7 +7439,14 @@ export function LiveStudioWorkbench({
                               </span>
                             )}
                           </div>
-                          {svc ? (
+                          {svc && isSelectedInfra ? (
+                            <p style={{ fontSize: 12, lineHeight: "1.45" }} className={themeSubtleText}>
+                              {t(
+                                "Read-only infrastructure container (auto-managed by Docker Compose).",
+                                "Container hạ tầng chỉ-xem (tự động quản lý bởi Docker Compose).",
+                              )}
+                            </p>
+                          ) : svc ? (
                             <div className="grid grid-cols-4 gap-1.5">
                               <button
                                 type="button"
