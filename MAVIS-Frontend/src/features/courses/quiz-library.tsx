@@ -48,7 +48,7 @@ const NEW_ASSET: QuizAsset = {
   id: "new",
   title: "",
   description: "",
-  passPercent: 80,
+  passPercent: 70,
   questions: [emptyQuestion()],
   updatedAt: "",
 };
@@ -189,8 +189,14 @@ export function QuizLibrary({ workspaceId }: { workspaceId: string }) {
     () => new Set((assets.data ?? []).map((item) => item.title.trim().toLowerCase())),
     [assets.data],
   );
-  const invalidate = async () =>
-    cache.invalidateQueries({ queryKey: ["api", "quiz-assets", workspaceId] });
+  const invalidate = async () => {
+    await Promise.all([
+      cache.invalidateQueries({ queryKey: ["api", "quiz-assets", workspaceId] }),
+      cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] }),
+      cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] }),
+      cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] }),
+    ]);
+  };
   const remove = useMutation({
     mutationFn: (id: string) =>
       api<null>(`workspaces/${workspaceId}/quiz-assets/${id}`, { method: "DELETE" }),

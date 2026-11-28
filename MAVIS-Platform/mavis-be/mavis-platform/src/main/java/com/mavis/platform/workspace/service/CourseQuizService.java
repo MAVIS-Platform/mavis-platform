@@ -353,7 +353,7 @@ public class CourseQuizService {
     private record RequestParts(String lesson, int threshold, List<Question> questions) {}
 
     private RequestParts validateRequest(Publish request) {
-        int threshold = request == null || request.passPercent() == null ? 80 : request.passPercent();
+        int threshold = request == null || request.passPercent() == null ? 70 : request.passPercent();
         if (request == null || threshold < 1 || threshold > 100 || !bounded(request.lesson(), 20_000)
                 || request.questions() == null || request.questions().isEmpty() || request.questions().size() > 50) {
             throw invalid();

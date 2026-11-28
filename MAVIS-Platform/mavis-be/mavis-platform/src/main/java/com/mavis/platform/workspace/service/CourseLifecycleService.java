@@ -33,6 +33,7 @@ public class CourseLifecycleService {
             if (item.assignmentId() != null) assignmentIds.add(item.assignmentId());
         }));
         assignmentIds.forEach(assignmentId -> courseAccess.publish(workspaceId, assignmentId));
+        authoring.syncLabItemTypesWithAssignments(workspaceId);
 
         if (!"PUBLISHED".equals(course.status())) {
             authoring.publishForActivation(workspaceId);
