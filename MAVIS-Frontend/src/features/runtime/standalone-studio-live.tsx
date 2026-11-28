@@ -459,16 +459,20 @@ function StandaloneStudioContent() {
       /^Quiz Gate\s*·\s*/i,
       `${t("Quiz", "Bài kiểm tra")} · `,
     );
-    const passed = hasPassedInlineQuiz(session.data?.user?.id, workspaceId, inlineQuiz.id, [
-      normalizedTitle,
-      inlineQuiz.title,
-    ]);
+    const passed = client.mode === "backend"
+      ? publishedCourse.data?.passedInlineQuizItemIds?.includes(inlineQuiz.id) === true
+      : hasPassedInlineQuiz(session.data?.user?.id, workspaceId, inlineQuiz.id, [
+          normalizedTitle,
+          inlineQuiz.title,
+        ]);
     return passed ? undefined : inlineQuiz;
   }, [
     isAuthorMode,
     canManage,
     assignmentId,
     publishedCourse.data?.snapshot?.modules,
+    publishedCourse.data?.passedInlineQuizItemIds,
+    client.mode,
     session.data?.user?.id,
     workspaceId,
     t,

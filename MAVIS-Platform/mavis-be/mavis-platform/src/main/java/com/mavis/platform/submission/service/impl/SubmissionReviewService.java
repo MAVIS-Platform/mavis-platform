@@ -187,12 +187,27 @@ public class SubmissionReviewService {
         List<SnapshotGrade> grades = parseSnapshotGrades(review.getSnapshotGrades());
         String outcome = review.getLabOutcome();
         if (outcome == null || outcome.isBlank()) {
-            outcome = "GRADED".equals(review.getStatus()) ? "PASSED"
-                    : ("RETURNED".equals(review.getStatus()) ? "NEEDS_REVISION" : "PENDING");
+            outcome = legacyOutcome(review.getStatus(), review.getScore(), grades);
         }
         return new View(review.getSubmission().getId(),review.getRevision(),review.getStatus(),review.getScore(),
                 review.getSummary(),review.getLecturer().getId(),review.getLecturer().getFullName(),
                 review.getUpdatedAt(),grades,outcome);
+    }
+
+    private static String legacyOutcome(String status, BigDecimal score, List<SnapshotGrade> grades) {
+        if ("RETURNED".equals(status)) {
+            return "NEEDS_REVISION";
+        }
+        if (!"GRADED".equals(status)) {
+            return "PENDING";
+        }
+        if (grades != null && !grades.isEmpty()) {
+            return grades.stream().allMatch(grade -> grade.score() != null
+                    && grade.score().compareTo(new BigDecimal("5.0")) > 0)
+                    ? "PASSED" : "NEEDS_REVISION";
+        }
+        return score != null && score.compareTo(new BigDecimal("50")) > 0
+                ? "PASSED" : "NEEDS_REVISION";
     }
 
     private static List<SnapshotGrade> parseSnapshotGrades(JsonNode node) {

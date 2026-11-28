@@ -48,6 +48,7 @@ import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import com.mavis.platform.workspace.service.CourseQuizService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -89,6 +90,7 @@ public class CourseLabStudentService {
     private final SubmissionReviewService submissionReviewService;
     private final com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
     private final ObjectMapper json;
+    private final JdbcTemplate jdbc;
 
     @org.springframework.beans.factory.annotation.Value("${mavis.runtime.max-active-studio-sessions:2}")
     private int maxActiveStudioSessions = 2;
@@ -132,7 +134,8 @@ public class CourseLabStudentService {
             SubmissionService submissionService,
             SubmissionReviewService submissionReviewService,
             com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises,
-            ObjectMapper json) {
+            ObjectMapper json,
+            JdbcTemplate jdbc) {
         this.access = access;
         this.courseLabs = courseLabs;
         this.assignments = assignments;
@@ -156,6 +159,7 @@ public class CourseLabStudentService {
         this.submissionReviewService = submissionReviewService;
         this.labStudioExercises = labStudioExercises;
         this.json = json;
+        this.jdbc = jdbc;
     }
 
     public record ReferenceDiagramView(
@@ -384,6 +388,7 @@ public class CourseLabStudentService {
         Assignment lab = requireLab(workspaceId, assignmentId);
         if (CourseLabPolicy.isStudent(actor)) {
             courseLabs.requireOpen(lab, actor);
+            requireStandaloneInlineQuizPassed(workspaceId, assignmentId, actor.getId());
             if (!courseLabs.hasPassedCurrentQuiz(lab, actor.getId())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "RUNTIME_QUIZ_REQUIRED",
                         "Vui lòng vượt qua bài Quiz của Lab trước khi mở phòng thí nghiệm MAVIS Studio Live");
@@ -432,6 +437,42 @@ public class CourseLabStudentService {
             return isStudentActor ? RuntimeSessionResponseDTO.redactForStudent(started) : started;
         } finally {
             startLock.unlock();
+        }
+    }
+
+    private void requireStandaloneInlineQuizPassed(UUID workspaceId, UUID assignmentId, UUID userId) {
+        Boolean blocked = jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM course_definitions c
+                    JOIN course_versions v
+                      ON v.course_id = c.id AND v.version = c.published_version
+                    CROSS JOIN LATERAL jsonb_array_elements(v.snapshot -> 'modules') module
+                    WHERE c.workspace_id = ?
+                      AND EXISTS (
+                          SELECT 1 FROM jsonb_array_elements(module -> 'items') item
+                          WHERE item ->> 'assignmentId' = ?
+                            AND item ->> 'type' IN ('RUNTIME_LAB', 'STATIC_LAB', 'IMPACT_LAB')
+                      )
+                      AND EXISTS (
+                          SELECT 1 FROM jsonb_array_elements(module -> 'items') quiz
+                          WHERE quiz ->> 'type' = 'QUIZ'
+                            AND COALESCE(quiz ->> 'assignmentId', '') = ''
+                            AND COALESCE((quiz ->> 'required')::boolean, TRUE)
+                            AND NOT EXISTS (
+                                SELECT 1 FROM course_inline_quiz_progress progress
+                                WHERE progress.user_id = ?
+                                  AND progress.workspace_id = ?
+                                  AND progress.course_version = v.version
+                                  AND progress.item_id = (quiz ->> 'id')::uuid
+                                  AND progress.passed = TRUE
+                            )
+                      )
+                )
+                """, Boolean.class, workspaceId, assignmentId.toString(), userId, workspaceId);
+        if (Boolean.TRUE.equals(blocked)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "INLINE_QUIZ_REQUIRED",
+                    "Vui lòng vượt qua bài Quiz của chương trước khi mở MAVIS Studio Live");
         }
     }
 

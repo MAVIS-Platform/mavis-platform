@@ -34,6 +34,15 @@ class SubmissionReviewServiceTest {
   review.setStatus("GRADED");assertThat(service.get(id).score()).isEqualByComparingTo("85");
   verify(access,never()).requireWorkspaceLecturer(any());
  }
+ @Test void legacyGradedReviewWithoutOutcomeUsesTheSameStrictScoreRuleAsSubmissionApis(){
+  var review=new SubmissionReview();review.setSubmission(submission);review.setLecturer(teacher);review.setRevision(2);
+  review.setStatus("GRADED");review.setScore(new BigDecimal("50"));review.setSummary("Legacy review");review.setLabOutcome(null);
+  when(access.requireCurrentActiveUser()).thenReturn(student);when(reviews.findBySubmissionId(id)).thenReturn(Optional.of(review));
+
+  assertThat(service.get(id).labOutcome()).isEqualTo("NEEDS_REVISION");
+  review.setScore(new BigDecimal("50.01"));
+  assertThat(service.get(id).labOutcome()).isEqualTo("PASSED");
+ }
  @Test void lecturerGradeIsVersionedAndDoesNotModifySubmittedArtifacts(){
   when(access.requireCurrentActiveUser()).thenReturn(teacher);when(reviews.findBySubmissionId(id)).thenReturn(Optional.empty());when(reviews.saveAndFlush(any())).thenAnswer(call->call.getArgument(0));
   var result=service.save(id,new SubmissionReviewService.Save(0,"GRADED",new BigDecimal("85"),"Approved with remediation notes"));

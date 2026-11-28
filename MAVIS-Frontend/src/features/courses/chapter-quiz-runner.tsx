@@ -356,6 +356,7 @@ export function ChapterQuizRunner({
       if (result.questionResults?.length) {
         setShowFeedback(true);
       }
+      void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
     },
   });
 

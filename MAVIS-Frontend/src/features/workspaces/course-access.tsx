@@ -306,6 +306,7 @@ export type PublishedCourse = {
   draftRevision: number;
   snapshotDigest: string;
   publishedAt: string;
+  passedInlineQuizItemIds: string[];
   snapshot: {
     title: string;
     description: string | null;

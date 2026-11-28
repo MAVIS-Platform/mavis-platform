@@ -59,7 +59,8 @@ public class CourseAuthoringService {
     public record CourseView(UUID id, UUID workspaceId, String title, String description, String status,
                              int draftRevision, int publishedVersion, List<ModuleView> modules) {}
     public record PublishedView(UUID courseId, int version, int draftRevision, String snapshotDigest,
-                                java.time.OffsetDateTime publishedAt, JsonNode snapshot) {}
+                                java.time.OffsetDateTime publishedAt, JsonNode snapshot,
+                                Set<UUID> passedInlineQuizItemIds) {}
     public record ModuleView(UUID id, String title, String description, int position, UUID prerequisiteModuleId, List<ItemView> items) {}
     public record ItemView(UUID id, String type, String title, String description, int position,
                            UUID assignmentId, JsonNode content, boolean required) {}
@@ -154,10 +155,10 @@ public class CourseAuthoringService {
             });
         }
         return new PublishedView(course.getId(), version.getVersion(), version.getDraftRevision(),
-                version.getSnapshotDigest(), version.getPublishedAt(), learnerSnapshot);
+                version.getSnapshotDigest(), version.getPublishedAt(), learnerSnapshot,
+                passedInlineQuizItemIds(workspaceId, version.getVersion(), access.requireCurrentActiveUser().getId()));
     }
 
-    @Transactional(readOnly = true)
     public InlineQuizResult checkInlineQuiz(UUID workspaceId, UUID itemId, List<List<Integer>> selections) {
         access.requireWorkspaceMember(workspaceId);
         if (itemId == null) {
@@ -229,7 +230,36 @@ public class CourseAuthoringService {
                 ? Math.max(1, Math.min(100, targetItem.path("content").path("passPercent").asInt(70)))
                 : 70;
         String status = (correctCount * 100 >= total * passPercent) ? "PASSED" : "NEEDS_RETRY";
+        UUID userId = access.requireCurrentActiveUser().getId();
+        jdbc.update("""
+                INSERT INTO course_inline_quiz_progress
+                    (user_id, workspace_id, course_id, course_version, item_id, attempt_count,
+                     best_correct_count, total_questions, passed, last_attempted_at, passed_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, CURRENT_TIMESTAMP,
+                        CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END)
+                ON CONFLICT (user_id, workspace_id, course_version, item_id) DO UPDATE SET
+                    attempt_count = course_inline_quiz_progress.attempt_count + 1,
+                    best_correct_count = GREATEST(course_inline_quiz_progress.best_correct_count, EXCLUDED.best_correct_count),
+                    total_questions = EXCLUDED.total_questions,
+                    passed = course_inline_quiz_progress.passed OR EXCLUDED.passed,
+                    last_attempted_at = CURRENT_TIMESTAMP,
+                    passed_at = CASE
+                        WHEN course_inline_quiz_progress.passed_at IS NOT NULL THEN course_inline_quiz_progress.passed_at
+                        WHEN EXCLUDED.passed THEN CURRENT_TIMESTAMP
+                        ELSE NULL
+                    END
+                """, userId, workspaceId, course.getId(), version.getVersion(), itemId,
+                correctCount, total, "PASSED".equals(status), "PASSED".equals(status));
         return new InlineQuizResult(correctCount, total, status, results);
+    }
+
+    private Set<UUID> passedInlineQuizItemIds(UUID workspaceId, int courseVersion, UUID userId) {
+        List<UUID> passed = jdbc.query("""
+                SELECT item_id
+                FROM course_inline_quiz_progress
+                WHERE user_id = ? AND workspace_id = ? AND course_version = ? AND passed = TRUE
+                """, (rs, rowNum) -> rs.getObject("item_id", UUID.class), userId, workspaceId, courseVersion);
+        return passed == null ? Set.of() : Set.copyOf(passed);
     }
 
     @Transactional(readOnly = true)
@@ -240,7 +270,7 @@ public class CourseAuthoringService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course not found"));
         return versions.findByCourseIdOrderByVersionDesc(course.getId()).stream()
                 .map(version -> new PublishedView(course.getId(), version.getVersion(), version.getDraftRevision(),
-                        version.getSnapshotDigest(), version.getPublishedAt(), version.getSnapshot()))
+                        version.getSnapshotDigest(), version.getPublishedAt(), version.getSnapshot(), Set.of()))
                 .toList();
     }
 
@@ -252,7 +282,7 @@ public class CourseAuthoringService {
         CourseVersion version = versions.findByCourseIdAndVersion(course.getId(), versionNumber)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course version not found"));
         return new PublishedView(course.getId(), version.getVersion(), version.getDraftRevision(),
-                version.getSnapshotDigest(), version.getPublishedAt(), version.getSnapshot());
+                version.getSnapshotDigest(), version.getPublishedAt(), version.getSnapshot(), Set.of());
     }
 
     public PublishedView publish(UUID workspaceId) {
@@ -294,7 +324,7 @@ public class CourseAuthoringService {
                 course.setStatus("PUBLISHED");
                 courses.save(course);
                 return new PublishedView(course.getId(), current.getVersion(), current.getDraftRevision(),
-                        current.getSnapshotDigest(), current.getPublishedAt(), current.getSnapshot());
+                        current.getSnapshotDigest(), current.getPublishedAt(), current.getSnapshot(), Set.of());
             }
             throw new BusinessException(ErrorCode.CONFLICT, "This exact Course content has already been published");
         }
@@ -306,7 +336,8 @@ public class CourseAuthoringService {
         course.setPublishedVersion(versionNumber);
         course.setStatus("PUBLISHED");
         courses.save(course);
-        return new PublishedView(course.getId(), versionNumber, course.getDraftRevision(), digest, version.getPublishedAt(), snapshot);
+        return new PublishedView(course.getId(), versionNumber, course.getDraftRevision(), digest,
+                version.getPublishedAt(), snapshot, Set.of());
     }
 
     private record CourseSnapshot(UUID courseId, UUID workspaceId, String title, String description,

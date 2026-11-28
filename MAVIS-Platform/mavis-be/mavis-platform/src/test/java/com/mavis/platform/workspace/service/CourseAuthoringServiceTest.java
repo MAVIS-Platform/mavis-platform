@@ -67,6 +67,7 @@ class CourseAuthoringServiceTest {
                         .position(1).content(JsonNodeFactory.instance.objectNode().put("body", "text")).required(true).build()));
         when(assignments.existsByIdAndWorkspaceId(any(), eq(workspaceId))).thenReturn(true);
         when(users.findById(lecturerId)).thenReturn(Optional.of(User.builder().id(lecturerId).build()));
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(lecturerId).build());
     }
 
     @Test

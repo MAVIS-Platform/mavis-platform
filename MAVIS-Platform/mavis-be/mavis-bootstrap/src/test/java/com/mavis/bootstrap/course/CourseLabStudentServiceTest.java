@@ -55,6 +55,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -83,6 +85,7 @@ class CourseLabStudentServiceTest {
     private SubmissionService submissionService;
     private SubmissionReviewService submissionReviewService;
     private com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
     private final ObjectMapper json = new ObjectMapper();
     private CourseLabStudentService service;
 
@@ -120,13 +123,14 @@ class CourseLabStudentServiceTest {
         submissionReviewService = mock(SubmissionReviewService.class);
 
         labStudioExercises = mock(com.mavis.common.repository.LabStudioExerciseRepository.class);
+        jdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
         service = new CourseLabStudentService(
                 access, courseLabs, assignments, projects, snapshots, models, elements,
                 relationships, diagrams, evidences, evaluations, evaluationFindings,
                 runtimeConfigurations, runtimeSessions, runtimeSessionService, runtimePlanningService,
                 runtimeStudioService,
                 assignmentService, courseQuizService, submissionService, submissionReviewService,
-                labStudioExercises, json);
+                labStudioExercises, json, jdbc);
 
         workspaceId = UUID.randomUUID();
         labId = UUID.randomUUID();
@@ -231,6 +235,20 @@ class CourseLabStudentServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
         verify(projects, never()).saveAndFlush(any());
+        verify(runtimeSessionService, never()).createRuntimeSession(any());
+    }
+
+    @Test
+    void startLabStudioSessionRejectsDirectApiBypassOfRequiredInlineQuiz() {
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class),
+                any(), any(), any(), any())).thenReturn(true);
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.startLabStudioSession(workspaceId, labId))
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+                    assertThat(failure.getMessage()).contains("Quiz");
+                });
         verify(runtimeSessionService, never()).createRuntimeSession(any());
     }
 

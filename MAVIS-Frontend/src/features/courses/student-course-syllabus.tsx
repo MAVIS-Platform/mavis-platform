@@ -410,6 +410,9 @@ export function StudentCourseSyllabus({
   const isStandaloneQuizItemPassed = (item: Pick<OutlineItemData, "id" | "type" | "assignmentId" | "title">) => {
     void inlineQuizTick;
     if (item.type !== "QUIZ" || item.assignmentId) return false;
+    if (client.mode === "backend") {
+      return publishedCourse.data?.passedInlineQuizItemIds?.includes(item.id) === true;
+    }
     return hasPassedInlineQuiz(session.data?.user?.id, workspaceId, item.id, [
       formatSyllabusItemTitle(item, t),
       item.title,
