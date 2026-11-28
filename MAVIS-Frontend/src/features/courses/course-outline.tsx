@@ -212,7 +212,12 @@ function CourseOutlineBody({
 
   const publishedModules = (published?.snapshot.modules as OutlineModule[] | undefined) ?? [];
   const draftModules = (draft?.modules as OutlineModule[] | undefined) ?? [];
-  const rawModules = publishedModules.length > 0 ? publishedModules : draftModules;
+  const preferDraft = canManage && !active && draftModules.length > 0;
+  const rawModules = preferDraft
+    ? draftModules
+    : publishedModules.length > 0
+      ? publishedModules
+      : draftModules;
   const legacyLabs = roadmap.data?.labs ?? [];
   const useLegacyOnly = !canManage && rawModules.length === 0 && legacyLabs.length > 0 && !isJavaCourseraWorkspace;
   const isCatalogFallback = isJavaCourseraWorkspace && !useLegacyOnly && rawModules.length === 0;
@@ -232,12 +237,14 @@ function CourseOutlineBody({
       })),
   }));
   const courseTitle = formatCoursePlainText(
-    published?.snapshot.title ??
+    (preferDraft ? draft?.title : undefined) ??
+      published?.snapshot.title ??
       (draftModules.length > 0 ? draft?.title : undefined) ??
       (isJavaCourseraWorkspace ? JAVA_COURSERA_COURSE_TITLE : workspace?.name),
   );
   const courseDescription = formatCoursePlainText(
-    published?.snapshot.description ??
+    (preferDraft ? draft?.description : undefined) ??
+      published?.snapshot.description ??
       (draftModules.length > 0 ? draft?.description : undefined) ??
       workspace?.description ??
       "",
