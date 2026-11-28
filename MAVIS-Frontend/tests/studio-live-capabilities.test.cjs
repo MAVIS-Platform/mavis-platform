@@ -1070,13 +1070,12 @@ test("Floating 3D Camera card stays ultra-compact with 3 presets and a single 4-
     "utf8",
   );
   const start = obsSrc.indexOf('data-testid="studio-3d-controls"');
-  const end = obsSrc.indexOf("</section>", start);
-  const card = obsSrc.slice(start, end);
-  assert.ok(card.includes("w-[216px]"), "3D Camera card should stay compact (216px) with clean preset padding");
-  assert.ok(card.includes("grid-cols-4"), "Rotate/tilt controls should share one compact 4-icon row");
-  assert.ok(card.includes('aria-label={t("Rotate left"') && card.includes('aria-label={t("Tilt down"'));
-  assert.ok(!card.includes("Right-drag to orbit"), "Verbose 2-line mouse hint should stay removed from floating card");
-  assert.ok(!card.includes('"CIRCULAR"'), "Redundant Layered/Circular/Grid row should stay removed from floating card");
+  const end = obsSrc.indexOf("</div>", start);
+  const pill = obsSrc.slice(start, end);
+  assert.ok(!obsSrc.includes('aria-label={t("3D Camera"'), "Separate floating 3D Camera card should stay removed");
+  assert.ok(pill.includes('aria-label={t("Rotate left"') && pill.includes('aria-label={t("Tilt down"'));
+  assert.ok(pill.includes('aria-label={t("Auto-layout"') && pill.includes('aria-label={t("Fit to view"'));
+  assert.ok(!pill.includes("Right-drag to orbit"), "Verbose 2-line mouse hint should stay removed");
 });
 
 test("LiveTerminalConsole omits fake compose header and red error card, streaming diagnostics inline in logs", () => {
@@ -2639,7 +2638,7 @@ test("Critical Audit 26 P0/P1/P2 Overhaul: initials, watermark, waterfall peers,
   const courseOutline = readSrc("src/features/courses/course-outline.tsx");
 
   // P0/P1 Studio invariants
-  assert.ok(obs.includes("const [cameraFormOpen, setCameraFormOpen] = useState(false);"));
+  assert.ok(!obs.includes("cameraFormOpen"), "Separate 3D Camera collapsible card stays removed in favor of unified 2D/3D pill");
   assert.ok(workbench.includes("if (!bottomCollapsed) setMissionCollapsed(true);"));
   assert.ok(workbench.includes("window.confirm("));
   assert.ok(workbench.includes('data-testid="drawer-run-docker-btn"'));

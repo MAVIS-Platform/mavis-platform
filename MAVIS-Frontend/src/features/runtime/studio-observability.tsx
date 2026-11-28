@@ -1182,7 +1182,6 @@ export function StudioObservability({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState(DEFAULT_3D_CAMERA);
-  const [cameraFormOpen, setCameraFormOpen] = useState(false);
   const [webglReady, setWebglReady] = useState(false);
   const handleWebglReadyChange = useCallback((ready: boolean) => {
     setWebglReady(ready);
@@ -2024,141 +2023,15 @@ export function StudioObservability({
     <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
-      {/* Floating Bottom-Left Viewport Controls Pill + Collapsible 3D Camera & Layout Form */}
+      {/* Unified Floating Bottom-Left Viewport Controls Pill (shared across 2D & 3D) */}
       {canvasOnly ? (
         <div
           data-tour="studio-3d-controls-group"
           className="pointer-events-none absolute bottom-[72px] left-[76px] z-20 flex flex-col items-start gap-2"
         >
-          {view === "3D" && (
-            <section
-              data-testid="studio-3d-controls"
-              aria-label={t("3D Camera", "Góc nhìn 3D")}
-              className={`pointer-events-auto ${
-                cameraFormOpen ? "w-[216px]" : "w-auto"
-              } ${styleCfg.floatingCardClass}`}
-            >
-              <div className="flex items-center justify-between gap-1.5 px-2 py-1">
-                <span className="inline-flex items-center gap-1 whitespace-nowrap text-[10.5px] font-bold tracking-tight">
-                  <Box className="size-3 shrink-0 text-primary" aria-hidden="true" />
-                  {t("3D Camera", "Góc nhìn 3D")}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-expanded={cameraFormOpen}
-                    aria-label={
-                      cameraFormOpen
-                        ? t("Collapse 3D controls", "Thu gọn điều khiển 3D")
-                        : t("Expand 3D controls", "Mở điều khiển 3D")
-                    }
-                    onClick={() => setCameraFormOpen((open) => !open)}
-                    className={`p-0.5 transition ${styleCfg.railIdleClass}`}
-                  >
-                    {cameraFormOpen ? (
-                      <ChevronDown className="size-3" aria-hidden="true" />
-                    ) : (
-                      <ChevronUp className="size-3" aria-hidden="true" />
-                    )}
-                  </button>
-                </div>
-              </div>
-              {cameraFormOpen && (
-                <div
-                  className={`space-y-1.5 border-t px-2 py-1.5 ${
-                    studioStyle === "pop"
-                      ? "border-slate-900"
-                      : studioStyle === "blueprint"
-                        ? "border-blue-300/90"
-                        : isLight
-                          ? "border-sky-200/80"
-                          : "border-slate-700/70"
-                  }`}
-                >
-                  <div className="grid grid-cols-3 gap-1">
-                    {(
-                      [
-                        ["Isometric", "Góc 3D", DEFAULT_3D_CAMERA.yaw, DEFAULT_3D_CAMERA.pitch],
-                        ["Top-down", "Từ trên", TOP_DOWN_3D_CAMERA.yaw, TOP_DOWN_3D_CAMERA.pitch],
-                        ["Elevation", "Mặt đứng", ELEVATION_3D_CAMERA.yaw, ELEVATION_3D_CAMERA.pitch],
-                      ] as const
-                    ).map(([labelEn, labelVi, presetYaw, presetPitch]) => {
-                      const active =
-                        Math.abs((((camera.yaw - presetYaw) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI) < 0.06 &&
-                        Math.abs(clampedPitch - presetPitch) < 0.05;
-                      return (
-                        <button
-                          key={labelEn}
-                          type="button"
-                          aria-pressed={active}
-                          onClick={() => {
-                            setPan({ x: 0, y: 0 });
-                            setZoom(1);
-                            setCamera({ yaw: presetYaw, pitch: presetPitch });
-                          }}
-                          className={`whitespace-nowrap border px-1 py-1 text-[10px] font-semibold transition ${styleCfg.controlRadiusClass} ${
-                            active ? styleCfg.controlActiveClass : styleCfg.controlIdleClass
-                          }`}
-                        >
-                          {t(labelEn, labelVi)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="grid grid-cols-4 gap-1">
-                    <button
-                      type="button"
-                      title={t("Rotate left", "Xoay trái")}
-                      aria-label={t("Rotate left", "Xoay trái")}
-                      onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.26 }))}
-                      className={`inline-flex h-7 items-center justify-center border transition ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
-                    >
-                      <RotateCcw className="size-3.5" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      title={t("Rotate right", "Xoay phải")}
-                      aria-label={t("Rotate right", "Xoay phải")}
-                      onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.26 }))}
-                      className={`inline-flex h-7 items-center justify-center border transition ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
-                    >
-                      <RotateCw className="size-3.5" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      title={t("Tilt up", "Nâng góc")}
-                      aria-label={t("Tilt up", "Nâng góc")}
-                      onClick={() =>
-                        setCamera((value) => ({
-                          ...value,
-                          pitch: Math.min(PITCH_MAX, value.pitch + 0.14),
-                        }))
-                      }
-                      className={`inline-flex h-7 items-center justify-center border transition ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
-                    >
-                      <ArrowUp className="size-3.5" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      title={t("Tilt down", "Hạ góc")}
-                      aria-label={t("Tilt down", "Hạ góc")}
-                      onClick={() =>
-                        setCamera((value) => ({
-                          ...value,
-                          pitch: Math.max(PITCH_MIN, value.pitch - 0.14),
-                        }))
-                      }
-                      className={`inline-flex h-7 items-center justify-center border transition ${styleCfg.controlRadiusClass} ${styleCfg.controlIdleClass}`}
-                    >
-                      <ArrowDown className="size-3.5" aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
           <div
             data-tour="studio-viewport-pill"
+            data-testid="studio-3d-controls"
             className={`pointer-events-auto inline-flex items-center gap-0.5 px-1 py-1 ${styleCfg.floatingPillClass}`}
           >
             {(["2D", "3D"] as const).map((mode) => (
@@ -2233,6 +2106,60 @@ export function StudioObservability({
             >
               <Plus className="size-3.5" aria-hidden="true" />
             </button>
+            {view === "3D" && (
+              <>
+                <span
+                  className={`mx-0.5 h-4 w-px ${styleCfg.dividerClass}`}
+                  aria-hidden="true"
+                />
+                <button
+                  type="button"
+                  title={t("Rotate left", "Xoay trái")}
+                  aria-label={t("Rotate left", "Xoay trái")}
+                  onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.26 }))}
+                  className={`p-1 transition ${styleCfg.railIdleClass}`}
+                >
+                  <RotateCcw className="size-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  title={t("Rotate right", "Xoay phải")}
+                  aria-label={t("Rotate right", "Xoay phải")}
+                  onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.26 }))}
+                  className={`p-1 transition ${styleCfg.railIdleClass}`}
+                >
+                  <RotateCw className="size-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  title={t("Tilt up", "Nâng góc")}
+                  aria-label={t("Tilt up", "Nâng góc")}
+                  onClick={() =>
+                    setCamera((value) => ({
+                      ...value,
+                      pitch: Math.min(PITCH_MAX, value.pitch + 0.14),
+                    }))
+                  }
+                  className={`p-1 transition ${styleCfg.railIdleClass}`}
+                >
+                  <ArrowUp className="size-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  title={t("Tilt down", "Hạ góc")}
+                  aria-label={t("Tilt down", "Hạ góc")}
+                  onClick={() =>
+                    setCamera((value) => ({
+                      ...value,
+                      pitch: Math.max(PITCH_MIN, value.pitch - 0.14),
+                    }))
+                  }
+                  className={`p-1 transition ${styleCfg.railIdleClass}`}
+                >
+                  <ArrowDown className="size-3.5" aria-hidden="true" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       ) : (

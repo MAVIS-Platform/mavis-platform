@@ -3476,50 +3476,6 @@ export function LiveStudioWorkbench({
                   </>
                 )}
 
-                {authoring && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRightCardMode("diagnostics");
-                      setShowRight(true);
-                    }}
-                    className={`h-8 whitespace-nowrap border px-3 text-[12.5px] font-semibold transition ${
-                      studioStyle === "blueprint" ? "rounded-sm" : "rounded-full"
-                    } ${styleCfg.controlIdleClass}`}
-                  >
-                    {t("Impact", "Tác động")}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab("logs");
-                    setBottomCollapsed(false);
-                  }}
-                  className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap border px-3 text-[12.5px] font-semibold transition ${
-                    studioStyle === "blueprint" ? "rounded-sm" : "rounded-full"
-                  } ${styleCfg.controlIdleClass}`}
-                >
-                  <Terminal className="size-3.5 opacity-80" aria-hidden="true" />
-                  <span>{t("Logs & Traces", "Log & Trace")}</span>
-                  {logsAndTracesCount > 0 && (
-                    <span
-                      className={`rounded-full px-1.5 font-mono text-[11px] font-bold ${
-                        studioStyle === "pop"
-                          ? "border border-slate-900 bg-[#DBEAFE] text-slate-950"
-                          : studioStyle === "blueprint"
-                            ? "bg-blue-100 text-blue-800"
-                            : isLight
-                              ? "bg-sky-100 text-sky-800"
-                              : "bg-sky-500/20 text-sky-200"
-                      }`}
-                    >
-                      {logsAndTracesCount}
-                    </span>
-                  )}
-                </button>
-
                 {missionCard?.verified && missionCard.submitHref && (
                   <Button asChild size="sm" className="h-8 rounded-full bg-emerald-600 px-3.5 text-[13px] font-semibold text-white hover:bg-emerald-700">
                     <Link href={missionCard.submitHref}>
