@@ -448,23 +448,23 @@ public class CourseLabStudentService {
                     JOIN course_versions v
                       ON v.course_id = c.id AND v.version = c.published_version
                     CROSS JOIN LATERAL jsonb_array_elements(v.snapshot -> 'modules') module
+                    CROSS JOIN LATERAL jsonb_array_elements(module -> 'items') WITH ORDINALITY AS lab_item(item, ord)
                     WHERE c.workspace_id = ?
+                      AND lab_item.item ->> 'assignmentId' = ?
+                      AND lab_item.item ->> 'type' IN ('RUNTIME_LAB', 'STATIC_LAB', 'IMPACT_LAB')
                       AND EXISTS (
-                          SELECT 1 FROM jsonb_array_elements(module -> 'items') item
-                          WHERE item ->> 'assignmentId' = ?
-                            AND item ->> 'type' IN ('RUNTIME_LAB', 'STATIC_LAB', 'IMPACT_LAB')
-                      )
-                      AND EXISTS (
-                          SELECT 1 FROM jsonb_array_elements(module -> 'items') quiz
-                          WHERE quiz ->> 'type' = 'QUIZ'
-                            AND COALESCE(quiz ->> 'assignmentId', '') = ''
-                            AND COALESCE((quiz ->> 'required')::boolean, TRUE)
+                          SELECT 1
+                          FROM jsonb_array_elements(module -> 'items') WITH ORDINALITY AS quiz_item(quiz, ord)
+                          WHERE quiz_item.ord < lab_item.ord
+                            AND quiz_item.quiz ->> 'type' = 'QUIZ'
+                            AND COALESCE(quiz_item.quiz ->> 'assignmentId', '') = ''
+                            AND COALESCE((quiz_item.quiz ->> 'required')::boolean, TRUE)
                             AND NOT EXISTS (
                                 SELECT 1 FROM course_inline_quiz_progress progress
                                 WHERE progress.user_id = ?
                                   AND progress.workspace_id = ?
                                   AND progress.course_version = v.version
-                                  AND progress.item_id = (quiz ->> 'id')::uuid
+                                  AND progress.item_id = (quiz_item.quiz ->> 'id')::uuid
                                   AND progress.passed = TRUE
                             )
                       )

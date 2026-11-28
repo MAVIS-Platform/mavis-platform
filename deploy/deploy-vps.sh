@@ -271,6 +271,12 @@ if [ -e "$lecturer_notification_workflow_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$lecturer_notification_workflow_migration" /opt/mavis/db-backups/lecturer-notifications-before-v50.dump
 fi
+inline_quiz_progress_migration="$incoming/V51__Persist_Inline_Quiz_Progress.sql"
+if [ -e "$inline_quiz_progress_migration" ]; then
+  test -f "$lecturer_notification_workflow_migration" && test -f "$schema_tool" || { echo "Incomplete Inline Quiz Progress schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$inline_quiz_progress_migration" /opt/mavis/db-backups/inline-quiz-progress-before-v51.dump
+fi
 # Ensure persistent data volume upload and worker directories are writable by app user 1654:1654
 docker run --rm --mount source=mavis_data,target=/data alpine:3.20 sh -c "mkdir -p /data/uploads /data/worker-artifacts && chown -R 1654:1654 /data/uploads /data/worker-artifacts" >/dev/null 2>&1 || true
 drain_deadline=$((SECONDS + 360))

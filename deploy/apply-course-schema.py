@@ -145,6 +145,20 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V51__Persist_Inline_Quiz_Progress.sql": (51, """
+WITH expected(present) AS (VALUES
+    (to_regclass('course_inline_quiz_progress') IS NOT NULL),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'course_inline_quiz_progress' AND column_name = 'item_id'
+             AND data_type = 'uuid')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'course_inline_quiz_progress' AND column_name = 'passed'
+             AND data_type = 'boolean'))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V48__Allow_Inactive_Workspace_Status.sql": (48, """
 SELECT CASE
     WHEN to_regclass('workspaces') IS NULL THEN 'partial'
