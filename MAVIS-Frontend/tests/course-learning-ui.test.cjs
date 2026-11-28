@@ -2370,16 +2370,20 @@ test("Workflow V2 Item #01: expandModuleFlowItems enforces 4-Step Module order (
   );
 });
 
-test("Commit #01: /home and /courses filter ARCHIVED/[QA] workspaces into Archived tab and syllabus resets state per workspaceId", () => {
+test("Commit #01: /home and /courses use lifecycle status for Archived and syllabus resets state per workspaceId", () => {
   const { isArchivedOrQaCourse } = require("../src/features/courses/mavis-pages.tsx");
   assert.equal(isArchivedOrQaCourse({ status: "ACTIVE", name: "Java Microservices", code: "JAVA-MS-2026" }), false);
   assert.equal(isArchivedOrQaCourse({ status: "ARCHIVED", name: "Java Old", code: "JAVA-OLD" }), true);
-  assert.equal(isArchivedOrQaCourse({ status: "ACTIVE", name: "[QA-AUTO] Smoke", code: "SMOKE" }), true);
-  assert.equal(isArchivedOrQaCourse({ status: "ACTIVE", name: "[QA] MAVIS backend BM04", code: "QA-BM04-123" }), true);
+  assert.equal(isArchivedOrQaCourse({ status: "ACTIVE", name: "[QA-AUTO] Smoke", code: "SMOKE" }), false);
+  assert.equal(isArchivedOrQaCourse({ status: "ACTIVE", name: "[QA] MAVIS backend BM04", code: "QA-BM04-123" }), false);
 
   const syllabus = read("src/features/courses/student-course-syllabus.tsx");
   assert.match(syllabus, /useEffect\(\(\) => \{\s*setSelectedItemId\(""\);[\s\S]*\}, \[workspaceId\]\);/);
   assert.match(syllabus, /COURSE_ARCHIVED/);
+  const pages = read("src/features/courses/mavis-pages.tsx");
+  const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
+  assert.match(pages, /View archived course/);
+  assert.match(dashboard, /View archived course/);
 });
 
 test("Quiz Module owns the full Quiz Builder and Lab Creation no longer owns Quiz", () => {

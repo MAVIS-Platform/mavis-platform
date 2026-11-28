@@ -74,8 +74,9 @@ export function groupDuplicateNotifications(
       grouped.push({ ...item, duplicateCount: 1 });
     } else {
       const current = grouped[existingIndex]!;
+      const unreadRepresentative = current.readAt && !item.readAt ? item : current;
       grouped[existingIndex] = {
-        ...current,
+        ...unreadRepresentative,
         duplicateCount: current.duplicateCount + 1,
         readAt: current.readAt && item.readAt ? current.readAt : null,
       };

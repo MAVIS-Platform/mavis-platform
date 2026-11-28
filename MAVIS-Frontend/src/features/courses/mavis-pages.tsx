@@ -114,12 +114,9 @@ function courseHref(workspaceId: string) {
 }
 
 export function isArchivedOrQaCourse(
-  workspace: Pick<Workspace, "status" | "name" | "code">,
+  workspace: Pick<Workspace, "status">,
 ): boolean {
-  if (workspace.status === "ARCHIVED") return true;
-  const name = workspace.name.trim();
-  const code = (workspace.code ?? "").trim();
-  return /^\[QA(?:-AUTO)?\]/i.test(name) || /^QA-/i.test(code);
+  return workspace.status === "ARCHIVED";
 }
 
 function CourseCard({ workspace, compact = false }: { workspace: Workspace; compact?: boolean }) {
@@ -149,7 +146,9 @@ function CourseCard({ workspace, compact = false }: { workspace: Workspace; comp
       </div>
       <Button asChild className="mt-5 w-full">
         <Link href={courseHref(workspace.id)}>
-          {t("Continue learning", "Tiếp tục học")}{" "}
+          {workspace.status === "ARCHIVED"
+            ? t("View archived course", "Xem khóa học đã lưu trữ")
+            : t("Continue learning", "Tiếp tục học")}{" "}
           <ArrowRight className="size-4" aria-hidden="true" />
         </Link>
       </Button>

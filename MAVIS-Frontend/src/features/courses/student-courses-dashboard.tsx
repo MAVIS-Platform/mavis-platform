@@ -311,7 +311,9 @@ export function StudentCourseProgressCard({
               <Play className="mr-1.5 h-3.5 w-3.5 fill-current" aria-hidden="true" />
               {isLecturer
                 ? t("Manage course", "Quản lý khóa học")
-                : t("Continue learning", "Tiếp tục học")}
+                : workspace.status === "ARCHIVED"
+                  ? t("View archived course", "Xem khóa học đã lưu trữ")
+                  : t("Continue learning", "Tiếp tục học")}
             </Link>
           </Button>
           <Button asChild size="sm" variant="outline" onClick={onOpen}>
