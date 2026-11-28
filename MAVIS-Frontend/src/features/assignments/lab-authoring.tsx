@@ -93,7 +93,6 @@ export function LabAuthoring() {
   const isPublished = Boolean(setupLab?.published || assignment?.labOrder != null);
   const cache = useQueryClient();
   const createDraftLab = useApiMutation("createAssignment");
-  const autoLaunchedRef = useRef(false);
 
   const launchNewStudioLab = () => {
     if (!workspaceId || !courseAccess.canCreateLabs || createDraftLab.isPending) return;
@@ -129,27 +128,6 @@ export function LabAuthoring() {
       },
     });
   };
-
-  useEffect(() => {
-    if (
-      section !== "create" ||
-      activeAssignmentId ||
-      flowMode !== "setup" ||
-      !canManage ||
-      !courseAccess.canCreateLabs ||
-      workspaces.isPending ||
-      assignments.isPending ||
-      session.isPending ||
-      setup.isPending ||
-      allLabs.length > 0 ||
-      autoLaunchedRef.current ||
-      createDraftLab.isPending
-    ) {
-      return;
-    }
-    autoLaunchedRef.current = true;
-    launchNewStudioLab();
-  });
 
   useEffect(() => {
     if (!activeAssignmentId) {
